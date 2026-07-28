@@ -1,0 +1,12 @@
+{
+  "display_name": "📝 角色日记",
+  "name": "character-diary",
+  "version": "2.0.0",
+  "description": "为每个有名字的角色以第一人称写日记，附关系网谱。悬浮FAB一键唤起，自动/手动双模式。",
+  "type": "extension",
+  "js": "index.js",
+  "css": "style.css",
+  "author": "",
+  "homePage": "",
+  "requires": []
+}
