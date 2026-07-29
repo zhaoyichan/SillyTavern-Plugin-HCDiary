@@ -3825,8 +3825,31 @@ async function cdRenderSettings() {
     if (src === 'tavern') return;
     const ep = { url: $('#cd-s-url').val(), key: $('#cd-s-key').val(), model: $('#cd-s-model').val() };
     const models = await cdFetchModels(src, ep);
+    if (!models.length) {
+      toastr.warning('未获取到模型列表，请检查 API 地址和密钥');
+      return;
+    }
+    // 更新 datalist
     $('#cd-models').html(models.map(m => `<option value="${escapeAttr(m)}">`).join(''));
-    if (models.length) toastr.info(`获取到 ${models.length} 个模型`);
+    // 如果当前输入框为空，自动填入第一个模型
+    if (!$('#cd-s-model').val()) {
+      $('#cd-s-model').val(models[0]);
+    }
+    // 在按钮下方显示模型列表供点击选择
+    const container = $('#cd-btn-fetch-models').parent();
+    let listEl = container.find('#cd-model-list');
+    if (!listEl.length) {
+      listEl = $('<div id="cd-model-list" style="margin-top:6px;max-height:120px;overflow-y:auto;display:flex;flex-wrap:wrap;gap:4px;"></div>');
+      container.append(listEl);
+    }
+    listEl.html(models.map(m => `<span class="cd-btn-secondary" style="font-size:0.6rem;padding:2px 6px;cursor:pointer;display:inline-block;" data-model="${escapeAttr(m)}">${escapeHtml(m)}</span>`).join(''));
+    // 点击模型名自动填入
+    listEl.off('click').on('click', 'span[data-model]', function () {
+      $('#cd-s-model').val($(this).data('model'));
+      listEl.find('span').css('background', '').css('color', '');
+      $(this).css('background', '#cdb69b').css('color', '#fff');
+    });
+    toastr.success(`获取到 ${models.length} 个模型`);
   });
 
   $('#cd-btn-save-settings').on('click', function () {
