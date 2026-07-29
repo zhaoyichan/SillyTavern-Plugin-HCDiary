@@ -25,6 +25,12 @@ const DEFAULT_SETTINGS = {
   fabShow         : true,         // 是否显示悬浮按钮
   themeMode       : 'day',       // 'auto' | 'day' | 'night'
   autoSummary     : true,         // 自动总结开关（独立于手动写日记）
+  enableDiary     : true,         // 生成角色日记
+  enableRelation  : true,         // 生成人物关系
+  enableArchive   : true,         // 生成剧情档案
+  injectDiary     : true,         // 注入角色日记到AI上下文
+  injectRelation  : true,         // 注入人物关系到AI上下文
+  injectArchive   : true,         // 注入剧情档案到AI上下文
   endpoints: {
     openai:  { url: 'https://api.openai.com/v1',               key: '', model: '' },
     claude:  { url: 'https://api.anthropic.com/v1',             key: '', model: '' },
@@ -916,13 +922,14 @@ let cdPending = false;  // 当锁住时又收到触发信号, 标记"完成后�
 async function cdBuildDiaryInjectionText() {
   try {
     const data = await cdGetData();
+    const s = cdGetSettings();
     const diaryNames = Object.keys(data.diaries || {});
     if (!diaryNames.length && !data.archive && !Object.keys(data.relations||{}).length) return '';
     
     const blocks = [];
     
-    // ====== 角色日记 ======
-    if (diaryNames.length) {
+    // ====== 角色日记（受 injectDiary 控制）======
+    if (s.injectDiary !== false && diaryNames.length) {
       const diaryLines = [];
       for (const [name, list] of Object.entries(data.diaries)) {
         if (!list.length) continue;
@@ -940,32 +947,36 @@ async function cdBuildDiaryInjectionText() {
       }
     }
     
-    // ====== 角色关系网 ======
-    const rels = data.relations || {};
-    const relLines = [];
-    for (const [from, targets] of Object.entries(rels)) {
-      for (const [to, rel] of Object.entries(targets)) {
-        const attitudeIcon = rel.attitude === 'positive' ? '友好' : rel.attitude === 'negative' ? '排斥' : '中立';
-        const noteStr = rel.note ? `（${rel.note}）` : '';
-        relLines.push(`- ${from} → ${to}：${rel.type || ''}[${attitudeIcon}]${noteStr}`);
+    // ====== 角色关系网（受 injectRelation 控制）======
+    if (s.injectRelation !== false) {
+      const rels = data.relations || {};
+      const relLines = [];
+      for (const [from, targets] of Object.entries(rels)) {
+        for (const [to, rel] of Object.entries(targets)) {
+          const attitudeIcon = rel.attitude === 'positive' ? '友好' : rel.attitude === 'negative' ? '排斥' : '中立';
+          const noteStr = rel.note ? `（${rel.note}）` : '';
+          relLines.push(`- ${from} → ${to}：${rel.type || ''}[${attitudeIcon}]${noteStr}`);
+        }
+      }
+      if (relLines.length) {
+        blocks.push('[角色关系]');
+        relLines.forEach(line => blocks.push(line));
       }
     }
-    if (relLines.length) {
-      blocks.push('[角色关系]');
-      relLines.forEach(line => blocks.push(line));
-    }
     
-    // ====== 剧情档案 ======
-    const arc = data.archive;
-    if (arc) {
-      const arcParts = [];
-      if (arc.mainline) arcParts.push(`主线：${arc.mainline}`);
-      if (arc.sideline) arcParts.push(`支线：${arc.sideline}`);
-      if (arc.states) arcParts.push(`重要状态：${arc.states}`);
-      if (arc.unresolved) arcParts.push(`待解决事项：${arc.unresolved}`);
-      if (arcParts.length) {
-        blocks.push('[剧情档案]');
-        arcParts.forEach(p => blocks.push(`- ${p}`));
+    // ====== 剧情档案（受 injectArchive 控制）======
+    if (s.injectArchive !== false) {
+      const arc = data.archive;
+      if (arc) {
+        const arcParts = [];
+        if (arc.mainline) arcParts.push(`主线：${arc.mainline}`);
+        if (arc.sideline) arcParts.push(`支线：${arc.sideline}`);
+        if (arc.states) arcParts.push(`重要状态：${arc.states}`);
+        if (arc.unresolved) arcParts.push(`待解决事项：${arc.unresolved}`);
+        if (arcParts.length) {
+          blocks.push('[剧情档案]');
+          arcParts.forEach(p => blocks.push(`- ${p}`));
+        }
       }
     }
     
@@ -1384,12 +1395,22 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
   try {
     if (!silent && typeof toastr !== "undefined") toastr.info(`开始写日记 (${windowFloors.length} 个新楼层)...`);
 
-    // ★ 三路并行 API 调用：日记 + 关系 + 剧情档案各自独立
-    const diaryMsgs    = cdBuildDiaryPrompt(windowFloors, data, s);
-    const relMsgs      = cdBuildRelationPrompt(windowFloors, data, s);
-    const archiveMsgs  = cdBuildArchivePrompt(windowFloors, data, s);
+    // ★ 根据开关决定调哪几路 API
+    const calls = [];
+    if (s.enableDiary !== false) {
+      const diaryMsgs = cdBuildDiaryPrompt(windowFloors, data, s);
+      calls.push({ name: '日记', msgs: diaryMsgs });
+    }
+    if (s.enableRelation !== false) {
+      const relMsgs = cdBuildRelationPrompt(windowFloors, data, s);
+      calls.push({ name: '关系', msgs: relMsgs });
+    }
+    if (s.enableArchive !== false) {
+      const archiveMsgs = cdBuildArchivePrompt(windowFloors, data, s);
+      calls.push({ name: '剧情档案', msgs: archiveMsgs });
+    }
 
-    cdAddLog('api_req', '发送三路并行AI请求（日记+关系+剧情档案）');
+    cdAddLog('api_req', `发送 ${calls.length} 路API请求`, {路由: calls.map(c => c.name)});
 
     /** 辅助：为单路 API 调用记录日志 */
     const _cdCallApi = async (name, msgs) => {
@@ -1411,7 +1432,7 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
           logDetail.total_tokens = tu.total;
         }
         cdAddLog('api_res', `[${name}] 请求成功`, logDetail);
-        return { text: res.text, tokenUsage: res.tokenUsage };
+        return { text: res.text, tokenUsage: res.tokenUsage, name };
       } catch (e) {
         const elapsed = Date.now() - start;
         cdAddLog('error', `[${name}] 请求失败 (${elapsed}ms): ` + e.message);
@@ -1419,18 +1440,24 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
       }
     };
 
-    const [diaryRes, relRes, archiveRes] = await Promise.allSettled([
-      _cdCallApi('日记', diaryMsgs),
-      _cdCallApi('关系', relMsgs),
-      _cdCallApi('剧情档案', archiveMsgs),
-    ]);
+    const results = await Promise.allSettled(calls.map(c => _cdCallApi(c.name, c.msgs)));
+    
+    // 把 results 按 name 映射回 diaryRes/relRes/archiveRes
+    const resultMap = {};
+    results.forEach((res, i) => {
+      resultMap[calls[i].name] = res;
+    });
 
     let diaryOk   = false;
     let relOk     = false;
     let archiveOk = false;
 
+    const diaryRes   = resultMap['日记'];
+    const relRes     = resultMap['关系'];
+    const archiveRes = resultMap['剧情档案'];
+
     // 处理日记
-    if (diaryRes.status === 'fulfilled') {
+    if (diaryRes?.status === 'fulfilled') {
       try {
         const npcs = parseDiaryJson(diaryRes.value.text);
         if (npcs.length) {
@@ -1445,13 +1472,13 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
         cdAddLog('warn', '日记解析失败（关系/档案仍继续处理）: ' + e.message);
         if (manual) toastr.warning('日记解析失败');
       }
-    } else {
+    } else if (diaryRes?.status === 'rejected') {
       cdAddLog('error', '日记API请求失败: ' + (diaryRes.reason?.message || '未知错误'));
       if (manual) toastr.error('日记请求失败: ' + (diaryRes.reason?.message || ''));
     }
 
     // 处理关系（独立，不影响日记）
-    if (relRes.status === 'fulfilled') {
+    if (relRes?.status === 'fulfilled') {
       try {
         const rels = parseRelationJson(relRes.value.text);
         if (rels.length) {
@@ -1465,12 +1492,12 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
         cdWarn('关系解析失败', e);
         cdAddLog('warn', '关系解析失败（不影响日记）: ' + e.message);
       }
-    } else {
+    } else if (relRes?.status === 'rejected') {
       cdAddLog('warn', '关系API请求失败（不影响日记）: ' + (relRes.reason?.message || ''));
     }
 
     // 处理剧情档案（独立，不影响日记/关系）
-    if (archiveRes.status === 'fulfilled') {
+    if (archiveRes?.status === 'fulfilled') {
       try {
         const arc = parseArchiveJson(archiveRes.value.text);
         if (arc.mainline || arc.sideline || arc.states || arc.unresolved) {
@@ -1488,7 +1515,7 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
         cdWarn('剧情档案解析失败', e);
         cdAddLog('warn', '剧情档案解析失败（不影响日记）: ' + e.message);
       }
-    } else {
+    } else if (archiveRes?.status === 'rejected') {
       cdAddLog('warn', '剧情档案API请求失败（不影响日记）: ' + (archiveRes.reason?.message || ''));
     }
 
@@ -2494,7 +2521,8 @@ function cdShowEntryEditor(name, idx, entry, data) {
       </div>
     </div>
   </div>`);
-  $('body').append(overlay);
+  // ★ 修复：挂载到 documentElement 而非 body，避免被主面板遮挡
+  $(document.documentElement).append(overlay);
   overlay.fadeIn(150);
 
   const close = () => overlay.remove();
@@ -3776,6 +3804,58 @@ async function cdRenderSettings() {
       </label>
     </div>
 
+    <h3 class="cd-settings-sub">生成内容</h3>
+
+    <div class="cd-set-row">
+      <label><i class="fa-regular fa-book"></i> 角色日记</label>
+      <label class="cd-switch">
+        <input type="checkbox" id="cd-s-diary" ${s.enableDiary !== false ? 'checked' : ''}>
+        <span class="cd-slider"></span>
+      </label>
+    </div>
+
+    <div class="cd-set-row">
+      <label><i class="fa-regular fa-diagram-project"></i> 人物关系</label>
+      <label class="cd-switch">
+        <input type="checkbox" id="cd-s-relation" ${s.enableRelation !== false ? 'checked' : ''}>
+        <span class="cd-slider"></span>
+      </label>
+    </div>
+
+    <div class="cd-set-row">
+      <label><i class="fa-regular fa-timeline"></i> 剧情档案</label>
+      <label class="cd-switch">
+        <input type="checkbox" id="cd-s-archive" ${s.enableArchive !== false ? 'checked' : ''}>
+        <span class="cd-slider"></span>
+      </label>
+    </div>
+
+    <h3 class="cd-settings-sub">注入AI上下文（发送给AI的内容）</h3>
+
+    <div class="cd-set-row">
+      <label><i class="fa-regular fa-book"></i> 注入角色日记</label>
+      <label class="cd-switch">
+        <input type="checkbox" id="cd-s-inject-diary" ${s.injectDiary !== false ? 'checked' : ''}>
+        <span class="cd-slider"></span>
+      </label>
+    </div>
+
+    <div class="cd-set-row">
+      <label><i class="fa-regular fa-diagram-project"></i> 注入人物关系</label>
+      <label class="cd-switch">
+        <input type="checkbox" id="cd-s-inject-relation" ${s.injectRelation !== false ? 'checked' : ''}>
+        <span class="cd-slider"></span>
+      </label>
+    </div>
+
+    <div class="cd-set-row">
+      <label><i class="fa-regular fa-timeline"></i> 注入剧情档案</label>
+      <label class="cd-switch">
+        <input type="checkbox" id="cd-s-inject-archive" ${s.injectArchive !== false ? 'checked' : ''}>
+        <span class="cd-slider"></span>
+      </label>
+    </div>
+
     <h3 class="cd-settings-sub">API 来源</h3>
 
     <div class="cd-set-row">
@@ -3868,6 +3948,12 @@ async function cdRenderSettings() {
       cameoThreshold: parseInt($('#cd-s-cameo').val(), 10) || 3,
       temperature: parseFloat($('#cd-s-temp').val()) || 0.7,
       fabShow: $('#cd-s-fab').is(':checked'),
+      enableDiary: $('#cd-s-diary').is(':checked'),
+      enableRelation: $('#cd-s-relation').is(':checked'),
+      enableArchive: $('#cd-s-archive').is(':checked'),
+      injectDiary: $('#cd-s-inject-diary').is(':checked'),
+      injectRelation: $('#cd-s-inject-relation').is(':checked'),
+      injectArchive: $('#cd-s-inject-archive').is(':checked'),
       source: src,
       endpoints,
     });
@@ -4170,6 +4256,12 @@ const CHANGELOG = [
       '章回标题生成优化：取最长的 archive 字段作为输入，增加宽松匹配 fallback',
       '新增剧情档案历史记录（archiveHistory），支持翻阅历史版本',
       '修复日志统计中 detail 字段未正确 JSON.parse 的问题',
+      '新增「说明」视图，内置完整功能说明书',
+      '编辑日记窗口遮挡修复：编辑器改为挂载到 documentElement',
+      '设置新增「生成内容」开关：可独立开关角色日记/人物关系/剧情档案的生成',
+      '设置新增「注入AI上下文」开关：可独立控制日记/关系/档案是否发送给AI',
+      '获取模型按钮优化：自动填入第一个模型，点击模型标签可快速选择',
+      '设置中 enableDiary/enableRelation/enableArchive 三个字段改名。如果你之前的设置文件中包含这三个字段，它们将被重置为默认值 true，需要重新设置。',
     ],
   },
   {
