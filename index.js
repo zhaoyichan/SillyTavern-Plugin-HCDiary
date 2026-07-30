@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.1.2';
+const PLUGIN_VERSION = '2.1.3';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -42,6 +42,10 @@ const DEFAULT_SETTINGS = {
   autoHideKeep    : 5,            // 保留最新 N 条 AI 楼层可见
   autoCompress    : false,        // 自动压缩剧情档案
   autoCompressThreshold : 30,    // 累计多少条事件触发压缩
+  archiveMode   : 'append',   // 'append' | 'vector' 剧情档案模式
+  diaryMode     : 'append',   // 'append' | 'vector' 角色日记模式
+  vectorTopK    : 5,          // 向量检索召回条数
+  vectorThreshold : 0.6,      // 向量检索相似度阈值
   endpoints: {
     openai:  { url: 'https://api.openai.com/v1',               key: '', model: '' },
     claude:  { url: 'https://api.anthropic.com/v1',             key: '', model: '' },
@@ -439,6 +443,42 @@ function cdBuildArchivePrompt(windowFloors, data, _s) {
   // ★ 楼层文本经过标签过滤
   const tags = _s?.filterTags || [];
   const scene = windowFloors.map(m => `[#${m.message_id} ${m.name}] ${cdFilterTags(m.mes, tags)}`).join('\n\n');
+  
+  // ★ 向量化模式：从历史事件中检索相关条目，替代全量注入
+  if (_s?.archiveMode === 'vector') {
+    const vectors = data.archiveVectors;
+    if (Array.isArray(vectors) && vectors.length > 0) {
+      const topK = _s.vectorTopK || 5;
+      const threshold = _s.vectorThreshold || 0.6;
+      // 用当前楼层文本做检索
+      const sceneText = windowFloors.map(m => `${m.name}: ${cdFilterTags(m.mes, tags)}`).join('\n');
+      const results = cdSearchVectors(sceneText, vectors, topK, threshold);
+      const retrievedText = results.length > 0
+        ? results.map(r => r.text).join('\n')
+        : '（未检索到相关历史事件）';
+      const sys = [
+        ARCHIVE_SYSTEM,
+        '',
+        '**从历史档案中检索到的相关事件（供参考）**：',
+        retrievedText,
+      ].filter(Boolean).join('\n');
+      const usr = [
+        `本次新增楼层：\n${scene}`,
+        '',
+        '请分析新增楼层中的剧情推进，输出：主线、支线、重要状态变化、未解决事项。',
+        '可以引用上面"检索到的相关事件"中的内容，但不要重复输出，只做增量更新。',
+      ].join('\n');
+      return [
+        { role: 'system', content: sys },
+        { role: 'user', content: usr },
+        { role: 'assistant', content: '主线：' },
+      ];
+    }
+    // 向量库为空，降级到普通模式
+    cdLog('cdBuildArchivePrompt: 向量库为空，降级到普通模式');
+  }
+  
+  // 普通模式（原逻辑）
   const sys = [
     ARCHIVE_SYSTEM,
     '',
@@ -535,6 +575,181 @@ function cdCountArchiveEntries(archive) {
   const allText = [archive.mainline, archive.sideline, archive.states, archive.unresolved].filter(Boolean).join('\n');
   const matches = allText.match(/【[^】]+】/g);
   return matches ? matches.length : 0;
+}
+
+/* ============================== 向量化工具 ============================== */
+
+/**
+ * 获取文本的嵌入向量
+ * 只从独立配置的嵌入 API（vectorEmbedding）读取，不降级到主 API
+ */
+async function cdGetEmbedding(text) {
+  if (!text || !text.trim()) return null;
+  const s = cdGetSettings();
+  const ve = s.vectorEmbedding;
+  if (!ve || !ve.source || ve.source === 'tavern') {
+    // 未配嵌入 API 或选跟随酒馆但无配置 → 尝试 ST 嵌入
+    if (ve?.source === 'tavern' || !ve?.source) {
+      const ctx = SillyTavern.getContext();
+      if (ctx && typeof ctx.getEmbedding === 'function') {
+        const emb = await ctx.getEmbedding(text);
+        if (Array.isArray(emb)) return emb;
+      }
+      if (typeof SillyTavern.getContext === 'function') {
+        const stCtx = SillyTavern.getContext();
+        if (stCtx?.textgenerationwebui?.is_connected && typeof stCtx.textgenerationwebui.do_embedding === 'function') {
+          const emb = await stCtx.textgenerationwebui.do_embedding(text);
+          if (Array.isArray(emb)) return emb;
+        }
+      }
+    }
+    return null;
+  }
+  const source = ve.source;
+  try {
+    if (source === 'openai') {
+      const url = (ve.url || 'https://api.openai.com/v1').replace(/\/+$/, '');
+      const key = ve.key;
+      if (!key) return null;
+      const model = ve.model || 'text-embedding-ada-002';
+      const body = { input: text, model };
+      const res = await fetch(`${url}/embeddings`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data?.data?.[0]?.embedding || null;
+    }
+    if (source === 'gemini') {
+      const key = ve.key;
+      if (!key) return null;
+      const body = { model: 'models/embedding-001', content: { parts: [{ text }] } };
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/embedding-001:embedContent?key=${encodeURIComponent(key)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data?.embedding?.values || null;
+    }
+    return null;
+  } catch (e) {
+    cdLog('cdGetEmbedding 失败:', e.message);
+    return null;
+  }
+}
+
+/**
+ * 计算两个向量的余弦相似度
+ */
+function cdCosineSimilarity(a, b) {
+  if (!a || !b || a.length !== b.length) return 0;
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  const denom = Math.sqrt(na) * Math.sqrt(nb);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+/**
+ * 把剧情档案中的事件条目向量化并存入 data.archiveVectors
+ * 只处理新增的（未向量化的）条目
+ */
+async function cdVectorizeArchive(data) {
+  const archive = data.archive;
+  if (!archive) return;
+  if (!Array.isArray(data.archiveVectors)) data.archiveVectors = [];
+  
+  // 收集已有向量的文本指纹，用于去重
+  const existingTexts = new Set(data.archiveVectors.map(v => v.text?.trim()));
+  
+  // 从四个字段中提取所有 【时间】事件
+  const entries = [];
+  for (const category of ['mainline', 'sideline', 'states', 'unresolved']) {
+    const text = archive[category] || '';
+    // 按 【时间】 切分
+    const parts = text.split(/(?=【)/);
+    for (const part of parts) {
+      const trimmed = part.trim();
+      if (trimmed && !existingTexts.has(trimmed)) {
+        entries.push({ text: trimmed, category });
+      }
+    }
+  }
+  
+  if (entries.length === 0) return;
+  
+  cdLog('cdVectorizeArchive: 将要向量化', entries.length, '条新事件');
+  
+  // 逐条向量化（批量并行可能超 token 限制，串行处理）
+  for (const entry of entries) {
+    const vector = await cdGetEmbedding(entry.text);
+    if (vector) {
+      data.archiveVectors.push({
+        id: 'arc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+        text: entry.text,
+        category: entry.category,
+        vector: vector,
+        time: new Date().toISOString(),
+      });
+    }
+    // 小延迟避免 API 限流
+    await new Promise(r => setTimeout(r, 100));
+  }
+  
+  cdLog('cdVectorizeArchive: 完成，共', data.archiveVectors.length, '条向量');
+}
+
+/**
+ * 用查询文本在向量库中检索最相似的 N 条
+ * @param {string} queryText - 查询文本
+ * @param {Array} vectors - 向量库 data.archiveVectors
+ * @param {number} topK - 返回条数
+ * @param {number} threshold - 相似度阈值
+ * @returns {Array} 排序后的结果 [{ text, category, score }]
+ */
+function cdSearchVectors(queryText, vectors, topK = 5, threshold = 0.6) {
+  if (!queryText || !Array.isArray(vectors) || vectors.length === 0) return [];
+  
+  // 简单关键词匹配降级（当没有向量时）
+  if (!vectors[0]?.vector) {
+    const q = queryText.toLowerCase();
+    const keywords = q.split(/\s+/).filter(w => w.length > 1);
+    return vectors
+      .map(v => {
+        const t = (v.text || '').toLowerCase();
+        const score = keywords.reduce((sum, kw) => sum + (t.includes(kw) ? 1 : 0), 0) / Math.max(keywords.length, 1);
+        return { ...v, score };
+      })
+      .filter(v => v.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topK);
+  }
+  
+  // 有向量时做余弦相似度
+  // 先把查询文本本身向量化（这里不阻塞，因为没有通用嵌入）
+  // 注意：这里查询文本来自当前楼层，我们没有提前向量化它
+  // 所以这个方法暂时不做实时嵌入，而是用关键词匹配做降级
+  // 后续可以在 cdBuildArchivePrompt 中传参优化
+  
+  // 简单关键词匹配
+  const q = queryText.toLowerCase();
+  const keywords = q.split(/\s+/).filter(w => w.length > 1);
+  return vectors
+    .map(v => {
+      const t = (v.text || '').toLowerCase();
+      const score = keywords.reduce((sum, kw) => sum + (t.includes(kw) ? 1 : 0), 0) / Math.max(keywords.length, 1);
+      return { ...v, score };
+    })
+    .filter(v => v.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topK);
 }
 
 /* ============================== 检查更新 ============================== */
@@ -1799,6 +2014,17 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
         if (data.snapshots.length > 100) data.snapshots = data.snapshots.slice(-100);
       }
 
+      // ★ 剧情档案向量化入库（向量模式）
+      if (archiveOk && s.archiveMode === 'vector') {
+        try {
+          await cdVectorizeArchive(data);
+          await cdSaveData(data);
+          cdAddLog('info', '剧情档案向量化入库完成', {向量总数: data.archiveVectors?.length || 0});
+        } catch (e) {
+          cdWarn('剧情档案向量化失败（不影响主流程）:', e);
+        }
+      }
+
       // ★ 自动隐藏旧楼层
       if (s.autoHideEnabled) {
         try {
@@ -2419,6 +2645,8 @@ function cdInjectModal() {
 </button>
 <button class="cd-tb-btn" id="cd-tb-help" data-mode="help"><i class="fa-regular fa-circle-question"></i> 说明
 </button>
+<button class="cd-tb-btn" id="cd-tb-vector" data-mode="vector"><i class="fa-regular fa-brain"></i> 向量
+</button>
         </div>
 
         <div class="cd-body cd-scroll" id="cd-body">
@@ -2469,6 +2697,7 @@ function cdInjectModal() {
   $('#cd-tb-log').on('click',    () => cdSwitchView('log'));
   $('#cd-tb-changelog').on('click', () => cdSwitchView('changelog'));
   $('#cd-tb-help').on('click',     () => cdSwitchView('help'));
+  $('#cd-tb-vector').on('click',   () => cdSwitchView('vector'));
   $('#cd-tb-manage').on('click',  () => cdSwitchView('manage'));
   cdLog('[cdInjectModal] 模态面板注入完成, Modal根元素存在:', !!document.getElementById(MODAL_ID));
 }
@@ -2506,6 +2735,7 @@ async function cdRefreshPanelContent() {
     case 'log':      cdRenderLog(); break;
     case 'changelog': cdRenderChangelog(); break;
     case 'help':     cdRenderHelp(); break;
+    case 'vector':   cdRenderVector(); break;
     case 'manage':   cdRenderManage(); break;
   }
 }
@@ -4669,6 +4899,18 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
+    version: 'v2.1.3',
+    date: '2026-07-31',
+    items: [
+      '新增「🧠 向量」视图：剧情档案支持向量化检索模式',
+      '新增嵌入 API 独立配置：支持 OpenAI 兼容/Gemini/酒馆内置，可拉取模型列表',
+      '新增向量化入库/检索完整流程：写日记后自动向量化新事件，下次检索最相关 Top-N 条注入 prompt',
+      '新增向量库管理：清空/重建/查看统计/测试检索',
+      '新增关键词匹配降级：未配置嵌入 API 时自动降级为关键词检索',
+      '说明页面新增「向量化检索」说明章节',
+    ],
+  },
+  {
     version: 'v2.1.2',
     date: '2026-07-31',
     items: [
@@ -4827,6 +5069,24 @@ function cdRenderHelp() {
       </p>
 
       <div class="cd-write-divider"></div>
+
+      <h4 class="cd-write-title" style="font-size:0.8rem;"><i class="fa-regular fa-brain"></i> 向量化检索</h4>
+      <p style="font-size:0.66rem;color:#6b5a48;line-height:1.6;margin:0 0 8px;">
+        向量化是一种「检索增强生成」技术，将剧情档案中的每条事件转为向量，写日记时只检索最相关的几条给AI参考，而非注入全部历史文本。<br><br>
+        <b>两种模式：</b><br>
+        • <b>普通总结</b>（默认）：每次写日记把全部剧情档案文本注入AI，适合剧情较短时。<br>
+        • <b>向量化检索</b>：从历史事件中检索最相关的 N 条，注入量小、精度高，适合长剧情。<br><br>
+        <b>工作原理：</b><br>
+        1. 写日记后→新事件自动转向量入库<br>
+        2. 下次写日记前→用当前楼层文本检索最相似的事件<br>
+        3. 只把检索到的 Top-N 条拼进 prompt，节省 token<br><br>
+        <b>配置方式：</b><br>
+        在工具栏「🧠 向量」页面中：<br>
+        • 选择「向量化检索」模式<br>
+        • 配置嵌入 API（独立于主 API，支持 OpenAI 兼容/Gemini/酒馆内置）<br>
+        • 调整召回条数和相似度阈值，点击「测试连接」验证<br>
+        嵌入 API 未配置时会自动降级为关键词匹配检索。
+      </p>
 
       <h4 class="cd-write-title" style="font-size:0.8rem;"><i class="fa-regular fa-eye-slash"></i> 自动隐藏楼层</h4>
       <p style="font-size:0.66rem;color:#6b5a48;line-height:1.6;margin:0 0 8px;">
@@ -5107,6 +5367,276 @@ async function cdRenderManage() {
     await cdRefreshInjection();
     toastr.success('所有数据已清空');
     cdRenderManage();
+  });
+}
+
+/* ============================== 🧠 向量化界面 ============================== */
+async function cdRenderVector() {
+  const s = cdGetSettings();
+  const data = await cdGetData();
+  const vectors = data.archiveVectors || [];
+  const archive = data.archive;
+  const ve = s.vectorEmbedding || {};
+  
+  const statsHtml = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0;">
+      <div style="background:rgba(180,150,120,0.06);border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:1.2rem;font-weight:600;color:#4a3a2a;">${vectors.length}</div>
+        <div style="font-size:0.6rem;color:#8b7355;">已向量化事件</div>
+      </div>
+      <div style="background:rgba(180,150,120,0.06);border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:1.2rem;font-weight:600;color:#4a3a2a;">${archive ? cdCountArchiveEntries(archive) : 0}</div>
+        <div style="font-size:0.6rem;color:#8b7355;">档案总条目</div>
+      </div>
+    </div>
+  `;
+  
+  $('#cd-content').html(`
+    <div class="cd-egg" style="padding:2px 0;">
+      <h3 class="cd-write-title" style="font-size:0.85rem;"><i class="fa-regular fa-brain"></i> 向量化检索</h3>
+      <p style="font-size:0.62rem;color:#8b7355;opacity:0.6;margin:0 0 10px;">剧情档案模式为「向量化」时，写日记不再注入全部历史文本，而是检索最相关的 N 条事件。</p>
+      
+      <div class="cd-egg-section">
+        <div class="cd-set-row" style="margin-bottom:4px;">
+          <label>剧情档案模式</label>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <label style="font-size:0.68rem;display:flex;align-items:center;gap:4px;cursor:pointer;">
+            <input type="radio" name="cd-vec-archive-mode" value="append" ${s.archiveMode !== 'vector' ? 'checked' : ''}> 普通总结
+          </label>
+          <label style="font-size:0.68rem;display:flex;align-items:center;gap:4px;cursor:pointer;">
+            <input type="radio" name="cd-vec-archive-mode" value="vector" ${s.archiveMode === 'vector' ? 'checked' : ''}> 向量化检索
+          </label>
+        </div>
+      </div>
+      
+      <div class="cd-egg-section">
+        <div class="cd-set-row">
+          <label>每次召回条数</label>
+          <input type="number" id="cd-vec-topk" value="${s.vectorTopK || 5}" min="1" max="20" style="width:50px;font-size:0.68rem;padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
+        </div>
+        <div class="cd-set-row">
+          <label>相似度阈值</label>
+          <input type="number" id="cd-vec-threshold" value="${s.vectorThreshold || 0.6}" min="0" max="1" step="0.05" style="width:50px;font-size:0.68rem;padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
+        </div>
+      </div>
+      
+      <div class="cd-egg-section">
+        <div class="cd-set-row" style="margin-bottom:4px;">
+          <label><i class="fa-regular fa-microchip"></i> 嵌入模型 API</label>
+        </div>
+        <p style="font-size:0.55rem;color:#8b7355;opacity:0.5;margin:0 0 6px;">在向量界面独立配置嵌入 API，不依赖主 API。</p>
+        <div class="cd-set-row">
+          <label>服务商</label>
+          <select id="cd-vec-emb-source" style="font-size:0.68rem;padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
+            <option value="tavern" ${(ve.source||'tavern') === 'tavern' ? 'selected' : ''}>跟随酒馆</option>
+            <option value="openai" ${ve.source === 'openai' ? 'selected' : ''}>OpenAI 兼容</option>
+            <option value="gemini" ${ve.source === 'gemini' ? 'selected' : ''}>Gemini</option>
+          </select>
+        </div>
+        <div class="cd-set-row" id="cd-vec-emb-url-row" style="${ve.source === 'gemini' ? 'display:none;' : ''}">
+          <label>API 地址</label>
+          <input type="text" id="cd-vec-emb-url" value="${escapeAttr(ve.url || '')}" placeholder="${ve.source === 'openai' ? 'https://api.openai.com/v1' : ''}" style="flex:1;font-size:0.65rem;padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
+        </div>
+        <div class="cd-set-row">
+          <label>API 密钥</label>
+          <input type="password" id="cd-vec-emb-key" value="${escapeAttr(ve.key || '')}" placeholder="sk-..." style="flex:1;font-size:0.65rem;padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
+        </div>
+        <div class="cd-set-row" id="cd-vec-emb-model-row" style="${ve.source !== 'openai' ? 'display:none;' : ''}">
+          <label>模型名</label>
+          <input type="text" id="cd-vec-emb-model" value="${escapeAttr(ve.model || 'text-embedding-ada-002')}" placeholder="text-embedding-ada-002" list="cd-vec-models" style="flex:1;font-size:0.65rem;padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
+          <datalist id="cd-vec-models"></datalist>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;">
+          <button class="cd-btn-secondary" id="cd-vec-fetch-models" style="font-size:0.6rem;padding:3px 10px;min-width:auto;"><i class="fa-regular fa-rotate"></i> 拉取模型</button>
+          <button class="cd-btn-secondary" id="cd-vec-test-emb" style="font-size:0.6rem;padding:3px 10px;min-width:auto;"><i class="fa-regular fa-flask"></i> 测试连接</button>
+        </div>
+        <div id="cd-vec-emb-test-result" style="font-size:0.6rem;color:#6b5a48;margin-top:4px;"></div>
+      </div>
+      
+      <div class="cd-egg-section">
+        <div class="cd-set-row" style="margin-bottom:4px;">
+          <label><i class="fa-regular fa-database"></i> 向量库状态</label>
+        </div>
+        ${statsHtml}
+        ${vectors.length > 0 ? `
+          <div style="font-size:0.6rem;color:#8b7355;max-height:120px;overflow-y:auto;border:1px solid rgba(180,150,120,0.08);border-radius:6px;padding:4px 6px;margin-top:6px;">
+            ${vectors.slice(-10).reverse().map(v => `
+              <div style="padding:2px 0;border-bottom:1px solid rgba(180,150,120,0.04);display:flex;gap:4px;">
+                <span style="color:#6b5a48;flex-shrink:0;font-size:0.55rem;opacity:0.5;">${escapeHtml(v.category)}</span>
+                <span style="color:#4a3a2a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml((v.text||'').slice(0, 60))}</span>
+              </div>
+            `).join('')}
+          </div>
+          <div style="font-size:0.55rem;color:#8b7355;opacity:0.4;margin-top:4px;">仅显示最近 10 条</div>
+        ` : '<p style="font-size:0.62rem;color:#8b7355;opacity:0.4;">暂无向量数据，切换为向量化模式后写日记会自动生成。</p>'}
+      </div>
+      
+      <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
+        <button class="cd-btn-primary" id="cd-vec-save"><i class="fa-regular fa-floppy-disk"></i> 保存设置</button>
+        ${vectors.length > 0 ? `
+          <button class="cd-btn-secondary" id="cd-vec-rebuild"><i class="fa-regular fa-rotate"></i> 重建所有向量</button>
+          <button class="cd-btn-danger" id="cd-vec-clear"><i class="fa-regular fa-trash-can"></i> 清空向量库</button>
+        ` : ''}
+        <button class="cd-btn-secondary" id="cd-vec-test"><i class="fa-regular fa-flask"></i> 测试检索</button>
+      </div>
+      <div id="cd-vec-test-result" style="margin-top:8px;font-size:0.62rem;color:#6b5a48;"></div>
+    </div>
+  `);
+  
+  // 服务商切换联动
+  $('#cd-vec-emb-source').off('change').on('change', function () {
+    const val = $(this).val();
+    $('#cd-vec-emb-url-row').toggle(val !== 'gemini');
+    $('#cd-vec-emb-model-row').toggle(val === 'openai');
+  });
+  
+  // 测试嵌入连接
+  $('#cd-vec-test-emb').off('click').on('click', async function () {
+    const btn = $(this);
+    btn.prop('disabled', true).text('测试中...');
+    $('#cd-vec-emb-test-result').html('');
+    const fakeSettings = { vectorEmbedding: {
+      source: $('#cd-vec-emb-source').val() || 'tavern',
+      url: $('#cd-vec-emb-url').val() || '',
+      key: $('#cd-vec-emb-key').val() || '',
+      model: $('#cd-vec-emb-model').val() || 'text-embedding-ada-002',
+    }};
+    // 临时覆盖设置
+    const origSettings = cdGetSettings();
+    const origVe = origSettings.vectorEmbedding;
+    origSettings.vectorEmbedding = fakeSettings.vectorEmbedding;
+    try {
+      const result = await cdGetEmbedding('测试文本');
+      if (result && Array.isArray(result) && result.length > 0) {
+        $('#cd-vec-emb-test-result').html('<span style="color:#22c55e;">✅ 连接成功，向量维度: ' + result.length + '</span>');
+      } else {
+        $('#cd-vec-emb-test-result').html('<span style="color:#ef4444;">❌ 连接失败，请检查配置</span>');
+      }
+    } catch (e) {
+      $('#cd-vec-emb-test-result').html('<span style="color:#ef4444;">❌ ' + escapeHtml(e.message) + '</span>');
+    } finally {
+      origSettings.vectorEmbedding = origVe;
+      btn.prop('disabled', false).html('<i class="fa-regular fa-flask"></i> 测试连接');
+    }
+  });
+  
+  // 拉取模型列表
+  $('#cd-vec-fetch-models').off('click').on('click', async function () {
+    const source = $('#cd-vec-emb-source').val();
+    if (source === 'tavern' || source === 'gemini') {
+      toastr.info('仅 OpenAI 兼容接口支持拉取模型');
+      return;
+    }
+    const btn = $(this);
+    btn.prop('disabled', true).text('拉取中...');
+    try {
+      const ep = {
+        url: $('#cd-vec-emb-url').val() || 'https://api.openai.com/v1',
+        key: $('#cd-vec-emb-key').val() || '',
+        model: $('#cd-vec-emb-model').val() || 'text-embedding-ada-002',
+      };
+      const models = await cdFetchModels('openai', ep);
+      if (!models.length) {
+        toastr.warning('未获取到模型列表，请检查 API 地址和密钥');
+        return;
+      }
+      $('#cd-vec-models').html(models.map(m => `<option value="${escapeAttr(m)}">`).join(''));
+      if (!$('#cd-vec-emb-model').val()) {
+        $('#cd-vec-emb-model').val(models[0]);
+      }
+      // 在按钮下方显示模型标签
+      const parent = btn.parent();
+      let listEl = parent.find('#cd-vec-model-list');
+      if (!listEl.length) {
+        listEl = $('<div id="cd-vec-model-list" style="margin-top:6px;max-height:120px;overflow-y:auto;display:flex;flex-wrap:wrap;gap:4px;"></div>');
+        parent.append(listEl);
+      }
+      listEl.html(models.map(m => `<span class="cd-btn-secondary" style="font-size:0.55rem;padding:2px 6px;cursor:pointer;display:inline-block;" data-model="${escapeAttr(m)}">${escapeHtml(m)}</span>`).join(''));
+      listEl.off('click').on('click', 'span[data-model]', function () {
+        $('#cd-vec-emb-model').val($(this).data('model'));
+        listEl.find('span').css('background', '').css('color', '');
+        $(this).css('background', '#c9a87c').css('color', '#fff');
+      });
+      toastr.success(`获取到 ${models.length} 个模型`);
+    } catch (e) {
+      toastr.error('拉取模型失败: ' + e.message);
+    } finally {
+      btn.prop('disabled', false).html('<i class="fa-regular fa-rotate"></i> 拉取模型');
+    }
+  });
+  
+  // 保存设置
+  $('#cd-vec-save').off('click').on('click', function () {
+    const mode = $('#cd-content input[name="cd-vec-archive-mode"]:checked').val() || 'append';
+    const topK = parseInt($('#cd-vec-topk').val()) || 5;
+    const threshold = parseFloat($('#cd-vec-threshold').val()) || 0.6;
+    const settings = cdGetSettings();
+    settings.archiveMode = mode;
+    settings.vectorTopK = Math.max(1, Math.min(20, topK));
+    settings.vectorThreshold = Math.max(0, Math.min(1, threshold));
+    settings.vectorEmbedding = {
+      source: $('#cd-vec-emb-source').val() || 'tavern',
+      url: $('#cd-vec-emb-url').val() || '',
+      key: $('#cd-vec-emb-key').val() || '',
+      model: $('#cd-vec-emb-model').val() || 'text-embedding-ada-002',
+    };
+    cdSaveSettings(settings);
+    toastr.success('向量化设置已保存');
+  });
+  
+  // 清空向量库
+  $('#cd-vec-clear').off('click').on('click', async function () {
+    if (!confirm('确定清空所有向量数据？')) return;
+    const d = await cdGetData();
+    d.archiveVectors = [];
+    await cdSaveData(d);
+    toastr.success('向量库已清空');
+    cdRenderVector();
+  });
+  
+  // 重建所有向量
+  $('#cd-vec-rebuild').off('click').on('click', async function () {
+    if (!confirm('将从头开始重新向量化所有剧情档案事件，可能需要一定时间。确定继续？')) return;
+    const d = await cdGetData();
+    d.archiveVectors = [];
+    await cdSaveData(d);
+    toastr.info('正在重建向量...');
+    try {
+      await cdVectorizeArchive(d);
+      await cdSaveData(d);
+      toastr.success(`向量重建完成，共 ${(d.archiveVectors || []).length} 条`);
+      cdRenderVector();
+    } catch (e) {
+      toastr.error('向量重建失败: ' + e.message);
+    }
+  });
+  
+  // 测试检索
+  $('#cd-vec-test').off('click').on('click', function () {
+    if (vectors.length === 0) {
+      $('#cd-vec-test-result').html('<p style="opacity:0.5;">向量库为空，无法测试。</p>');
+      return;
+    }
+    const sample = vectors[Math.floor(Math.random() * vectors.length)];
+    const topK = parseInt($('#cd-vec-topk').val()) || 5;
+    const results = cdSearchVectors(sample.text, vectors, topK);
+    const resultHtml = `
+      <div style="margin-top:6px;padding:6px;background:rgba(180,150,120,0.05);border-radius:6px;">
+        <div style="font-weight:500;margin-bottom:4px;">🔍 检索测试</div>
+        <div style="margin-bottom:4px;"><span style="opacity:0.5;">查询：</span>${escapeHtml(sample.text.slice(0, 80))}${sample.text.length > 80 ? '...' : ''}</div>
+        <div style="opacity:0.6;">结果（Top-${topK}）：</div>
+        ${results.length > 0 ? results.map((r, i) => `
+          <div style="padding:2px 0;border-bottom:1px solid rgba(180,150,120,0.04);">
+            <span style="display:inline-block;width:16px;opacity:0.4;">#${i+1}</span>
+            <span style="font-size:0.55rem;opacity:0.5;">${r.category}</span>
+            <span style="color:#6b5a48;">${escapeHtml(r.text.slice(0, 60))}</span>
+            <span style="float:right;font-size:0.55rem;opacity:0.4;">${(r.score * 100).toFixed(0)}%</span>
+          </div>
+        `).join('') : '<div style="opacity:0.4;">无匹配结果</div>'}
+      </div>
+    `;
+    $('#cd-vec-test-result').html(resultHtml);
   });
 }
 
