@@ -4454,14 +4454,11 @@ async function cdRenderSettings() {
 
     <h3 class="cd-settings-sub">API 来源</h3>
 
-    <div class="cd-set-row">
-      <label>服务商</label>
-      <select id="cd-s-source" class="cd-select">
-        <option value="tavern" ${s.source === 'tavern' ? 'selected' : ''}>当前酒馆</option>
-        <option value="openai" ${s.source === 'openai' ? 'selected' : ''}>OpenAI</option>
-        <option value="claude" ${s.source === 'claude' ? 'selected' : ''}>Claude</option>
-        <option value="gemini" ${s.source === 'gemini' ? 'selected' : ''}>Gemini</option>
-      </select>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+      <button class="cd-s-src-btn cd-btn-secondary" data-source="tavern" style="font-size:0.62rem;padding:4px 10px;${s.source === 'tavern' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">当前酒馆</button>
+      <button class="cd-s-src-btn cd-btn-secondary" data-source="openai" style="font-size:0.62rem;padding:4px 10px;${s.source === 'openai' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">OpenAI</button>
+      <button class="cd-s-src-btn cd-btn-secondary" data-source="claude" style="font-size:0.62rem;padding:4px 10px;${s.source === 'claude' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">Claude</button>
+      <button class="cd-s-src-btn cd-btn-secondary" data-source="gemini" style="font-size:0.62rem;padding:4px 10px;${s.source === 'gemini' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">Gemini</button>
     </div>
 
     <div id="cd-custom-api" style="display:${s.source === 'tavern' ? 'none' : 'block'};">
@@ -4484,20 +4481,28 @@ async function cdRenderSettings() {
     <button class="cd-btn-primary" id="cd-btn-save-settings">应用</button>
   `);
 
-  // 事件绑定
-  $('#cd-s-source').on('change', function () {
-    const src = $(this).val();
+  // 事件绑定 - API来源按钮切换
+  $(document).off('click', '.cd-s-src-btn').on('click', '.cd-s-src-btn', function () {
+    $('.cd-s-src-btn').css('background', '').css('color', '').css('border-color', '');
+    $(this).css('background', '#c9a87c').css('color', '#fff').css('border-color', '#c9a87c');
+    const src = $(this).data('source');
     $('#cd-custom-api').toggle(src !== 'tavern');
     if (src !== 'tavern') {
       const ep = (cdGetSettings().endpoints || {})[src] || { url: '', key: '', model: '' };
-      $('#cd-s-url').val(ep.url || '');
+      // 自动填充默认地址
+      const defaults = {
+        openai: 'https://api.openai.com/v1',
+        claude: 'https://api.anthropic.com/v1',
+        gemini: 'https://generativelanguage.googleapis.com/v1beta',
+      };
+      $('#cd-s-url').val(ep.url || defaults[src] || '');
       $('#cd-s-key').val(ep.key || '');
       $('#cd-s-model').val(ep.model || '');
     }
   });
 
   $('#cd-btn-fetch-models').on('click', async function () {
-    const src = $('#cd-s-source').val();
+    const src = $('.cd-s-src-btn[style*="background: #c9a87c"]').data('source') || 'tavern';
     if (src === 'tavern') return;
     const ep = { url: $('#cd-s-url').val(), key: $('#cd-s-key').val(), model: $('#cd-s-model').val() };
     const models = await cdFetchModels(src, ep);
@@ -4571,7 +4576,7 @@ async function cdRenderSettings() {
   });
 
   $('#cd-btn-save-settings').on('click', function () {
-    const src = $('#cd-s-source').val();
+    const src = $('.cd-s-src-btn[style*="background: #c9a87c"]').data('source') || 'tavern';
     const endpoints = Object.assign({}, cdGetSettings().endpoints || {});
     if (src !== 'tavern') {
       endpoints[src] = {
@@ -4908,6 +4913,7 @@ const CHANGELOG = [
       '新增向量库管理：清空/重建/查看统计/测试检索',
       '新增关键词匹配降级：未配置嵌入 API 时自动降级为关键词检索',
       '说明页面新增「向量化检索」说明章节',
+      '设置面板 API 来源改为按钮选择器，点选自动填充默认地址，移动端操作更友好',
     ],
   },
   {
@@ -5423,35 +5429,34 @@ async function cdRenderVector() {
       
       <div class="cd-egg-section">
         <div class="cd-set-row" style="margin-bottom:4px;">
-          <label><i class="fa-regular fa-microchip"></i> 嵌入模型 API</label>
+          <label>嵌入 API</label>
         </div>
-        <p style="font-size:0.55rem;color:#8b7355;opacity:0.5;margin:0 0 6px;">在向量界面独立配置嵌入 API，不依赖主 API。</p>
-        <div class="cd-set-row">
-          <label>服务商</label>
-          <select id="cd-vec-emb-source" style="font-size:0.68rem;padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
-            <option value="tavern" ${(ve.source||'tavern') === 'tavern' ? 'selected' : ''}>跟随酒馆</option>
-            <option value="openai" ${ve.source === 'openai' ? 'selected' : ''}>OpenAI 兼容</option>
-            <option value="gemini" ${ve.source === 'gemini' ? 'selected' : ''}>Gemini</option>
-          </select>
+        <p style="font-size:0.55rem;color:#8b7355;opacity:0.5;margin:0 0 6px;">选择嵌入服务来源，选好后只需填密钥即可。</p>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+          <button class="cd-vec-emb-btn cd-btn-secondary" data-source="tavern" style="font-size:0.62rem;padding:4px 10px;${(ve.source||'tavern') === 'tavern' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">酒馆内置</button>
+          <button class="cd-vec-emb-btn cd-btn-secondary" data-source="openai" style="font-size:0.62rem;padding:4px 10px;${ve.source === 'openai' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">OpenAI 兼容</button>
+          <button class="cd-vec-emb-btn cd-btn-secondary" data-source="gemini" style="font-size:0.62rem;padding:4px 10px;${ve.source === 'gemini' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">Gemini</button>
         </div>
-        <div class="cd-set-row" id="cd-vec-emb-url-row" style="${ve.source === 'gemini' ? 'display:none;' : ''}">
-          <label>API 地址</label>
-          <input type="text" id="cd-vec-emb-url" value="${escapeAttr(ve.url || '')}" placeholder="${ve.source === 'openai' ? 'https://api.openai.com/v1' : ''}" style="flex:1;font-size:0.65rem;padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
+        <div id="cd-vec-emb-details" style="${ve.source === 'tavern' ? 'display:none;' : ''}">
+          <div class="cd-set-row" id="cd-vec-emb-url-row" style="${ve.source === 'gemini' ? 'display:none;' : ''}">
+            <label>API 地址</label>
+            <input type="text" id="cd-vec-emb-url" value="${escapeAttr(ve.source === 'openai' ? (ve.url || 'https://api.openai.com/v1') : (ve.url || ''))}" placeholder="https://api.openai.com/v1" style="flex:1;font-size:0.65rem;padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
+          </div>
+          <div class="cd-set-row" id="cd-vec-emb-key-row" style="${ve.source === 'tavern' ? 'display:none;' : ''}">
+            <label>API 密钥</label>
+            <input type="password" id="cd-vec-emb-key" value="${escapeAttr(ve.key || '')}" placeholder="sk-..." style="flex:1;font-size:0.65rem;padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
+          </div>
+          <div class="cd-set-row" id="cd-vec-emb-model-row" style="${ve.source !== 'openai' ? 'display:none;' : ''}">
+            <label>模型名</label>
+            <input type="text" id="cd-vec-emb-model" value="${escapeAttr(ve.model || 'text-embedding-ada-002')}" placeholder="text-embedding-ada-002" list="cd-vec-models" style="flex:1;font-size:0.65rem;padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
+            <datalist id="cd-vec-models"></datalist>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;">
+            <button class="cd-btn-secondary" id="cd-vec-fetch-models" style="font-size:0.6rem;padding:3px 10px;min-width:auto;display:${ve.source === 'openai' ? '' : 'none'};"><i class="fa-regular fa-rotate"></i> 拉取模型</button>
+            <button class="cd-btn-secondary" id="cd-vec-test-emb" style="font-size:0.6rem;padding:3px 10px;min-width:auto;"><i class="fa-regular fa-flask"></i> 测试连接</button>
+          </div>
+          <div id="cd-vec-emb-test-result" style="font-size:0.6rem;color:#6b5a48;margin-top:4px;"></div>
         </div>
-        <div class="cd-set-row">
-          <label>API 密钥</label>
-          <input type="password" id="cd-vec-emb-key" value="${escapeAttr(ve.key || '')}" placeholder="sk-..." style="flex:1;font-size:0.65rem;padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
-        </div>
-        <div class="cd-set-row" id="cd-vec-emb-model-row" style="${ve.source !== 'openai' ? 'display:none;' : ''}">
-          <label>模型名</label>
-          <input type="text" id="cd-vec-emb-model" value="${escapeAttr(ve.model || 'text-embedding-ada-002')}" placeholder="text-embedding-ada-002" list="cd-vec-models" style="flex:1;font-size:0.65rem;padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
-          <datalist id="cd-vec-models"></datalist>
-        </div>
-        <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;">
-          <button class="cd-btn-secondary" id="cd-vec-fetch-models" style="font-size:0.6rem;padding:3px 10px;min-width:auto;"><i class="fa-regular fa-rotate"></i> 拉取模型</button>
-          <button class="cd-btn-secondary" id="cd-vec-test-emb" style="font-size:0.6rem;padding:3px 10px;min-width:auto;"><i class="fa-regular fa-flask"></i> 测试连接</button>
-        </div>
-        <div id="cd-vec-emb-test-result" style="font-size:0.6rem;color:#6b5a48;margin-top:4px;"></div>
       </div>
       
       <div class="cd-egg-section">
@@ -5484,11 +5489,28 @@ async function cdRenderVector() {
     </div>
   `);
   
-  // 服务商切换联动
-  $('#cd-vec-emb-source').off('change').on('change', function () {
-    const val = $(this).val();
-    $('#cd-vec-emb-url-row').toggle(val !== 'gemini');
-    $('#cd-vec-emb-model-row').toggle(val === 'openai');
+  // 服务商按钮切换
+  $(document).off('click', '.cd-vec-emb-btn').on('click', '.cd-vec-emb-btn', function () {
+    $('.cd-vec-emb-btn').css('background', '').css('color', '').css('border-color', '');
+    $(this).css('background', '#c9a87c').css('color', '#fff').css('border-color', '#c9a87c');
+    const val = $(this).data('source');
+    // 自动填充默认值
+    if (val === 'openai' && !$('#cd-vec-emb-url').val()) {
+      $('#cd-vec-emb-url').val('https://api.openai.com/v1');
+    }
+    if (val === 'gemini' && !$('#cd-vec-emb-url').val()) {
+      $('#cd-vec-emb-url').val('https://generativelanguage.googleapis.com/v1beta');
+    }
+    // 显示/隐藏详情区域
+    if (val === 'tavern') {
+      $('#cd-vec-emb-details').hide();
+    } else {
+      $('#cd-vec-emb-details').show();
+      $('#cd-vec-emb-url-row').toggle(val !== 'gemini');
+      $('#cd-vec-emb-key-row').show();
+      $('#cd-vec-emb-model-row').toggle(val === 'openai');
+      $('#cd-vec-fetch-models').toggle(val === 'openai');
+    }
   });
   
   // 测试嵌入连接
@@ -5496,8 +5518,9 @@ async function cdRenderVector() {
     const btn = $(this);
     btn.prop('disabled', true).text('测试中...');
     $('#cd-vec-emb-test-result').html('');
+    const source = $('.cd-vec-emb-btn[style*="background: #c9a87c"]').data('source') || 'tavern';
     const fakeSettings = { vectorEmbedding: {
-      source: $('#cd-vec-emb-source').val() || 'tavern',
+      source: source,
       url: $('#cd-vec-emb-url').val() || '',
       key: $('#cd-vec-emb-key').val() || '',
       model: $('#cd-vec-emb-model').val() || 'text-embedding-ada-002',
@@ -5523,7 +5546,7 @@ async function cdRenderVector() {
   
   // 拉取模型列表
   $('#cd-vec-fetch-models').off('click').on('click', async function () {
-    const source = $('#cd-vec-emb-source').val();
+    const source = $('.cd-vec-emb-btn[style*="background: #c9a87c"]').data('source') || 'openai';
     if (source === 'tavern' || source === 'gemini') {
       toastr.info('仅 OpenAI 兼容接口支持拉取模型');
       return;
@@ -5576,7 +5599,7 @@ async function cdRenderVector() {
     settings.vectorTopK = Math.max(1, Math.min(20, topK));
     settings.vectorThreshold = Math.max(0, Math.min(1, threshold));
     settings.vectorEmbedding = {
-      source: $('#cd-vec-emb-source').val() || 'tavern',
+      source: $('.cd-vec-emb-btn[style*="background: #c9a87c"]').data('source') || 'tavern',
       url: $('#cd-vec-emb-url').val() || '',
       key: $('#cd-vec-emb-key').val() || '',
       model: $('#cd-vec-emb-model').val() || 'text-embedding-ada-002',
