@@ -31,6 +31,13 @@ const DEFAULT_SETTINGS = {
   injectDiary     : true,         // 注入角色日记到AI上下文
   injectRelation  : true,         // 注入人物关系到AI上下文
   injectArchive   : true,         // 注入剧情档案到AI上下文
+  filterTags      : [             // 内容过滤标签对（不发送给AI总结）
+    { start: '<user_thought>', end: '</user_thought>' },
+    { start: '', end: '' },
+    { start: '<!--', end: '-->' },
+  ],
+  autoHideEnabled : false,        // 自动隐藏已总结楼层
+  autoHideKeep    : 5,            // 保留最新 N 条 AI 楼层可见
   endpoints: {
     openai:  { url: 'https://api.openai.com/v1',               key: '', model: '' },
     claude:  { url: 'https://api.anthropic.com/v1',             key: '', model: '' },
@@ -255,7 +262,9 @@ function cdBuildDiaryPrompt(windowFloors, data, s) {
     if (!last) return '';
     return `【${name}】上次(${last.date || '第' + last.turn + '楼'}): ${last.entry}\n  心情:${last.mood} 对用户态度:${last.attitude_to_user}`;
   }).filter(Boolean).join('\n');
-  const scene = windowFloors.map(m => `[#${m.message_id} ${m.name}] ${m.mes}`).join('\n\n');
+  // ★ 楼层文本经过标签过滤
+  const tags = s.filterTags || [];
+  const scene = windowFloors.map(m => `[#${m.message_id} ${m.name}] ${cdFilterTags(m.mes, tags)}`).join('\n\n');
   const sys = [
     '你是一个"角色日记"记录员。阅读给定剧情片段, 为其中每个有名有戏份的登场角色, 以该角色第一人称主观视角写一篇日记。',
     '要求:',
@@ -422,7 +431,9 @@ const ARCHIVE_SYSTEM = [
 
 function cdBuildArchivePrompt(windowFloors, data, _s) {
   const existing = data.archive || emptyData().archive;
-  const scene = windowFloors.map(m => `[#${m.message_id} ${m.name}] ${m.mes}`).join('\n\n');
+  // ★ 楼层文本经过标签过滤
+  const tags = _s?.filterTags || [];
+  const scene = windowFloors.map(m => `[#${m.message_id} ${m.name}] ${cdFilterTags(m.mes, tags)}`).join('\n\n');
   const sys = [
     ARCHIVE_SYSTEM,
     '',
@@ -465,7 +476,9 @@ function parseArchiveJson(text) {
 }
 function cdBuildRelationPrompt(windowFloors, data, _s) {
   const known = Object.keys(data.diaries);
-  const scene = windowFloors.map(m => `[#${m.message_id} ${m.name}] ${m.mes}`).join('\n\n');
+  // ★ 楼层文本经过标签过滤
+  const tags = _s?.filterTags || [];
+  const scene = windowFloors.map(m => `[#${m.message_id} ${m.name}] ${cdFilterTags(m.mes, tags)}`).join('\n\n');
   const sys = [
     '你是一个角色关系分析员。阅读给定剧情片段, 提取角色之间的"单向主观关系"。',
     '要求:',
@@ -485,6 +498,30 @@ function cdBuildRelationPrompt(windowFloors, data, _s) {
     { role: 'user', content: usr },
     { role: 'assistant', content: '{"relations":[' },
   ];
+}
+
+/* ============================== 内容过滤 ============================== */
+
+/** 根据用户自定义的标签对，过滤掉不需要发送给AI的内容 */
+function cdFilterTags(text, tags) {
+  if (!text || !Array.isArray(tags) || !tags.length) return text;
+  let result = String(text);
+  for (const pair of tags) {
+    const start = String(pair?.start || '').trim();
+    const end = String(pair?.end || '').trim();
+    if (!start || !end) continue;
+    let si = result.indexOf(start);
+    while (si !== -1) {
+      const ei = result.indexOf(end, si + start.length);
+      if (ei === -1) {
+        result = result.slice(0, si);
+        break;
+      }
+      result = result.slice(0, si) + result.slice(ei + end.length);
+      si = result.indexOf(start);
+    }
+  }
+  return result.trim();
 }
 
 /* ============================== JSON 鲁棒解析 ============================== */
@@ -1354,6 +1391,72 @@ async function cdCheckAutoTrigger() {
   cdSwitchView('log');
 }
 
+/**
+ * ★ 隐藏已总结的旧楼层，只保留最新 N 条 AI 楼层可见
+ * 参考隐藏助手思路：将旧楼层的 is_system 设为 true，ST 会自动隐藏
+ */
+async function cdHideOldFloors(keepCount) {
+  const ctx = SillyTavern.getContext();
+  if (!ctx || !Array.isArray(ctx.chat)) return;
+  const chat = ctx.chat;
+  if (!chat.length) return;
+
+  // 从后往前找 keepCount 条 AI 楼层（非 user、非 system）
+  let found = 0;
+  let visibleStart = chat.length;
+  for (let i = chat.length - 1; i >= 0; i--) {
+    const m = chat[i];
+    if (m && !m.is_user && !m.is_system) {
+      found++;
+      if (found >= keepCount) {
+        visibleStart = i;
+        break;
+      }
+    }
+  }
+  // 如果 AI 楼层总数不足 keepCount，不隐藏
+  if (found < keepCount) return;
+
+  // 标记 visibleStart 之前的非用户消息为 system（隐藏）
+  const toHide = [];
+  for (let i = 0; i < visibleStart; i++) {
+    const m = chat[i];
+    if (m && !m.is_user && m.is_system !== true) {
+      m.is_system = true;
+      toHide.push(i);
+    }
+  }
+
+  if (toHide.length === 0) return;
+
+  // 更新 DOM
+  const selector = toHide.map(id => `.mes[mesid="${id}"]`).join(',');
+  if (selector) {
+    $(selector).attr('is_system', 'true');
+  }
+
+  cdLog('cdHideOldFloors: 隐藏了', toHide.length, '条楼层，保留最新', keepCount, '条');
+}
+
+/**
+ * ★ 一键显示所有被隐藏的楼层
+ */
+function cdShowAllFloors() {
+  const ctx = SillyTavern.getContext();
+  if (!ctx || !Array.isArray(ctx.chat)) return;
+  let count = 0;
+  for (const m of ctx.chat) {
+    if (m && m.is_system === true && !m.is_user) {
+      // 只恢复被插件隐藏的 AI 楼层（保留真正的 system 消息）
+      m.is_system = false;
+      count++;
+    }
+  }
+  // 更新 DOM
+  $('.mes[is_system="true"]').attr('is_system', 'false');
+  cdLog('cdShowAllFloors: 恢复了', count, '条隐藏的楼层');
+}
+
 async function cdRunDiary({ manual = false, silent = false, extraFloors = null } = {}) {
   if (cdBusy) {
     cdAddLog('warn', '写日记被跳过：已有任务在进行中');
@@ -1577,9 +1680,44 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
           cdLog('卡牌提取失败（不影响主流程）:', e.message);
         }
       }
+
+      // ★ 自动隐藏已总结的旧楼层
+      if (diaryOk && s.autoHideEnabled) {
+        try {
+          await cdHideOldFloors(s.autoHideKeep || 5);
+          cdAddLog('info', `自动隐藏完成，保留最新 ${s.autoHideKeep || 5} 条AI楼层`);
+        } catch (e) {
+          cdLog('自动隐藏失败（不影响主流程）:', e.message);
+        }
+      }
       
       await cdRefreshInjection();
       cdAddLog('info', '日记保存完成并刷新注入');
+
+      // ★ 自动隐藏旧楼层
+      if (s.autoHideEnabled) {
+        try {
+          const chat = _cdGetChat();
+          const keep = Math.max(1, s.autoHideKeep || 5);
+          const hideBefore = Math.max(0, chat.length - keep);
+          let hiddenCount = 0;
+          for (let i = 0; i < hideBefore; i++) {
+            if (chat[i] && !chat[i].is_system) {
+              chat[i].is_system = true;
+              hiddenCount++;
+            }
+          }
+          if (hiddenCount > 0) {
+            cdAddLog('info', `自动隐藏 ${hiddenCount} 条旧楼层（保留最新 ${keep} 条）`);
+            // 触发 ST 重新渲染
+            const ctx = SillyTavern.getContext();
+            if (ctx?.emit) ctx.emit('chat_updated', {});
+          }
+        } catch (e) {
+          cdWarn('自动隐藏楼层失败', e);
+        }
+      }
+
       if (!silent) {
         const tips = [];
         if (diaryOk) tips.push('日记已更新');
@@ -3856,6 +3994,46 @@ async function cdRenderSettings() {
       </label>
     </div>
 
+    <h3 class="cd-settings-sub">内容过滤（标签内的内容不发送给AI总结）</h3>
+
+    <div id="cd-filter-tags-container">
+      ${(Array.isArray(s.filterTags) ? s.filterTags : []).map((pair, idx) => `
+        <div class="cd-set-row cd-filter-tag-row" data-idx="${idx}">
+          <input type="text" class="cd-input cd-filter-start" value="${escapeAttr(pair.start || '')}" placeholder="上标签" style="flex:1;min-width:60px;">
+          <span style="font-size:0.6rem;color:#8b7355;opacity:0.5;flex-shrink:0;">→</span>
+          <input type="text" class="cd-input cd-filter-end" value="${escapeAttr(pair.end || '')}" placeholder="下标签" style="flex:1;min-width:60px;">
+          <button class="cd-btn-danger cd-filter-del" style="padding:2px 6px;font-size:0.6rem;min-width:auto;">×</button>
+        </div>
+      `).join('')}
+    </div>
+    <button class="cd-btn-secondary" id="cd-filter-add" style="margin-top:4px;font-size:0.65rem;">+ 添加一组标签</button>
+    <p style="font-size:0.55rem;color:#8b7355;opacity:0.5;margin:4px 0 0;line-height:1.4;">
+      被上标签和下标签包裹的内容将从发送给AI的楼层文本中移除，不会被总结进日记/关系/剧情档案。
+      例如：上标签 <code>&lt;user_thought&gt;</code> 下标签 <code>&lt;/user_thought&gt;</code> 会过滤小剧场内容。
+      留空全部删光则不进行任何过滤。
+    </p>
+
+    <h3 class="cd-settings-sub">自动隐藏楼层</h3>
+
+    <div class="cd-set-row">
+      <label><i class="fa-regular fa-eye-slash"></i> 总结后自动隐藏旧楼层</label>
+      <label class="cd-switch">
+        <input type="checkbox" id="cd-s-autohide" ${s.autoHideEnabled ? 'checked' : ''}>
+        <span class="cd-slider"></span>
+      </label>
+    </div>
+
+    <div class="cd-set-row">
+      <label>保留最新 AI 楼层数</label>
+      <input type="number" id="cd-s-autohide-keep" value="${s.autoHideKeep || 5}" min="1" max="100" class="cd-input">
+      <span class="cd-hint">总结后只保留最新 N 条 AI 楼层可见</span>
+    </div>
+
+    <div class="cd-set-row">
+      <label></label>
+      <button class="cd-btn-secondary" id="cd-btn-show-all-floors" style="font-size:0.65rem;"><i class="fa-regular fa-eye"></i> 恢复所有隐藏楼层</button>
+    </div>
+
     <h3 class="cd-settings-sub">API 来源</h3>
 
     <div class="cd-set-row">
@@ -3932,6 +4110,48 @@ async function cdRenderSettings() {
     toastr.success(`获取到 ${models.length} 个模型`);
   });
 
+  // ★ 添加一组过滤标签
+  $('#cd-filter-add').off('click').on('click', function () {
+    const container = $('#cd-filter-tags-container');
+    const idx = container.children().length;
+    container.append(`
+      <div class="cd-set-row cd-filter-tag-row" data-idx="${idx}">
+        <input type="text" class="cd-input cd-filter-start" value="" placeholder="上标签" style="flex:1;min-width:60px;">
+        <span style="font-size:0.6rem;color:#8b7355;opacity:0.5;flex-shrink:0;">→</span>
+        <input type="text" class="cd-input cd-filter-end" value="" placeholder="下标签" style="flex:1;min-width:60px;">
+        <button class="cd-btn-danger cd-filter-del" style="padding:2px 6px;font-size:0.6rem;min-width:auto;">×</button>
+      </div>
+    `);
+  });
+
+  // ★ 删除一组过滤标签（委托事件）
+  $('#cd-filter-tags-container').off('click', '.cd-filter-del').on('click', '.cd-filter-del', function () {
+    $(this).closest('.cd-filter-tag-row').remove();
+  });
+
+  // ★ 恢复所有隐藏楼层
+  $('#cd-btn-show-all-floors').off('click').on('click', function () {
+    try {
+      const chat = _cdGetChat();
+      let restored = 0;
+      for (let i = 0; i < chat.length; i++) {
+        if (chat[i] && chat[i].is_system === true) {
+          chat[i].is_system = false;
+          restored++;
+        }
+      }
+      if (restored > 0) {
+        const ctx = SillyTavern.getContext();
+        if (ctx?.emit) ctx.emit('chat_updated', {});
+        toastr.success(`已恢复 ${restored} 条隐藏楼层`);
+      } else {
+        toastr.info('没有隐藏的楼层需要恢复');
+      }
+    } catch (e) {
+      toastr.error('恢复失败: ' + e.message);
+    }
+  });
+
   $('#cd-btn-save-settings').on('click', function () {
     const src = $('#cd-s-source').val();
     const endpoints = Object.assign({}, cdGetSettings().endpoints || {});
@@ -3954,6 +4174,15 @@ async function cdRenderSettings() {
       injectDiary: $('#cd-s-inject-diary').is(':checked'),
       injectRelation: $('#cd-s-inject-relation').is(':checked'),
       injectArchive: $('#cd-s-inject-archive').is(':checked'),
+      autoHideEnabled: $('#cd-s-autohide').is(':checked'),
+      autoHideKeep: parseInt($('#cd-s-autohide-keep').val(), 10) || 5,
+      // ★ 收集过滤标签
+      filterTags: $('#cd-filter-tags-container .cd-filter-tag-row').map(function () {
+        return {
+          start: $(this).find('.cd-filter-start').val().trim(),
+          end: $(this).find('.cd-filter-end').val().trim(),
+        };
+      }).get(),
       source: src,
       endpoints,
     });
@@ -3961,6 +4190,12 @@ async function cdRenderSettings() {
     const fab = document.getElementById(FAB_ID);
     if (fab) fab.style.display = $('#cd-s-fab').is(':checked') ? '' : 'none';
     toastr.success('设置已保存');
+  });
+
+  // ★ 恢复所有隐藏楼层按钮
+  $('#cd-btn-show-all-floors').off('click').on('click', function () {
+    cdShowAllFloors();
+    toastr.success('已恢复所有隐藏楼层');
   });
 }
 
@@ -4257,11 +4492,13 @@ const CHANGELOG = [
       '新增剧情档案历史记录（archiveHistory），支持翻阅历史版本',
       '修复日志统计中 detail 字段未正确 JSON.parse 的问题',
       '新增「说明」视图，内置完整功能说明书',
-      '编辑日记窗口遮挡修复：编辑器改为挂载到 documentElement',
-      '设置新增「生成内容」开关：可独立开关角色日记/人物关系/剧情档案的生成',
+      '编辑日记窗口遮挡修复',
+      '设置新增「生成内容」开关：可独立开关日记/关系/档案的生成',
       '设置新增「注入AI上下文」开关：可独立控制日记/关系/档案是否发送给AI',
       '获取模型按钮优化：自动填入第一个模型，点击模型标签可快速选择',
-      '设置中 enableDiary/enableRelation/enableArchive 三个字段改名。如果你之前的设置文件中包含这三个字段，它们将被重置为默认值 true，需要重新设置。',
+      '新增「内容过滤」设置：自定义标签过滤小剧场等内容，不发送给AI总结',
+      '新增「自动隐藏楼层」功能：写日记后自动隐藏旧楼层，只保留最新N条',
+      '设置面板新增「恢复所有隐藏楼层」按钮',
     ],
   },
   {
@@ -4365,6 +4602,25 @@ function cdRenderHelp() {
         <tr><td style="padding:5px 8px;border-bottom:1px solid rgba(180,150,120,0.06);color:#6b5a48;white-space:nowrap;">API 来源</td><td style="padding:5px 8px;border-bottom:1px solid rgba(180,150,120,0.06);">跟随酒馆连接，或手动配置 OpenAI/Claude/Gemini</td></tr>
         <tr><td style="padding:5px 8px;border-bottom:1px solid rgba(180,150,120,0.06);color:#6b5a48;white-space:nowrap;">快捷入口</td><td style="padding:5px 8px;border-bottom:1px solid rgba(180,150,120,0.06);">显示/隐藏悬浮 FAB 按钮</td></tr>
       </table>
+
+      <div class="cd-write-divider"></div>
+
+      <h4 class="cd-write-title" style="font-size:0.8rem;"><i class="fa-regular fa-filter"></i> 内容过滤</h4>
+      <p style="font-size:0.66rem;color:#6b5a48;line-height:1.6;margin:0 0 8px;">
+        在设置中可自定义「上标签」和「下标签」，被这对标签包裹的楼层内容在发送给AI总结时会被移除。<br>
+        默认已预设三组标签：<code>&lt;user_thought&gt;</code>（小剧场）、<code>&lt;think&gt;</code>（思考过程）、<code>&lt;!-- --&gt;</code>（注释）。<br>
+        你可以增删改任意标签组，全部删光则不进行过滤。<br>
+        注意：过滤只影响发送给AI的文本，不影响已存储的日记和剧情档案内容。
+      </p>
+
+      <div class="cd-write-divider"></div>
+
+      <h4 class="cd-write-title" style="font-size:0.8rem;"><i class="fa-regular fa-eye-slash"></i> 自动隐藏楼层</h4>
+      <p style="font-size:0.66rem;color:#6b5a48;line-height:1.6;margin:0 0 8px;">
+        每次写日记后自动隐藏旧楼层（用户和AI消息都隐藏），只保留最新N条可见。<br>
+        可在设置中开启此功能，并调整保留条数。<br>
+        如果不小心隐藏了重要楼层，点击设置中的「恢复所有隐藏楼层」按钮即可还原。
+      </p>
 
       <div class="cd-write-divider"></div>
 
