@@ -114,12 +114,16 @@ function cdWarn(...args) {
 async function cdApiComplete(messages, s) {
   const start = Date.now();
   let text;
-  switch (s.source) {
+  // 自动推断实际使用的 API 来源：优先取有配置的非 tavern 来源，否则用 tavern
+  const effectiveSource = (s.endpoints?.openai?.url ? 'openai' :
+                           s.endpoints?.claude?.url ? 'claude' :
+                           s.endpoints?.gemini?.url ? 'gemini' : 'tavern');
+  switch (effectiveSource) {
     case 'tavern': text = await callTavern(messages, s); break;
     case 'openai': text = await callOpenAI(messages, s.endpoints.openai, s); break;
     case 'claude': text = await callClaude(messages, s.endpoints.claude, s); break;
     case 'gemini': text = await callGemini(messages, s.endpoints.gemini, s); break;
-    default: throw new Error('未知接口来源: ' + s.source);
+    default: throw new Error('未知接口来源: ' + effectiveSource);
   }
   const elapsed = Date.now() - start;
   // 读取 callXxx 中可能记录的 token 用量
