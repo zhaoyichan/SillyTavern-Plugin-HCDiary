@@ -1,5 +1,5 @@
 {
-  "display_name": "角色日记",
+  "display_name": "角色日记 【liwe】",
   "name": "character-diary",
   "id": "character-diary",
   "version": "2.1.2",
@@ -7,11 +7,11 @@
   "type": "extension",
   "js": "index.js",
   "css": "style.css",
-  "author": "",
-  "homePage": "",
+  "author": "liwe",
+  "homePage": "https://github.com/zhaoyichan/SillyTavern-Plugin-HCDiary",
   "repository": {
     "type": "github",
-    "url": ""
+    "url": "https://github.com/zhaoyichan/SillyTavern-Plugin-HCDiary"
   },
   "requires": []
 }
