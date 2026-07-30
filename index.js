@@ -4461,18 +4461,18 @@ async function cdRenderSettings() {
       <button class="cd-s-src-btn cd-btn-secondary" data-source="gemini" style="font-size:0.62rem;padding:4px 10px;${s.source === 'gemini' && s.endpoints?.gemini?.url ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">Gemini</button>
     </div>
 
-    <div id="cd-custom-api" style="display:${s.source === 'tavern' ? 'none' : 'block'};">
+    <div id="cd-custom-api" style="display:${(!s.source || s.source === 'tavern') && !(s.endpoints?.openai?.url || s.endpoints?.claude?.url || s.endpoints?.gemini?.url) ? 'none' : 'block'};">
       <div class="cd-set-row">
         <label>接口地址</label>
-        <input type="text" id="cd-s-url" value="${(s.endpoints[s.source] || {}).url || ''}" class="cd-input" placeholder="https://api...">
+        <input type="text" id="cd-s-url" value="${s.endpoints?.openai?.url || s.endpoints?.claude?.url || s.endpoints?.gemini?.url || ''}" class="cd-input" placeholder="https://api...">
       </div>
       <div class="cd-set-row">
         <label>密钥</label>
-        <input type="password" id="cd-s-key" value="${(s.endpoints[s.source] || {}).key || ''}" class="cd-input" placeholder="sk-...">
+        <input type="password" id="cd-s-key" value="${s.endpoints?.openai?.key || s.endpoints?.claude?.key || s.endpoints?.gemini?.key || ''}" class="cd-input" placeholder="sk-...">
       </div>
       <div class="cd-set-row">
         <label>模型</label>
-        <input type="text" id="cd-s-model" value="${(s.endpoints[s.source] || {}).model || ''}" class="cd-input" list="cd-models" placeholder="模型名">
+        <input type="text" id="cd-s-model" value="${s.endpoints?.openai?.model || s.endpoints?.claude?.model || s.endpoints?.gemini?.model || ''}" class="cd-input" list="cd-models" placeholder="模型名">
         <datalist id="cd-models"></datalist>
       </div>
       <button class="cd-btn-secondary" id="cd-btn-fetch-models">获取可用模型</button>
