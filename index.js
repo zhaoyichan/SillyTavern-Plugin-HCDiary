@@ -2387,7 +2387,7 @@ function cdInjectModal() {
     <div id="${MODAL_ID}" class="cd-root cd-${theme}" style="display:none">
       <div class="cd-sheet">
         <div class="cd-header">
-          <span class="cd-header-title">角色日记</span>
+          <span class="cd-header-title">角色日记 <span style="font-weight:400;opacity:0.4;font-size:0.65rem;">【liwe】</span></span>
           <div class="cd-header-actions">
             <button class="cd-header-btn" id="cd-btn-fullscreen" title="全屏"><i class="fa-regular fa-maximize"></i></button>
             <button class="cd-header-btn" id="cd-btn-theme" title="切换主题"><i class="fa-regular ${theme === 'night' ? 'fa-sun' : 'fa-moon'}"></i></button>
@@ -4765,7 +4765,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size:0.95rem;font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> 角色日记</h3>
         <p style="font-size:0.68rem;color:#8b7355;margin:0 0 2px;">自动为剧情中的每个角色撰写第一人称日记</p>
-        <p style="font-size:0.6rem;color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.1.0</p>
+        <p style="font-size:0.6rem;color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.1.0 · 【liwe】</p>
         <p style="font-size:0.68rem;color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
