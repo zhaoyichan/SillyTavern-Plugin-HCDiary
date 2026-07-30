@@ -4455,10 +4455,10 @@ async function cdRenderSettings() {
     <h3 class="cd-settings-sub">API 来源</h3>
 
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
-      <button class="cd-s-src-btn cd-btn-secondary" data-source="tavern" style="font-size:0.62rem;padding:4px 10px;${s.source === 'tavern' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">当前酒馆</button>
-      <button class="cd-s-src-btn cd-btn-secondary" data-source="openai" style="font-size:0.62rem;padding:4px 10px;${s.source === 'openai' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">OpenAI</button>
-      <button class="cd-s-src-btn cd-btn-secondary" data-source="claude" style="font-size:0.62rem;padding:4px 10px;${s.source === 'claude' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">Claude</button>
-      <button class="cd-s-src-btn cd-btn-secondary" data-source="gemini" style="font-size:0.62rem;padding:4px 10px;${s.source === 'gemini' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">Gemini</button>
+      <button class="cd-s-src-btn cd-btn-secondary" data-source="tavern" style="font-size:0.62rem;padding:4px 10px;${(!s.source || s.source === 'tavern' || !s.endpoints?.[s.source]?.url) ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">当前酒馆</button>
+      <button class="cd-s-src-btn cd-btn-secondary" data-source="openai" style="font-size:0.62rem;padding:4px 10px;${s.source === 'openai' && s.endpoints?.openai?.url ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">OpenAI</button>
+      <button class="cd-s-src-btn cd-btn-secondary" data-source="claude" style="font-size:0.62rem;padding:4px 10px;${s.source === 'claude' && s.endpoints?.claude?.url ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">Claude</button>
+      <button class="cd-s-src-btn cd-btn-secondary" data-source="gemini" style="font-size:0.62rem;padding:4px 10px;${s.source === 'gemini' && s.endpoints?.gemini?.url ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">Gemini</button>
     </div>
 
     <div id="cd-custom-api" style="display:${s.source === 'tavern' ? 'none' : 'block'};">
@@ -4488,8 +4488,9 @@ async function cdRenderSettings() {
     const src = $(this).data('source');
     $('#cd-custom-api').toggle(src !== 'tavern');
     if (src !== 'tavern') {
-      const ep = (cdGetSettings().endpoints || {})[src] || { url: '', key: '', model: '' };
-      // 自动填充默认地址
+      const endpoints = cdGetSettings().endpoints || {};
+      const ep = endpoints[src] || {};
+      // 如果该 source 没有保存过完整配置，尝试从其他非 tavern source 复用
       const defaults = {
         openai: 'https://api.openai.com/v1',
         claude: 'https://api.anthropic.com/v1',
