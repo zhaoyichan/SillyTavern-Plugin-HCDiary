@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.1.3';
+const PLUGIN_VERSION = '2.1.4';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -4904,7 +4904,7 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
-    version: 'v2.1.3',
+    version: 'v2.1.4',
     date: '2026-07-31',
     items: [
       '新增「🧠 向量」视图：剧情档案支持向量化检索模式',
