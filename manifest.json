@@ -2,7 +2,7 @@
   "display_name": "LIWE · RAG 记忆引擎",
   "name": "character-diary",
   "id": "character-diary",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "自动为剧情中的每个角色撰写第一人称日记，提取角色关系网，生成剧情档案。支持三路并行 API、自动触发、时间线、世界书同步。",
   "type": "extension",
   "js": "index.js",

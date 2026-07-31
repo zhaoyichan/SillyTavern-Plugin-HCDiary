@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.2.0';
+const PLUGIN_VERSION = '2.2.1';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -2615,19 +2615,7 @@ async function cdCollectLiveTable() {
     cdAddLog('info', '[填表调试] 解析结果', { rows: rows.length, types: rows.map((a) => a.kind + (a.kind === 'char' ? ('/' + a.name) : '')).slice(0, 20) });
     if (!rows.length) return;
     const applied = await cdApplyLiveTable(rows);
-    // 采集完成后，从消息数据里剥离 <liwe>...</liwe> 标签（参照 yuzuki-Memory 的 stripMemoryTags 思路）
-    // 这样正文显示层自然不再出现标签，不依赖 ST 正则或 DOM 操作
-    try {
-      const stripRe = new RegExp(`<${s.liveTableTag || 'liwe'}>[\\s\\S]*?<\\/?(?:${s.liveTableTag || 'liwe'})>`, 'gi');
-      const clean = (str) => String(str || '').replace(stripRe, '').trim();
-      if (Array.isArray(last.swipes)) {
-        const si2 = Number(last.swipe_id) || 0;
-        if (typeof last.swipes[si2] === 'string') last.swipes[si2] = clean(last.swipes[si2]);
-      }
-      if (typeof last.mes === 'string') last.mes = clean(last.mes);
-      // 通知 ST 刷新这条消息的显示（若可用）
-      try { SillyTavern.getContext().eventSource.emit(SillyTavern.getContext().event_types.MESSAGE_UPDATED, chat.length - 1); } catch (e) {}
-    } catch (e) { cdWarn('剥离填表标签失败', e); }
+
     cdLog('[填表] 采集标签完成', { rows: rows.length, applied });
   } catch (e) {
     cdWarn('填表采集失败', e);
@@ -5435,6 +5423,14 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
+    version: 'v2.2.1',
+    date: '2026-08-01',
+    items: [
+      '修复「清空填表数据」「清空剧情档案」按钮失效：按钮用 class、绑定误用 id 选择器导致点击无反应无提示',
+      '修复填表界面「自定义发给AI的提示词」下方被折叠：说明文字中 details 标签未转义，导致下方界面被收进折疊块需点开',
+    ],
+  },
+  {
     version: 'v2.2.0',
     date: '2026-07-31',
     items: [
@@ -5575,7 +5571,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.2.0 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.2.1 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
@@ -5873,7 +5869,7 @@ async function cdRenderManage() {
   });
 
   // ★ 清空剧情档案
-  $('#cd-mgr-clear-archive').off('click').on('click', async function () {
+  $('.cd-mgr-clear-archive').off('click').on('click', async function () {
     if (!await confirmDelete('确定清空剧情档案？不可恢复！')) return;
     const d = await cdGetData();
     d.archive = Object.assign({}, emptyData().archive);
@@ -5884,9 +5880,11 @@ async function cdRenderManage() {
   });
 
   // ★ 清空填表数据
-  $('#cd-mgr-clear-table').off('click').on('click', async function () {
+  $('.cd-mgr-clear-table').off('click').on('click', async function () {
+    cdAddLog('info', '[填表调试] 点击清空填表数据');
     if (!await confirmDelete('确定清空填表数据（地点/角色/履历）？不可恢复！')) return;
     const d = await cdGetData();
+    cdAddLog('info', '[填表调试] 清空前 liveTableData 长度', { len: Array.isArray(d.liveTableData) ? d.liveTableData.length : '非数组' });
     d.liveTableData = [];
     await cdSaveData(d);
     toastr.success('填表数据已清空');
@@ -6053,7 +6051,7 @@ async function cdRenderTable() {
           <textarea id="cd-lt-prompt" rows="9" spellcheck="false" style="width:100%;box-sizing:border-box;margin-top:4px;padding:6px;font-size: calc(0.6rem * var(--cd-fs,1));background:#fdfaf3;border:1px solid #e3d5b8;border-radius:6px;color:#3c2f1f;resize:vertical;line-height:1.5;">${escV(s.liveTablePrompt || '')}</textarea>
           <div style="margin-top:4px;"><button class="cd-btn-primary" id="cd-lt-resetprompt" style="font-size: calc(0.62rem * var(--cd-fs,1));padding:3px 10px;min-width:auto;">恢复默认提示词</button>
           <span style="font-size: calc(0.55rem * var(--cd-fs,1));color:#8b7355;">（点击后填入带 &lt;details&gt; 折叠的默认版本，再点「保存设置」生效）</span></div>
-          <p style="font-size: calc(0.55rem * var(--cd-fs,1));color:#8b7355;margin:4px 0 0;line-height:1.5;">本功能为采集式填表：AI 必须严格按提示词，在回复末尾用一个 <details><summary>情报表</summary> 折叠块包裹 &lt;liwe&gt; 标签，插件才能识别并写入表格。请保留提示词中的 &lt;liwe&gt; 标签及其内容格式；字段名改动后，插件需按相同字段名采集。修改后点「保存设置」生效。</p>
+          <p style="font-size: calc(0.55rem * var(--cd-fs,1));color:#8b7355;margin:4px 0 0;line-height:1.5;">本功能为采集式填表：AI 必须严格按提示词，在回复末尾用一个 &lt;details&gt;&lt;summary&gt;情报表&lt;/summary&gt; 折叠块包裹 &lt;liwe&gt; 标签，插件才能识别并写入表格。请保留提示词中的 &lt;liwe&gt; 标签及其内容格式；字段名改动后，插件需按相同字段名采集。修改后点「保存设置」生效。</p>
           <div style="margin-top:6px;border-top:1px dashed #d8c9a8;padding-top:6px;">
             <label style="font-size: calc(0.66rem * var(--cd-fs,1));font-weight:700;color:#7a5c34;">» 采集字段配置（可自定义增删改，用、或,分隔）</label>
             <div style="margin-top:4px;">
