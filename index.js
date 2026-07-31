@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.1.4.1';
+const PLUGIN_VERSION = '2.1.4.2';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -2643,8 +2643,7 @@ function cdInjectModal() {
           </button>
           <button class="cd-tb-btn" id="cd-tb-egg" data-mode="egg"><i class="fa-regular fa-gem"></i> 娱乐
           </button>
-          <button class="cd-tb-btn" id="cd-tb-write" data-mode="write"><i class="fa-regular fa-feather-pointed"></i> 写日记
-          </button>
+          
           <button class="cd-tb-btn" id="cd-tb-export" data-mode="export"><i class="fa-regular fa-download"></i> 导出
           </button>
           <button class="cd-tb-btn" id="cd-tb-log" data-mode="log"><i class="fa-regular fa-clipboard-list"></i> 日志
@@ -2695,7 +2694,6 @@ function cdInjectModal() {
   $('#cd-tb-browse').on('click', () => cdSwitchView('browse'));
   $('#cd-tb-graph').on('click',  () => cdSwitchView('graph'));
   $('#cd-tb-archive').on('click', () => cdSwitchView('archive'));
-  $('#cd-tb-write').on('click',  () => cdSwitchView('write'));
   $('#cd-tb-floors').on('click', () => cdSwitchView('floors'));
   $('#cd-tb-backfill').on('click', () => cdSwitchView('backfill'));
   $('#cd-tb-clear').on('click',  () => cdSwitchView('clear'));
@@ -2735,7 +2733,6 @@ async function cdRefreshPanelContent() {
     case 'browse':   await cdRenderBrowse(); break;
     case 'graph':    await cdRenderGraph(); break;
     case 'archive':  await cdRenderArchive(); break;
-    case 'write':    cdRenderWrite(); break;
     case 'floors':   await cdRenderFloors(); break;
     case 'clear':    cdRenderClear(); break;
     case 'export':   cdRenderExport(); break;
@@ -2853,11 +2850,8 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
     }, 0);
   }
 
-  // ★ 撤销提示
+  // ★ 撤销提示（撤销栏已禁用，undoHtml 恒为空）
   let undoHtml = '';
-  if (_cdSnapshot) {
-    undoHtml = `<div class="cd-undo-bar"><span><i class="fa-regular fa-rotate-left"></i> 有可撤销的上次写日记操作</span><button class="cd-btn-secondary" id="cd-do-undo">撤销</button><button class="cd-btn-secondary" id="cd-do-redo" style="display:none;">复原</button></div>`;
-  }
 
   // 搜索栏 + 角色筛选 + 卡片列表
   let html = `${undoHtml}${overviewHtml}
@@ -3185,11 +3179,8 @@ async function cdRenderArchive() {
   const arc = data.archive || emptyData().archive;
   const empty = !arc.mainline && !arc.sideline && !arc.states && !arc.unresolved;
   
-  // ★ 撤销提示
+  // ★ 撤销提示（撤销栏已禁用，undoHtml 恒为空）
   let undoHtml = '';
-  if (_cdSnapshot) {
-    undoHtml = `<div class="cd-undo-bar"><span><i class="fa-regular fa-rotate-left"></i> 有可撤销的上次写日记操作</span><button class="cd-btn-secondary" id="cd-do-undo">撤销</button><button class="cd-btn-secondary" id="cd-do-redo" style="display:none;">复原</button></div>`;
-  }
   
   if (empty) {
     $('#cd-content').html(undoHtml + `<div class="cd-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg><p>暂无剧情档案</p><p class="cd-empty-sub">写日记时将自动生成，AI 会为每条事件标注时间</p></div>`);
@@ -3432,21 +3423,12 @@ async function cdRenderArchive() {
   });
 }
 
-/** 写日记&补写&压缩融合（融合版） */
-async function cdRenderWrite() {
-  const s = cdGetSettings();
+/** 楼层管理器：浏览所有AI楼层，勾选要补写的 */
+async function cdRenderFloors() {
   const data = await cdGetData();
   const allAi = await cdGetAiFloors();
-  // 计算未记录的 AI 楼层
-  const recordedSet = new Set();
-  for (const list of Object.values(data.diaries || {})) {
-    for (const e of list) {
-      if (e.message_id !== undefined) recordedSet.add(e.message_id);
-    }
-  }
-  const unrecorded = allAi.filter(m => !recordedSet.has(m.message_id));
-  
-  // 剧情档案压缩融合 prompt
+  const lastRecordedFloor = data.lastFloor ?? -1;
+  const s = cdGetSettings();
   const COMPRESS_PROMPT = `【你现在不是陪聊助手，而是"剧情档案整理员"。
 
 你的任务是把多次已经确认过的剧情总结，融合压缩成一版更紧凑但仍然完整可续写的累计总结正文。
@@ -3458,115 +3440,8 @@ async function cdRenderWrite() {
 4. 严禁把具体事实压缩成抽象词。
 5. 如果多次总结里有重复信息，要融合，不要机械重复抄写。
 6. 输出纯文本，不要解释，不要多余说明。】`;
-
-  // 检查剧情档案是否有内容可压缩
   const arc = data.archive || {};
   const hasArchive = !!(arc.mainline || arc.sideline || arc.states || arc.unresolved);
-
-  $('#cd-content').html(`
-    <div class="cd-write-panel">
-      <div class="cd-write-section">
-        <h3 class="cd-write-title"><i class="fa-regular fa-feather-pointed"></i> 写日记</h3>
-        <p class="cd-write-desc">共 ${allAi.length} 个AI楼层，${unrecorded.length} 条未记录</p>
-        <button class="cd-btn-primary" id="cd-do-write">立即写新增</button>
-        <div class="cd-write-range" style="margin-top:8px;">
-          <input type="number" id="cd-write-range-start" class="cd-input" placeholder="起始" min="0" value="${allAi.length > 0 ? allAi[0].message_id : 0}">
-          <span class="cd-write-range-sep">至</span>
-          <input type="number" id="cd-write-range-end" class="cd-input" placeholder="结束" min="0" value="${allAi.length > 0 ? allAi[allAi.length - 1].message_id : 0}">
-          <button class="cd-btn-secondary" id="cd-do-write-range">写范围</button>
-        </div>
-      </div>
-
-      <div class="cd-write-divider"></div>
-
-      <div class="cd-write-section">
-        <h3 class="cd-write-title"><i class="fa-regular fa-compress"></i> 压缩融合剧情档案</h3>
-        <p class="cd-write-desc">将多次累计的剧情总结压缩融合成一版紧凑的版本</p>
-        <div class="cd-write-compress-info">
-          <span>主线 ${(arc.mainline || '').length} 字</span>
-          <span>支线 ${(arc.sideline || '').length} 字</span>
-          <span>状态 ${(arc.states || '').length} 字</span>
-          <span>未解决 ${(arc.unresolved || '').length} 字</span>
-        </div>
-        <button class="cd-btn-primary" id="cd-do-compress" ${hasArchive ? '' : 'disabled'} style="margin-top:8px;">
-          ${hasArchive ? '压缩融合剧情档案' : '暂无剧情档案可压缩'}
-        </button>
-      </div>
-    </div>`);
-
-  $('#cd-do-write').off('click').on('click', () => cdRunDiary({ manual: true }));
-  $('#cd-do-write-range').off('click').on('click', async () => {
-    const start = parseInt($('#cd-write-range-start').val(), 10);
-    const end = parseInt($('#cd-write-range-end').val(), 10);
-    if (isNaN(start) || isNaN(end) || start < 0 || end < 0 || start > end) {
-      toastr.warning('请输入有效的楼层范围（起始 ≤ 结束）');
-      return;
-    }
-    const rangeFloors = allAi.filter(m => m.message_id >= start && m.message_id <= end);
-    if (!rangeFloors.length) { toastr.info('指定范围内没有 AI 楼层'); return; }
-    cdRunDiary({ manual: true, silent: false, extraFloors: rangeFloors });
-  });
-
-  // 压缩融合剧情档案
-  $('#cd-do-compress').off('click').on('click', async function () {
-    if (cdBusy) { toastr.info('正在处理，请稍候'); return; }
-    const curData = await cdGetData();
-    const arc = curData.archive;
-    if (!arc || !(arc.mainline || arc.sideline || arc.states || arc.unresolved)) {
-      toastr.info('没有剧情档案需要压缩');
-      return;
-    }
-    cdBusy = true;
-    try {
-      toastr.info('正在压缩融合剧情档案...');
-      cdAddLog('info', '开始压缩融合剧情档案');
-      
-      // 对四个字段分别压缩
-      const fields = ['mainline', 'sideline', 'states', 'unresolved'];
-      const labels = { mainline: '主线', sideline: '支线', states: '重要状态变化', unresolved: '未解决事项' };
-      
-      for (const field of fields) {
-        const content = arc[field];
-        if (!content || content.length < 100) continue; // 太短的不用压缩
-        
-        cdAddLog('api_req', `压缩请求: ${labels[field]} (${content.length}字)`);
-        
-        const msgs = [
-          { role: 'system', content: COMPRESS_PROMPT },
-          { role: 'user', content: `以下是需要压缩融合的剧情总结（${labels[field]}）：\n\n${content}\n\n请输出压缩融合后的版本。` },
-        ];
-        
-        const res = await cdApiComplete(msgs, s);
-        if (res && res.text && res.text.trim()) {
-          // 去除可能的多余标记
-          let compressed = res.text.trim();
-          // 如果AI在开头加了标签名，去掉
-          const labelRe = new RegExp(`^${labels[field]}[：:]\\s*`);
-          compressed = compressed.replace(labelRe, '');
-          arc[field] = compressed;
-          cdAddLog('api_res', `压缩完成: ${labels[field]} (${compressed.length}字)`, {压缩前: content.length, 压缩后: compressed.length});
-        }
-      }
-      
-      await cdSaveData(curData);
-      await cdRefreshInjection();
-      toastr.success('剧情档案压缩融合完成');
-      cdAddLog('info', '剧情档案压缩融合完成');
-    } catch (e) {
-      cdWarn('压缩融合失败', e);
-      cdAddLog('error', '压缩融合失败: ' + e.message);
-      toastr.error('压缩融合失败: ' + e.message);
-    } finally {
-      cdBusy = false;
-    }
-  });
-}
-
-/** 楼层管理器：浏览所有AI楼层，勾选要补写的 */
-async function cdRenderFloors() {
-  const data = await cdGetData();
-  const allAi = await cdGetAiFloors();
-  const lastRecordedFloor = data.lastFloor ?? -1;
   
   // 标记已记录和未记录
   const floorItems = allAi.map(m => ({
@@ -3627,6 +3502,43 @@ async function cdRenderFloors() {
           <button class="cd-btn-primary" id="cd-do-write-selected-floors">写勾选的楼层 (<span id="cd-selected-count">${unrecordedCount}</span>)</button>
           <button class="cd-btn-secondary" id="cd-do-select-all-unrecorded">全选未记录</button>
         </div>
+
+        <div class="cd-write-divider"></div>
+        <div class="cd-write-section">
+          <h3 class="cd-write-title"><i class="fa-regular fa-compress"></i> 压缩融合剧情档案</h3>
+          <p class="cd-write-desc">将多次累计的剧情总结压缩融合成一版紧凑的版本</p>
+          <div class="cd-write-compress-info">
+            <span>主线 ${(arc.mainline || '').length} 字</span>
+            <span>支线 ${(arc.sideline || '').length} 字</span>
+            <span>状态 ${(arc.states || '').length} 字</span>
+            <span>未解决 ${(arc.unresolved || '').length} 字</span>
+          </div>
+          <button class="cd-btn-primary" id="cd-do-compress" ${hasArchive ? '' : 'disabled'} style="margin-top:8px;">
+            ${hasArchive ? '压缩融合剧情档案' : '暂无剧情档案可压缩'}
+          </button>
+        </div>
+
+        <div class="cd-write-divider"></div>
+        <div class="cd-write-section">
+          <h3 class="cd-write-title"><i class="fa-regular fa-clock-rotate-left"></i> 历史补写</h3>
+          <p class="cd-write-desc">仅提取 AI 楼层，跳过用户/系统消息；已记录的楼层也可强制补写</p>
+
+          <div class="cd-write-range" style="margin-bottom:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <span style="font-size:0.62rem;color:#8b7355;">手动区间补写：从</span>
+            <input type="number" id="cd-backfill-start" class="cd-input" placeholder="起始" min="0" style="width:60px;">
+            <span style="font-size:0.62rem;color:#8b7355;">到</span>
+            <input type="number" id="cd-backfill-end" class="cd-input" placeholder="结束" min="0" style="width:60px;">
+            <button class="cd-btn-primary" id="cd-backfill-range">立即补写</button>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <span style="font-size:0.62rem;color:#8b7355;">检测到 ${unrecordedCount} 个历史楼层未记录，每批</span>
+            <input type="number" id="cd-backfill-batch" class="cd-input" value="30" min="5" max="100" style="width:55px;">
+            <span style="font-size:0.62rem;color:#8b7355;">楼</span>
+            <button class="cd-btn-primary" id="cd-backfill-all">一键补写全部</button>
+          </div>
+          <div id="cd-backfill-progress" style="margin-top:6px;font-size:0.58rem;color:#6b5a48;"></div>
+        </div>
       </div>
     `);
     
@@ -3653,6 +3565,109 @@ async function cdRenderFloors() {
       // 按 message_id 排序
       selected.sort((a, b) => a.message_id - b.message_id);
       cdRunDiary({ manual: true, silent: false, extraFloors: selected });
+    });
+
+    // 压缩融合剧情档案
+    $('#cd-do-compress').off('click').on('click', async function () {
+      if (cdBusy) { toastr.info('正在处理，请稍候'); return; }
+      const curData = await cdGetData();
+      const arc2 = curData.archive;
+      if (!arc2 || !(arc2.mainline || arc2.sideline || arc2.states || arc2.unresolved)) {
+        toastr.info('没有剧情档案需要压缩'); return;
+      }
+      cdBusy = true;
+      try {
+        toastr.info('正在压缩融合剧情档案...');
+        cdAddLog('info', '开始压缩融合剧情档案');
+        const fields = ['mainline','sideline','states','unresolved'];
+        const labels = { mainline:'主线', sideline:'支线', states:'重要状态变化', unresolved:'未解决事项' };
+        for (const field of fields) {
+          const content = arc2[field];
+          if (!content || content.length < 100) continue;
+          cdAddLog('api_req', `压缩请求: ${labels[field]} (${content.length}字)`);
+          const msgs = [
+            { role: 'system', content: COMPRESS_PROMPT },
+            { role: 'user', content: `以下是需要压缩融合的剧情总结（${labels[field]}）：
+
+${content}
+
+请输出压缩融合后的版本。` },
+          ];
+          const res = await cdApiComplete(msgs, s);
+          if (res && res.text && res.text.trim()) {
+            let compressed = res.text.trim();
+            const labelRe = new RegExp(`^${labels[field]}[：:]\s*`);
+            compressed = compressed.replace(labelRe, '');
+            arc2[field] = compressed;
+            cdAddLog('api_res', `压缩完成: ${labels[field]} (${compressed.length}字)`, {压缩前: content.length, 压缩后: compressed.length});
+          }
+        }
+        await cdSaveData(curData);
+        await cdRefreshInjection();
+        toastr.success('剧情档案压缩融合完成');
+        cdAddLog('info', '剧情档案压缩融合完成');
+      } catch (e) {
+        cdWarn('压缩融合失败', e);
+        cdAddLog('error', '压缩融合失败: ' + e.message);
+        toastr.error('压缩融合失败: ' + e.message);
+      } finally {
+        cdBusy = false;
+      }
+    });
+
+    // ---------- 历史补写 ----------
+    // 手动区间补写
+    $('#cd-backfill-range').off('click').on('click', async function () {
+      const start = parseInt($('#cd-backfill-start').val(), 10);
+      const end = parseInt($('#cd-backfill-end').val(), 10);
+      if (isNaN(start) || isNaN(end) || start < 0 || end < 0 || start > end) {
+        toastr.warning('请输入有效的楼层范围（起始 ≤ 结束）'); return;
+      }
+      const range = allAi.filter(m => m.message_id >= start && m.message_id <= end && !m.is_user && !m.is_system);
+      if (!range.length) { toastr.info('该区间没有 AI 楼层'); return; }
+      range.sort((a, b) => a.message_id - b.message_id);
+      $('#cd-backfill-progress').text(`正在补写 #${start}-#${end} 楼层（${range.length} 个AI楼层）...`);
+      try {
+        await cdRunDiary({ manual: true, silent: false, extraFloors: range });
+        $('#cd-backfill-progress').text('补写完成');
+      } catch (e) {
+        $('#cd-backfill-progress').text('补写失败: ' + e.message);
+      }
+    });
+
+    // 一键分批补写全部未记录
+    $('#cd-backfill-all').off('click').on('click', async function () {
+      if (cdBusy) { toastr.info('正在处理，请稍候'); return; }
+      const batchSize = parseInt($('#cd-backfill-batch').val(), 10) || 30;
+      // 未记录的 AI 楼层
+      const unrecordedAi = allAi.slice().sort((a, b) => a.message_id - b.message_id); // 0楼到最近楼层的全部AI楼层
+      if (!unrecordedAi.length) { toastr.info('没有未记录的历史楼层'); return; }
+      unrecordedAi.sort((a, b) => a.message_id - b.message_id); // 从最早到最新
+      // 分批
+      const batches = [];
+      for (let i = 0; i < unrecordedAi.length; i += batchSize) {
+        batches.push(unrecordedAi.slice(i, i + batchSize));
+      }
+      if (unrecordedAi.length > 100) {
+        if (!confirm(`检测到 ${unrecordedAi.length} 个历史楼层未记录，将分 ${batches.length} 批写入（每批 ${batchSize} 楼），确定继续？`)) return;
+      } else if (!confirm(`检测到 ${unrecordedAi.length} 个历史楼层未记录，将分 ${batches.length} 批写入，确定继续？`)) {
+        return;
+      }
+      for (let bi = 0; bi < batches.length; bi++) {
+        const batch = batches[bi];
+        $('#cd-backfill-progress').text(`正在补写第 ${bi+1}/${batches.length} 批（#${batch[0].message_id}-#${batch[batch.length-1].message_id}楼）...`);
+        try {
+          await cdRunDiary({ manual: true, silent: true, extraFloors: batch });
+          await new Promise(r => setTimeout(r, 500)); // 批间停顿，等锁释放
+          $('#cd-backfill-progress').text(`已完成第 ${bi+1}/${batches.length} 批`);
+        } catch (e) {
+          $('#cd-backfill-progress').text(`第 ${bi+1} 批失败: ${e.message}，已停止`);
+          toastr.error('补写中断: ' + e.message);
+          return;
+        }
+      }
+      $('#cd-backfill-progress').text('全部补写完成！');
+      toastr.success(`历史补写完成，共 ${unrecordedAi.length} 楼`);
     });
   }
   
@@ -4659,14 +4674,14 @@ async function cdRenderEgg() {
       { icon: 'fa-regular fa-timeline', title: '时间线', text: '基于剧情档案的时间线展示。AI 在写剧情档案时会为每条事件标注【时间标记】，时间线会按时间顺序排列所有事件。主线/支线/状态/未解决用不同颜色区分。' },
       { icon: 'fa-regular fa-diagram-project', title: '关系力图', text: '角色关系可视化。使用弹簧算法自动布局，角色为彩色节点，关系为彩色连线（绿=友好/红=排斥/灰=中立）。下方保留文本关系列表备查。' },
       { icon: 'fa-regular fa-gem', title: '娱乐页面', text: '集中展示数据总览、成就系统、塔罗占卜、角色剧场、年度报告和名场面收藏。每个功能都是独立的趣味体验。' },
-      { icon: 'fa-regular fa-feather-pointed', title: '写日记', text: '包含立即写新增和指定楼层范围两种模式。还支持压缩融合剧情档案功能。' },
+      { icon: 'fa-regular fa-layer-group', title: '楼层', text: '浏览所有 AI 楼层，勾选未记录楼层补写，支持手动区间补写和一键分批补写全部历史，并可压缩融合剧情档案。' },
       { icon: 'fa-regular fa-chart-simple', title: '统计视图', text: '展示角色数、日记总数、关系条目数、楼层范围四个核心指标。下方有角色心情分布 SVG 条形图，展示前8个角色的心情占比。' },
       { icon: 'fa-regular fa-download', title: '导出功能', text: '支持导出 JSON（完整数据结构，可重新导入）和 Markdown（可读格式，含角色日记/关系/剧情档案）。导入 JSON 时按 message_id 去重合并。' },
       { icon: 'fa-regular fa-clipboard-list', title: '日志功能', text: '记录所有 API 请求、响应、报错信息，保存在 localStorage 中，刷新页面不丢失。方便排查配置问题和调试。' },
       { icon: 'fa-regular fa-gear', title: '设置说明', text: '总开关控制是否自动写日记。自动总结独立开关。触发间隔默认5楼。路人转正阈值默认3次。来源可选手动配置或跟随酒馆连接。' },
       { icon: 'fa-regular fa-brain', title: '心理补全', text: '在浏览视图中点击日记旁的 🧠 按钮，AI 会基于该日记内容生成一段200-500字的角色内心独白，保存在日记详情中。' },
       { icon: 'fa-regular fa-star', title: '名场面收藏', text: '在浏览视图中点击日记旁的 ☆ 按钮即可收藏。收藏的条目会出现在彩蛋页面的"名场面收藏"列表中，方便回顾精彩瞬间。' },
-      { icon: 'fa-regular fa-compress', title: '压缩融合', text: '在写日记面板中可对剧情档案进行压缩融合。AI 会将多次累计的剧情总结融合成一版更紧凑的版本，保留所有关键信息。' },
+      { icon: 'fa-regular fa-compress', title: '压缩融合', text: '在楼层视图中可对剧情档案进行压缩融合。AI 会将多次累计的剧情总结融合成一版更紧凑的版本，保留所有关键信息。' },
       { icon: 'fa-regular fa-link', title: '跨聊天继承', text: '在旧聊天中导出 JSON，切换到新聊天后导入。数据按角色和 message_id 合并，不会重复添加已有条目。' },
       { icon: 'fa-regular fa-pen-to-square', title: '日记编辑', text: '在浏览视图中点击 ✏️ 按钮可编辑单条日记的全部字段：日期、心情、态度、正文、心声、关键事件。编辑后自动刷新注入。' },
       { icon: 'fa-regular fa-trash-can', title: '日记删除', text: '在浏览视图中点击 🗑️ 按钮可删除单条日记。如果角色的最后一条日记被删除，自动清除该角色的别名和 promoted 状态。' },
@@ -4927,6 +4942,17 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
+    version: 'v2.1.4.2',
+    date: '2026-07-31',
+    items: [
+      '移除「写日记」独立视图，楼层视图承担补写与压缩融合功能',
+      '新增「历史补写」功能：支持手动选择楼层区间强制补写（仅提取 AI 楼层，不受已记录状态限制）',
+      '新增「一键补写全部」：自动检测全部历史 AI 楼层，从最早到最新分批写入，可调每批楼层数，实时显示进度',
+      '注销浏览/时间线界面的撤销栏提示',
+      '修复主 API 与向量嵌入 API 来源识别、首次配置拉取模型等问题',
+    ],
+  },
+  {
     version: 'v2.1.4.1',
     date: '2026-07-31',
     items: [
@@ -5001,7 +5027,7 @@ const CHANGELOG = [
     items: [
       '基础功能：自动/手动写角色日记、关系提取、剧情档案',
       '三次并发 API 调用改为单次合并调用',
-      '设置面板、写日记面板、浏览视图、时间线视图',
+      '设置面板、楼层视图、浏览视图、时间线视图',
       '娱乐页面：成就系统、塔罗占卜、角色剧场、年度报告',
       '名场面收藏、心情分布、心情趋势热力图',
       '压缩融合剧情档案功能',
@@ -5047,7 +5073,7 @@ function cdRenderHelp() {
         <tr><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);vertical-align:top;white-space:nowrap;color:#6b5a48;font-weight:500;">时间线</td><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);">剧情档案按主线/支线/状态/未解决分类展示，保留时间线竖线样式</td></tr>
         <tr><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);vertical-align:top;white-space:nowrap;color:#6b5a48;font-weight:500;">关系</td><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);">角色关系力导向图可视化，绿=友好 红=排斥 灰=中立，下方附文本列表</td></tr>
         <tr><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);vertical-align:top;white-space:nowrap;color:#6b5a48;font-weight:500;">管理</td><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);">多选删除日记/关系/卡牌/快照，一键清空所有数据</td></tr>
-        <tr><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);vertical-align:top;white-space:nowrap;color:#6b5a48;font-weight:500;">写日记</td><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);">立即写新增楼层、指定楼层范围补写、压缩融合剧情档案</td></tr>
+        
         <tr><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);vertical-align:top;white-space:nowrap;color:#6b5a48;font-weight:500;">楼层</td><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);">浏览所有 AI 楼层，勾选未记录的楼层补写日记</td></tr>
         <tr><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);vertical-align:top;white-space:nowrap;color:#6b5a48;font-weight:500;">娱乐</td><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);">成就系统、塔罗占卜、角色对白剧场、年度报告、名场面收藏、数据总览</td></tr>
         <tr><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);vertical-align:top;white-space:nowrap;color:#6b5a48;font-weight:500;">日志</td><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);">API 请求/响应日志，含 Token 用量、缓存命中、费用统计，支持导出</td></tr>
@@ -5128,7 +5154,7 @@ function cdRenderHelp() {
         <li>浏览视图中点击 ✏️ 可编辑单条日记，点击 🧠 可生成角色内心独白</li>
         <li>点击 ☆ 收藏精彩日记，在娱乐页面集中回顾</li>
         <li>切换聊天后可通过导出 JSON → 导入 JSON 迁移数据</li>
-        <li>剧情档案太长时，在写日记面板点「压缩融合剧情档案」一键精简</li>
+        <li>剧情档案太长时，在楼层视图点「压缩融合剧情档案」一键精简</li>
         <li>日志面板的「检查自动触发」按钮可查看还需几楼触发自动总结</li>
       </ul>
 
