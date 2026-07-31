@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.1.4';
+const PLUGIN_VERSION = '2.1.4.1';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -114,16 +114,20 @@ function cdWarn(...args) {
 async function cdApiComplete(messages, s) {
   const start = Date.now();
   let text;
-  // 自动推断实际使用的 API 来源：优先取有配置的非 tavern 来源，否则用 tavern
-  const effectiveSource = (s.endpoints?.openai?.url ? 'openai' :
-                           s.endpoints?.claude?.url ? 'claude' :
-                           s.endpoints?.gemini?.url ? 'gemini' : 'tavern');
-  switch (effectiveSource) {
+  // 优先按用户显式配置的来源，否则按已配置的 endpoints 推断；都无则用酒馆
+  let effSrc = s.source === 'tavern' ? 'tavern' : s.source;
+  if (!(effSrc === 'openai' || effSrc === 'claude' || effSrc === 'gemini') ||
+      (effSrc !== 'tavern' && !s.endpoints?.[effSrc]?.url)) {
+    effSrc = (s.endpoints?.openai?.url ? 'openai' :
+              s.endpoints?.claude?.url ? 'claude' :
+              s.endpoints?.gemini?.url ? 'gemini' : 'tavern');
+  }
+  switch (effSrc) {
     case 'tavern': text = await callTavern(messages, s); break;
     case 'openai': text = await callOpenAI(messages, s.endpoints.openai, s); break;
     case 'claude': text = await callClaude(messages, s.endpoints.claude, s); break;
     case 'gemini': text = await callGemini(messages, s.endpoints.gemini, s); break;
-    default: throw new Error('未知接口来源: ' + effectiveSource);
+    default: throw new Error('未知接口来源: ' + effSrc);
   }
   const elapsed = Date.now() - start;
   // 读取 callXxx 中可能记录的 token 用量
@@ -4312,11 +4316,6 @@ function cdRenderExport() {
 /* ============================== 设置面板 ============================== */
 async function cdRenderSettings() {
   const s = cdGetSettings();
-  // 自动推断当前生效的 API 来源：优先取有配置的非 tavern 来源，否则为 current tavern
-  const effSrc = (s.endpoints?.openai?.url ? 'openai' :
-                  s.endpoints?.claude?.url ? 'claude' :
-                  s.endpoints?.gemini?.url ? 'gemini' : 'tavern');
-  const curEp = effSrc !== 'tavern' ? (s.endpoints[effSrc] || {}) : {};
   const panel = $('#cd-settings-panel');
   panel.html(`
     <h2 class="cd-settings-h2"><i class="fa-regular fa-gear"></i> 偏好</h2>
@@ -4464,24 +4463,24 @@ async function cdRenderSettings() {
     <h3 class="cd-settings-sub">API 来源</h3>
 
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
-      <button class="cd-s-src-btn cd-btn-secondary" data-source="tavern" style="font-size:0.62rem;padding:4px 10px;${effSrc === 'tavern' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">当前酒馆</button>
-      <button class="cd-s-src-btn cd-btn-secondary" data-source="openai" style="font-size:0.62rem;padding:4px 10px;${effSrc === 'openai' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">OpenAI</button>
-      <button class="cd-s-src-btn cd-btn-secondary" data-source="claude" style="font-size:0.62rem;padding:4px 10px;${effSrc === 'claude' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">Claude</button>
-      <button class="cd-s-src-btn cd-btn-secondary" data-source="gemini" style="font-size:0.62rem;padding:4px 10px;${effSrc === 'gemini' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">Gemini</button>
+      <button class="cd-s-src-btn cd-btn-secondary" data-source="tavern" style="font-size:0.62rem;padding:4px 10px;${(!s.source || s.source === 'tavern' || !s.endpoints?.[s.source]?.url) ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">当前酒馆</button>
+      <button class="cd-s-src-btn cd-btn-secondary" data-source="openai" style="font-size:0.62rem;padding:4px 10px;${s.source === 'openai' && s.endpoints?.openai?.url ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">OpenAI</button>
+      <button class="cd-s-src-btn cd-btn-secondary" data-source="claude" style="font-size:0.62rem;padding:4px 10px;${s.source === 'claude' && s.endpoints?.claude?.url ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">Claude</button>
+      <button class="cd-s-src-btn cd-btn-secondary" data-source="gemini" style="font-size:0.62rem;padding:4px 10px;${s.source === 'gemini' && s.endpoints?.gemini?.url ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">Gemini</button>
     </div>
 
-    <div id="cd-custom-api" style="display:${effSrc === 'tavern' ? 'none' : 'block'};">
+    <div id="cd-custom-api" style="display:${(!s.source || s.source === 'tavern') && !(s.endpoints?.openai?.url || s.endpoints?.claude?.url || s.endpoints?.gemini?.url) ? 'none' : 'block'};">
       <div class="cd-set-row">
         <label>接口地址</label>
-        <input type="text" id="cd-s-url" value="${curEp.url || ''}" class="cd-input" placeholder="https://api...">
+        <input type="text" id="cd-s-url" value="${s.endpoints?.openai?.url || s.endpoints?.claude?.url || s.endpoints?.gemini?.url || ''}" class="cd-input" placeholder="https://api...">
       </div>
       <div class="cd-set-row">
         <label>密钥</label>
-        <input type="password" id="cd-s-key" value="${curEp.key || ''}" class="cd-input" placeholder="sk-...">
+        <input type="password" id="cd-s-key" value="${s.endpoints?.openai?.key || s.endpoints?.claude?.key || s.endpoints?.gemini?.key || ''}" class="cd-input" placeholder="sk-...">
       </div>
       <div class="cd-set-row">
         <label>模型</label>
-        <input type="text" id="cd-s-model" value="${curEp.model || ''}" class="cd-input" list="cd-models" placeholder="模型名">
+        <input type="text" id="cd-s-model" value="${s.endpoints?.openai?.model || s.endpoints?.claude?.model || s.endpoints?.gemini?.model || ''}" class="cd-input" list="cd-models" placeholder="模型名">
         <datalist id="cd-models"></datalist>
       </div>
       <button class="cd-btn-secondary" id="cd-btn-fetch-models">获取可用模型</button>
@@ -4490,14 +4489,18 @@ async function cdRenderSettings() {
     <button class="cd-btn-primary" id="cd-btn-save-settings">应用</button>
   `);
 
-    // 记录当前编辑中的 API 来源（默认取 effSrc）
-  window._cdActiveSrc = effSrc;
+  // 记录当前编辑来源（初始取已配置的非tavern来源，否则为酒馆）
+  window._cdEditSource =
+    (s.endpoints?.openai?.url ? 'openai' :
+     s.endpoints?.claude?.url ? 'claude' :
+     s.endpoints?.gemini?.url ? 'gemini' : 'tavern');
+
   // 事件绑定 - API来源按钮切换
   $(document).off('click', '.cd-s-src-btn').on('click', '.cd-s-src-btn', function () {
     $('.cd-s-src-btn').css('background', '').css('color', '').css('border-color', '');
     $(this).css('background', '#c9a87c').css('color', '#fff').css('border-color', '#c9a87c');
     const src = $(this).data('source');
-    window._cdActiveSrc = src;
+    window._cdEditSource = src;   // 记录当前点选来源
     $('#cd-custom-api').toggle(src !== 'tavern');
     if (src !== 'tavern') {
       const endpoints = cdGetSettings().endpoints || {};
@@ -4515,8 +4518,14 @@ async function cdRenderSettings() {
   });
 
   $('#cd-btn-fetch-models').on('click', async function () {
-    const src = window._cdActiveSrc || 'tavern';
-    if (src === 'tavern') return;
+    // 优先用当前点选来源；否则按输入框地址推断（兼容首次配置未保存的情况）
+    let src = window._cdEditSource;
+    if (!src || src === 'tavern') {
+      const urlVal = ($('#cd-s-url').val() || '').toLowerCase();
+      src = (urlVal.includes('anthropic') ? 'claude' :
+             urlVal.includes('googleapis') || urlVal.includes('generativelanguage') ? 'gemini' : 'openai');
+    }
+    if (src === 'tavern') { toastr.info('当前为酒馆内置接口，无需拉取模型'); return; }
     const ep = { url: $('#cd-s-url').val(), key: $('#cd-s-key').val(), model: $('#cd-s-model').val() };
     const models = await cdFetchModels(src, ep);
     if (!models.length) {
@@ -4589,7 +4598,8 @@ async function cdRenderSettings() {
   });
 
   $('#cd-btn-save-settings').on('click', function () {
-    const src = window._cdActiveSrc || 'tavern';
+    // 用当前点选的来源保存（用户点了哪个按钮就存哪个）
+    const src = window._cdEditSource || 'tavern';
     const endpoints = Object.assign({}, cdGetSettings().endpoints || {});
     if (src !== 'tavern') {
       endpoints[src] = {
@@ -4917,16 +4927,13 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
-    version: 'v2.1.4',
+    version: 'v2.1.4.1',
     date: '2026-07-31',
     items: [
-      '新增「🧠 向量」视图：剧情档案支持向量化检索模式',
-      '新增嵌入 API 独立配置：支持 OpenAI 兼容/Gemini/酒馆内置，可拉取模型列表',
-      '新增向量化入库/检索完整流程：写日记后自动向量化新事件，下次检索最相关 Top-N 条注入 prompt',
-      '新增向量库管理：清空/重建/查看统计/测试检索',
-      '新增关键词匹配降级：未配置嵌入 API 时自动降级为关键词检索',
-      '说明页面新增「向量化检索」说明章节',
-      '设置面板 API 来源改为按钮选择器，点选自动填充默认地址，移动端操作更友好',
+      '修复主 API 来源识别：保存/拉取/调用改用当前点选的来源，多 API 并存时各来源互不干扰',
+      '修复向量嵌入 API 同一问题：向量界面来源选择、拉取模型、保存统一改用当前点选来源',
+      '修复首次配置尚未保存时拉取模型失败的问题',
+      '修复实际调用时 source 存储异常导致走错接口的问题',
     ],
   },
   {
@@ -5501,12 +5508,16 @@ async function cdRenderVector() {
       <div id="cd-vec-test-result" style="margin-top:8px;font-size:0.62rem;color:#6b5a48;"></div>
     </div>
   `);
+
+  // 记录当前点选的向量嵌入来源（初始取已保存的 ve.source）
+  window._cdEditVecSource = ve.source || 'tavern';
   
   // 服务商按钮切换
   $(document).off('click', '.cd-vec-emb-btn').on('click', '.cd-vec-emb-btn', function () {
     $('.cd-vec-emb-btn').css('background', '').css('color', '').css('border-color', '');
     $(this).css('background', '#c9a87c').css('color', '#fff').css('border-color', '#c9a87c');
     const val = $(this).data('source');
+    window._cdEditVecSource = val;   // 记录当前点选的向量嵌入来源
     // 自动填充默认值
     if (val === 'openai' && !$('#cd-vec-emb-url').val()) {
       $('#cd-vec-emb-url').val('https://api.openai.com/v1');
@@ -5531,7 +5542,7 @@ async function cdRenderVector() {
     const btn = $(this);
     btn.prop('disabled', true).text('测试中...');
     $('#cd-vec-emb-test-result').html('');
-    const source = $('.cd-vec-emb-btn[style*="background: #c9a87c"]').data('source') || 'tavern';
+    const source = window._cdEditVecSource || 'tavern';
     const fakeSettings = { vectorEmbedding: {
       source: source,
       url: $('#cd-vec-emb-url').val() || '',
@@ -5559,7 +5570,7 @@ async function cdRenderVector() {
   
   // 拉取模型列表
   $('#cd-vec-fetch-models').off('click').on('click', async function () {
-    const source = $('.cd-vec-emb-btn[style*="background: #c9a87c"]').data('source') || 'openai';
+    const source = window._cdEditVecSource || 'openai';
     if (source === 'tavern' || source === 'gemini') {
       toastr.info('仅 OpenAI 兼容接口支持拉取模型');
       return;
@@ -5612,7 +5623,7 @@ async function cdRenderVector() {
     settings.vectorTopK = Math.max(1, Math.min(20, topK));
     settings.vectorThreshold = Math.max(0, Math.min(1, threshold));
     settings.vectorEmbedding = {
-      source: $('.cd-vec-emb-btn[style*="background: #c9a87c"]').data('source') || 'tavern',
+      source: window._cdEditVecSource || 'tavern',
       url: $('#cd-vec-emb-url').val() || '',
       key: $('#cd-vec-emb-key').val() || '',
       model: $('#cd-vec-emb-model').val() || 'text-embedding-ada-002',
@@ -5683,22 +5694,4 @@ function escapeHtml(s) {
 
 function escapeAttr(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '"').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}>
-          </div>
-        `).join('') : '<div style="opacity:0.4;">无匹配结果</div>'}
-      </div>
-    `;
-    $('#cd-vec-test-result').html(resultHtml);
-  });
-}
-
-function escapeHtml(s) {
-  if (!s) return '';
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '"');
-}
-
-function escapeAttr(s) {
-  return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '"').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}g, '"').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}g, '"').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
