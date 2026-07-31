@@ -916,3 +916,82 @@
 .cd-night .cd-slider { background: rgba(255, 255, 255, 0.12); }
 .cd-night .cd-slider:before { background: #d4c9b8; }
 .cd-night .cd-switch input:checked + .cd-slider { background: #cdb69b; }
+
+/* ---- 浏览概览折叠(A3) ---- */
+.cd-browse-overview-wrap {
+  margin-bottom: 10px;
+  border: 1px solid rgba(180,150,120,0.07);
+  border-radius: 8px;
+  background: rgba(248,243,237,0.18);
+}
+.cd-browse-overview-summary {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 10px; cursor: pointer; user-select: none;
+  font-size: calc(0.68rem * var(--cd-fs, 1)); font-weight: 600; color: #6b5a48;
+}
+.cd-browse-overview-summary::-webkit-details-marker { display: none; }
+.cd-browse-overview-toggle {
+  margin-left: auto; font-size: calc(0.55rem * var(--cd-fs, 1));
+  transition: transform 0.15s; color: #a08a68;
+}
+.cd-browse-overview-wrap[open] .cd-browse-overview-toggle { transform: rotate(180deg); }
+.cd-browse-overview-wrap .cd-browse-overview { margin-bottom: 0; padding: 4px 10px 10px; }
+
+
+/* ---- 单条日记折叠结构 ---- */
+.cd-entry-summary {
+  display: flex; align-items: center; gap: 6px;
+  cursor: pointer; user-select: none;
+  font-size: calc(0.62rem * var(--cd-fs, 1)); color: #8b7355;
+  opacity: 0.55;
+}
+.cd-entry-summary::-webkit-details-marker { display: none; }
+.cd-entry[open] > .cd-entry-summary { opacity: 0.85; color: #6b5a48; }
+.cd-entry-toggle {
+  margin-left: auto; font-size: calc(0.55rem * var(--cd-fs, 1));
+  transition: transform 0.15s; color: #a08a68;
+}
+.cd-entry[open] > .cd-entry-summary .cd-entry-toggle { transform: rotate(90deg); }
+.cd-entry-head {
+  display: flex; justify-content: flex-end; align-items: center; gap: 4px;
+  margin-bottom: 4px; opacity: 0.9;
+}
+.cd-entry-content { padding-top: 1px; }
+.cd-entry-summary .cd-entry-date { font-weight: 600; color: #6b5a48; }
+
+
+/* ---- C7: 单条日记卡片分区 ---- */
+.cd-entry {
+  padding: 8px 10px;
+  margin: 5px 0;
+  border-radius: 8px;
+  border: 1px solid rgba(180,150,120,0.10);
+  background: rgba(250,247,241,0.55);
+}
+.cd-entry + .cd-entry { margin-top: 6px; }
+.cd-entry:hover { background: rgba(250,247,241,0.9); }
+.cd-entry[open] { border-color: rgba(180,150,120,0.20); background: rgba(250,246,238,0.75); }
+.cd-card-body .cd-entry:last-child { border-bottom: 1px solid rgba(180,150,120,0.10); }
+
+
+/* ---- D8: 查看更早按钮 ---- */
+.cd-load-more {
+  display: block; width: 100%; margin-top: 8px; padding: 6px;
+  font-size: calc(0.62rem * var(--cd-fs, 1)); color: #6b5a48;
+  background: rgba(180,150,120,0.06);
+  border: 1px dashed rgba(180,150,120,0.35); border-radius: 6px;
+  cursor: pointer;
+}
+.cd-load-more:hover { background: rgba(180,150,120,0.12); }
+
+
+/* ---- 名场面收藏折叠展开 ---- */
+.cd-egg-fav-list { max-height: none; overflow-y: visible; }
+.cd-egg-fav-item { padding: 6px 8px; border-radius: 6px; background: rgba(248,243,237,0.3); border: 1px solid rgba(180,150,120,0.08); }
+.cd-egg-fav-summary { display: flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; }
+.cd-egg-fav-summary::-webkit-details-marker { display: none; }
+.cd-egg-fav-toggle { margin-left: auto; font-size: calc(0.6rem * var(--cd-fs, 1)); color: #a08a68; transition: transform 0.15s; }
+.cd-egg-fav-item[open] .cd-egg-fav-toggle { transform: rotate(90deg); }
+.cd-egg-fav-body { border-top: 1px dashed rgba(180,150,120,0.15); margin-top: 6px; padding-top: 6px; }
+.cd-egg-fav-secret { font-size: calc(0.62rem * var(--cd-fs, 1)); color: #8b5cf6; opacity: 0.8; font-style: italic; margin-top: 3px; }
+.cd-egg-fav-events { font-size: calc(0.62rem * var(--cd-fs, 1)); color: #8b7355; opacity: 0.6; margin-top: 3px; }

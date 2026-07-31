@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.2.1';
+const PLUGIN_VERSION = '2.2.2';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -1007,6 +1007,54 @@ function cdSaveSettings(patch) {
 }
 
 /* ============================== 本局数据 (chat variables) ============================== */
+/* ===== 全局收藏库(跨聊天持久保存) ===== */
+const CD_FAV_KEY = 'cdGlobalFavs';
+function cdGetGlobalFavs() {
+  try {
+    const raw = localStorage.getItem(CD_FAV_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
+}
+function cdSaveGlobalFavs(arr) {
+  try { localStorage.setItem(CD_FAV_KEY, JSON.stringify(arr)); } catch (e) {}
+}
+function cdFavKey(name, e) {
+  return name + '|' + (e.date || '') + '|' + String(e.entry || '').slice(0, 60);
+}
+function cdFavSnapshot(name, e) {
+  return { __key: cdFavKey(name, e), name: name, date: e.date || '', turn: e.turn || '', mood: e.mood || '', attitude: e.attitude_to_user || '', entry: e.entry || '', secret: e.secret || '', key_events: Array.isArray(e.key_events) ? e.key_events.slice() : [], ts: Date.now() };
+}
+function cdSyncGlobalFav(name, e, fav) {
+  const arr = cdGetGlobalFavs();
+  const key = cdFavKey(name, e);
+  const i = arr.findIndex(function (x) { return x.__key === key; });
+  if (fav) {
+    if (i === -1) arr.unshift(cdFavSnapshot(name, e));
+  } else {
+    if (i !== -1) arr.splice(i, 1);
+  }
+  cdSaveGlobalFavs(arr);
+}
+function cdFavMigrate(data) {
+  if (!data || !data.diaries) return;
+  const arr = cdGetGlobalFavs();
+  let changed = false;
+  for (const name of Object.keys(data.diaries)) {
+    const list = data.diaries[name];
+    if (!Array.isArray(list)) continue;
+    for (const e of list) {
+      if (e && e.fav) {
+        const key = cdFavKey(name, e);
+        if (!arr.some(function (x) { return x.__key === key; })) {
+          arr.push(cdFavSnapshot(name, e));
+          changed = true;
+        }
+      }
+    }
+  }
+  if (changed) cdSaveGlobalFavs(arr);
+}
 async function cdGetData() {
   try {
     // ST 原生：用 chatMetadata 存数据
@@ -1351,6 +1399,9 @@ async function cdRollbackFrom(floor) {
 
 /** 互斥锁 — 防止并发生成导致数据损坏 */
 let cdBusy = false;
+let cdBrowseLoadMore = {};   // 浏览界面每个角色已显示(懒加载)的日记条数
+let cdBusyLabel = '';   // 当前占用锁的任务名
+let cdBusyAt = 0;        // 占用锁开始时间戳
 let cdPending = false;  // 当锁住时又收到触发信号, 标记"完成后再跑一轮"
 
 /**
@@ -1954,10 +2005,28 @@ function cdShowAllFloors() {
   cdLog('cdShowAllFloors: 恢复了', count, '条隐藏的楼层');
 }
 
+/** 当锁被占用时, 提示用户当前在执行什么任务(并显示已运行秒数) */
+function cdBusyToast() {
+  if (typeof toastr === 'undefined') { if (typeof cdAddLog==='function') cdAddLog('warn', '有任务在执行中: ' + (cdBusyLabel||'未知')); return; }
+  const secs = cdBusyAt ? Math.max(1, Math.round((Date.now() - cdBusyAt)/1000)) : '';
+  const what = cdBusyLabel ? '「' + cdBusyLabel + '」' : '某个任务';
+  const pend = secs ? '（已运行 ' + secs + ' 秒）' : '';
+  toastr.info('当前正在执行 ' + what + '，请稍候' + pend);
+}
+/** 通用超时封装：防止某一路 API 请求永久挂起导致整个任务(以及 cdBusy 锁)卡死 */
+function cdWithTimeout(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error((label ? label + ' ' : '') + '请求超时(' + ms + 'ms)')), ms);
+    Promise.resolve(promise).then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); }
+    );
+  });
+}
 async function cdRunDiary({ manual = false, silent = false, extraFloors = null } = {}) {
   if (cdBusy) {
-    cdAddLog('warn', '写日记被跳过：已有任务在进行中');
-    if (manual) { toastr.info('正在写, 请稍候'); cdPending = true; }
+    cdAddLog('warn', '写日记被跳过：已有任务在进行中，当前任务: ' + (cdBusyLabel||'未知'));
+    if (manual) { cdBusyToast(); cdPending = true; }
     return;
   }
 
@@ -1991,7 +2060,7 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
   if (windowFloors.length > (s.maxWindowFloors || 40))
     windowFloors = windowFloors.slice(-(s.maxWindowFloors || 40));
 
-  cdBusy = true;
+  cdBusy = true; cdBusyLabel = '写日记'; cdBusyAt = Date.now();
   try {
     if (!silent && typeof toastr !== "undefined") toastr.info(`开始写日记 (${windowFloors.length} 个新楼层)...`);
 
@@ -2017,7 +2086,7 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
       const start = Date.now();
       cdAddLog('api_req', `[${name}] 开始请求`, {消息数: msgs.length});
       try {
-        const res = await cdApiComplete(msgs, s);
+        const res = await cdWithTimeout(cdApiComplete(msgs, s), 120000, name);
         const elapsed = Date.now() - start;
         const logDetail = {长度: res.text.length, 预览: res.text.slice(0, 100), 耗时: elapsed + 'ms'};
         if (res.tokenUsage) {
@@ -2040,7 +2109,8 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
       }
     };
 
-    const results = await Promise.allSettled(calls.map(c => _cdCallApi(c.name, c.msgs)));
+    const _cdRunAll = Promise.allSettled(calls.map(c => _cdCallApi(c.name, c.msgs)));
+    const results = await Promise.race([_cdRunAll, new Promise(r => setTimeout(() => r([]), 300000))]);
     
     // 把 results 按 name 映射回 diaryRes/relRes/archiveRes
     const resultMap = {};
@@ -2134,7 +2204,7 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
               { role: 'system', content: '你是一个章回体标题生成器。根据剧情摘要，生成一个4-8字的标题。格式严格为：第X回：XXXX' },
               { role: 'user', content: `剧情摘要：${latestText.slice(0, 300)}\n\n生成标题：` },
             ];
-            const titleRes = await cdApiComplete(titleMsgs, s);
+            const titleRes = await cdWithTimeout(cdApiComplete(titleMsgs, s), 120000, '章回标题');
             const match = titleRes?.text?.match(/第\d+回[：:]\S{4,10}/);
             if (match) {
               data._chapterTitle = match[0];
@@ -2272,7 +2342,7 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
                 { role: 'system', content: COMPRESS_PROMPT },
                 { role: 'user', content: `请压缩以下${labels[field]}：\n\n${content}` },
               ];
-              const res = await cdApiComplete(msgs, s);
+              const res = await cdWithTimeout(cdApiComplete(msgs, s), 120000, '自动压缩');
               if (res?.text?.trim()) {
                 let compressed = res.text.trim();
                 compressed = compressed.replace(new RegExp(`^${labels[field]}[：:]\\s*`), '');
@@ -2326,7 +2396,7 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
     cdAddLog('error', '写日记过程异常: ' + e.message);
     if (manual && !silent) toastr.error('写日记失败: ' + e.message);
   } finally {
-    cdBusy = false;
+    cdBusy = false; cdBusyLabel = '';
     // 如果在忙期间又收到触发, 再跑一次
     if (cdPending) {
       cdPending = false;
@@ -2996,6 +3066,7 @@ function cdInjectFab() {
   // 拖拽
   $(`#${FAB_ID}`).on('mousedown', function (e) {
     cdFabDragged = false;
+    document.getElementById(FAB_ID).style.opacity = '1'; // 拖动时恢复不透明
     const el = document.getElementById(FAB_ID);
     const rect = el.getBoundingClientRect();
     cdFabDragState = { startX: e.clientX, startY: e.clientY, origLeft: rect.left, origTop: rect.top };
@@ -3015,6 +3086,7 @@ function cdInjectFab() {
   });
   document.getElementById(FAB_ID).addEventListener('touchstart', function (e) {
     cdFabDragged = false;
+    document.getElementById(FAB_ID).style.opacity = '1'; // 拖动时恢复不透明
     const el = document.getElementById(FAB_ID);
     const rect = el.getBoundingClientRect();
     cdFabDragState = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, origLeft: rect.left, origTop: rect.top };
@@ -3052,7 +3124,28 @@ function cdOnFabDragEnd() {
   if (cdFabDragged) {
     const f = document.getElementById(FAB_ID);
     const r = f.getBoundingClientRect();
-    localStorage.setItem('cd-fab-pos', JSON.stringify({ left: r.left, top: r.top }));
+    // 吸附: 靠近左右边缘时自动贴边(留 8px), 否则停在原位
+    const snap = 4;     // 球碰到屏幕左右边缘时才触发吸附
+    let newLeft = r.left;
+    let docked = false;
+    const w = f.offsetWidth;
+    if (r.left < snap) {
+      newLeft = -w / 4;              // 吸附左边缘: 露出约 3/4 球
+      docked = true;
+    } else if (window.innerWidth - (r.left + w) < snap) {
+      newLeft = window.innerWidth - (w * 3) / 4;   // 吸附右边缘: 露出左边约 3/4 球
+      docked = true;
+    }
+    if (docked) {
+      f.style.left = newLeft + 'px';
+      f.style.right = 'auto';
+      f.style.transform = '';
+      f.style.opacity = '0.6';
+    } else {
+      f.style.opacity = '1';
+    }
+    const fr = f.getBoundingClientRect();
+    localStorage.setItem('cd-fab-pos', JSON.stringify({ left: fr.left, top: fr.top }));
   }
   cdFabDragState = null;
   $(document).off('mousemove.cdfab mouseup.cdfab');
@@ -3276,10 +3369,15 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
   // 概要区域（横向：心情分布 | 热力图 | 随机回顾），只有未搜索/未过滤时显示
   let overviewHtml = '';
   if (!filterText && !filterChar) {
+    // 概览折叠状态记忆(保存在 localStorage)
+    const ov = localStorage.getItem('cdBrowseOverviewOpen');
+    const ovOpen = ov === null ? true : ov === '1';
     const moodChartHtml = cdRenderMoodChart(data);
     const heatmapHtml = cdRenderHeatmap(data);
     const randomHtml = cdRenderRandomEntry(data);
-    overviewHtml = `<div class="cd-browse-overview">
+    overviewHtml = `<details class="cd-browse-overview-wrap" ${ovOpen ? 'open' : ''}>
+      <summary class="cd-browse-overview-summary"><i class="fa-solid fa-chart-pie"></i> 数据概览<span class="cd-browse-overview-toggle"><i class="fa-solid fa-chevron-down"></i></span></summary>
+      <div class="cd-browse-overview">
       <div class="cd-browse-overview-item cd-browse-mood">
         <h4 class="cd-browse-overview-title"><i class="fa-regular fa-chart-line"></i> 心情分布</h4>
         <p class="cd-browse-overview-desc">各角色不同心情的出现频率，彩色条越长表示该心情越常见</p>
@@ -3294,7 +3392,8 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
         <h4 class="cd-browse-overview-title"><i class="fa-regular fa-dice"></i> 随机回顾</h4>
         <div id="cd-browse-random-container">${randomHtml}</div>
       </div>
-    </div>`;
+    </div>
+    </details>`;
     // 随机回顾换一条
     setTimeout(() => {
       $('#cd-browse-random-container').on('click', '#cd-random-refresh', function () {
@@ -3334,30 +3433,55 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
         </span>
       </summary>
       <div class="cd-card-body">
-        ${displayList.slice().reverse().map((e, idx) => {
-          const realIdx = data.diaries[name].indexOf(e);
-          const entryHtml = filterText ? highlightMatch(escapeHtml(e.entry || ''), filterText) : escapeHtml(e.entry || '');
-          const secretHtml = e.secret ? (filterText ? highlightMatch(escapeHtml(e.secret), filterText) : escapeHtml(e.secret)) : '';
-          return `<div class="cd-entry" data-name="${escapeAttr(name)}" data-idx="${realIdx}" data-floor="${e.message_id || ''}">
-            <div class="cd-entry-head">
-              <span class="cd-entry-date">${escapeHtml(e.date || '第' + e.turn + '楼')}</span>
-              ${e.mood ? `<span class="cd-entry-mood">${cdMoodEmoji(e.mood)} ${filterText ? highlightMatch(escapeHtml(e.mood), filterText) : escapeHtml(e.mood)}</span>` : ''}
-              ${e.attitude_to_user ? `<span class="cd-entry-att">对用户: ${escapeHtml(e.attitude_to_user)}</span>` : ''}
-              <button class="cd-entry-fav-btn ${e.fav ? 'cd-fav-active' : ''}" title="收藏"><i class="fa-regular fa-star"></i></button>
-              <button class="cd-entry-psyche-btn" title="心理补全"><i class="fa-regular fa-brain"></i></button>
-              <button class="cd-entry-edit-btn" title="编辑这条日记"><i class="fa-regular fa-pen-to-square"></i></button>
-              <button class="cd-entry-del-btn" title="删除这条日记"><i class="fa-regular fa-trash-can"></i></button>
-            </div>
-            <div class="cd-entry-text">${entryHtml}</div>
-            ${secretHtml ? `<div class="cd-entry-secret">${secretHtml}</div>` : ''}
-            ${e.key_events && e.key_events.length ? `<div class="cd-entry-events">${filterText ? highlightMatch(escapeHtml(e.key_events.join(' · ')), filterText) : escapeHtml(e.key_events.join(' · '))}</div>` : ''}
-          </div>`;
-        }).join('')}
+        ${(() => {
+            const __total = displayList.slice().reverse();
+            const __per = (cdBrowseLoadMore && cdBrowseLoadMore[name]) || 8;
+            const __shown = __total.slice(0, __per);
+            let __html = __shown.map((e2, idx2) => {
+              const realIdx = data.diaries[name].indexOf(e2);
+              const entryHtml2 = filterText ? highlightMatch(escapeHtml(e2.entry || ''), filterText) : escapeHtml(e2.entry || '');
+              const secretHtml2 = e2.secret ? (filterText ? highlightMatch(escapeHtml(e2.secret), filterText) : escapeHtml(e2.secret)) : '';
+              return `<details class="cd-entry" data-name="${escapeAttr(name)}" data-idx="${realIdx}" data-floor="${e2.message_id || ''}" ${realIdx === data.diaries[name].length - 1 ? 'open' : ''}>
+                <summary class="cd-entry-summary">
+                  <span class="cd-entry-date">${escapeHtml(e2.date || '第' + e2.turn + '楼')}</span>
+                  ${e2.mood ? `<span class="cd-entry-mood">${cdMoodEmoji(e2.mood)} ${filterText ? highlightMatch(escapeHtml(e2.mood), filterText) : escapeHtml(e2.mood)}</span>` : ''}
+                  ${e2.attitude_to_user ? `<span class="cd-entry-att">对用户: ${escapeHtml(e2.attitude_to_user)}</span>` : ''}
+                  <span class="cd-entry-toggle"><i class="fa-solid fa-chevron-right"></i></span>
+                </summary>
+                <div class="cd-entry-content">
+                  <div class="cd-entry-head">
+                    <button class="cd-entry-fav-btn ${e2.fav ? 'cd-fav-active' : ''}" title="收藏"><i class="fa-regular fa-star"></i></button>
+                    <button class="cd-entry-psyche-btn" title="心理补全"><i class="fa-regular fa-brain"></i></button>
+                    <button class="cd-entry-edit-btn" title="编辑这条日记"><i class="fa-regular fa-pen-to-square"></i></button>
+                    <button class="cd-entry-del-btn" title="删除这条日记"><i class="fa-regular fa-trash-can"></i></button>
+                  </div>
+                  <div class="cd-entry-text">${entryHtml2}</div>
+                  ${secretHtml2 ? `<div class="cd-entry-secret">${secretHtml2}</div>` : ''}
+                  ${e2.key_events && e2.key_events.length ? `<div class="cd-entry-events">${filterText ? highlightMatch(escapeHtml(e2.key_events.join(' · ')), filterText) : escapeHtml(e2.key_events.join(' · '))}</div>` : ''}
+                </div>
+              </details>`;
+            }).join('');
+            if (__total.length > __shown.length) {
+              __html += `<button class="cd-load-more" data-name="${escapeAttr(name)}" title="加载更早的日记"><i class="fa-solid fa-arrow-up"></i> 查看更早 ${__total.length - __shown.length} 篇</button>`;
+            }
+            return __html;
+          })()}
       </div>
     </details>`;
   }
   html += '</div>';
   $('#cd-content').html(html);
+  // 记住概览折叠状态
+  $('#cd-content .cd-browse-overview-wrap').off('toggle').on('toggle', function () {
+    localStorage.setItem('cdBrowseOverviewOpen', this.open ? '1' : '0');
+  });
+  // 懒加载: 查看更早
+  $('#cd-content').off('click', '.cd-load-more').on('click', '.cd-load-more', function () {
+    const nm = $(this).data('name');
+    cdBrowseLoadMore[nm] = ((cdBrowseLoadMore[nm] || 8)) + 8;
+    cdRenderBrowse($('#cd-browse-search-input').val(), $('#cd-browse-char-filter').val());
+    return false;
+  });
 
   // 搜索框输入防抖
   let searchTimer;
@@ -3423,6 +3547,7 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
     const entry = curData.diaries[name]?.[idx];
     if (!entry) return;
     entry.fav = !entry.fav;
+    cdSyncGlobalFav(name, entry, entry.fav);
     btn.toggleClass('cd-fav-active', entry.fav);
     await cdSaveData(curData);
   });
@@ -4033,13 +4158,13 @@ async function cdRenderFloors() {
 
     // 压缩融合剧情档案
     $('#cd-do-compress').off('click').on('click', async function () {
-      if (cdBusy) { toastr.info('正在处理，请稍候'); return; }
+      if (cdBusy) { cdBusyToast(); return; }
       const curData = await cdGetData();
       const arc2 = curData.archive;
       if (!arc2 || !(arc2.mainline || arc2.sideline || arc2.states || arc2.unresolved)) {
         toastr.info('没有剧情档案需要压缩'); return;
       }
-      cdBusy = true;
+      cdBusy = true; cdBusyLabel = '压缩融合剧情档案'; cdBusyAt = Date.now();
       try {
         toastr.info('正在压缩融合剧情档案...');
         cdAddLog('info', '开始压缩融合剧情档案');
@@ -4057,7 +4182,7 @@ ${content}
 
 请输出压缩融合后的版本。` },
           ];
-          const res = await cdApiComplete(msgs, s);
+          const res = await cdWithTimeout(cdApiComplete(msgs, s), 120000, '功能请求');
           if (res && res.text && res.text.trim()) {
             let compressed = res.text.trim();
             const labelRe = new RegExp(`^${labels[field]}[：:]\s*`);
@@ -4075,7 +4200,7 @@ ${content}
         cdAddLog('error', '压缩融合失败: ' + e.message);
         toastr.error('压缩融合失败: ' + e.message);
       } finally {
-        cdBusy = false;
+        cdBusy = false; cdBusyLabel = '';
       }
     });
 
@@ -4101,7 +4226,7 @@ ${content}
 
     // 一键分批补写全部未记录
     $('#cd-backfill-all').off('click').on('click', async function () {
-      if (cdBusy) { toastr.info('正在处理，请稍候'); return; }
+      if (cdBusy) { cdBusyToast(); return; }
       const batchSize = parseInt($('#cd-backfill-batch').val(), 10) || 30;
       // 未记录的 AI 楼层
       const unrecordedAi = allAi.slice().sort((a, b) => a.message_id - b.message_id); // 0楼到最近楼层的全部AI楼层
@@ -4396,8 +4521,8 @@ const PSYCHE_PROMPT = `你现在是角色的"内心世界分析师"。基于以�
 4. 输出纯文本，不要解释。`;
 
 async function cdExpandPsyche(name, entry, data) {
-  if (cdBusy) { toastr.info('正在处理，请稍候'); return; }
-  cdBusy = true;
+  if (cdBusy) { cdBusyToast(); return; }
+  cdBusy = true; cdBusyLabel = '生成心理独白'; cdBusyAt = Date.now();
   try {
     toastr.info(`正在生成 ${name} 的心理独白...`);
     cdAddLog('api_req', `心理补全请求: ${name}`);
@@ -4406,7 +4531,7 @@ async function cdExpandPsyche(name, entry, data) {
       { role: 'system', content: PSYCHE_PROMPT },
       { role: 'user', content: `角色：${name}\n时间：${entry.date || '第' + entry.turn + '楼'}\n心情：${entry.mood || '未知'}\n\n日记内容：\n${entry.entry}\n\n心声：${entry.secret || '（无）'}\n\n请写出该角色此刻的内心独白。` },
     ];
-    const res = await cdApiComplete(msgs, s);
+    const res = await cdWithTimeout(cdApiComplete(msgs, s), 120000, '功能请求');
     if (res && res.text && res.text.trim()) {
       cdAddLog('api_res', `心理补全完成: ${res.text.trim().length}字`, {预览: res.text.trim().slice(0, 80)});
       return res.text.trim();
@@ -4416,7 +4541,7 @@ async function cdExpandPsyche(name, entry, data) {
     cdAddLog('error', '心理补全失败: ' + e.message);
     toastr.error('心理补全失败: ' + e.message);
   } finally {
-    cdBusy = false;
+    cdBusy = false; cdBusyLabel = '';
   }
   return null;
 }
@@ -5176,13 +5301,9 @@ async function cdRenderEgg() {
   }
   const egg = randomEgg();
   
-  // 名场面列表
-  const allEntries = [];
-  for (const [name, list] of Object.entries(data.diaries || {})) {
-    for (const e of list) {
-      if (e.fav) allEntries.push({ name, ...e });
-    }
-  }
+  // 名场面列表（全局收藏库，跨聊天持久）
+  cdFavMigrate(data); // 兼容：把当前聊天已收藏的并入全局库(去重)
+  const allEntries = cdGetGlobalFavs().slice().reverse();
   
   const achievements = cdCalcAchievements(data);
   const unlocked = achievements.filter(a => a.unlocked);
@@ -5291,13 +5412,18 @@ async function cdRenderEgg() {
         <h3 class="cd-write-title"><i class="fa-regular fa-star"></i> 名场面收藏 (${allEntries.length})</h3>
         ${allEntries.length ? `<div class="cd-egg-fav-list">
           ${allEntries.map(e => `
-            <div class="cd-egg-fav-item">
-              <div class="cd-egg-fav-head">
+            <details class="cd-egg-fav-item">
+              <summary class="cd-egg-fav-summary">
                 <span class="cd-egg-fav-name">${escapeHtml(e.name)}</span>
                 <span class="cd-egg-fav-date">${escapeHtml(e.date || '第' + e.turn + '楼')}</span>
+                <span class="cd-egg-fav-toggle"><i class="fa-solid fa-chevron-right"></i></span>
+              </summary>
+              <div class="cd-egg-fav-body">
+                <div class="cd-egg-fav-text">${escapeHtml(e.entry || '')}</div>
+                ${e.secret ? `<div class="cd-egg-fav-secret">💭 心声：${escapeHtml(e.secret)}</div>` : ''}
+                ${e.key_events && e.key_events.length ? `<div class="cd-egg-fav-events">📌 ${escapeHtml(Array.isArray(e.key_events) ? e.key_events.join(' · ') : e.key_events)}</div>` : ''}
               </div>
-              <div class="cd-egg-fav-text">${escapeHtml(e.entry || '').slice(0, 120)}${(e.entry || '').length > 120 ? '...' : ''}</div>
-            </div>`).join('')}
+            </details>`).join('')}
         </div>` : '<p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;padding:8px;">在浏览视图中点击日记的 ☆ 按钮收藏</p>'}
       </div>
 
@@ -5312,8 +5438,8 @@ async function cdRenderEgg() {
 
   // 塔罗占卜
   $('#cd-do-tarot').off('click').on('click', async function () {
-    if (cdBusy) { toastr.info('正在处理，请稍候'); return; }
-    cdBusy = true;
+    if (cdBusy) { cdBusyToast(); return; }
+    cdBusy = true; cdBusyLabel = '塔罗占卜'; cdBusyAt = Date.now();
     try {
       tarotData = tarotData || (await cdGetData());
       const names = Object.keys(tarotData.diaries || {});
@@ -5330,7 +5456,7 @@ async function cdRenderEgg() {
         { role: 'system', content: '你是一个塔罗牌占卜师。根据当前的剧情状态，为抽到的三张牌给出剧情意义上的解读。每张牌解读2-3句话，贴合剧情。输出格式：\n【过去】牌名：解读\n【现在】牌名：解读\n【未来】牌名：解读' },
         { role: 'user', content: `当前剧情有角色：${names.join('、')}\n关系数：${totalRels}\n日记总数：${totalEntries}\n\n抽取的牌：\n过去：${picked[0]}\n现在：${picked[1]}\n未来：${picked[2]}\n\n请给出占卜解读。` },
       ];
-      const res = await cdApiComplete(msgs, s);
+      const res = await cdWithTimeout(cdApiComplete(msgs, s), 120000, '功能请求');
       if (res && res.text) {
         $('#cd-tarot-result').html(`<div class="cd-tarot-result">${escapeHtml(res.text).replace(/\n/g, '<br>')}</div>`);
         const d = await cdGetData();
@@ -5342,16 +5468,16 @@ async function cdRenderEgg() {
       cdWarn('塔罗占卜失败', e);
       toastr.error('占卜失败: ' + e.message);
     } finally {
-      cdBusy = false;
+      cdBusy = false; cdBusyLabel = '';
     }
   });
 
   // 角色对白剧场
   $('#cd-do-theater').off('click').on('click', async function () {
-    if (cdBusy) { toastr.info('正在处理，请稍候'); return; }
+    if (cdBusy) { cdBusyToast(); return; }
     const checked = $('#cd-theater-chars .cd-theater-cb:checked').map(function(){return $(this).val();}).get();
     if (checked.length < 2) { toastr.warning('请至少选择2个角色'); return; }
-    cdBusy = true;
+    cdBusy = true; cdBusyLabel = '角色对白剧场'; cdBusyAt = Date.now();
     try {
       const s = cdGetSettings();
       const charInfo = checked.map(n => {
@@ -5366,7 +5492,7 @@ async function cdRenderEgg() {
           return Object.entries(rels).filter(([to]) => checked.includes(to)).map(([to, r]) => `${n}→${to}: ${r.type||''}`).join('\n');
         }).filter(Boolean).join('\n')}\n\n请生成一段对话。` },
       ];
-      const res = await cdApiComplete(msgs, s);
+      const res = await cdWithTimeout(cdApiComplete(msgs, s), 120000, '功能请求');
       if (res && res.text) {
         $('#cd-theater-result').html(`<div class="cd-theater-result">${escapeHtml(res.text).replace(/\n/g, '<br>')}</div>`);
         const d = await cdGetData();
@@ -5378,14 +5504,14 @@ async function cdRenderEgg() {
       cdWarn('角色剧场失败', e);
       toastr.error('剧场生成失败: ' + e.message);
     } finally {
-      cdBusy = false;
+      cdBusy = false; cdBusyLabel = '';
     }
   });
 
   // 年度报告
   $('#cd-do-report').off('click').on('click', async function () {
-    if (cdBusy) { toastr.info('正在处理，请稍候'); return; }
-    cdBusy = true;
+    if (cdBusy) { cdBusyToast(); return; }
+    cdBusy = true; cdBusyLabel = '年度报告'; cdBusyAt = Date.now();
     try {
       const s = cdGetSettings();
       const data2 = await cdGetData();
@@ -5401,7 +5527,7 @@ async function cdRenderEgg() {
         { role: 'system', content: '你是一个数据分析师。根据剧情数据生成一份趣味年度报告，风格活泼幽默。输出格式自由，包含：最活跃角色、心情之最、关系之最、经典语录推荐等。300字以内。' },
         { role: 'user', content: reportData },
       ];
-      const res = await cdApiComplete(msgs, s);
+      const res = await cdWithTimeout(cdApiComplete(msgs, s), 120000, '功能请求');
       if (res && res.text) {
         $('#cd-report-result').html(`<div class="cd-report-result">${escapeHtml(res.text).replace(/\n/g, '<br>')}</div>`);
         const d = await cdGetData();
@@ -5413,7 +5539,7 @@ async function cdRenderEgg() {
       cdWarn('年度报告失败', e);
       toastr.error('报告生成失败: ' + e.message);
     } finally {
-      cdBusy = false;
+      cdBusy = false; cdBusyLabel = '';
     }
   });
 
@@ -5422,6 +5548,17 @@ async function cdRenderEgg() {
 
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
+  {
+    version: 'v2.2.2',
+    date: '2026-08-01',
+    items: [
+      '浏览体验升级：数据概览区可折叠并记忆折叠状态；单条日记默认折叠、最新一篇默认展开',
+      '单条日记卡片化分区、条间更清晰；日记按角色分批懒加载，点「查看更早」再取更早记录',
+      '新增全局收藏：收藏的日记存入全局库，切换任意聊天后仍可在娱乐页名场面看到；名场面支持点开看全文',
+      '悬浮球增强：拖到屏幕左右边缘自动吸附、贴边只露约3/4球、贴边颜色变淡，碰到边才触发吸附',
+      '稳定性：给全部 API 调用加超时兜底，杜绝写日记卡死锁不释放；被跳过时提示当前占用的具体任务',
+    ],
+  },
   {
     version: 'v2.2.1',
     date: '2026-08-01',
@@ -5571,7 +5708,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.2.1 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.2.2 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
