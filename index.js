@@ -4312,6 +4312,11 @@ function cdRenderExport() {
 /* ============================== 设置面板 ============================== */
 async function cdRenderSettings() {
   const s = cdGetSettings();
+  // 自动推断当前生效的 API 来源：优先取有配置的非 tavern 来源，否则为 current tavern
+  const effSrc = (s.endpoints?.openai?.url ? 'openai' :
+                  s.endpoints?.claude?.url ? 'claude' :
+                  s.endpoints?.gemini?.url ? 'gemini' : 'tavern');
+  const curEp = effSrc !== 'tavern' ? (s.endpoints[effSrc] || {}) : {};
   const panel = $('#cd-settings-panel');
   panel.html(`
     <h2 class="cd-settings-h2"><i class="fa-regular fa-gear"></i> 偏好</h2>
@@ -4459,24 +4464,24 @@ async function cdRenderSettings() {
     <h3 class="cd-settings-sub">API 来源</h3>
 
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
-      <button class="cd-s-src-btn cd-btn-secondary" data-source="tavern" style="font-size:0.62rem;padding:4px 10px;${(!s.source || s.source === 'tavern' || !s.endpoints?.[s.source]?.url) ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">当前酒馆</button>
-      <button class="cd-s-src-btn cd-btn-secondary" data-source="openai" style="font-size:0.62rem;padding:4px 10px;${s.source === 'openai' && s.endpoints?.openai?.url ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">OpenAI</button>
-      <button class="cd-s-src-btn cd-btn-secondary" data-source="claude" style="font-size:0.62rem;padding:4px 10px;${s.source === 'claude' && s.endpoints?.claude?.url ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">Claude</button>
-      <button class="cd-s-src-btn cd-btn-secondary" data-source="gemini" style="font-size:0.62rem;padding:4px 10px;${s.source === 'gemini' && s.endpoints?.gemini?.url ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">Gemini</button>
+      <button class="cd-s-src-btn cd-btn-secondary" data-source="tavern" style="font-size:0.62rem;padding:4px 10px;${effSrc === 'tavern' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">当前酒馆</button>
+      <button class="cd-s-src-btn cd-btn-secondary" data-source="openai" style="font-size:0.62rem;padding:4px 10px;${effSrc === 'openai' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">OpenAI</button>
+      <button class="cd-s-src-btn cd-btn-secondary" data-source="claude" style="font-size:0.62rem;padding:4px 10px;${effSrc === 'claude' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">Claude</button>
+      <button class="cd-s-src-btn cd-btn-secondary" data-source="gemini" style="font-size:0.62rem;padding:4px 10px;${effSrc === 'gemini' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">Gemini</button>
     </div>
 
-    <div id="cd-custom-api" style="display:${(!s.source || s.source === 'tavern') && !(s.endpoints?.openai?.url || s.endpoints?.claude?.url || s.endpoints?.gemini?.url) ? 'none' : 'block'};">
+    <div id="cd-custom-api" style="display:${effSrc === 'tavern' ? 'none' : 'block'};">
       <div class="cd-set-row">
         <label>接口地址</label>
-        <input type="text" id="cd-s-url" value="${s.endpoints?.openai?.url || s.endpoints?.claude?.url || s.endpoints?.gemini?.url || ''}" class="cd-input" placeholder="https://api...">
+        <input type="text" id="cd-s-url" value="${curEp.url || ''}" class="cd-input" placeholder="https://api...">
       </div>
       <div class="cd-set-row">
         <label>密钥</label>
-        <input type="password" id="cd-s-key" value="${s.endpoints?.openai?.key || s.endpoints?.claude?.key || s.endpoints?.gemini?.key || ''}" class="cd-input" placeholder="sk-...">
+        <input type="password" id="cd-s-key" value="${curEp.key || ''}" class="cd-input" placeholder="sk-...">
       </div>
       <div class="cd-set-row">
         <label>模型</label>
-        <input type="text" id="cd-s-model" value="${s.endpoints?.openai?.model || s.endpoints?.claude?.model || s.endpoints?.gemini?.model || ''}" class="cd-input" list="cd-models" placeholder="模型名">
+        <input type="text" id="cd-s-model" value="${curEp.model || ''}" class="cd-input" list="cd-models" placeholder="模型名">
         <datalist id="cd-models"></datalist>
       </div>
       <button class="cd-btn-secondary" id="cd-btn-fetch-models">获取可用模型</button>
@@ -4485,11 +4490,14 @@ async function cdRenderSettings() {
     <button class="cd-btn-primary" id="cd-btn-save-settings">应用</button>
   `);
 
+    // 记录当前编辑中的 API 来源（默认取 effSrc）
+  window._cdActiveSrc = effSrc;
   // 事件绑定 - API来源按钮切换
   $(document).off('click', '.cd-s-src-btn').on('click', '.cd-s-src-btn', function () {
     $('.cd-s-src-btn').css('background', '').css('color', '').css('border-color', '');
     $(this).css('background', '#c9a87c').css('color', '#fff').css('border-color', '#c9a87c');
     const src = $(this).data('source');
+    window._cdActiveSrc = src;
     $('#cd-custom-api').toggle(src !== 'tavern');
     if (src !== 'tavern') {
       const endpoints = cdGetSettings().endpoints || {};
@@ -4507,7 +4515,7 @@ async function cdRenderSettings() {
   });
 
   $('#cd-btn-fetch-models').on('click', async function () {
-    const src = $('.cd-s-src-btn[style*="background: #c9a87c"]').data('source') || 'tavern';
+    const src = window._cdActiveSrc || 'tavern';
     if (src === 'tavern') return;
     const ep = { url: $('#cd-s-url').val(), key: $('#cd-s-key').val(), model: $('#cd-s-model').val() };
     const models = await cdFetchModels(src, ep);
@@ -4581,7 +4589,7 @@ async function cdRenderSettings() {
   });
 
   $('#cd-btn-save-settings').on('click', function () {
-    const src = $('.cd-s-src-btn[style*="background: #c9a87c"]').data('source') || 'tavern';
+    const src = window._cdActiveSrc || 'tavern';
     const endpoints = Object.assign({}, cdGetSettings().endpoints || {});
     if (src !== 'tavern') {
       endpoints[src] = {
@@ -5675,4 +5683,22 @@ function escapeHtml(s) {
 
 function escapeAttr(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '"').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}>
+          </div>
+        `).join('') : '<div style="opacity:0.4;">无匹配结果</div>'}
+      </div>
+    `;
+    $('#cd-vec-test-result').html(resultHtml);
+  });
+}
+
+function escapeHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '"');
+}
+
+function escapeAttr(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '"').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}g, '"').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}g, '"').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
