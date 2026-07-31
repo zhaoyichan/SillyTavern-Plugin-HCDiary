@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.2.2';
+const PLUGIN_VERSION = '2.2.3';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -5549,6 +5549,13 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
+    version: 'v2.2.3',
+    date: '2026-08-01',
+    items: [
+      '修复「向量」设置中每次召回条数被锁定最大 20 的问题：放开到 1~100，自定义 N 层保存/切换标签后不再回退为默认值',
+    ],
+  },
+  {
     version: 'v2.2.2',
     date: '2026-08-01',
     items: [
@@ -5708,7 +5715,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.2.2 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.2.3 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
@@ -6365,7 +6372,7 @@ async function cdRenderVector() {
       <div class="cd-egg-section">
         <div class="cd-set-row">
           <label>每次召回条数</label>
-          <input type="number" id="cd-vec-topk" value="${s.vectorTopK || 5}" min="1" max="20" style="width:50px;font-size: calc(0.68rem * var(--cd-fs, 1));padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
+          <input type="number" id="cd-vec-topk" value="${s.vectorTopK || 5}" min="1" max="100" style="width:50px;font-size: calc(0.68rem * var(--cd-fs, 1));padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
         </div>
         <div class="cd-set-row">
           <label>相似度阈值</label>
@@ -6570,7 +6577,7 @@ async function cdRenderVector() {
     const settings = cdGetSettings();
     settings.archiveMode = mode;
     settings.diaryMode = $('#cd-content input[name="cd-vec-diary-mode"]:checked').val() || 'append';
-    settings.vectorTopK = Math.max(1, Math.min(20, topK));
+    settings.vectorTopK = Math.max(1, Math.min(100, topK));
     settings.vectorThreshold = Math.max(0, Math.min(1, threshold));
     settings.vectorEmbedding = {
       source: window._cdEditVecSource || 'tavern',
