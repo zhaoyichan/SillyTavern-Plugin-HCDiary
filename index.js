@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.1.5';
+const PLUGIN_VERSION = '2.2.0';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -52,6 +52,49 @@ const DEFAULT_SETTINGS = {
     claude:  { url: 'https://api.anthropic.com/v1',             key: '', model: '' },
     gemini:  { url: 'https://generativelanguage.googleapis.com/v1beta', key: '', model: '' },
   },
+  // ===== 填表功能（LIWE 情报表）=====
+  liveTableEnabled  : true,      // 填表总开关
+  liveTableInject   : true,      // 是否把填表提示词发给正文AI
+  liveCharFields    : ['状态', '衣着', '对用户好感', '备注'],  // 状态表子字段（可自定义增删改）
+  liveLowerFields   : ['经历事情', '持有物品', '任务'],        // 履历字段（可自定义增删改）
+  liveTableMode     : 'auto',    // 填表触发模式: 'auto'(正文末尾自动) | 'batch'(每N层批量)
+  liveTableBatch    : 1,         // N层批量：每 N 层填一次(1=每层都填)
+  liveTableBatchSource : 'tavern', // 批量模式API来源: 'tavern'(跟随酒馆) 或 openai/claude/gemini
+  liveTableTag      : 'liwe',    // 标签名
+  liveTablePrompt   : `[填表指令]
+请根据刚刚的剧情，在回复末尾用一个 <details><summary>情报表</summary> 折叠块包裹，内部输出一个 <liwe> 标签，标签内按以下格式记录：
+
+地点: （当前所在的地点，变化才输出）
+角色名: 具体角色名|状态:…|衣着:…|对用户好感:…|备注:…
+（每个出现的角色一行；子字段用 | 分隔、格式为「子字段:值」；该角色子字段有变化才输出该行，覆盖更新）
+
+经历事情: （{{user}}经历的事情，每条带时间地点，如「第三日·遗忘之城：内容」；有新经历才输出）
+持有物品: （{{user}}新获得的物品，一件一条；有新物品才输出）
+任务: （{{user}}的新任务或更新，一条一条；有新任务才输出）
+
+规则：
+0. 履历（经历/物品/任务）均指主角 {{user}} 的。
+1. 如实从剧情提取，不编造；本次无变化/无关的项不要输出。
+2. 角色行、地点为「覆盖更新」；经历/物品/任务为「追加新条目」。
+3. 经历事情务必带上时间地点。
+4. 用 <details><summary>情报表</summary> ... </details> 包裹 <liwe> 标签，正文只显示折叠条、不直接显示表格内容。`,
+
+  // 发送给正文AI的填表提示词（可自由编辑，用 <liwe> 输出标签）
+  liveTableDef: [  // 表结构定义（全局，所有聊天共用模板）
+    {
+      id: 'T-main', name: '角色情报表', enabled: true,
+      upper: [  // 上半区：覆盖式（快照，只留最新）
+        { key: '人物穿着', keyword: '穿着' },
+        { key: '角色状态', keyword: '状态' },
+        { key: '对用户感想', keyword: '感想' },
+      ],
+      lower: [  // 下半区：追加式（履历，逐条换行累积）
+        { key: '地点', keyword: '地点' },
+        { key: '物品', keyword: '物品' },
+        { key: '事件', keyword: '事件' },
+      ],
+    },
+  ],
 };
 
 /** ---------- 越狱前缀 ---------- */
@@ -88,6 +131,7 @@ function emptyData() {
     snapshots: [],     // 历史快照 [{ time, type, diaryCount, relationCount, archiveUpdated, archiveEntryCount, chapterTitle }]
     archiveVectors: [], // 剧情档案向量库 [{ id, text, category, vector }]
     diaryVectors: [],  // 角色日记向量库 [{ id, role, text, vector }]
+    liveTableData: [], // 填表功能：当前聊天的填表值 [{ defId, upper:{}, lower:{} }]
   };
 }
 
@@ -938,7 +982,13 @@ function parseRelationJson(text) {
 function cdGetSettings() {
   const { extSettings } = _cdGetStCtx();
   if (extSettings) {
-    if (!extSettings[PLUGIN_ID]) extSettings[PLUGIN_ID] = Object.assign({}, DEFAULT_SETTINGS);
+    if (!extSettings[PLUGIN_ID]) {
+      extSettings[PLUGIN_ID] = Object.assign({}, DEFAULT_SETTINGS);
+    } else {
+      // 旧设置补齐新增字段默认值（保留已存值）
+      extSettings[PLUGIN_ID] = Object.assign({}, DEFAULT_SETTINGS, extSettings[PLUGIN_ID]);
+    }
+
     return extSettings[PLUGIN_ID];
   }
   // fallback to global
@@ -1321,9 +1371,10 @@ async function cdBuildDiaryInjectionText() {
     const data = await cdGetData();
     const s = cdGetSettings();
     const diaryNames = Object.keys(data.diaries || {});
-    if (!diaryNames.length && !data.archive && !Object.keys(data.relations||{}).length) return '';
     
     const blocks = [];
+    // [填表调试] 确认函数被调用
+    console.log('[CD填表debug] cdBuildDiaryInjectionText 被调用, diaries=', diaryNames.length, ', archive=', !!data.archive, ', injectDiary=', s.injectDiary, ', liveTableEnabled=', s.liveTableEnabled, ', liveTableInject=', s.liveTableInject);
     
     // ====== 角色日记（受 injectDiary 控制）======
     if (s.injectDiary !== false && diaryNames.length) {
@@ -1377,7 +1428,40 @@ async function cdBuildDiaryInjectionText() {
       }
     }
     
-    return blocks.join('\n');
+    const base = blocks.join('\n');
+    // ── 追加填表指令（含当前表格现状，作为记忆背景）──
+    let lt = '';
+    try {
+      const ltInstr = cdBuildLiveTableInjectText();
+      const ltData = Array.isArray(data.liveTableData) && data.liveTableData[0] ? data.liveTableData[0] : null;
+      let tableTxt = '';
+      const ltLower = (ltData && ltData.lower) || {};
+      const hasLower = Object.keys(ltLower).some((k) => ltLower[k]);
+      if (ltData && (ltData.location || Object.keys(ltData.chars || {}).length || hasLower)) {
+        const tl = [];
+        if (ltData.location) tl.push('地点: ' + ltData.location);
+        const chars = ltData.chars || {};
+        const _cf = Array.isArray(s.liveCharFields) && s.liveCharFields.length ? s.liveCharFields : ['状态', '衣着', '对用户好感', '备注'];
+        const _lf = Array.isArray(s.liveLowerFields) && s.liveLowerFields.length ? s.liveLowerFields : ['经历事情', '持有物品', '任务'];
+        Object.keys(chars).forEach((name) => {
+          const ch = chars[name] || {};
+          tl.push(`角色名: ${name}|` + _cf.map((f) => `${f}:${ch[f] || ''}`).join('|'));
+        });
+        _lf.forEach((k) => {
+          if (ltLower[k]) tl.push(k + ': ' + ltLower[k].split('\n').map((l) => l.trim()).filter(Boolean).join('；'));
+        });
+        tableTxt = '[当前表格现状]\n' + tl.join('\n');
+      }
+      lt = ltInstr ? (ltInstr + (tableTxt ? '\n\n' + tableTxt : '')) : tableTxt;
+    } catch (e) {}
+    if (lt) {
+      const prompt = lt ? (lt + '\n\n' + (base || '')) : base;
+      cdLog('[填表] 注入填表（含表格现状）长度', { promptLen: String(prompt).length });
+      return prompt;
+    }
+    return base;
+
+
   } catch (e) {
     cdWarn('cdBuildDiaryInjectionText 失败', e);
     return '';
@@ -1388,14 +1472,14 @@ async function cdBuildDiaryInjectionText() {
 let _cdInjectionRegistered = false;
 let _cdInjectionKey = 'character-diary-memory';
 
-/** 使用 setExtensionPrompt 注册日记注入（推荐方式，兼容性更好） */
+/** 使用 setExtensionPrompt 注册注入（日记+关系+剧情+填表指令，统一走 cdBuildDiaryInjectionText） */
 async function cdRegisterInjection() {
   try {
     const text = await cdBuildDiaryInjectionText();
     const ctx = SillyTavern.getContext();
     if (ctx && typeof ctx.setExtensionPrompt === 'function') {
       if (text) {
-        ctx.setExtensionPrompt(_cdInjectionKey, text, 1000); // position: 1000 (靠近system)
+        ctx.setExtensionPrompt(_cdInjectionKey, text, 1000);
         cdLog('[注入] setExtensionPrompt 已更新:', text.length, '字符');
       } else {
         ctx.setExtensionPrompt(_cdInjectionKey, '', 0);
@@ -1409,6 +1493,37 @@ async function cdRegisterInjection() {
   }
 }
 
+
+// ===== 填表注入：生成本次要发送给正文AI的填表指令 =====
+function cdBuildLiveTableInjectText() {
+  try {
+    const s = cdGetSettings();
+    if (!s.liveTableEnabled || !s.liveTableInject) return '';
+    // 用户自定义提示词优先（可自由编辑）
+    const customPrompt = (s.liveTablePrompt || '').trim();
+    if (customPrompt) return customPrompt;
+    const tag = s.liveTableTag || 'liwe';
+    return [
+      `[重要指令 · 填表] 这是必须遵守的关键指令。`,
+      `请根据刚刚的剧情，务必在回复末尾用一个 <details><summary>情报表</summary> 折叠块包裹，内部输出一个 <${tag}> 标签，标签内严格按以下格式记录：`,
+      ``,
+      `地点: （当前所在的地点，变化才输出）`,
+      `角色名: 具体角色名|${(() => { const f = Array.isArray(s.liveCharFields) && s.liveCharFields.length ? s.liveCharFields : ['状态', '衣着', '对用户好感', '备注']; return f.map((x) => x + ':…').join('|'); })()}`,
+      `（每个出现的角色一行；子字段用 | 分隔、格式为「子字段:值」；该角色子字段有变化才输出该行，覆盖更新；角色名子字段之后的子字段可直接省略未变化的项）`,
+      ``,
+       ...(() => { const f = Array.isArray(s.liveLowerFields) && s.liveLowerFields.length ? s.liveLowerFields : ['经历事情', '持有物品', '任务']; return f.map((x) => `${x}: ({{user}}的${x}，有新内容才输出)`); })()
+      ``,
+      `规则：`,
+      `1. 如实从剧情提取，不编造；本次无变化/无关的项不要输出。`,
+      `2. 角色行、地点为「覆盖更新」；经历/物品/任务为「追加新条目」。`,
+      `3. 经历事情务必带上时间地点。`,
+      `4. 用 <details><summary>情报表</summary> ... </details> 包裹 &lt;${tag}&gt; 标签，正文只显示折叠条、不直接显示表格内容。`,
+    ].join('\n');
+  } catch (e) {
+    cdWarn('构建填表注入失败', e);
+    return '';
+  }
+}
 /**
  * CHAT_COMPLETION_PROMPT_READY 事件回调：备用注入方案
  * 当 setExtensionPrompt 不可用时的 fallback
@@ -1421,16 +1536,16 @@ async function cdOnBeforeGeneration(eventData) {
     if (dryRun || !Array.isArray(chat)) return;
     
     const text = await cdBuildDiaryInjectionText();
-    if (!text) return;
-    
-    // 在 prompt chat 的末尾插入一条 system 消息
-    const sysMsg = {
-      role: 'system',
-      content: text,
-      name: 'system',
-    };
-    chat.push(sysMsg);
-    cdLog('cdOnBeforeGeneration: 已注入日记到 prompt chat', text.length, '字符');
+    if (text) {
+      // 在 prompt chat 的末尾插入一条 system 消息（日记+关系+剧情+填表指令）
+      const sysMsg = {
+        role: 'system',
+        content: text,
+        name: 'system',
+      };
+      chat.push(sysMsg);
+      cdLog('cdOnBeforeGeneration: 已注入到 prompt chat', text.length, '字符');
+    }
   } catch (e) {
     cdWarn('cdOnBeforeGeneration 失败', e);
   }
@@ -2285,9 +2400,241 @@ async function cdOnMessageReceived() {
   }
 }
 
-/**
- * 消息删除/撤回回调
- */
+
+/* ============================== 填表功能（LIWE 情报表）============================== */
+// 解析 <liwe> 标签，返回结构化动作数组
+// 角色子字段与履历字段均读用户配置（liveCharFields / liveLowerFields）
+function cdParseLiveTable(text) {
+  const actions = [];
+  if (!text) return actions;
+  const s = cdGetSettings();
+  const tag = s.liveTableTag || 'liwe';
+  const charFields = Array.isArray(s.liveCharFields) && s.liveCharFields.length ? s.liveCharFields : ['状态', '衣着', '对用户好感', '备注'];
+  const lowerFields = Array.isArray(s.liveLowerFields) && s.liveLowerFields.length ? s.liveLowerFields : ['经历事情', '持有物品', '任务'];
+  const re = new RegExp(`<(?:${tag})\\s*>([\\s\\S]*?)<\\/${tag}>`, 'gi');
+  let m;
+  let _probe = re.exec(text);
+  re.lastIndex = 0;
+  cdAddLog('info', '[填表调试] re匹配', { matched: !!_probe, innerHead: _probe ? String(_probe[1]).slice(0, 150) : '', textHead: String(text).slice(0, 80) });
+  while ((m = re.exec(text)) !== null) {
+    const inner = String(m[1] || '').replace(/<!--|-->/g, '').trim();
+    inner.split(/\r?\n/).forEach((line) => {
+      const raw = String(line || '').trim();
+      if (!raw) return;
+      const parsed = raw.match(/^([^:：]+)[:：]([\s\S]*)$/);
+      if (!parsed || !parsed[1].trim()) return;
+      const field = parsed[1].trim();
+      const value = parsed[2].trim();
+      if (!value) return;
+      cdAddLog('info', '[填表调试] 行', { field: field.slice(0, 30), valueHead: value.slice(0, 40) });
+      // 地点
+      if (field === '地点' || field === '位置' || field === '所在地') {
+        actions.push({ kind: 'location', value });
+        return;
+      }
+      // 履历字段（按配置匹配；也兼容 经历/物品/持有 别名）
+      if (lowerFields.includes(field) || field === '经历' || field === '物品' || field === '持有') {
+        let f = field;
+        if (field === '经历') f = '经历事情';
+        else if (field === '物品' || field === '持有') f = '持有物品';
+        actions.push({ kind: 'lower', field: f, value });
+        return;
+      }
+      // 角色行：AI 输出「角色名: 角色A|子字段:值|...」
+      if (field === '角色名' || field === '名字') {
+        const seg = value.split('|').map((x) => x.trim());
+        const name = (seg[0] || '').trim();
+        if (!name) return;
+        const sub = {};
+        charFields.forEach((f) => { sub[f] = ''; });
+        let hasNamedSub = false;
+        seg.slice(1).forEach((s2) => {
+          const kv = String(s2 || '').match(/^([^:：]+)[:：]([\s\S]*)$/);
+          const k = kv ? kv[1].trim() : '';
+          const v = kv ? kv[2].trim() : '';
+          if (!k && !v) return;
+          // 精确匹配配置字段
+          let matched = false;
+          charFields.forEach((f) => {
+            if (k === f) { sub[f] = v; hasNamedSub = true; matched = true; }
+          });
+          if (matched) return;
+          // 旧别名兼容
+          if ((k === '穿着' || k === '服装') && charFields.includes('衣着')) { sub['衣着'] = v; hasNamedSub = true; }
+          else if ((k === '好感' || k === '态度') && charFields.includes('对用户好感')) { sub['对用户好感'] = v; hasNamedSub = true; }
+          else if (k === '说明' && charFields.includes('备注')) { sub['备注'] = v; hasNamedSub = true; }
+          // 无字段名：按顺序填空位
+          else if (!kv) {
+            const idx = charFields.findIndex((f) => !String(sub[f] || '').trim());
+            if (idx >= 0) { sub[charFields[idx]] = s2; hasNamedSub = true; }
+          }
+        });
+        actions.push({ kind: 'char', name, parts: sub });
+        return;
+      }
+      // 其他行：无角色名前缀，取 field 为角色名
+      const seg2 = value.split('|').map((x) => x.trim());
+      const sub2 = {};
+      charFields.forEach((f, i) => { sub2[f] = seg2[i] || ''; });
+      actions.push({ kind: 'char', name: field, parts: sub2 });
+    });
+  }
+  return actions;
+}
+// 字段渲染名 -> 定义里的 key（按 keyword 匹配）
+function cdLiveFieldKey(def, rawField) {
+  if (!def) return '';
+  const target = String(rawField || '').trim();
+  const all = [...(def.upper || []), ...(def.lower || [])];
+  for (const f of all) {
+    if (String(f.keyword || '').trim() === target) return f.key;
+  }
+  for (const f of all) {
+    if (String(f.key || '').trim() === target) return f.key;
+  }
+  return '';
+}
+
+// 去重后追加（用换行分隔）
+function cdAppendLine(current, next) {
+  const cur = String(current || '').trim();
+  const nxt = String(next || '').trim();
+  if (!nxt) return cur;
+  const lines = cur ? cur.split(/\n+/) : [];
+  if (lines.some((l) => l.trim() === nxt)) return cur; // 已存在，跳过
+  lines.push(nxt);
+  return lines.join('\n');
+}
+
+// 把解析出的动作写入 data.liveTableData
+// 角色子字段与履历字段均按用户配置存储
+async function cdApplyLiveTable(actions) {
+  if (!Array.isArray(actions) || !actions.length) return 0;
+  const s = cdGetSettings();
+  const charFields = Array.isArray(s.liveCharFields) && s.liveCharFields.length ? s.liveCharFields : ['状态', '衣着', '对用户好感', '备注'];
+  const lowerFields = Array.isArray(s.liveLowerFields) && s.liveLowerFields.length ? s.liveLowerFields : ['经历事情', '持有物品', '任务'];
+  const data = await cdGetData();
+  if (!Array.isArray(data.liveTableData)) data.liveTableData = [];
+  let rec = data.liveTableData[0] || null;
+  if (!rec) {
+    rec = { id: 'T-main', location: '', chars: {}, lower: {} };
+    data.liveTableData.push(rec);
+  }
+  const hasOldShape = (rec.upper && typeof rec.upper === 'object') || (rec.chars && typeof rec.chars === 'object' && (rec.chars['角色名'] || rec.chars['名字']));
+  if (hasOldShape) {
+    rec.location = '';
+    if (typeof rec.chars !== 'object' || rec.chars['角色名'] || rec.chars['名字']) rec.chars = {};
+    delete rec.upper;
+    delete rec.defId;
+  }
+  if (!rec.chars || typeof rec.chars !== 'object') rec.chars = {};
+  if (!rec.lower || typeof rec.lower !== 'object') rec.lower = {};
+  let changed = 0;
+  // 迁移旧英文子字段 key → 新中文 key（status→状态, cloth→衣着, affection→对用户好感, remark→备注）
+  try {
+    const ekMap = { status: '状态', cloth: '衣着', affection: '对用户好感', remark: '备注' };
+    Object.keys(rec.chars).forEach((nm) => {
+      const ch = rec.chars[nm];
+      if (!ch || typeof ch !== 'object') return;
+      Object.keys(ekMap).forEach((ek) => {
+        const ck = ekMap[ek];
+        if (ch[ek] !== undefined && (ch[ck] === undefined || ch[ck] === '' || ch[ck] === null)) {
+          if (ch[ek] !== '') { ch[ck] = ch[ek]; changed += 1; }
+        }
+        delete ch[ek];
+      });
+    });
+  } catch (e) {}
+  actions.forEach((a) => {
+    if (a.kind === 'location') {
+      if (rec.location !== a.value) { rec.location = a.value; changed += 1; }
+    } else if (a.kind === 'char') {
+      const name = String(a.name || '').trim();
+      if (!name) return;
+      const p = (a.parts && typeof a.parts === 'object') ? a.parts : {};
+      if (!rec.chars[name] || typeof rec.chars[name] !== 'object') rec.chars[name] = {};
+      const cur = rec.chars[name];
+      let need = false;
+      charFields.forEach((f) => {
+        if (cur[f] === undefined) cur[f] = '';
+        if (String(p[f] || '') !== String(cur[f] || '')) need = true;
+      });
+      if (need) {
+        charFields.forEach((f) => { if (p[f] !== undefined && p[f] !== '') cur[f] = p[f]; });
+        changed += 1;
+      }
+    } else if (a.kind === 'lower') {
+      const f = a.field;
+      if (!lowerFields.includes(f)) return;
+      const nv = cdAppendLine(rec.lower[f], a.value);
+      if (nv !== (rec.lower[f] || '')) { rec.lower[f] = nv; changed += 1; }
+    }
+  });
+  if (changed) { await cdSaveData(data); cdLog('[填表] 采集并写入', changed, '项'); }
+  return changed;
+}
+// 指纹去重（避免重复采集同一楼层）
+const _cdLiveSignatures = new Set();
+const _cdLiveSigQueue = [];
+function cdLiveProcessed(text) {
+  if (!text) return true;
+  let h = 0;
+  const src = String(text);
+  for (let i = 0; i < src.length; i++) h = ((h << 5) - h + src.charCodeAt(i)) | 0;
+  const sig = `${src.length}:${h}`;
+  if (_cdLiveSignatures.has(sig)) return true;
+  _cdLiveSignatures.add(sig);
+  _cdLiveSigQueue.push(sig);
+  while (_cdLiveSigQueue.length > 50) _cdLiveSignatures.delete(_cdLiveSigQueue.shift());
+  return false;
+}
+
+// 批量模式计数器（每N层采一次）
+let _cdLiveBatchCounter = 0;
+
+// 主采集入口：从最后一条 AI 楼层提取 liwe 标签 -> 解析 -> 入库 -> 隐藏标签
+async function cdCollectLiveTable() {
+  try {
+    const s = cdGetSettings();
+    if (!s.liveTableEnabled) return; // 总开关
+    // 批量模式：每 N 层才采集一次
+    const mode = s.liveTableMode || 'auto';
+    const n = Math.max(1, Math.round(Number(s.liveTableBatch) || 1));
+    if (mode === 'batch') {
+      _cdLiveBatchCounter = (_cdLiveBatchCounter || 0) + 1;
+      if (_cdLiveBatchCounter % n !== 0) return; // 未到批次，跳过本次采集
+    }
+    const chat = _cdGetChat();
+    if (!Array.isArray(chat) || !chat.length) return;
+    const last = chat[chat.length - 1];
+    if (!last || last.is_user !== false || last.is_system) return; // 只需 AI 楼层
+    const text = last.swipes && Array.isArray(last.swipes) ? (last.swipes[last.swipe_id || 0] || last.mes || '') : (last.mes || '');
+    cdAddLog('info', '[填表调试] 采集尝试', { chatLen: chat.length, textLen: String(text).length, hasTag: /liwe/i.test(String(text)) });
+    if (cdLiveProcessed(text)) { cdAddLog('warn', '[填表调试] 指纹去重跳过'); return; }
+    const rows = cdParseLiveTable(text);
+    cdAddLog('info', '[填表调试] 解析结果', { rows: rows.length, types: rows.map((a) => a.kind + (a.kind === 'char' ? ('/' + a.name) : '')).slice(0, 20) });
+    if (!rows.length) return;
+    const applied = await cdApplyLiveTable(rows);
+    // 采集完成后，从消息数据里剥离 <liwe>...</liwe> 标签（参照 yuzuki-Memory 的 stripMemoryTags 思路）
+    // 这样正文显示层自然不再出现标签，不依赖 ST 正则或 DOM 操作
+    try {
+      const stripRe = new RegExp(`<${s.liveTableTag || 'liwe'}>[\\s\\S]*?<\\/?(?:${s.liveTableTag || 'liwe'})>`, 'gi');
+      const clean = (str) => String(str || '').replace(stripRe, '').trim();
+      if (Array.isArray(last.swipes)) {
+        const si2 = Number(last.swipe_id) || 0;
+        if (typeof last.swipes[si2] === 'string') last.swipes[si2] = clean(last.swipes[si2]);
+      }
+      if (typeof last.mes === 'string') last.mes = clean(last.mes);
+      // 通知 ST 刷新这条消息的显示（若可用）
+      try { SillyTavern.getContext().eventSource.emit(SillyTavern.getContext().event_types.MESSAGE_UPDATED, chat.length - 1); } catch (e) {}
+    } catch (e) { cdWarn('剥离填表标签失败', e); }
+    cdLog('[填表] 采集标签完成', { rows: rows.length, applied });
+  } catch (e) {
+    cdWarn('填表采集失败', e);
+  }
+}
+
+/** 消息删除/撤回回调 */
 async function cdOnMessageDeleted(floor) {
   await cdRollbackFrom(floor);
 }// ============================================================
@@ -2405,6 +2752,8 @@ async function _cdDoInit() {
         } catch(e) {
           cdWarn('cdOnMessageReceived 异常', e);
         }
+        // 填表采集（独立的短延迟，避免与写日记竞争）
+        setTimeout(() => { if (cdCollectLiveTable) cdCollectLiveTable(); }, 150);
       };
       // 同时监听两个事件，保证能触发
       if (et.MESSAGE_RECEIVED) {
@@ -2498,8 +2847,8 @@ function cdApplyFontScale() {
 function cdInjectExtButton() {
   const html = `
     <div id="cd_open_wand" class="list-group-item flex-container flexGap5">
-      <div class="fa-regular fa-book extensionsMenuExtensionButton" title="角色日记"></div>
-      <span>角色日记</span>
+      <div class="fa-regular fa-book extensionsMenuExtensionButton" title="LIWE · RAG 记忆引擎"></div>
+      <span>LIWE · RAG 记忆引擎</span>
     </div>`;
 
   /** 
@@ -2551,6 +2900,7 @@ function cdMakeDraggable(modalEl, handleEl) {
       modalEl.style.left = Math.max(0, _cdModalDragState.origLeft + ev.clientX - _cdModalDragState.startX) + 'px';
       modalEl.style.top  = Math.max(0, _cdModalDragState.origTop  + ev.clientY - _cdModalDragState.startY) + 'px';
       modalEl.style.right = 'auto';
+      modalEl.style.transform = '';
     };
     const onUp = function() {
       if (_cdModalDragged) cdSaveModalPos();
@@ -2575,6 +2925,7 @@ function cdMakeDraggable(modalEl, handleEl) {
       modalEl.style.left = Math.max(0, _cdModalDragState.origLeft + ev.touches[0].clientX - _cdModalDragState.startX) + 'px';
       modalEl.style.top  = Math.max(0, _cdModalDragState.origTop  + ev.touches[0].clientY - _cdModalDragState.startY) + 'px';
       modalEl.style.right = 'auto';
+      modalEl.style.transform = '';
     };
     const onUp = function() {
       if (_cdModalDragged) cdSaveModalPos();
@@ -2595,17 +2946,33 @@ function cdSaveModalPos() {
   try { localStorage.setItem('cd-modal-pos', JSON.stringify({ left: r.left, top: r.top })); } catch(_) {}
 }
 
-/** 恢复面板位置 */
+/** 恢复面板位置：居中 or 保存位置（自动修正异常/左上角缺陷） */
 function cdRestoreModalPos() {
   const el = document.getElementById(MODAL_ID);
   if (!el) return;
   try {
+    const w = el.offsetWidth || 380;
+    const h = el.offsetHeight || 480;
+    el.style.transform = '';
     const saved = JSON.parse(localStorage.getItem('cd-modal-pos') || 'null');
-    if (saved) {
+    // 合理位置判定：在视口内，且不在左上角缺陷区（top<60 或 left<20 视为异常，多为历史遗留）
+    let ok = saved
+      && Number.isFinite(saved.left)
+      && Number.isFinite(saved.top)
+      && saved.left >= 20
+      && saved.top >= 60
+      && saved.left <= window.innerWidth - 40
+      && saved.top <= window.innerHeight - 60;
+    if (ok) {
       el.style.left = saved.left + 'px';
       el.style.top = saved.top + 'px';
-      el.style.right = 'auto';
+    } else {
+      // 无保存或异常：屏幕居中，并清除旧位置
+      try { localStorage.removeItem('cd-modal-pos'); } catch(_){}
+      el.style.left = Math.max(0, Math.round((window.innerWidth - w) / 2)) + 'px';
+      el.style.top = Math.max(0, Math.round((window.innerHeight - h) / 2)) + 'px';
     }
+    el.style.right = 'auto';
   } catch(_) {}
 }
 
@@ -2614,9 +2981,10 @@ function cdInjectFab() {
   let savedPos = null;
   try { savedPos = JSON.parse(localStorage.getItem('cd-fab-pos') || 'null'); } catch (_) {}
   const mobile = isMobile();
+  // 默认位置：左中间（避免顶部被遮挡）；拖拽过则用保存的位置
   const posStyle = (!mobile && savedPos)
     ? `left:${savedPos.left}px;top:${savedPos.top}px;right:auto;bottom:auto;`
-    : '';
+    : `left:12px;top:calc(50% - 22px);right:auto;bottom:auto;`;
   const theme = getEffectiveTheme();
   const fabShow = cdGetSettings().fabShow !== false;
   cdLog('[cdInjectFab] fabShow:', fabShow, 'theme:', theme, 'mobile:', mobile, 'savedPos:', savedPos);
@@ -2628,7 +2996,7 @@ function cdInjectFab() {
   }
   
   const html = `<div id="${FAB_ID}" style="position:fixed;z-index:2000000;${posStyle}${fabShow ? '' : 'display:none'}">
-    <button class="cd-fab-btn cd-${theme}" title="角色日记"
+    <button class="cd-fab-btn cd-${theme}" title="LIWE · RAG 记忆引擎"
       style="width:44px;height:44px;border-radius:50%;background:#c9a87c;color:#fffef9;border:1.5px solid rgba(255,255,255,0.4);display:flex;align-items:center;justify-content:center;font-size: calc(1.05rem * var(--cd-fs, 1));cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.5);transform:translateZ(0);">
       <i class="fa-regular fa-book"></i>
     </button>
@@ -2652,6 +3020,7 @@ function cdInjectFab() {
         f.style.left = Math.max(0, Math.min(cdFabDragState.origLeft + ev.clientX - cdFabDragState.startX, window.innerWidth - f.offsetWidth)) + 'px';
         f.style.top  = Math.max(0, Math.min(cdFabDragState.origTop  + ev.clientY - cdFabDragState.startY, window.innerHeight - f.offsetHeight)) + 'px';
         f.style.right = 'auto';
+      f.style.transform = '';
         f.style.bottom = 'auto';
       })
       .on('mouseup.cdfab', cdOnFabDragEnd);
@@ -2687,6 +3056,7 @@ function cdOnFabTouchMove(ev) {
   f.style.left = Math.max(0, Math.min(cdFabDragState.origLeft + ex - cdFabDragState.startX, window.innerWidth - f.offsetWidth)) + 'px';
   f.style.top  = Math.max(0, Math.min(cdFabDragState.origTop  + ey - cdFabDragState.startY, window.innerHeight - f.offsetHeight)) + 'px';
   f.style.right = 'auto';
+      f.style.transform = '';
   f.style.bottom = 'auto';
 }
 
@@ -2709,7 +3079,7 @@ function cdInjectModal() {
     <div id="${MODAL_ID}" class="cd-root cd-${theme}" style="display:none">
       <div class="cd-sheet">
         <div class="cd-header">
-          <span class="cd-header-title">角色日记 <span style="font-weight:400;opacity:0.4;font-size: calc(0.65rem * var(--cd-fs, 1));">【liwe】</span></span>
+          <span class="cd-header-title" title="LIWE · RAG 记忆引擎">LIWE · RAG 记忆引擎</span>
           <div class="cd-header-actions">
             <button class="cd-header-btn" id="cd-btn-fullscreen" title="全屏"><i class="fa-regular fa-maximize"></i></button>
             <button class="cd-header-btn" id="cd-btn-theme" title="切换主题"><i class="fa-regular ${theme === 'night' ? 'fa-sun' : 'fa-moon'}"></i></button>
@@ -2724,6 +3094,8 @@ function cdInjectModal() {
           <button class="cd-tb-btn" id="cd-tb-archive" data-mode="archive"><i class="fa-regular fa-timeline"></i> 时间线
 </button>
 <button class="cd-tb-btn" id="cd-tb-graph" data-mode="graph"><i class="fa-regular fa-diagram-project"></i> 关系
+</button>
+<button class="cd-tb-btn" id="cd-tb-table" data-mode="table"><i class="fa-regular fa-table"></i> 表
 </button>
 <button class="cd-tb-btn" id="cd-tb-floors" data-mode="floors"><i class="fa-regular fa-layer-group"></i> 楼层
 </button>
@@ -2791,7 +3163,8 @@ function cdInjectModal() {
   $('#cd-tb-log').on('click',    () => cdSwitchView('log'));
   $('#cd-tb-changelog').on('click', () => cdSwitchView('changelog'));
   $('#cd-tb-help').on('click',     () => cdSwitchView('help'));
-  $('#cd-tb-vector').on('click',   () => cdSwitchView('vector'));
+  $('#cd-tb-table').on('click',   () => cdSwitchView('table'));
+$('#cd-tb-vector').on('click',   () => cdSwitchView('vector'));
   $('#cd-tb-manage').on('click',  () => cdSwitchView('manage'));
   cdLog('[cdInjectModal] 模态面板注入完成, Modal根元素存在:', !!document.getElementById(MODAL_ID));
 }
@@ -2829,6 +3202,7 @@ async function cdRefreshPanelContent() {
     case 'log':      cdRenderLog(); break;
     case 'changelog': cdRenderChangelog(); break;
     case 'help':     cdRenderHelp(); break;
+    case 'table':    cdRenderTable(); break;
     case 'vector':   cdRenderVector(); break;
     case 'manage':   cdRenderManage(); break;
   }
@@ -3449,23 +3823,34 @@ async function cdRenderArchive() {
     <!-- 剧情卡牌 -->
     <div class="cd-egg-section">
       <h3 class="cd-write-title" style="margin-bottom:4px;"><i class="fa-regular fa-layer-group"></i> 剧情卡牌 (${cards.length})</h3>
-      ${cards.length ? `<div style="display:flex;gap:4px;overflow-x:auto;overflow-y:hidden;padding:4px 2px;max-height:80px;">
+      ${cards.length ? `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
         ${cards.slice().reverse().slice(0, 30).map(c => `
-          <div style="flex-shrink:0;width:100px;padding:4px 6px;border-radius:6px;background:rgba(248,243,237,0.3);border:1px solid rgba(180,150,120,0.06);font-size: calc(0.58rem * var(--cd-fs, 1));line-height:1.3;overflow:hidden;">
-            <div style="display:flex;align-items:center;gap:3px;margin-bottom:2px;">
-              <i class="${c.icon}" style="font-size: calc(0.5rem * var(--cd-fs, 1));color:#8b7355;"></i>
-              <span style="font-weight:500;color:#4a3a2a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(c.title)}</span>
+          <div class="cd-card-item" style="border:1px solid rgba(180,150,120,0.1);border-radius:6px;background:rgba(248,243,237,0.3);cursor:pointer;overflow:hidden;">
+            <div class="cd-card-head" style="padding:5px 6px;font-size: calc(0.58rem * var(--cd-fs, 1));text-align:center;">
+              <div style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;margin-bottom:2px;"><i class="${c.icon}"></i></div>
+              <div style="font-weight:500;color:#4a3a2a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(c.title)}</div>
+              <div style="color:#8b7355;opacity:0.6;font-size: calc(0.5rem * var(--cd-fs, 1));overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(c.time)}</div>
             </div>
-            <div style="color:#8b7355;opacity:0.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(c.time)}</div>
+            <div class="cd-card-body" style="display:none;padding:4px 6px;font-size: calc(0.56rem * var(--cd-fs, 1));color:#6b5a48;line-height:1.4;border-top:1px solid rgba(180,150,120,0.05);word-break:break-word;text-align:left;">${escapeHtml(c.desc || c.title)}</div>
           </div>
         `).join('')}
-        ${cards.length > 30 ? `<span style="flex-shrink:0;font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;padding:12px 4px;">+${cards.length-30}</span>` : ''}
+        ${cards.length > 30 ? `<span style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;padding:4px 0;">...还有 ${cards.length-30} 张，可在管理页查看</span>` : ''}
       </div>` : '<p style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;padding:4px 0;">写日记时自动从剧情档案中提取</p>'}
     </div>
   `;
 
   // 追加到底部
   $('#cd-content').append(bottomHtml);
+
+  // 剧情卡牌点击展开/收起
+  $('#cd-content').off('click', '.cd-card-item').on('click', '.cd-card-item', function () {
+    const body = $(this).find('.cd-card-body');
+    const icon = $(this).find('.fa-chevron-down');
+    body.slideToggle(150);
+    icon.toggleClass('fa-chevron-down fa-chevron-up');
+  });
+
+
   
   // 回放事件绑定
   let _replayTlTimer = null;
@@ -5050,6 +5435,19 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
+    version: 'v2.2.0',
+    date: '2026-07-31',
+    items: [
+      '新增「填表」功能（LIWE 情报表）：让正文AI在回复末尾用 <details><summary>情报表</summary> 折叠块包裹 <liwe> 标签输出，插件自动采集入库',
+      '填表标签用 <details> 折叠显示，正文只显示一行折叠条、不暴露表格内容，天然隐藏',
+      '填表界面重构：是否填表开关 / 触发方式（自动·批量二选一）/ N层批量 / 发送表单给AI',
+      '填表提示词可自由编辑，并支持「恢复默认」一键填入带折叠的默认版本',
+      '采集字段可自定义：状态表子字段与履历字段支持增删改，采集/提示词/展示均跟随配置',
+      '填表指令在注入文本中前置并加强措辞，提升 AI 输出稳定性',
+      '修复填表采集解析（模板字符串正则转义）、角色数据键迁移、FAB/面板默认位置等',
+    ],
+  },
+  {
     version: 'v2.1.5',
     date: '2026-07-31',
     items: [
@@ -5175,9 +5573,9 @@ function cdRenderHelp() {
     <div class="cd-egg" style="padding:2px 0;">
 
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
-        <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> 角色日记</h3>
-        <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">自动为剧情中的每个角色撰写第一人称日记</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.1.0 · 【liwe】</p>
+        <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
+        <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.2.0 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
@@ -5190,6 +5588,7 @@ function cdRenderHelp() {
         <tr><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);vertical-align:top;white-space:nowrap;color:#6b5a48;font-weight:500;width:70px;">浏览</td><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);">按角色查看所有日记，支持全文搜索、角色筛选、心情分布热力图、随机回顾</td></tr>
         <tr><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);vertical-align:top;white-space:nowrap;color:#6b5a48;font-weight:500;">时间线</td><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);">剧情档案按主线/支线/状态/未解决分类展示，保留时间线竖线样式</td></tr>
         <tr><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);vertical-align:top;white-space:nowrap;color:#6b5a48;font-weight:500;">关系</td><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);">角色关系力导向图可视化，绿=友好 红=排斥 灰=中立，下方附文本列表</td></tr>
+        <tr><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);vertical-align:top;white-space:nowrap;color:#6b5a48;font-weight:500;">填表</td><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);">情报表（LIWE）：AI 用折叠块输出地点/角色状态/主角履历，插件采集入库，字段可自定义</td></tr>
         <tr><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);vertical-align:top;white-space:nowrap;color:#6b5a48;font-weight:500;">管理</td><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);">多选删除日记/关系/卡牌/快照，一键清空所有数据</td></tr>
         
         <tr><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);vertical-align:top;white-space:nowrap;color:#6b5a48;font-weight:500;">楼层</td><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);">浏览所有 AI 楼层，勾选未记录的楼层补写日记</td></tr>
@@ -5419,6 +5818,23 @@ async function cdRenderManage() {
 
       <div class="cd-write-divider"></div>
 
+      <!-- 📋 填表数据 -->
+      <div class="cd-egg-section">
+        <div class="cd-set-row" style="margin-bottom:4px;">
+          <label><i class="fa-regular fa-table" style="color:#4a3a2a;"></i> 填表数据 <span style="font-size: calc(0.6rem * var(--cd-fs, 1));opacity:0.5;">(角色 ${Object.keys((data.liveTableData && data.liveTableData[0] && data.liveTableData[0].chars) || {}).length} 位)</span></label>
+        </div>
+        <div style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#6b5a48;">
+          <div style="padding:4px 6px;">
+            地点: ${escapeHtml((data.liveTableData && data.liveTableData[0] && data.liveTableData[0].location) || '（空）')}<br>
+            角色: ${Object.keys((data.liveTableData && data.liveTableData[0] && data.liveTableData[0].chars) || {}).join('、') || '（无）'}<br>
+            履历: 经历${((data.liveTableData && data.liveTableData[0] && data.liveTableData[0].lower && data.liveTableData[0].lower['经历事情']) || '').split('\n').filter(Boolean).length}条 · 物品${((data.liveTableData && data.liveTableData[0] && data.liveTableData[0].lower && data.liveTableData[0].lower['持有物品']) || '').split('\n').filter(Boolean).length}条 · 任务${((data.liveTableData && data.liveTableData[0] && data.liveTableData[0].lower && data.liveTableData[0].lower['任务']) || '').split('\n').filter(Boolean).length}条
+          </div>
+          <button class="cd-btn-danger cd-mgr-clear-table" style="margin-top:4px;font-size: calc(0.6rem * var(--cd-fs, 1));padding:3px 10px;min-width:auto;"><i class="fa-regular fa-trash-can"></i> 清空填表数据</button>
+        </div>
+      </div>
+
+      <div class="cd-write-divider"></div>
+
       <!-- 🃏 剧情卡牌 -->
       <div class="cd-egg-section">
         <div class="cd-set-row" style="margin-bottom:4px;">
@@ -5464,6 +5880,16 @@ async function cdRenderManage() {
     d.archiveHistory = [];
     await cdSaveData(d);
     toastr.success('剧情档案已清空');
+    cdRenderManage();
+  });
+
+  // ★ 清空填表数据
+  $('#cd-mgr-clear-table').off('click').on('click', async function () {
+    if (!await confirmDelete('确定清空填表数据（地点/角色/履历）？不可恢复！')) return;
+    const d = await cdGetData();
+    d.liveTableData = [];
+    await cdSaveData(d);
+    toastr.success('填表数据已清空');
     cdRenderManage();
   });
 
@@ -5544,6 +5970,193 @@ async function cdRenderManage() {
     cdRenderManage();
   });
 }
+
+
+/* ============================== 📋 填表界面（LIWE 情报表）============================== */
+function escV(v) {
+  try { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') || ''; } catch(e){ return ''; }
+}
+async function cdRenderTable() {
+  try {
+    const s = cdGetSettings();
+    const data = await cdGetData();
+    // 打开界面时迁移旧英文子字段 key → 中文 key
+    try {
+      const rec0 = Array.isArray(data.liveTableData) && data.liveTableData[0] ? data.liveTableData[0] : null;
+      if (rec0 && rec0.chars && typeof rec0.chars === 'object') {
+        const ekMap = { status: '状态', cloth: '衣着', affection: '对用户好感', remark: '备注' };
+        let mig = false;
+        Object.keys(rec0.chars).forEach((nm) => {
+          const ch = rec0.chars[nm];
+          if (!ch || typeof ch !== 'object') return;
+          Object.keys(ekMap).forEach((ek) => {
+            const ck = ekMap[ek];
+            if (ch[ek] !== undefined && (ch[ck] === undefined || ch[ck] === '' || ch[ck] === null)) {
+              if (ch[ek] !== '') { ch[ck] = ch[ek]; mig = true; }
+            }
+            delete ch[ek];
+          });
+        });
+        if (mig) await cdSaveData(data);
+      }
+    } catch (e) {}
+    const defs = Array.isArray(s.liveTableDef) ? s.liveTableDef.filter((d) => d && d.enabled !== false) : [];
+    const tableData = Array.isArray(data.liveTableData) ? data.liveTableData : [];
+    const batch = Math.max(1, Math.round(Number(s.liveTableBatch) || 1));
+    const batchSrc = s.liveTableBatchSource || 'tavern';
+
+    let html = `<div style="padding:2px 0;">
+      <h3 class="cd-write-title" style="font-size: calc(0.85rem * var(--cd-fs,1));"><i class="fa-regular fa-table"></i> 填表（LIWE 情报表）</h3>
+      <p style="font-size: calc(0.62rem * var(--cd-fs,1));color:#8b7355;opacity:0.7;margin:0 0 10px;">正文 AI 每层在回复末尾输出 <b style="font-size:inherit;">&lt;liwe&gt;</b> 标签，插件自动采集收录。上区覆盖、下区追加。</p>
+
+      <!-- 功能开关 -->
+      <div style="background:#f7f1e3;border:1px solid #e3d5b8;border-radius:8px;padding:8px 10px;margin-bottom:10px;" class="cd-set-section">
+        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px;">
+          <label style="font-size: calc(0.7rem * var(--cd-fs,1));font-weight:600;">是否开始填表</label>
+          <label class="cd-switch" style="margin:0;">
+            <input type="checkbox" id="cd-lt-enabled" ${s.liveTableEnabled !== false ? 'checked' : ''}>
+            <span class="cd-slider"></span>
+          </label>
+        </div>
+        <div style="font-size: calc(0.66rem * var(--cd-fs,1));font-weight:600;color:#7a5c34;margin:2px 0 4px;">填表触发方式（自动 / 批量 二选一）</div>
+        <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-bottom:6px;">
+          <label style="font-size: calc(0.68rem * var(--cd-fs,1));cursor:pointer;">
+            <input type="radio" name="cd-lt-mode" value="auto" ${(s.liveTableMode||'auto')==='auto'?'checked':''}> 自动填表（正文末尾生成）
+          </label>
+          <label style="font-size: calc(0.68rem * var(--cd-fs,1));cursor:pointer;">
+            <input type="radio" name="cd-lt-mode" value="batch" ${(s.liveTableMode||'auto')==='batch'?'checked':''}> 批量填表（每N层批量）
+          </label>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-bottom:6px;">
+          <label style="font-size: calc(0.68rem * var(--cd-fs,1));">每 N 层批量填表</label>
+          <input type="number" id="cd-lt-batch" value="${batch}" min="1" max="99" style="width:52px;font-size: calc(0.68rem * var(--cd-fs,1));">
+          <label style="font-size: calc(0.68rem * var(--cd-fs,1));">批量API来源</label>
+          <select id="cd-lt-batchsrc" style="font-size: calc(0.68rem * var(--cd-fs,1));">
+            <option value="tavern" ${batchSrc==='tavern'?'selected':''}>跟随酒馆</option>
+            <option value="openai" ${batchSrc==='openai'?'selected':''}>OpenAI</option>
+            <option value="claude" ${batchSrc==='claude'?'selected':''}>Claude</option>
+            <option value="gemini" ${batchSrc==='gemini'?'selected':''}>Gemini</option>
+          </select>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-bottom:6px;">
+          <label style="font-size: calc(0.68rem * var(--cd-fs,1));">发送表单给AI</label>
+          <label class="cd-switch" style="margin:0;">
+            <input type="checkbox" id="cd-lt-inject" ${s.liveTableInject !== false ? 'checked' : ''}>
+            <span class="cd-slider"></span>
+          </label>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px;">
+          <button class="cd-btn-primary" id="cd-lt-save" style="font-size: calc(0.68rem * var(--cd-fs,1));">保存设置</button>
+        </div>
+        <div style="margin-top:8px;border-top:1px dashed #d8c9a8;padding-top:6px;">
+          <label style="font-size: calc(0.68rem * var(--cd-fs,1));font-weight:700;color:#7a5c34;">发送给AI的填表提示词（可自由编辑）</label>
+          <textarea id="cd-lt-prompt" rows="9" spellcheck="false" style="width:100%;box-sizing:border-box;margin-top:4px;padding:6px;font-size: calc(0.6rem * var(--cd-fs,1));background:#fdfaf3;border:1px solid #e3d5b8;border-radius:6px;color:#3c2f1f;resize:vertical;line-height:1.5;">${escV(s.liveTablePrompt || '')}</textarea>
+          <div style="margin-top:4px;"><button class="cd-btn-primary" id="cd-lt-resetprompt" style="font-size: calc(0.62rem * var(--cd-fs,1));padding:3px 10px;min-width:auto;">恢复默认提示词</button>
+          <span style="font-size: calc(0.55rem * var(--cd-fs,1));color:#8b7355;">（点击后填入带 &lt;details&gt; 折叠的默认版本，再点「保存设置」生效）</span></div>
+          <p style="font-size: calc(0.55rem * var(--cd-fs,1));color:#8b7355;margin:4px 0 0;line-height:1.5;">本功能为采集式填表：AI 必须严格按提示词，在回复末尾用一个 <details><summary>情报表</summary> 折叠块包裹 &lt;liwe&gt; 标签，插件才能识别并写入表格。请保留提示词中的 &lt;liwe&gt; 标签及其内容格式；字段名改动后，插件需按相同字段名采集。修改后点「保存设置」生效。</p>
+          <div style="margin-top:6px;border-top:1px dashed #d8c9a8;padding-top:6px;">
+            <label style="font-size: calc(0.66rem * var(--cd-fs,1));font-weight:700;color:#7a5c34;">» 采集字段配置（可自定义增删改，用、或,分隔）</label>
+            <div style="margin-top:4px;">
+              <label style="font-size: calc(0.6rem * var(--cd-fs,1));color:#6b5a48;">状态表子字段（每个角色行里的项）</label>
+              <input id="cd-lt-chfields" value="${escV((s.liveCharFields || []).join('、'))}" style="width:100%;box-sizing:border-box;padding:4px 6px;font-size: calc(0.6rem * var(--cd-fs,1));background:#fdfaf3;border:1px solid #e3d5b8;border-radius:6px;color:#3c2f1f;">
+            </div>
+            <div style="margin-top:4px;">
+              <label style="font-size: calc(0.6rem * var(--cd-fs,1));color:#6b5a48;">履历字段（{{user}}的追加记录类）</label>
+              <input id="cd-lt-lowfields" value="${escV((s.liveLowerFields || []).join('、'))}" style="width:100%;box-sizing:border-box;padding:4px 6px;font-size: calc(0.6rem * var(--cd-fs,1));background:#fdfaf3;border:1px solid #e3d5b8;border-radius:6px;color:#3c2f1f;">
+            </div>
+            <p style="font-size: calc(0.53rem * var(--cd-fs,1));color:#8b7355;margin:3px 0 0;line-height:1.5;">提示词里的角色子字段、履历字段需与这里的配置保持一致，AI 才会按这些字段输出、插件才能正确采集。字段之间用、或,分隔；字段名本身请勿包含 、 , ， 等分隔符字符，否则会被切分。修改后点「保存设置」生效。</p>
+          </div>
+        </div>
+      </div>
+
+      <div style="background:#f7f1e3;border:1px solid #e3d5b8;border-radius:8px;padding:8px 10px;margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <label style="font-size: calc(0.75rem * var(--cd-fs,1));font-weight:700;"><i class="fa-regular fa-file-lines"></i> 表值（当前聊天）</label>
+          <button class="cd-btn-primary" id="cd-lt-refresh" style="font-size: calc(0.68rem * var(--cd-fs,1));">刷新</button>
+        </div>
+        <div style="border-top:1px dashed #d8c9a8;padding-top:6px;">
+`;
+
+    if (!defs.length) {
+      html += `<p style="font-size: calc(0.65rem * var(--cd-fs,1));color:#b08d57;margin:6px 0;">尚未配置任何情报表，请编辑全局设置。当前默认建有一张「角色情报表」。</p>`;
+    } else {
+      defs.forEach((def) => {
+        // 每张表：现在结构为 location + chars(按角色) + lower(主角履历)
+        const rec = tableData.find((r) => r.defId === def.id || (r.id && !r.defId)) || tableData[0] || { id: def.id, location: '', chars: {}, lower: {} };
+        const loc = rec.location || '';
+        const chars = (rec.chars && typeof rec.chars === 'object') ? rec.chars : {};
+        const lower = (rec.lower && typeof rec.lower === 'object') ? rec.lower : {};
+        html += `<div style="margin:6px 0 10px;">
+          <div style="font-size: calc(0.72rem * var(--cd-fs,1));font-weight:700;color:#7a5c34;margin-bottom:4px;">◎ ${escV(def.name || '未命名表')}</div>
+          <div style="font-size: calc(0.62rem * var(--cd-fs,1));color:#b08d57;margin-bottom:2px;">── 状态表（按角色，覆盖）──</div>`;
+        // 地点
+        html += `<div style="display:flex;align-items:flex-start;gap:6px;font-size: calc(0.68rem * var(--cd-fs,1));padding:1px 0;">
+          <b style="flex:0 0 78px;font-size:inherit;color:#7a5c34;">地点</b>
+          <span style="flex:1;word-break:break-word;color:#3c2f1f;">${escV(loc) || '<span style="color:#c8bba0;">（空）</span>'}</span>
+        </div>`;
+        // 角色行
+        if (Object.keys(chars).length) {
+          Object.keys(chars).forEach((name) => {
+            const ch = chars[name] || {};
+            const cf = Array.isArray(s.liveCharFields) && s.liveCharFields.length ? s.liveCharFields : ['状态', '衣着', '对用户好感', '备注'];
+            const line = cf.map((f) => ch[f] && String(ch[f]).trim()).filter(Boolean).join(' | ') || '—';
+            html += `<div style="display:flex;align-items:flex-start;gap:6px;font-size: calc(0.68rem * var(--cd-fs,1));padding:1px 0;">
+              <b style="flex:0 0 78px;font-size:inherit;color:#7a5c34;">${escV(name)}</b>
+              <span style="flex:1;white-space:pre-wrap;word-break:break-word;color:#3c2f1f;">${escV(line)}</span>
+            </div>`;
+          });
+        } else {
+          html += `<div style="font-size: calc(0.62rem * var(--cd-fs,1));color:#c8bba0;padding:1px 0;">（尚无角色，对话后自动生成）</div>`;
+        }
+        html += `<div style="font-size: calc(0.62rem * var(--cd-fs,1));color:#b08d57;margin-bottom:2px;">── 主角履历（追加）──</div>`;
+        // 主角履历（字段按配置）
+        const lf = Array.isArray(s.liveLowerFields) && s.liveLowerFields.length ? s.liveLowerFields : ['经历事情', '持有物品', '任务'];
+        lf.forEach((k) => {
+          const v = lower[k] || '';
+          html += `<div style="display:flex;align-items:flex-start;gap:6px;font-size: calc(0.68rem * var(--cd-fs,1));padding:1px 0;">
+            <b style="flex:0 0 78px;font-size:inherit;color:#7a5c34;">${escV(k)}</b>
+            <span style="flex:1;white-space:pre-wrap;word-break:break-word;color:#3c2f1f;">${escV(v) ? escV(v).split('\n').map((l)=>'▸ '+l).join('<br>') : '<span style="color:#c8bba0;">（空）</span>'}</span>
+          </div>`;
+        });
+        html += `</div>`;
+      });
+    }
+
+    html += `</div></div>`;
+
+    $('#cd-content').html(html);
+
+    // —— 事件绑定 ——
+    $('#cd-lt-save').off('click').on('click', function () {
+      const _cf = $('#cd-lt-chfields').val().split(/[、,，]+/).map((x) => x.trim()).filter(Boolean);
+      const _lf = $('#cd-lt-lowfields').val().split(/[、,，]+/).map((x) => x.trim()).filter(Boolean);
+      cdSaveSettings({
+        liveTableEnabled: $('#cd-lt-enabled').is(':checked'),
+        liveTableMode: $('input[name="cd-lt-mode"]:checked').val() || 'auto',
+        liveTableInject: $('#cd-lt-inject').is(':checked'),
+        liveTableBatch: Math.max(1, parseInt($('#cd-lt-batch').val(), 10) || 1),
+        liveTableBatchSource: $('#cd-lt-batchsrc').val() || 'tavern',
+        liveTablePrompt: $('#cd-lt-prompt').val() || '',
+        liveCharFields: _cf.length ? _cf : s.liveCharFields || ['状态', '衣着', '对用户好感', '备注'],
+        liveLowerFields: _lf.length ? _lf : s.liveLowerFields || ['经历事情', '持有物品', '任务'],
+      });
+      try { cdRefreshInjection(); } catch(e) {}
+      toastr.success('填表设置已保存');
+    });
+    $('#cd-lt-refresh').off('click').on('click', function () {
+      cdRenderTable();
+    });
+    $('#cd-lt-resetprompt').off('click').on('click', function () {
+      const def = `[填表指令]\n请根据刚刚的剧情，在回复末尾用一个 <details><summary>情报表</summary> 折叠块包裹，内部输出一个 <liwe> 标签，标签内按以下格式记录：\n\n地点: （当前所在的地点，变化才输出）\n角色名: 具体角色名|状态:…|衣着:…|对用户好感:…|备注:…\n（每个出现的角色一行；子字段用 | 分隔、格式为「子字段:值」；该角色子字段有变化才输出该行，覆盖更新）\n\n经历事情: （{{user}}经历的事情，每条带时间地点，如「第三日·遗忘之城：内容」；有新经历才输出）\n持有物品: （{{user}}新获得的物品，一件一条；有新物品才输出）\n任务: （{{user}}的新任务或更新，一条一条；有新任务才输出）\n\n规则：\n0. 履历（经历/物品/任务）均指主角 {{user}} 的。\n1. 如实从剧情提取，不编造；本次无变化/无关的项不要输出。\n2. 角色行、地点为「覆盖更新」；经历/物品/任务为「追加新条目」。\n3. 经历事情务必带上时间地点。\n4. 用 <details><summary>情报表</summary> ... </details> 包裹 <liwe> 标签，正文只显示折叠条、不直接显示表格内容。\n`;
+      $('#cd-lt-prompt').val(def);
+      toastr.info('已填入默认提示词，请点「保存设置」生效');
+    });
+  } catch (e) {
+    cdWarn('cdRenderTable 失败', e);
+    $('#cd-content').html('<p style="font-size:0.7rem;color:#b03;"></p>');
+  }
+}
+
 
 /* ============================== 🧠 向量化界面 ============================== */
 async function cdRenderVector() {
