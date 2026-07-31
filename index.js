@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.1.4.2';
+const PLUGIN_VERSION = '2.1.5';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -26,6 +26,7 @@ const DEFAULT_SETTINGS = {
   source          : 'tavern',     // 'tavern' | 'openai' | 'claude' | 'gemini'
   fabShow         : true,         // 是否显示悬浮按钮
   themeMode       : 'day',       // 'auto' | 'day' | 'night'
+  fontScale       : 1,            // 界面字号缩放 0.8~1.4（1=标准）
   autoSummary     : true,         // 自动总结开关（独立于手动写日记）
   enableDiary     : true,         // 生成角色日记
   enableRelation  : true,         // 生成人物关系
@@ -85,6 +86,8 @@ function emptyData() {
     },
     cards: [],         // 剧情卡牌收集 [{ title, desc, time, icon }]
     snapshots: [],     // 历史快照 [{ time, type, diaryCount, relationCount, archiveUpdated, archiveEntryCount, chapterTitle }]
+    archiveVectors: [], // 剧情档案向量库 [{ id, text, category, vector }]
+    diaryVectors: [],  // 角色日记向量库 [{ id, role, text, vector }]
   };
 }
 
@@ -282,6 +285,21 @@ function cdBuildDiaryPrompt(windowFloors, data, s) {
   // ★ 楼层文本经过标签过滤
   const tags = s.filterTags || [];
   const scene = windowFloors.map(m => `[#${m.message_id} ${m.name}] ${cdFilterTags(m.mes, tags)}`).join('\n\n');
+
+  // ★ 向量化模式：检索相关历史日记（覆盖全量记忆下拉）
+  let diaryMemory = memory;
+  if (s.diaryMode === 'vector') {
+    try {
+      if (Array.isArray(data.diaryVectors) && data.diaryVectors.length > 0) {
+        const topK = s.vectorTopK || 5;
+        const threshold = s.vectorThreshold || 0.6;
+        const results = cdSearchVectors(scene, data.diaryVectors, topK, threshold);
+        if (results.length) {
+          diaryMemory = '相关历史日记（向量检索）：\n' + results.map(r => '  - ' + (r.text || '').trim()).join('\n');
+        }
+      }
+    } catch (e) { cdWarn('日记向量检索失败（降级为全量记忆）:', e); }
+  }
   const sys = [
     '你是一个"角色日记"记录员。阅读给定剧情片段, 为其中每个有名有戏份的登场角色, 以该角色第一人称主观视角写一篇日记。',
     '要求:',
@@ -301,7 +319,7 @@ function cdBuildDiaryPrompt(windowFloors, data, s) {
   ].filter(Boolean).join('\n');
   const usr = [
     known.length ? `已知角色名单: ${known.join('; ')}` : '已知角色名单: (暂无)',
-    memory ? `各角色已有记忆(最新日记):\n${memory}` : '各角色已有记忆: (暂无)',
+    diaryMemory ? `各角色已有记忆(最新日记):\n${diaryMemory}` : '各角色已有记忆: (暂无)',
     `本次剧情片段:\n${scene}`,
     '请输出 JSON。',
   ].join('\n\n');
@@ -711,8 +729,59 @@ async function cdVectorizeArchive(data) {
     await new Promise(r => setTimeout(r, 100));
   }
   
+
   cdLog('cdVectorizeArchive: 完成，共', data.archiveVectors.length, '条向量');
 }
+
+/**
+ * 把角色日记条目向量化并存入 data.diaryVectors
+ * 只处理新增的（未向量化的）条目，每条带角色名 role 用于按角色过滤
+ */
+async function cdVectorizeDiary(data) {
+  const diaries = data.diaries;
+  if (!diaries || typeof diaries !== 'object') return;
+  if (!Array.isArray(data.diaryVectors)) data.diaryVectors = [];
+
+  // 收集已有向量的文本指纹，用于去重
+  const existingTexts = new Set(data.diaryVectors.map(v => v.text?.trim()));
+
+  const entries = [];
+  for (const [name, list] of Object.entries(diaries)) {
+    if (!Array.isArray(list)) continue;
+    for (const e of list) {
+      if (!e || !e.entry || !e.entry.trim()) continue;
+      const role = name;
+      const dateStr = e.date ? '第' + e.date : (e.turn !== undefined ? '第' + e.turn + '楼' : '');
+      const text = `【${role}的日记 · ${dateStr || '未知时间'}】${e.entry.trim()}`;
+      const trimmed = text.trim();
+      if (trimmed && !existingTexts.has(trimmed)) {
+        entries.push({ role, text: trimmed });
+      }
+    }
+  }
+
+  if (entries.length === 0) return;
+
+  cdLog('cdVectorizeDiary: 将要向量化', entries.length, '条新日记');
+
+  // 逐条向量化（串行，避免限流）
+  for (const entry of entries) {
+    const vector = await cdGetEmbedding(entry.text);
+    if (vector) {
+      data.diaryVectors.push({
+        id: 'dia_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+        role: entry.role,
+        text: entry.text,
+        vector: vector,
+        time: new Date().toISOString(),
+      });
+    }
+    await new Promise(r => setTimeout(r, 100));
+  }
+
+  cdLog('cdVectorizeDiary: 完成，共', data.diaryVectors.length, '条向量');
+}
+
 
 /**
  * 用查询文本在向量库中检索最相似的 N 条
@@ -1501,11 +1570,11 @@ function cdRenderLog() {
         </div>
         <div class="cd-log-stat-card">
           <span class="cd-log-stat-label" style="color:#4ec9b0;"><i class="fa-regular fa-circle-check"></i> 缓存命中</span>
-          <span class="cd-log-stat-value">${totalHit.toLocaleString()} <span style="font-size:0.6rem;opacity:0.5;">(${totalTokens > 0 ? (totalHit/totalTokens*100).toFixed(1) : 0}%)</span></span>
+          <span class="cd-log-stat-value">${totalHit.toLocaleString()} <span style="font-size: calc(0.6rem * var(--cd-fs, 1));opacity:0.5;">(${totalTokens > 0 ? (totalHit/totalTokens*100).toFixed(1) : 0}%)</span></span>
         </div>
         <div class="cd-log-stat-card">
           <span class="cd-log-stat-label" style="color:#ce9178;"><i class="fa-regular fa-circle-exclamation"></i> 缓存未命中</span>
-          <span class="cd-log-stat-value">${totalMiss.toLocaleString()} <span style="font-size:0.6rem;opacity:0.5;">(${totalTokens > 0 ? (totalMiss/totalTokens*100).toFixed(1) : 0}%)</span></span>
+          <span class="cd-log-stat-value">${totalMiss.toLocaleString()} <span style="font-size: calc(0.6rem * var(--cd-fs, 1));opacity:0.5;">(${totalTokens > 0 ? (totalMiss/totalTokens*100).toFixed(1) : 0}%)</span></span>
         </div>
         <div class="cd-log-stat-card">
           <span class="cd-log-stat-label"><i class="fa-regular fa-coins"></i> 费用 (flash)</span>
@@ -2033,6 +2102,17 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
         }
       }
 
+      // ★ 角色日记向量化入库（向量模式）
+      if (diaryOk && s.diaryMode === 'vector') {
+        try {
+          await cdVectorizeDiary(data);
+          await cdSaveData(data);
+          cdAddLog('info', '角色日记向量化入库完成', {向量总数: data.diaryVectors?.length || 0});
+        } catch (e) {
+          cdWarn('角色日记向量化失败（不影响主流程）:', e);
+        }
+      }
+
       // ★ 自动隐藏旧楼层
       if (s.autoHideEnabled) {
         try {
@@ -2406,6 +2486,14 @@ function cdApplyTheme(theme) {
   }
 }
 
+/** 应用界面字号缩放：设置 CSS 变量 --cd-fs，所有 rem 字号统一缩放（不改面板尺寸） */
+function cdApplyFontScale() {
+  const root = document.getElementById(MODAL_ID);
+  if (!root) return;
+  const fs = cdGetSettings().fontScale || 1;
+  root.style.setProperty('--cd-fs', fs);
+}
+
 /* ============================== 扩展菜单按钮 ============================== */
 function cdInjectExtButton() {
   const html = `
@@ -2541,7 +2629,7 @@ function cdInjectFab() {
   
   const html = `<div id="${FAB_ID}" style="position:fixed;z-index:2000000;${posStyle}${fabShow ? '' : 'display:none'}">
     <button class="cd-fab-btn cd-${theme}" title="角色日记"
-      style="width:44px;height:44px;border-radius:50%;background:#c9a87c;color:#fffef9;border:1.5px solid rgba(255,255,255,0.4);display:flex;align-items:center;justify-content:center;font-size:1.05rem;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.5);transform:translateZ(0);">
+      style="width:44px;height:44px;border-radius:50%;background:#c9a87c;color:#fffef9;border:1.5px solid rgba(255,255,255,0.4);display:flex;align-items:center;justify-content:center;font-size: calc(1.05rem * var(--cd-fs, 1));cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.5);transform:translateZ(0);">
       <i class="fa-regular fa-book"></i>
     </button>
   </div>`;
@@ -2621,7 +2709,7 @@ function cdInjectModal() {
     <div id="${MODAL_ID}" class="cd-root cd-${theme}" style="display:none">
       <div class="cd-sheet">
         <div class="cd-header">
-          <span class="cd-header-title">角色日记 <span style="font-weight:400;opacity:0.4;font-size:0.65rem;">【liwe】</span></span>
+          <span class="cd-header-title">角色日记 <span style="font-weight:400;opacity:0.4;font-size: calc(0.65rem * var(--cd-fs, 1));">【liwe】</span></span>
           <div class="cd-header-actions">
             <button class="cd-header-btn" id="cd-btn-fullscreen" title="全屏"><i class="fa-regular fa-maximize"></i></button>
             <button class="cd-header-btn" id="cd-btn-theme" title="切换主题"><i class="fa-regular ${theme === 'night' ? 'fa-sun' : 'fa-moon'}"></i></button>
@@ -2719,6 +2807,7 @@ async function cdOpenPanel() {
   }
   // 恢复拖拽后的位置
   cdRestoreModalPos();
+  cdApplyFontScale();
   $(`#${MODAL_ID}`).fadeIn(200);
   cdSwitchView('browse');
 }
@@ -2743,6 +2832,8 @@ async function cdRefreshPanelContent() {
     case 'vector':   cdRenderVector(); break;
     case 'manage':   cdRenderManage(); break;
   }
+  // 视图渲染完成后重新应用界面字号缩放（动态内容也生效）
+  cdApplyFontScale();
 }
 
 async function cdSwitchView(mode) {
@@ -3163,7 +3254,7 @@ async function cdRenderGraph() {
 
   $('#cd-content').html(`
     <div class="cd-force-section">
-      <h3 class="cd-write-title"><i class="fa-regular fa-diagram-project"></i> 关系力图 <span style="font-size:0.6rem;opacity:0.4;font-weight:normal;">弹簧算法自动布局</span></h3>
+      <h3 class="cd-write-title"><i class="fa-regular fa-diagram-project"></i> 关系力图 <span style="font-size: calc(0.6rem * var(--cd-fs, 1));opacity:0.4;font-weight:normal;">弹簧算法自动布局</span></h3>
       ${forceGraphHtml}
     </div>
     <div class="cd-write-divider"></div>
@@ -3263,7 +3354,7 @@ async function cdRenderArchive() {
       if (!cat.items.length) continue;
       
       html += `<div style="margin-bottom:12px;">
-        <h4 style="font-size:0.75rem;font-weight:600;color:${cat.color};margin:0 0 6px;display:flex;align-items:center;gap:4px;">
+        <h4 style="font-size: calc(0.75rem * var(--cd-fs, 1));font-weight:600;color:${cat.color};margin:0 0 6px;display:flex;align-items:center;gap:4px;">
           <i class="fa-regular ${cat.icon}"></i> ${cat.label}
         </h4>
         <div class="cd-timeline">`;
@@ -3337,19 +3428,19 @@ async function cdRenderArchive() {
     <!-- 横向剧情回放 -->
     <div class="cd-egg-section">
       <h3 class="cd-write-title" style="margin-bottom:4px;"><i class="fa-regular fa-play"></i> 剧情回放</h3>
-      <p style="font-size:0.62rem;color:#8b7355;opacity:0.6;margin:0 0 6px;">按时间顺序横向速览</p>
+      <p style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;opacity:0.6;margin:0 0 6px;">按时间顺序横向速览</p>
       <div style="display:flex;gap:4px;align-items:center;margin-bottom:6px;">
-        <button class="cd-btn-primary" id="cd-do-replay-tl" style="font-size:0.65rem;padding:3px 10px;">▶ 回放</button>
-        <button class="cd-btn-secondary" id="cd-do-replay-tl-stop" style="display:none;font-size:0.65rem;padding:3px 10px;">■ 停止</button>
-        <select id="cd-replay-tl-speed" class="cd-select" style="width:auto;font-size:0.6rem;padding:2px 4px;">
+        <button class="cd-btn-primary" id="cd-do-replay-tl" style="font-size: calc(0.65rem * var(--cd-fs, 1));padding:3px 10px;">▶ 回放</button>
+        <button class="cd-btn-secondary" id="cd-do-replay-tl-stop" style="display:none;font-size: calc(0.65rem * var(--cd-fs, 1));padding:3px 10px;">■ 停止</button>
+        <select id="cd-replay-tl-speed" class="cd-select" style="width:auto;font-size: calc(0.6rem * var(--cd-fs, 1));padding:2px 4px;">
           <option value="2000">1x</option>
           <option value="1000" selected>2x</option>
           <option value="500">4x</option>
         </select>
-        <span style="font-size:0.55rem;color:#8b7355;opacity:0.5;flex:1;text-align:right;">${allEntries.length} 条日记</span>
+        <span style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;flex:1;text-align:right;">${allEntries.length} 条日记</span>
       </div>
       <div id="cd-replay-tl-area" style="display:flex;gap:8px;overflow-x:auto;overflow-y:hidden;padding:8px 6px;border:1px solid rgba(180,150,120,0.08);border-radius:8px;min-height:70px;background:rgba(248,243,237,0.15);scroll-behavior:smooth;align-items:stretch;">
-        <span style="color:#8b7355;opacity:0.4;font-size:0.62rem;padding:20px 10px;text-align:center;width:100%;">点击回放开始</span>
+        <span style="color:#8b7355;opacity:0.4;font-size: calc(0.62rem * var(--cd-fs, 1));padding:20px 10px;text-align:center;width:100%;">点击回放开始</span>
       </div>
     </div>
 
@@ -3360,16 +3451,16 @@ async function cdRenderArchive() {
       <h3 class="cd-write-title" style="margin-bottom:4px;"><i class="fa-regular fa-layer-group"></i> 剧情卡牌 (${cards.length})</h3>
       ${cards.length ? `<div style="display:flex;gap:4px;overflow-x:auto;overflow-y:hidden;padding:4px 2px;max-height:80px;">
         ${cards.slice().reverse().slice(0, 30).map(c => `
-          <div style="flex-shrink:0;width:100px;padding:4px 6px;border-radius:6px;background:rgba(248,243,237,0.3);border:1px solid rgba(180,150,120,0.06);font-size:0.58rem;line-height:1.3;overflow:hidden;">
+          <div style="flex-shrink:0;width:100px;padding:4px 6px;border-radius:6px;background:rgba(248,243,237,0.3);border:1px solid rgba(180,150,120,0.06);font-size: calc(0.58rem * var(--cd-fs, 1));line-height:1.3;overflow:hidden;">
             <div style="display:flex;align-items:center;gap:3px;margin-bottom:2px;">
-              <i class="${c.icon}" style="font-size:0.5rem;color:#8b7355;"></i>
+              <i class="${c.icon}" style="font-size: calc(0.5rem * var(--cd-fs, 1));color:#8b7355;"></i>
               <span style="font-weight:500;color:#4a3a2a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(c.title)}</span>
             </div>
             <div style="color:#8b7355;opacity:0.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(c.time)}</div>
           </div>
         `).join('')}
-        ${cards.length > 30 ? `<span style="flex-shrink:0;font-size:0.55rem;color:#8b7355;opacity:0.5;padding:12px 4px;">+${cards.length-30}</span>` : ''}
-      </div>` : '<p style="font-size:0.62rem;color:#8b7355;opacity:0.5;padding:4px 0;">写日记时自动从剧情档案中提取</p>'}
+        ${cards.length > 30 ? `<span style="flex-shrink:0;font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;padding:12px 4px;">+${cards.length-30}</span>` : ''}
+      </div>` : '<p style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;padding:4px 0;">写日记时自动从剧情档案中提取</p>'}
     </div>
   `;
 
@@ -3395,7 +3486,7 @@ async function cdRenderArchive() {
         _replayTlTimer = null;
         $('#cd-do-replay-tl').show();
         $('#cd-do-replay-tl-stop').hide();
-        area.insertAdjacentHTML('beforeend', `<span style="flex-shrink:0;font-size:0.55rem;color:#8b7355;opacity:0.5;padding:20px 10px;">— 回放结束 —</span>`);
+        area.insertAdjacentHTML('beforeend', `<span style="flex-shrink:0;font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;padding:20px 10px;">— 回放结束 —</span>`);
         return;
       }
       const e = allEntries[index];
@@ -3403,11 +3494,11 @@ async function cdRenderArchive() {
       const nameColor = cdNameColor(e.name);
       const card = document.createElement('div');
       card.className = 'cd-replay-card';
-      card.style.cssText = 'flex-shrink:0;width:180px;padding:8px 10px;border-radius:8px;background:#f8f3ed;border-left:4px solid ' + nameColor + ';font-size:0.65rem;line-height:1.5;box-shadow:0 1px 4px rgba(0,0,0,0.04);';
+      card.style.cssText = 'flex-shrink:0;width:180px;padding:8px 10px;border-radius:8px;background:#f8f3ed;border-left:4px solid ' + nameColor + ';font-size: calc(0.65rem * var(--cd-fs, 1));line-height:1.5;box-shadow:0 1px 4px rgba(0,0,0,0.04);';
       card.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-          <span style="font-weight:600;color:${nameColor};font-size:0.7rem;">${escapeHtml(e.name)}</span>
-          <span style="color:#8b7355;opacity:0.4;font-size:0.5rem;flex-shrink:0;margin-left:4px;">#${e.message_id}</span>
+          <span style="font-weight:600;color:${nameColor};font-size: calc(0.7rem * var(--cd-fs, 1));">${escapeHtml(e.name)}</span>
+          <span style="color:#8b7355;opacity:0.4;font-size: calc(0.5rem * var(--cd-fs, 1));flex-shrink:0;margin-left:4px;">#${e.message_id}</span>
         </div>
         <div style="color:#4a3a2a;word-break:break-word;overflow-wrap:break-word;">${moodEmoji} ${escapeHtml((e.entry || '').slice(0, 80))}</div>
       `;
@@ -3524,20 +3615,20 @@ async function cdRenderFloors() {
           <p class="cd-write-desc">仅提取 AI 楼层，跳过用户/系统消息；已记录的楼层也可强制补写</p>
 
           <div class="cd-write-range" style="margin-bottom:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-            <span style="font-size:0.62rem;color:#8b7355;">手动区间补写：从</span>
+            <span style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;">手动区间补写：从</span>
             <input type="number" id="cd-backfill-start" class="cd-input" placeholder="起始" min="0" style="width:60px;">
-            <span style="font-size:0.62rem;color:#8b7355;">到</span>
+            <span style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;">到</span>
             <input type="number" id="cd-backfill-end" class="cd-input" placeholder="结束" min="0" style="width:60px;">
             <button class="cd-btn-primary" id="cd-backfill-range">立即补写</button>
           </div>
 
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-            <span style="font-size:0.62rem;color:#8b7355;">检测到 ${unrecordedCount} 个历史楼层未记录，每批</span>
+            <span style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;">检测到 ${unrecordedCount} 个历史楼层未记录，每批</span>
             <input type="number" id="cd-backfill-batch" class="cd-input" value="30" min="5" max="100" style="width:55px;">
-            <span style="font-size:0.62rem;color:#8b7355;">楼</span>
+            <span style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;">楼</span>
             <button class="cd-btn-primary" id="cd-backfill-all">一键补写全部</button>
           </div>
-          <div id="cd-backfill-progress" style="margin-top:6px;font-size:0.58rem;color:#6b5a48;"></div>
+          <div id="cd-backfill-progress" style="margin-top:6px;font-size: calc(0.58rem * var(--cd-fs, 1));color:#6b5a48;"></div>
         </div>
       </div>
     `);
@@ -3751,7 +3842,7 @@ function cdRenderMoodChart(data) {
   });
 
   // 图例
-  const legend = allMoods.map(m => `<span style="display:inline-flex;align-items:center;gap:3px;font-size:0.6rem;color:#6b5a48;margin-right:6px;">
+  const legend = allMoods.map(m => `<span style="display:inline-flex;align-items:center;gap:3px;font-size: calc(0.6rem * var(--cd-fs, 1));color:#6b5a48;margin-right:6px;">
     <span style="width:8px;height:8px;border-radius:2px;background:${moodColors[m]||'#aaa'};display:inline-block;"></span>${m}
   </span>`).join('');
 
@@ -3789,7 +3880,7 @@ function cdRenderRandomEntry(data) {
     </div>
     <div class="cd-random-body">${escapeHtml(entry.entry || '')}</div>
     ${entry.secret ? `<div class="cd-random-secret"><i class="fa-regular fa-comment-dots"></i> ${escapeHtml(entry.secret)}</div>` : ''}
-    <button class="cd-btn-secondary" id="cd-random-refresh" style="margin-top:6px;font-size:0.7rem;"><i class="fa-regular fa-dice"></i> 换一条</button>
+    <button class="cd-btn-secondary" id="cd-random-refresh" style="margin-top:6px;font-size: calc(0.7rem * var(--cd-fs, 1));"><i class="fa-regular fa-dice"></i> 换一条</button>
   </div>`;
 }
 
@@ -4273,11 +4364,11 @@ function cdRenderExport() {
     if (!names.length) { toastr.info('暂无日记可导出'); return; }
     
     // 弹出一个选择角色的模态
-    const charHtml = names.map(n => `<label style="display:block;padding:4px 0;font-size:0.7rem;"><input type="radio" name="cd-bio-char" value="${escapeAttr(n)}"> ${escapeHtml(n)}</label>`).join('');
+    const charHtml = names.map(n => `<label style="display:block;padding:4px 0;font-size: calc(0.7rem * var(--cd-fs, 1));"><input type="radio" name="cd-bio-char" value="${escapeAttr(n)}"> ${escapeHtml(n)}</label>`).join('');
     const modal = $(`
       <div class="cd-overlay" style="position:fixed;inset:0;z-index:2000002;background:rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;">
         <div style="background:#fcfaf6;border-radius:12px;padding:16px;max-width:280px;width:90%;">
-          <h3 style="font-size:0.8rem;margin:0 0 8px;color:#4a3a2a;">选择角色</h3>
+          <h3 style="font-size: calc(0.8rem * var(--cd-fs, 1));margin:0 0 8px;color:#4a3a2a;">选择角色</h3>
           ${charHtml}
           <div style="display:flex;gap:6px;margin-top:10px;">
             <button class="cd-btn-primary" id="cd-bio-confirm">导出</button>
@@ -4334,6 +4425,14 @@ async function cdRenderSettings() {
   const panel = $('#cd-settings-panel');
   panel.html(`
     <h2 class="cd-settings-h2"><i class="fa-regular fa-gear"></i> 偏好</h2>
+
+    <h3 class="cd-settings-sub">外观</h3>
+    <div class="cd-set-row">
+      <label>界面字号</label>
+      <input type="range" id="cd-font-scale-range" min="80" max="200" step="5" value="${Math.round((s.fontScale || 1) * 100)}" style="flex:1;accent-color:#c9a87c;">
+      <span id="cd-font-scale-val" style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;min-width:32px;text-align:center;">${Math.round((s.fontScale || 1) * 100)}%</span>
+    </div>
+    <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;margin:2px 0 0;text-align:right;">拖动滑块实时调整面板字号</p>
 
     <div class="cd-set-row">
       <label>主开关</label>
@@ -4425,14 +4524,14 @@ async function cdRenderSettings() {
       ${(Array.isArray(s.filterTags) ? s.filterTags : []).map((pair, idx) => `
         <div class="cd-set-row cd-filter-tag-row" data-idx="${idx}">
           <input type="text" class="cd-input cd-filter-start" value="${escapeAttr(pair.start || '')}" placeholder="上标签" style="flex:1;min-width:60px;">
-          <span style="font-size:0.6rem;color:#8b7355;opacity:0.5;flex-shrink:0;">→</span>
+          <span style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;flex-shrink:0;">→</span>
           <input type="text" class="cd-input cd-filter-end" value="${escapeAttr(pair.end || '')}" placeholder="下标签" style="flex:1;min-width:60px;">
-          <button class="cd-btn-danger cd-filter-del" style="padding:2px 6px;font-size:0.6rem;min-width:auto;">×</button>
+          <button class="cd-btn-danger cd-filter-del" style="padding:2px 6px;font-size: calc(0.6rem * var(--cd-fs, 1));min-width:auto;">×</button>
         </div>
       `).join('')}
     </div>
-    <button class="cd-btn-secondary" id="cd-filter-add" style="margin-top:4px;font-size:0.65rem;">+ 添加一组标签</button>
-    <p style="font-size:0.55rem;color:#8b7355;opacity:0.5;margin:4px 0 0;line-height:1.4;">
+    <button class="cd-btn-secondary" id="cd-filter-add" style="margin-top:4px;font-size: calc(0.65rem * var(--cd-fs, 1));">+ 添加一组标签</button>
+    <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;margin:4px 0 0;line-height:1.4;">
       被上标签和下标签包裹的内容将从发送给AI的楼层文本中移除，不会被总结进日记/关系/剧情档案。
       例如：上标签 <code>&lt;user_thought&gt;</code> 下标签 <code>&lt;/user_thought&gt;</code> 会过滤小剧场内容。
       留空全部删光则不进行任何过滤。
@@ -4456,7 +4555,7 @@ async function cdRenderSettings() {
 
     <div class="cd-set-row">
       <label></label>
-      <button class="cd-btn-secondary" id="cd-btn-show-all-floors" style="font-size:0.65rem;"><i class="fa-regular fa-eye"></i> 恢复所有隐藏楼层</button>
+      <button class="cd-btn-secondary" id="cd-btn-show-all-floors" style="font-size: calc(0.65rem * var(--cd-fs, 1));"><i class="fa-regular fa-eye"></i> 恢复所有隐藏楼层</button>
     </div>
 
     <h3 class="cd-settings-sub">自动压缩剧情档案</h3>
@@ -4478,10 +4577,10 @@ async function cdRenderSettings() {
     <h3 class="cd-settings-sub">API 来源</h3>
 
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
-      <button class="cd-s-src-btn cd-btn-secondary" data-source="tavern" style="font-size:0.62rem;padding:4px 10px;${(!s.source || s.source === 'tavern' || !s.endpoints?.[s.source]?.url) ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">当前酒馆</button>
-      <button class="cd-s-src-btn cd-btn-secondary" data-source="openai" style="font-size:0.62rem;padding:4px 10px;${s.source === 'openai' && s.endpoints?.openai?.url ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">OpenAI</button>
-      <button class="cd-s-src-btn cd-btn-secondary" data-source="claude" style="font-size:0.62rem;padding:4px 10px;${s.source === 'claude' && s.endpoints?.claude?.url ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">Claude</button>
-      <button class="cd-s-src-btn cd-btn-secondary" data-source="gemini" style="font-size:0.62rem;padding:4px 10px;${s.source === 'gemini' && s.endpoints?.gemini?.url ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">Gemini</button>
+      <button class="cd-s-src-btn cd-btn-secondary" data-source="tavern" style="font-size: calc(0.62rem * var(--cd-fs, 1));padding:4px 10px;${(!s.source || s.source === 'tavern' || !s.endpoints?.[s.source]?.url) ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">当前酒馆</button>
+      <button class="cd-s-src-btn cd-btn-secondary" data-source="openai" style="font-size: calc(0.62rem * var(--cd-fs, 1));padding:4px 10px;${s.source === 'openai' && s.endpoints?.openai?.url ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">OpenAI</button>
+      <button class="cd-s-src-btn cd-btn-secondary" data-source="claude" style="font-size: calc(0.62rem * var(--cd-fs, 1));padding:4px 10px;${s.source === 'claude' && s.endpoints?.claude?.url ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">Claude</button>
+      <button class="cd-s-src-btn cd-btn-secondary" data-source="gemini" style="font-size: calc(0.62rem * var(--cd-fs, 1));padding:4px 10px;${s.source === 'gemini' && s.endpoints?.gemini?.url ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">Gemini</button>
     </div>
 
     <div id="cd-custom-api" style="display:${(!s.source || s.source === 'tavern') && !(s.endpoints?.openai?.url || s.endpoints?.claude?.url || s.endpoints?.gemini?.url) ? 'none' : 'block'};">
@@ -4560,7 +4659,7 @@ async function cdRenderSettings() {
       listEl = $('<div id="cd-model-list" style="margin-top:6px;max-height:120px;overflow-y:auto;display:flex;flex-wrap:wrap;gap:4px;"></div>');
       container.append(listEl);
     }
-    listEl.html(models.map(m => `<span class="cd-btn-secondary" style="font-size:0.6rem;padding:2px 6px;cursor:pointer;display:inline-block;" data-model="${escapeAttr(m)}">${escapeHtml(m)}</span>`).join(''));
+    listEl.html(models.map(m => `<span class="cd-btn-secondary" style="font-size: calc(0.6rem * var(--cd-fs, 1));padding:2px 6px;cursor:pointer;display:inline-block;" data-model="${escapeAttr(m)}">${escapeHtml(m)}</span>`).join(''));
     // 点击模型名自动填入
     listEl.off('click').on('click', 'span[data-model]', function () {
       $('#cd-s-model').val($(this).data('model'));
@@ -4577,9 +4676,9 @@ async function cdRenderSettings() {
     container.append(`
       <div class="cd-set-row cd-filter-tag-row" data-idx="${idx}">
         <input type="text" class="cd-input cd-filter-start" value="" placeholder="上标签" style="flex:1;min-width:60px;">
-        <span style="font-size:0.6rem;color:#8b7355;opacity:0.5;flex-shrink:0;">→</span>
+        <span style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;flex-shrink:0;">→</span>
         <input type="text" class="cd-input cd-filter-end" value="" placeholder="下标签" style="flex:1;min-width:60px;">
-        <button class="cd-btn-danger cd-filter-del" style="padding:2px 6px;font-size:0.6rem;min-width:auto;">×</button>
+        <button class="cd-btn-danger cd-filter-del" style="padding:2px 6px;font-size: calc(0.6rem * var(--cd-fs, 1));min-width:auto;">×</button>
       </div>
     `);
   });
@@ -4610,6 +4709,15 @@ async function cdRenderSettings() {
     } catch (e) {
       toastr.error('恢复失败: ' + e.message);
     }
+  });
+
+  // 界面字号滑杆（文档级委托，防重复绑定）
+  $(document).off('input change', '#cd-font-scale-range').on('input change', '#cd-font-scale-range', function () {
+    const pct = parseInt(this.value, 10) || 100;
+    const scale = pct / 100;
+    $('#cd-font-scale-val').text(pct + '%');
+    cdSaveSettings({ fontScale: scale });
+    cdApplyFontScale();
   });
 
   $('#cd-btn-save-settings').on('click', function () {
@@ -4776,7 +4884,7 @@ async function cdRenderEgg() {
 
       <div class="cd-egg-section">
         <h3 class="cd-write-title"><i class="fa-regular fa-wand-magic-sparkles"></i> 塔罗占卜</h3>
-        <p style="font-size:0.68rem;color:#8b7355;opacity:0.6;margin:0 0 6px;">基于当前剧情抽取3张塔罗牌，AI 解读剧情走向</p>
+        <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;opacity:0.6;margin:0 0 6px;">基于当前剧情抽取3张塔罗牌，AI 解读剧情走向</p>
         <div id="cd-tarot-result">${data._tarotResult ? `<div class="cd-tarot-result">${escapeHtml(data._tarotResult).replace(/\n/g, '<br>')}</div>` : ''}</div>
         <button class="cd-btn-primary" id="cd-do-tarot" style="margin-top:4px;">占卜</button>
       </div>
@@ -4785,9 +4893,9 @@ async function cdRenderEgg() {
 
       <div class="cd-egg-section">
         <h3 class="cd-write-title"><i class="fa-regular fa-masks-theater"></i> 角色对白剧场</h3>
-        <p style="font-size:0.68rem;color:#8b7355;opacity:0.6;margin:0 0 6px;">选择角色，AI 基于日记生成一段角色之间的对话</p>
+        <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;opacity:0.6;margin:0 0 6px;">选择角色，AI 基于日记生成一段角色之间的对话</p>
         <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px;" id="cd-theater-chars">
-          ${diaryNames.map(n => `<label style="font-size:0.65rem;display:flex;align-items:center;gap:2px;padding:2px 6px;border-radius:4px;background:rgba(248,243,237,0.3);cursor:pointer;">
+          ${diaryNames.map(n => `<label style="font-size: calc(0.65rem * var(--cd-fs, 1));display:flex;align-items:center;gap:2px;padding:2px 6px;border-radius:4px;background:rgba(248,243,237,0.3);cursor:pointer;">
             <input type="checkbox" class="cd-theater-cb" value="${escapeAttr(n)}"> ${escapeHtml(n)}
           </label>`).join('')}
         </div>
@@ -4799,7 +4907,7 @@ async function cdRenderEgg() {
 
       <div class="cd-egg-section">
         <h3 class="cd-write-title"><i class="fa-regular fa-rectangle-ad"></i> 年度报告</h3>
-        <p style="font-size:0.68rem;color:#8b7355;opacity:0.6;margin:0 0 6px;">基于所有数据生成一份趣味剧情总结报告</p>
+        <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;opacity:0.6;margin:0 0 6px;">基于所有数据生成一份趣味剧情总结报告</p>
         <div id="cd-report-result">${data._reportResult ? `<div class="cd-report-result">${escapeHtml(data._reportResult).replace(/\n/g, '<br>')}</div>` : ''}</div>
         <button class="cd-btn-primary" id="cd-do-report">生成报告</button>
       </div>
@@ -4817,15 +4925,15 @@ async function cdRenderEgg() {
               </div>
               <div class="cd-egg-fav-text">${escapeHtml(e.entry || '').slice(0, 120)}${(e.entry || '').length > 120 ? '...' : ''}</div>
             </div>`).join('')}
-        </div>` : '<p style="font-size:0.68rem;color:#8b7355;opacity:0.5;padding:8px;">在浏览视图中点击日记的 ☆ 按钮收藏</p>'}
+        </div>` : '<p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;padding:8px;">在浏览视图中点击日记的 ☆ 按钮收藏</p>'}
       </div>
 
       <div class="cd-write-divider"></div>
 
       <div class="cd-egg-section">
         <h3 class="cd-write-title"><i class="${egg.icon}"></i> ${egg.title}</h3>
-        <p style="font-size:0.72rem;color:#6b5a48;line-height:1.6;">${egg.text}</p>
-        <button class="cd-btn-secondary" id="cd-egg-refresh" style="margin-top:6px;font-size:0.7rem;">换一个</button>
+        <p style="font-size: calc(0.72rem * var(--cd-fs, 1));color:#6b5a48;line-height:1.6;">${egg.text}</p>
+        <button class="cd-btn-secondary" id="cd-egg-refresh" style="margin-top:6px;font-size: calc(0.7rem * var(--cd-fs, 1));">换一个</button>
       </div>
     </div>`);
 
@@ -4942,6 +5050,16 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
+    version: 'v2.1.5',
+    date: '2026-07-31',
+    items: [
+      '新增「角色日记向量化」：剧情档案与角色日记均支持向量化检索，共用同一嵌入 API',
+      '角色日记向量化：写日记成功后新日记自动向量化入库，写日记前检索最相关历史日记 Top-N 注入',
+      '向量界面新增「角色日记模式」与独立日记向量库，支持分别管理两个库（清空/重建/测试检索）',
+      '新增「界面字号」调节：滑块实时调整面板字号，只改字号不改面板尺寸',
+    ],
+  },
+  {
     version: 'v2.1.4.2',
     date: '2026-07-31',
     items: [
@@ -5042,8 +5160,8 @@ function cdRenderChangelog() {
     <div class="cd-egg">
       ${CHANGELOG.map(ver => `
         <div class="cd-egg-section">
-          <h3 class="cd-write-title"><i class="fa-regular fa-tag"></i> ${ver.version} <span style="font-size:0.6rem;opacity:0.4;font-weight:normal;">${ver.date}</span></h3>
-          <ul style="margin:4px 0;padding-left:16px;font-size:0.68rem;color:#6b5a48;line-height:1.7;">
+          <h3 class="cd-write-title"><i class="fa-regular fa-tag"></i> ${ver.version} <span style="font-size: calc(0.6rem * var(--cd-fs, 1));opacity:0.4;font-weight:normal;">${ver.date}</span></h3>
+          <ul style="margin:4px 0;padding-left:16px;font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;line-height:1.7;">
             ${ver.items.map(item => `<li>${escapeHtml(item)}</li>`).join('')}
           </ul>
         </div>
@@ -5057,18 +5175,18 @@ function cdRenderHelp() {
     <div class="cd-egg" style="padding:2px 0;">
 
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
-        <h3 style="font-size:0.95rem;font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> 角色日记</h3>
-        <p style="font-size:0.68rem;color:#8b7355;margin:0 0 2px;">自动为剧情中的每个角色撰写第一人称日记</p>
-        <p style="font-size:0.6rem;color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.1.0 · 【liwe】</p>
-        <p style="font-size:0.68rem;color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
+        <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> 角色日记</h3>
+        <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">自动为剧情中的每个角色撰写第一人称日记</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.1.0 · 【liwe】</p>
+        <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
       </div>
 
       <div class="cd-write-divider"></div>
 
-      <h4 class="cd-write-title" style="font-size:0.8rem;"><i class="fa-regular fa-star"></i> 核心功能</h4>
-      <table style="width:100%;border-collapse:collapse;font-size:0.68rem;color:#4a3a2a;margin-bottom:10px;">
+      <h4 class="cd-write-title" style="font-size: calc(0.8rem * var(--cd-fs, 1));"><i class="fa-regular fa-star"></i> 核心功能</h4>
+      <table style="width:100%;border-collapse:collapse;font-size: calc(0.68rem * var(--cd-fs, 1));color:#4a3a2a;margin-bottom:10px;">
         <tr><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);vertical-align:top;white-space:nowrap;color:#6b5a48;font-weight:500;width:70px;">浏览</td><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);">按角色查看所有日记，支持全文搜索、角色筛选、心情分布热力图、随机回顾</td></tr>
         <tr><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);vertical-align:top;white-space:nowrap;color:#6b5a48;font-weight:500;">时间线</td><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);">剧情档案按主线/支线/状态/未解决分类展示，保留时间线竖线样式</td></tr>
         <tr><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);vertical-align:top;white-space:nowrap;color:#6b5a48;font-weight:500;">关系</td><td style="padding:6px 8px;border-bottom:1px solid rgba(180,150,120,0.08);">角色关系力导向图可视化，绿=友好 红=排斥 灰=中立，下方附文本列表</td></tr>
@@ -5082,8 +5200,8 @@ function cdRenderHelp() {
 
       <div class="cd-write-divider"></div>
 
-      <h4 class="cd-write-title" style="font-size:0.8rem;"><i class="fa-regular fa-rotate"></i> 自动触发机制</h4>
-      <p style="font-size:0.66rem;color:#6b5a48;line-height:1.6;margin:0 0 8px;">
+      <h4 class="cd-write-title" style="font-size: calc(0.8rem * var(--cd-fs, 1));"><i class="fa-regular fa-rotate"></i> 自动触发机制</h4>
+      <p style="font-size: calc(0.66rem * var(--cd-fs, 1));color:#6b5a48;line-height:1.6;margin:0 0 8px;">
         每次 AI 回复后自动检查新增楼层数。达到设置间隔（默认 5 楼）时，自动执行三路并行 API 写日记+关系+剧情档案。<br>
         基于 <code>chat.length</code> 基线追踪，不受 SillyTavern 分片加载影响。<br>
         可在设置面板关闭自动总结，改为手动触发。
@@ -5091,8 +5209,8 @@ function cdRenderHelp() {
 
       <div class="cd-write-divider"></div>
 
-      <h4 class="cd-write-title" style="font-size:0.8rem;"><i class="fa-regular fa-diagram-project"></i> 三路并行 API</h4>
-      <div style="font-size:0.66rem;color:#6b5a48;line-height:1.6;">
+      <h4 class="cd-write-title" style="font-size: calc(0.8rem * var(--cd-fs, 1));"><i class="fa-regular fa-diagram-project"></i> 三路并行 API</h4>
+      <div style="font-size: calc(0.66rem * var(--cd-fs, 1));color:#6b5a48;line-height:1.6;">
         <p style="margin:0 0 4px;"><b style="color:#4a3a2a;">① 日记 API</b> — 为每个有戏份的角色以第一人称写日记</p>
         <p style="margin:0 0 4px;"><b style="color:#4a3a2a;">② 关系 API</b> — 提取角色间单向主观关系</p>
         <p style="margin:0 0 4px;"><b style="color:#4a3a2a;">③ 剧情档案 API</b> — 增量更新主线/支线/状态/未解决事项</p>
@@ -5101,8 +5219,8 @@ function cdRenderHelp() {
 
       <div class="cd-write-divider"></div>
 
-      <h4 class="cd-write-title" style="font-size:0.8rem;"><i class="fa-regular fa-gear"></i> 设置说明</h4>
-      <table style="width:100%;border-collapse:collapse;font-size:0.66rem;color:#4a3a2a;margin-bottom:8px;">
+      <h4 class="cd-write-title" style="font-size: calc(0.8rem * var(--cd-fs, 1));"><i class="fa-regular fa-gear"></i> 设置说明</h4>
+      <table style="width:100%;border-collapse:collapse;font-size: calc(0.66rem * var(--cd-fs, 1));color:#4a3a2a;margin-bottom:8px;">
         <tr><td style="padding:5px 8px;border-bottom:1px solid rgba(180,150,120,0.06);color:#6b5a48;white-space:nowrap;">主开关</td><td style="padding:5px 8px;border-bottom:1px solid rgba(180,150,120,0.06);">启用/禁用自动写日记</td></tr>
         <tr><td style="padding:5px 8px;border-bottom:1px solid rgba(180,150,120,0.06);color:#6b5a48;white-space:nowrap;">处理频率</td><td style="padding:5px 8px;border-bottom:1px solid rgba(180,150,120,0.06);">每 N 条 AI 消息执行一次，默认 5</td></tr>
         <tr><td style="padding:5px 8px;border-bottom:1px solid rgba(180,150,120,0.06);color:#6b5a48;white-space:nowrap;">路人转正</td><td style="padding:5px 8px;border-bottom:1px solid rgba(180,150,120,0.06);">出场 N 次后转为正式角色，默认 3 次</td></tr>
@@ -5112,8 +5230,8 @@ function cdRenderHelp() {
 
       <div class="cd-write-divider"></div>
 
-      <h4 class="cd-write-title" style="font-size:0.8rem;"><i class="fa-regular fa-filter"></i> 内容过滤</h4>
-      <p style="font-size:0.66rem;color:#6b5a48;line-height:1.6;margin:0 0 8px;">
+      <h4 class="cd-write-title" style="font-size: calc(0.8rem * var(--cd-fs, 1));"><i class="fa-regular fa-filter"></i> 内容过滤</h4>
+      <p style="font-size: calc(0.66rem * var(--cd-fs, 1));color:#6b5a48;line-height:1.6;margin:0 0 8px;">
         在设置中可自定义「上标签」和「下标签」，被这对标签包裹的楼层内容在发送给AI总结时会被移除。<br>
         默认已预设三组标签：<code>&lt;user_thought&gt;</code>（小剧场）、<code>&lt;think&gt;</code>（思考过程）、<code>&lt;!-- --&gt;</code>（注释）。<br>
         你可以增删改任意标签组，全部删光则不进行过滤。<br>
@@ -5122,8 +5240,8 @@ function cdRenderHelp() {
 
       <div class="cd-write-divider"></div>
 
-      <h4 class="cd-write-title" style="font-size:0.8rem;"><i class="fa-regular fa-brain"></i> 向量化检索</h4>
-      <p style="font-size:0.66rem;color:#6b5a48;line-height:1.6;margin:0 0 8px;">
+      <h4 class="cd-write-title" style="font-size: calc(0.8rem * var(--cd-fs, 1));"><i class="fa-regular fa-brain"></i> 向量化检索</h4>
+      <p style="font-size: calc(0.66rem * var(--cd-fs, 1));color:#6b5a48;line-height:1.6;margin:0 0 8px;">
         向量化是一种「检索增强生成」技术，将剧情档案中的每条事件转为向量，写日记时只检索最相关的几条给AI参考，而非注入全部历史文本。<br><br>
         <b>两种模式：</b><br>
         • <b>普通总结</b>（默认）：每次写日记把全部剧情档案文本注入AI，适合剧情较短时。<br>
@@ -5137,11 +5255,16 @@ function cdRenderHelp() {
         • 选择「向量化检索」模式<br>
         • 配置嵌入 API（独立于主 API，支持 OpenAI 兼容/Gemini/酒馆内置）<br>
         • 调整召回条数和相似度阈值，点击「测试连接」验证<br>
-        嵌入 API 未配置时会自动降级为关键词匹配检索。
+        嵌入 API 未配置时会自动降级为关键词匹配检索。<br><br>
+<b>角色日记向量化：</b><br>
+剧情档案与角色日记均可独立开启向量化（共用同一个嵌入 API）。<br>
+• 写日记成功后，新日记条目会自动向量化入库<br>
+• 下次写日记前，用当前楼层文本检索与剧情最相关的历史日记，仅注入 Top-N 条<br>
+在「🧠 向量」页面可分别切换剧情档案与角色日记的模式，并单独管理两个向量库（含清空/重建/测试检索）。
       </p>
 
-      <h4 class="cd-write-title" style="font-size:0.8rem;"><i class="fa-regular fa-eye-slash"></i> 自动隐藏楼层</h4>
-      <p style="font-size:0.66rem;color:#6b5a48;line-height:1.6;margin:0 0 8px;">
+      <h4 class="cd-write-title" style="font-size: calc(0.8rem * var(--cd-fs, 1));"><i class="fa-regular fa-eye-slash"></i> 自动隐藏楼层</h4>
+      <p style="font-size: calc(0.66rem * var(--cd-fs, 1));color:#6b5a48;line-height:1.6;margin:0 0 8px;">
         每次写日记后自动隐藏旧楼层（用户和AI消息都隐藏），只保留最新N条可见。<br>
         可在设置中开启此功能，并调整保留条数。<br>
         如果不小心隐藏了重要楼层，点击设置中的「恢复所有隐藏楼层」按钮即可还原。
@@ -5149,8 +5272,8 @@ function cdRenderHelp() {
 
       <div class="cd-write-divider"></div>
 
-      <h4 class="cd-write-title" style="font-size:0.8rem;"><i class="fa-regular fa-lightbulb"></i> 小技巧</h4>
-      <ul style="margin:0;padding-left:14px;font-size:0.66rem;color:#6b5a48;line-height:1.7;">
+      <h4 class="cd-write-title" style="font-size: calc(0.8rem * var(--cd-fs, 1));"><i class="fa-regular fa-lightbulb"></i> 小技巧</h4>
+      <ul style="margin:0;padding-left:14px;font-size: calc(0.66rem * var(--cd-fs, 1));color:#6b5a48;line-height:1.7;">
         <li>浏览视图中点击 ✏️ 可编辑单条日记，点击 🧠 可生成角色内心独白</li>
         <li>点击 ☆ 收藏精彩日记，在娱乐页面集中回顾</li>
         <li>切换聊天后可通过导出 JSON → 导入 JSON 迁移数据</li>
@@ -5160,8 +5283,8 @@ function cdRenderHelp() {
 
       <div class="cd-write-divider"></div>
 
-      <h4 class="cd-write-title" style="font-size:0.8rem;"><i class="fa-regular fa-database"></i> 数据说明</h4>
-      <p style="font-size:0.66rem;color:#6b5a48;line-height:1.6;margin:0;">
+      <h4 class="cd-write-title" style="font-size: calc(0.8rem * var(--cd-fs, 1));"><i class="fa-regular fa-database"></i> 数据说明</h4>
+      <p style="font-size: calc(0.66rem * var(--cd-fs, 1));color:#6b5a48;line-height:1.6;margin:0;">
         日记数据存储在 SillyTavern 的 chatMetadata 中，跟随聊天自动保存。<br>
         日志存储在浏览器 localStorage，刷新不丢失。<br>
         导出 JSON 可永久备份，支持跨聊天导入合并。
@@ -5209,26 +5332,26 @@ async function cdRenderManage() {
   let html = `
     <div class="cd-egg" style="padding:2px 0;">
 
-      <h3 class="cd-write-title" style="font-size:0.85rem;"><i class="fa-regular fa-database"></i> 数据管理</h3>
-      <p style="font-size:0.62rem;color:#8b7355;opacity:0.6;margin:0 0 10px;">勾选要删除的条目，点击底部的「删除选中」按钮。删除后不可恢复。</p>
+      <h3 class="cd-write-title" style="font-size: calc(0.85rem * var(--cd-fs, 1));"><i class="fa-regular fa-database"></i> 数据管理</h3>
+      <p style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;opacity:0.6;margin:0 0 10px;">勾选要删除的条目，点击底部的「删除选中」按钮。删除后不可恢复。</p>
 
       <!-- 📖 角色日记 -->
       <div class="cd-egg-section">
         <div class="cd-set-row" style="margin-bottom:4px;">
-          <label><i class="fa-regular fa-book" style="color:#4a3a2a;"></i> 角色日记 <span style="font-size:0.6rem;opacity:0.5;">(${diaryEntries.length} 条)</span></label>
-          ${diaryEntries.length ? `<label style="font-size:0.6rem;"><input type="checkbox" class="cd-mgr-checkall" data-target="diary"> 全选</label>` : ''}
+          <label><i class="fa-regular fa-book" style="color:#4a3a2a;"></i> 角色日记 <span style="font-size: calc(0.6rem * var(--cd-fs, 1));opacity:0.5;">(${diaryEntries.length} 条)</span></label>
+          ${diaryEntries.length ? `<label style="font-size: calc(0.6rem * var(--cd-fs, 1));"><input type="checkbox" class="cd-mgr-checkall" data-target="diary"> 全选</label>` : ''}
         </div>
         ${diaryEntries.length ? `<div class="cd-mgr-list" data-group="diary" style="max-height:200px;overflow-y:auto;border:1px solid rgba(180,150,120,0.08);border-radius:6px;padding:2px;">
           ${diaryEntries.map(e => `
-            <label style="display:flex;align-items:center;gap:4px;padding:3px 6px;font-size:0.62rem;border-bottom:1px solid rgba(180,150,120,0.04);cursor:pointer;">
+            <label style="display:flex;align-items:center;gap:4px;padding:3px 6px;font-size: calc(0.62rem * var(--cd-fs, 1));border-bottom:1px solid rgba(180,150,120,0.04);cursor:pointer;">
               <input type="checkbox" class="cd-mgr-cb" data-key="${escapeAttr(e.key)}" data-group="diary">
               <span style="color:#4a3a2a;font-weight:500;flex-shrink:0;">${escapeHtml(e.name)}</span>
               <span style="color:#8b7355;opacity:0.5;flex-shrink:0;">${escapeHtml(e.date)}</span>
               <span style="color:#6b5a48;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${escapeHtml(e.entry)}</span>
-              ${e.mood ? `<span style="font-size:0.55rem;color:#8b7355;opacity:0.5;flex-shrink:0;">${escapeHtml(e.mood)}</span>` : ''}
+              ${e.mood ? `<span style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;flex-shrink:0;">${escapeHtml(e.mood)}</span>` : ''}
             </label>
           `).join('')}
-        </div>` : '<p style="font-size:0.62rem;color:#8b7355;opacity:0.4;padding:4px 0;">暂无日记</p>'}
+        </div>` : '<p style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;opacity:0.4;padding:4px 0;">暂无日记</p>'}
       </div>
 
       <div class="cd-write-divider"></div>
@@ -5236,21 +5359,21 @@ async function cdRenderManage() {
       <!-- 🔗 人物关系 -->
       <div class="cd-egg-section">
         <div class="cd-set-row" style="margin-bottom:4px;">
-          <label><i class="fa-regular fa-diagram-project" style="color:#4a3a2a;"></i> 人物关系 <span style="font-size:0.6rem;opacity:0.5;">(${relEntries.length} 条)</span></label>
-          ${relEntries.length ? `<label style="font-size:0.6rem;"><input type="checkbox" class="cd-mgr-checkall" data-target="rel"> 全选</label>` : ''}
+          <label><i class="fa-regular fa-diagram-project" style="color:#4a3a2a;"></i> 人物关系 <span style="font-size: calc(0.6rem * var(--cd-fs, 1));opacity:0.5;">(${relEntries.length} 条)</span></label>
+          ${relEntries.length ? `<label style="font-size: calc(0.6rem * var(--cd-fs, 1));"><input type="checkbox" class="cd-mgr-checkall" data-target="rel"> 全选</label>` : ''}
         </div>
         ${relEntries.length ? `<div class="cd-mgr-list" data-group="rel" style="max-height:150px;overflow-y:auto;border:1px solid rgba(180,150,120,0.08);border-radius:6px;padding:2px;">
           ${relEntries.map(e => `
-            <label style="display:flex;align-items:center;gap:4px;padding:3px 6px;font-size:0.62rem;border-bottom:1px solid rgba(180,150,120,0.04);cursor:pointer;">
+            <label style="display:flex;align-items:center;gap:4px;padding:3px 6px;font-size: calc(0.62rem * var(--cd-fs, 1));border-bottom:1px solid rgba(180,150,120,0.04);cursor:pointer;">
               <input type="checkbox" class="cd-mgr-cb" data-key="${escapeAttr(`${e.from}→${e.to}`)}" data-group="rel">
               <span style="color:#4a3a2a;font-weight:500;">${escapeHtml(e.from)}</span>
               <span style="color:#8b7355;opacity:0.5;">→</span>
               <span style="color:#4a3a2a;font-weight:500;">${escapeHtml(e.to)}</span>
               <span style="color:#6b5a48;">${escapeHtml(e.type)}</span>
-              <span style="font-size:0.55rem;color:${e.attitude === 'positive' ? '#22c55e' : e.attitude === 'negative' ? '#ef4444' : '#9ca3af'};">${e.attitude}</span>
+              <span style="font-size: calc(0.55rem * var(--cd-fs, 1));color:${e.attitude === 'positive' ? '#22c55e' : e.attitude === 'negative' ? '#ef4444' : '#9ca3af'};">${e.attitude}</span>
             </label>
           `).join('')}
-        </div>` : '<p style="font-size:0.62rem;color:#8b7355;opacity:0.4;padding:4px 0;">暂无关系</p>'}
+        </div>` : '<p style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;opacity:0.4;padding:4px 0;">暂无关系</p>'}
       </div>
 
       <div class="cd-write-divider"></div>
@@ -5258,23 +5381,23 @@ async function cdRenderManage() {
       <!-- 📸 历史快照 -->
       <div class="cd-egg-section">
         <div class="cd-set-row" style="margin-bottom:4px;">
-          <label><i class="fa-regular fa-camera" style="color:#4a3a2a;"></i> 历史快照 <span style="font-size:0.6rem;opacity:0.5;">(${(data.snapshots||[]).length} 条)</span></label>
-          ${(data.snapshots||[]).length ? `<label style="font-size:0.6rem;"><input type="checkbox" class="cd-mgr-checkall" data-target="snap"> 全选</label>` : ''}
+          <label><i class="fa-regular fa-camera" style="color:#4a3a2a;"></i> 历史快照 <span style="font-size: calc(0.6rem * var(--cd-fs, 1));opacity:0.5;">(${(data.snapshots||[]).length} 条)</span></label>
+          ${(data.snapshots||[]).length ? `<label style="font-size: calc(0.6rem * var(--cd-fs, 1));"><input type="checkbox" class="cd-mgr-checkall" data-target="snap"> 全选</label>` : ''}
         </div>
         ${(data.snapshots||[]).length ? `<div class="cd-mgr-list" data-group="snap" style="max-height:250px;overflow-y:auto;border:1px solid rgba(180,150,120,0.08);border-radius:6px;padding:2px;">
           ${data.snapshots.slice().reverse().map((s, rawIdx) => {
             const idx = data.snapshots.length - 1 - rawIdx;
-            return `<label style="display:flex;align-items:center;gap:4px;padding:3px 6px;font-size:0.62rem;border-bottom:1px solid rgba(180,150,120,0.04);cursor:pointer;">
+            return `<label style="display:flex;align-items:center;gap:4px;padding:3px 6px;font-size: calc(0.62rem * var(--cd-fs, 1));border-bottom:1px solid rgba(180,150,120,0.04);cursor:pointer;">
               <input type="checkbox" class="cd-mgr-cb" data-key="${idx}" data-group="snap">
-              <span style="color:#8b7355;opacity:0.5;flex-shrink:0;font-size:0.55rem;">${s.type === 'auto' ? '自动' : '手动'}</span>
+              <span style="color:#8b7355;opacity:0.5;flex-shrink:0;font-size: calc(0.55rem * var(--cd-fs, 1));">${s.type === 'auto' ? '自动' : '手动'}</span>
               <span style="color:#6b5a48;flex-shrink:0;">${escapeHtml(s.time)}</span>
               <span style="color:#4a3a2a;">${s.diaryCount}角色</span>
               <span style="color:#8b7355;opacity:0.7;">${s.relationCount}关系</span>
-              ${s.archiveUpdated ? `<span style="color:#22c55e;font-size:0.55rem;">档案✓</span>` : ''}
+              ${s.archiveUpdated ? `<span style="color:#22c55e;font-size: calc(0.55rem * var(--cd-fs, 1));">档案✓</span>` : ''}
               ${s.chapterTitle ? `<span style="color:#4a3a2a;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${escapeHtml(s.chapterTitle)}</span>` : ''}
             </label>`;
           }).join('')}
-        </div>` : '<p style="font-size:0.62rem;color:#8b7355;opacity:0.4;padding:4px 0;">暂无快照。每次写日记后自动生成。</p>'}
+        </div>` : '<p style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;opacity:0.4;padding:4px 0;">暂无快照。每次写日记后自动生成。</p>'}
       </div>
 
       <div class="cd-write-divider"></div>
@@ -5284,12 +5407,12 @@ async function cdRenderManage() {
         <div class="cd-set-row" style="margin-bottom:4px;">
           <label><i class="fa-regular fa-timeline" style="color:#4a3a2a;"></i> 剧情档案</label>
         </div>
-        <div style="font-size:0.62rem;color:#6b5a48;">
+        <div style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#6b5a48;">
           ${hasArchive ? `
             <div style="padding:4px 6px;">
               主线 ${(archive.mainline||'').length} 字 · 支线 ${(archive.sideline||'').length} 字 · 状态 ${(archive.states||'').length} 字 · 未解决 ${(archive.unresolved||'').length} 字
             </div>
-            <button class="cd-btn-danger cd-mgr-clear-archive" style="margin-top:4px;font-size:0.6rem;padding:3px 10px;min-width:auto;"><i class="fa-regular fa-trash-can"></i> 清空剧情档案</button>
+            <button class="cd-btn-danger cd-mgr-clear-archive" style="margin-top:4px;font-size: calc(0.6rem * var(--cd-fs, 1));padding:3px 10px;min-width:auto;"><i class="fa-regular fa-trash-can"></i> 清空剧情档案</button>
           ` : '<p style="padding:4px 0;">暂无剧情档案</p>'}
         </div>
       </div>
@@ -5299,19 +5422,19 @@ async function cdRenderManage() {
       <!-- 🃏 剧情卡牌 -->
       <div class="cd-egg-section">
         <div class="cd-set-row" style="margin-bottom:4px;">
-          <label><i class="fa-regular fa-layer-group" style="color:#4a3a2a;"></i> 剧情卡牌 <span style="font-size:0.6rem;opacity:0.5;">(${cards.length} 张)</span></label>
-          ${cards.length ? `<label style="font-size:0.6rem;"><input type="checkbox" class="cd-mgr-checkall" data-target="card"> 全选</label>` : ''}
+          <label><i class="fa-regular fa-layer-group" style="color:#4a3a2a;"></i> 剧情卡牌 <span style="font-size: calc(0.6rem * var(--cd-fs, 1));opacity:0.5;">(${cards.length} 张)</span></label>
+          ${cards.length ? `<label style="font-size: calc(0.6rem * var(--cd-fs, 1));"><input type="checkbox" class="cd-mgr-checkall" data-target="card"> 全选</label>` : ''}
         </div>
         ${cards.length ? `<div class="cd-mgr-list" data-group="card" style="max-height:150px;overflow-y:auto;border:1px solid rgba(180,150,120,0.08);border-radius:6px;padding:2px;">
           ${cards.map((c, i) => `
-            <label style="display:flex;align-items:center;gap:4px;padding:3px 6px;font-size:0.62rem;border-bottom:1px solid rgba(180,150,120,0.04);cursor:pointer;">
+            <label style="display:flex;align-items:center;gap:4px;padding:3px 6px;font-size: calc(0.62rem * var(--cd-fs, 1));border-bottom:1px solid rgba(180,150,120,0.04);cursor:pointer;">
               <input type="checkbox" class="cd-mgr-cb" data-key="${i}" data-group="card">
-              <i class="${c.icon}" style="font-size:0.55rem;color:#8b7355;width:14px;"></i>
+              <i class="${c.icon}" style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;width:14px;"></i>
               <span style="color:#4a3a2a;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${escapeHtml(c.title)}</span>
               <span style="color:#8b7355;opacity:0.5;">${escapeHtml(c.time)}</span>
             </label>
           `).join('')}
-        </div>` : '<p style="font-size:0.62rem;color:#8b7355;opacity:0.4;padding:4px 0;">暂无卡牌</p>'}
+        </div>` : '<p style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;opacity:0.4;padding:4px 0;">暂无卡牌</p>'}
       </div>
 
       <div class="cd-write-divider"></div>
@@ -5321,7 +5444,7 @@ async function cdRenderManage() {
         <button class="cd-btn-danger" id="cd-mgr-delete-selected" style="flex:1;"><i class="fa-regular fa-trash-can"></i> 删除选中</button>
         <button class="cd-btn-danger" id="cd-mgr-delete-all" style="flex:1;"><i class="fa-regular fa-trash-can"></i> 清空所有数据</button>
       </div>
-      <p style="font-size:0.55rem;color:#c84632;opacity:0.5;margin:4px 0 0;">删除操作不可恢复，请谨慎操作。</p>
+      <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#c84632;opacity:0.5;margin:4px 0 0;">删除操作不可恢复，请谨慎操作。</p>
 
     </div>`;
 
@@ -5429,35 +5552,64 @@ async function cdRenderVector() {
   const vectors = data.archiveVectors || [];
   const archive = data.archive;
   const ve = s.vectorEmbedding || {};
+  const diaryVectors = data.diaryVectors || [];
+  const diaryTotal = Object.values(data.diaries || {}).reduce((s, l) => s + (Array.isArray(l) ? l.length : 0), 0);
   
   const statsHtml = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0;">
       <div style="background:rgba(180,150,120,0.06);border-radius:8px;padding:10px;text-align:center;">
-        <div style="font-size:1.2rem;font-weight:600;color:#4a3a2a;">${vectors.length}</div>
-        <div style="font-size:0.6rem;color:#8b7355;">已向量化事件</div>
+        <div style="font-size: calc(1.2rem * var(--cd-fs, 1));font-weight:600;color:#4a3a2a;">${vectors.length}</div>
+        <div style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;">已向量化事件</div>
       </div>
       <div style="background:rgba(180,150,120,0.06);border-radius:8px;padding:10px;text-align:center;">
-        <div style="font-size:1.2rem;font-weight:600;color:#4a3a2a;">${archive ? cdCountArchiveEntries(archive) : 0}</div>
-        <div style="font-size:0.6rem;color:#8b7355;">档案总条目</div>
+        <div style="font-size: calc(1.2rem * var(--cd-fs, 1));font-weight:600;color:#4a3a2a;">${archive ? cdCountArchiveEntries(archive) : 0}</div>
+        <div style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;">档案总条目</div>
+      </div>
+    </div>
+  `;
+
+  const diaryStatsHtml = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0;">
+      <div style="background:rgba(180,150,120,0.06);border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size: calc(1.2rem * var(--cd-fs, 1));font-weight:600;color:#4a3a2a;">${diaryVectors.length}</div>
+        <div style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;">已向量化日记</div>
+      </div>
+      <div style="background:rgba(180,150,120,0.06);border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size: calc(1.2rem * var(--cd-fs, 1));font-weight:600;color:#4a3a2a;">${diaryTotal}</div>
+        <div style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;">日记总条数</div>
       </div>
     </div>
   `;
   
   $('#cd-content').html(`
     <div class="cd-egg" style="padding:2px 0;">
-      <h3 class="cd-write-title" style="font-size:0.85rem;"><i class="fa-regular fa-brain"></i> 向量化检索</h3>
-      <p style="font-size:0.62rem;color:#8b7355;opacity:0.6;margin:0 0 10px;">剧情档案模式为「向量化」时，写日记不再注入全部历史文本，而是检索最相关的 N 条事件。</p>
+      <h3 class="cd-write-title" style="font-size: calc(0.85rem * var(--cd-fs, 1));"><i class="fa-regular fa-brain"></i> 向量化检索</h3>
+      <p style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;opacity:0.6;margin:0 0 10px;">剧情档案模式为「向量化」时，写日记不再注入全部历史文本，而是检索最相关的 N 条事件。</p>
       
       <div class="cd-egg-section">
         <div class="cd-set-row" style="margin-bottom:4px;">
           <label>剧情档案模式</label>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <label style="font-size:0.68rem;display:flex;align-items:center;gap:4px;cursor:pointer;">
+          <label style="font-size: calc(0.68rem * var(--cd-fs, 1));display:flex;align-items:center;gap:4px;cursor:pointer;">
             <input type="radio" name="cd-vec-archive-mode" value="append" ${s.archiveMode !== 'vector' ? 'checked' : ''}> 普通总结
           </label>
-          <label style="font-size:0.68rem;display:flex;align-items:center;gap:4px;cursor:pointer;">
+          <label style="font-size: calc(0.68rem * var(--cd-fs, 1));display:flex;align-items:center;gap:4px;cursor:pointer;">
             <input type="radio" name="cd-vec-archive-mode" value="vector" ${s.archiveMode === 'vector' ? 'checked' : ''}> 向量化检索
+          </label>
+        </div>
+      </div>
+
+      <div class="cd-egg-section">
+        <div class="cd-set-row" style="margin-bottom:4px;">
+          <label>角色日记模式</label>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <label style="font-size: calc(0.68rem * var(--cd-fs, 1));display:flex;align-items:center;gap:4px;cursor:pointer;">
+            <input type="radio" name="cd-vec-diary-mode" value="append" ${s.diaryMode !== 'vector' ? 'checked' : ''}> 普通总结
+          </label>
+          <label style="font-size: calc(0.68rem * var(--cd-fs, 1));display:flex;align-items:center;gap:4px;cursor:pointer;">
+            <input type="radio" name="cd-vec-diary-mode" value="vector" ${s.diaryMode === 'vector' ? 'checked' : ''}> 向量化检索
           </label>
         </div>
       </div>
@@ -5465,11 +5617,11 @@ async function cdRenderVector() {
       <div class="cd-egg-section">
         <div class="cd-set-row">
           <label>每次召回条数</label>
-          <input type="number" id="cd-vec-topk" value="${s.vectorTopK || 5}" min="1" max="20" style="width:50px;font-size:0.68rem;padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
+          <input type="number" id="cd-vec-topk" value="${s.vectorTopK || 5}" min="1" max="20" style="width:50px;font-size: calc(0.68rem * var(--cd-fs, 1));padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
         </div>
         <div class="cd-set-row">
           <label>相似度阈值</label>
-          <input type="number" id="cd-vec-threshold" value="${s.vectorThreshold || 0.6}" min="0" max="1" step="0.05" style="width:50px;font-size:0.68rem;padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
+          <input type="number" id="cd-vec-threshold" value="${s.vectorThreshold || 0.6}" min="0" max="1" step="0.05" style="width:50px;font-size: calc(0.68rem * var(--cd-fs, 1));padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
         </div>
       </div>
       
@@ -5477,31 +5629,31 @@ async function cdRenderVector() {
         <div class="cd-set-row" style="margin-bottom:4px;">
           <label>嵌入 API</label>
         </div>
-        <p style="font-size:0.55rem;color:#8b7355;opacity:0.5;margin:0 0 6px;">选择嵌入服务来源，选好后只需填密钥即可。</p>
+        <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;margin:0 0 6px;">选择嵌入服务来源，选好后只需填密钥即可。</p>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
-          <button class="cd-vec-emb-btn cd-btn-secondary" data-source="tavern" style="font-size:0.62rem;padding:4px 10px;${(ve.source||'tavern') === 'tavern' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">酒馆内置</button>
-          <button class="cd-vec-emb-btn cd-btn-secondary" data-source="openai" style="font-size:0.62rem;padding:4px 10px;${ve.source === 'openai' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">OpenAI 兼容</button>
-          <button class="cd-vec-emb-btn cd-btn-secondary" data-source="gemini" style="font-size:0.62rem;padding:4px 10px;${ve.source === 'gemini' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">Gemini</button>
+          <button class="cd-vec-emb-btn cd-btn-secondary" data-source="tavern" style="font-size: calc(0.62rem * var(--cd-fs, 1));padding:4px 10px;${(ve.source||'tavern') === 'tavern' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">酒馆内置</button>
+          <button class="cd-vec-emb-btn cd-btn-secondary" data-source="openai" style="font-size: calc(0.62rem * var(--cd-fs, 1));padding:4px 10px;${ve.source === 'openai' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">OpenAI 兼容</button>
+          <button class="cd-vec-emb-btn cd-btn-secondary" data-source="gemini" style="font-size: calc(0.62rem * var(--cd-fs, 1));padding:4px 10px;${ve.source === 'gemini' ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">Gemini</button>
         </div>
         <div id="cd-vec-emb-details" style="${ve.source === 'tavern' ? 'display:none;' : ''}">
           <div class="cd-set-row" id="cd-vec-emb-url-row" style="${ve.source === 'gemini' ? 'display:none;' : ''}">
             <label>API 地址</label>
-            <input type="text" id="cd-vec-emb-url" value="${escapeAttr(ve.source === 'openai' ? (ve.url || 'https://api.openai.com/v1') : (ve.url || ''))}" placeholder="https://api.openai.com/v1" style="flex:1;font-size:0.65rem;padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
+            <input type="text" id="cd-vec-emb-url" value="${escapeAttr(ve.source === 'openai' ? (ve.url || 'https://api.openai.com/v1') : (ve.url || ''))}" placeholder="https://api.openai.com/v1" style="flex:1;font-size: calc(0.65rem * var(--cd-fs, 1));padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
           </div>
           <div class="cd-set-row" id="cd-vec-emb-key-row" style="${ve.source === 'tavern' ? 'display:none;' : ''}">
             <label>API 密钥</label>
-            <input type="password" id="cd-vec-emb-key" value="${escapeAttr(ve.key || '')}" placeholder="sk-..." style="flex:1;font-size:0.65rem;padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
+            <input type="password" id="cd-vec-emb-key" value="${escapeAttr(ve.key || '')}" placeholder="sk-..." style="flex:1;font-size: calc(0.65rem * var(--cd-fs, 1));padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
           </div>
           <div class="cd-set-row" id="cd-vec-emb-model-row" style="${ve.source !== 'openai' ? 'display:none;' : ''}">
             <label>模型名</label>
-            <input type="text" id="cd-vec-emb-model" value="${escapeAttr(ve.model || 'text-embedding-ada-002')}" placeholder="text-embedding-ada-002" list="cd-vec-models" style="flex:1;font-size:0.65rem;padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
+            <input type="text" id="cd-vec-emb-model" value="${escapeAttr(ve.model || 'text-embedding-ada-002')}" placeholder="text-embedding-ada-002" list="cd-vec-models" style="flex:1;font-size: calc(0.65rem * var(--cd-fs, 1));padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
             <datalist id="cd-vec-models"></datalist>
           </div>
           <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;">
-            <button class="cd-btn-secondary" id="cd-vec-fetch-models" style="font-size:0.6rem;padding:3px 10px;min-width:auto;display:${ve.source === 'openai' ? '' : 'none'};"><i class="fa-regular fa-rotate"></i> 拉取模型</button>
-            <button class="cd-btn-secondary" id="cd-vec-test-emb" style="font-size:0.6rem;padding:3px 10px;min-width:auto;"><i class="fa-regular fa-flask"></i> 测试连接</button>
+            <button class="cd-btn-secondary" id="cd-vec-fetch-models" style="font-size: calc(0.6rem * var(--cd-fs, 1));padding:3px 10px;min-width:auto;display:${ve.source === 'openai' ? '' : 'none'};"><i class="fa-regular fa-rotate"></i> 拉取模型</button>
+            <button class="cd-btn-secondary" id="cd-vec-test-emb" style="font-size: calc(0.6rem * var(--cd-fs, 1));padding:3px 10px;min-width:auto;"><i class="fa-regular fa-flask"></i> 测试连接</button>
           </div>
-          <div id="cd-vec-emb-test-result" style="font-size:0.6rem;color:#6b5a48;margin-top:4px;"></div>
+          <div id="cd-vec-emb-test-result" style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#6b5a48;margin-top:4px;"></div>
         </div>
       </div>
       
@@ -5511,16 +5663,34 @@ async function cdRenderVector() {
         </div>
         ${statsHtml}
         ${vectors.length > 0 ? `
-          <div style="font-size:0.6rem;color:#8b7355;max-height:120px;overflow-y:auto;border:1px solid rgba(180,150,120,0.08);border-radius:6px;padding:4px 6px;margin-top:6px;">
+          <div style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;max-height:120px;overflow-y:auto;border:1px solid rgba(180,150,120,0.08);border-radius:6px;padding:4px 6px;margin-top:6px;">
             ${vectors.slice(-10).reverse().map(v => `
               <div style="padding:2px 0;border-bottom:1px solid rgba(180,150,120,0.04);display:flex;gap:4px;">
-                <span style="color:#6b5a48;flex-shrink:0;font-size:0.55rem;opacity:0.5;">${escapeHtml(v.category)}</span>
+                <span style="color:#6b5a48;flex-shrink:0;font-size: calc(0.55rem * var(--cd-fs, 1));opacity:0.5;">${escapeHtml(v.category)}</span>
                 <span style="color:#4a3a2a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml((v.text||'').slice(0, 60))}</span>
               </div>
             `).join('')}
           </div>
-          <div style="font-size:0.55rem;color:#8b7355;opacity:0.4;margin-top:4px;">仅显示最近 10 条</div>
-        ` : '<p style="font-size:0.62rem;color:#8b7355;opacity:0.4;">暂无向量数据，切换为向量化模式后写日记会自动生成。</p>'}
+          <div style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;opacity:0.4;margin-top:4px;">仅显示最近 10 条</div>
+        ` : '<p style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;opacity:0.4;">暂无向量数据，切换为向量化模式后写日记会自动生成。</p>'}
+      </div>
+
+      <div class="cd-egg-section">
+        <div class="cd-set-row" style="margin-bottom:4px;">
+          <label><i class="fa-regular fa-book"></i> 角色日记向量库</label>
+        </div>
+        ${diaryStatsHtml}
+        ${diaryVectors.length > 0 ? `
+          <div style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;max-height:120px;overflow-y:auto;border:1px solid rgba(180,150,120,0.08);border-radius:6px;padding:4px 6px;margin-top:6px;">
+            ${diaryVectors.slice(-10).reverse().map(v => `
+              <div style="padding:2px 0;border-bottom:1px solid rgba(180,150,120,0.04);display:flex;gap:4px;">
+                <span style="color:#6b5a48;flex-shrink:0;font-size: calc(0.55rem * var(--cd-fs, 1));opacity:0.5;">${escapeHtml(v.role || '')}</span>
+                <span style="color:#4a3a2a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml((v.text||'').slice(0, 60))}</span>
+              </div>
+            `).join('')}
+          </div>
+          <div style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;opacity:0.4;margin-top:4px;">仅显示最近 10 条</div>
+        ` : '<p style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;opacity:0.4;">暂无日记向量，切换日记为向量化模式后写日记会自动生成。</p>'}
       </div>
       
       <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
@@ -5530,8 +5700,13 @@ async function cdRenderVector() {
           <button class="cd-btn-danger" id="cd-vec-clear"><i class="fa-regular fa-trash-can"></i> 清空向量库</button>
         ` : ''}
         <button class="cd-btn-secondary" id="cd-vec-test"><i class="fa-regular fa-flask"></i> 测试检索</button>
+        ${diaryVectors.length > 0 ? `
+          <button class="cd-btn-secondary" id="cd-vec-diary-rebuild"><i class="fa-regular fa-rotate"></i> 重建日记向量</button>
+          <button class="cd-btn-danger" id="cd-vec-diary-clear"><i class="fa-regular fa-trash-can"></i> 清空日记库</button>
+        ` : ''}
+        <button class="cd-btn-secondary" id="cd-vec-diary-test"><i class="fa-regular fa-flask"></i> 日记测试检索</button>
       </div>
-      <div id="cd-vec-test-result" style="margin-top:8px;font-size:0.62rem;color:#6b5a48;"></div>
+      <div id="cd-vec-test-result" style="margin-top:8px;font-size: calc(0.62rem * var(--cd-fs, 1));color:#6b5a48;"></div>
     </div>
   `);
 
@@ -5625,7 +5800,7 @@ async function cdRenderVector() {
         listEl = $('<div id="cd-vec-model-list" style="margin-top:6px;max-height:120px;overflow-y:auto;display:flex;flex-wrap:wrap;gap:4px;"></div>');
         parent.append(listEl);
       }
-      listEl.html(models.map(m => `<span class="cd-btn-secondary" style="font-size:0.55rem;padding:2px 6px;cursor:pointer;display:inline-block;" data-model="${escapeAttr(m)}">${escapeHtml(m)}</span>`).join(''));
+      listEl.html(models.map(m => `<span class="cd-btn-secondary" style="font-size: calc(0.55rem * var(--cd-fs, 1));padding:2px 6px;cursor:pointer;display:inline-block;" data-model="${escapeAttr(m)}">${escapeHtml(m)}</span>`).join(''));
       listEl.off('click').on('click', 'span[data-model]', function () {
         $('#cd-vec-emb-model').val($(this).data('model'));
         listEl.find('span').css('background', '').css('color', '');
@@ -5646,6 +5821,7 @@ async function cdRenderVector() {
     const threshold = parseFloat($('#cd-vec-threshold').val()) || 0.6;
     const settings = cdGetSettings();
     settings.archiveMode = mode;
+    settings.diaryMode = $('#cd-content input[name="cd-vec-diary-mode"]:checked').val() || 'append';
     settings.vectorTopK = Math.max(1, Math.min(20, topK));
     settings.vectorThreshold = Math.max(0, Math.min(1, threshold));
     settings.vectorEmbedding = {
@@ -5702,9 +5878,64 @@ async function cdRenderVector() {
         ${results.length > 0 ? results.map((r, i) => `
           <div style="padding:2px 0;border-bottom:1px solid rgba(180,150,120,0.04);">
             <span style="display:inline-block;width:16px;opacity:0.4;">#${i+1}</span>
-            <span style="font-size:0.55rem;opacity:0.5;">${r.category}</span>
+            <span style="font-size: calc(0.55rem * var(--cd-fs, 1));opacity:0.5;">${r.category}</span>
             <span style="color:#6b5a48;">${escapeHtml(r.text.slice(0, 60))}</span>
-            <span style="float:right;font-size:0.55rem;opacity:0.4;">${(r.score * 100).toFixed(0)}%</span>
+            <span style="float:right;font-size: calc(0.55rem * var(--cd-fs, 1));opacity:0.4;">${(r.score * 100).toFixed(0)}%</span>
+          </div>
+        `).join('') : '<div style="opacity:0.4;">无匹配结果</div>'}
+      </div>
+    `;
+    $('#cd-vec-test-result').html(resultHtml);
+  });
+
+  // 清空日记向量库
+  $('#cd-vec-diary-clear').off('click').on('click', async function () {
+    if (!confirm('确定清空所有日记向量数据？')) return;
+    const d = await cdGetData();
+    d.diaryVectors = [];
+    await cdSaveData(d);
+    toastr.success('日记向量库已清空');
+    cdRenderVector();
+  });
+
+  // 重建日记向量库
+  $('#cd-vec-diary-rebuild').off('click').on('click', async function () {
+    if (!confirm('将从头开始重新向量化所有角色日记，可能需要一定时间。确定继续？')) return;
+    const d = await cdGetData();
+    d.diaryVectors = [];
+    await cdSaveData(d);
+    toastr.info('正在重建日记向量...');
+    try {
+      await cdVectorizeDiary(d);
+      await cdSaveData(d);
+      toastr.success(`日记向量重建完成，共 ${(d.diaryVectors || []).length} 条`);
+      cdRenderVector();
+    } catch (e) {
+      toastr.error('日记向量重建失败: ' + e.message);
+    }
+  });
+
+  // 日记测试检索
+  $('#cd-vec-diary-test').off('click').on('click', function () {
+    if (diaryVectors.length === 0) {
+      window.cdDiaryTestResult = null;
+      toastr.info('日记向量库为空，无法测试');
+      return;
+    }
+    const sample = diaryVectors[Math.floor(Math.random() * diaryVectors.length)];
+    const topK = parseInt($('#cd-vec-topk').val()) || 5;
+    const results = cdSearchVectors(sample.text, diaryVectors, topK);
+    const resultHtml = `
+      <div style="margin-top:6px;padding:6px;background:rgba(180,150,120,0.05);border-radius:6px;">
+        <div style="font-weight:500;margin-bottom:4px;">📓 日记检索测试</div>
+        <div style="margin-bottom:4px;"><span style="opacity:0.5;">查询：</span>${escapeHtml(sample.text.slice(0, 80))}${sample.text.length > 80 ? '...' : ''}</div>
+        <div style="opacity:0.6;">结果（Top-${topK}）：</div>
+        ${results.length > 0 ? results.map((r, i) => `
+          <div style="padding:2px 0;border-bottom:1px solid rgba(180,150,120,0.04);">
+            <span style="display:inline-block;width:16px;opacity:0.4;">#${i+1}</span>
+            <span style="font-size: calc(0.55rem * var(--cd-fs, 1));opacity:0.5;">${escapeHtml(r.role || '')}</span>
+            <span style="color:#6b5a48;">${escapeHtml(r.text.slice(0, 60))}</span>
+            <span style="float:right;font-size: calc(0.55rem * var(--cd-fs, 1));opacity:0.4;">${(r.score * 100).toFixed(0)}%</span>
           </div>
         `).join('') : '<div style="opacity:0.4;">无匹配结果</div>'}
       </div>
