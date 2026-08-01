@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.2.5';
+const PLUGIN_VERSION = '2.2.7';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -591,6 +591,7 @@ function cdBuildArchivePrompt(windowFloors, data, _s) {
     existing.unresolved ? `已知未解决事项：${existing.unresolved}` : '',
     existingItemsTxt ? `已知物品记录：\n${existingItemsTxt}` : '',
     existingCustomTxt ? `\n${existingCustomTxt}` : '',
+    customFormatBlock ? '\n自定义追踪项（同样严格按格式输出，与主线等字段并列）：\n' + customFormatBlock : '',
   ].filter(Boolean).join('\n');
   const usr = [
     `本次新增楼层：\n${scene}`,
@@ -1112,7 +1113,19 @@ function cdGetSettings() {
 
 function cdSaveSettings(patch) {
   Object.assign(cdGetSettings(), patch);
-  saveSettingsDebounced();
+  // ST 中 saveSettingsDebounced 是 getContext() 上下文对象上的方法，不是全局变量（裸调用会 ReferenceError）
+  try {
+    const ctx = SillyTavern.getContext();
+    if (ctx && typeof ctx.saveSettingsDebounced === 'function') {
+      ctx.saveSettingsDebounced();
+    } else if (typeof saveSettingsDebounced === 'function') {
+      saveSettingsDebounced();
+    } else {
+      cdWarn('saveSettingsDebounced 不可用，设置仅在内存生效');
+    }
+  } catch (e) {
+    cdWarn('cdSaveSettings 保存失败', e);
+  }
 }
 
 /* ============================== 本局数据 (chat variables) ============================== */
@@ -1696,26 +1709,37 @@ async function cdBuildDiaryInjectionText() {
 /** 注入状态管理 */
 let _cdInjectionRegistered = false;
 let _cdInjectionKey = 'character-diary-memory';
+/** 缓存最近一次生成的注入消息（供 CHAT_COMPLETION_PROMPT_READY 手动按位置插入） */
+let _cdInjectMsg = null;
+let _cdInjectMsgRole = 0;
 
-/** 使用 setExtensionPrompt 注册注入（日记+关系+剧情+填表指令，统一走 cdBuildDiaryInjectionText） */
-/** 注入位置解析: 支持 'top'(开头) / 'bottom'(末尾), 优先用酒馆 extension_prompt_types 常量, 缺失则用常见数值 */
+/** 使用 setExtensionPrompt 注册注入。
+ * ST 官方 @types 定义：position 仅接受 1(插入到聊天中) 或 -1(不注入)，位置实际由 depth 控制。
+ * 故此处 position 固定返回 1，真正的「开头/对话中/末尾」交给 cdResolveInjectDepth 通过 depth 实现。 */
 function cdGetInjectPosition() {
-  const s = cdGetSettings();
-  const t = (typeof extension_prompt_types !== 'undefined' && extension_prompt_types) ? extension_prompt_types : null;
-  const pos = s.injectPosition || 'after';
-  if (pos === 'before') return (t && t.BEFORE_PROMPT !== undefined) ? t.BEFORE_PROMPT : 2;
-  if (pos === 'chat') return (t && t.IN_CHAT !== undefined) ? t.IN_CHAT : 1;
-  return (t && t.AFTER_PROMPT !== undefined) ? t.AFTER_PROMPT : 0;
+  return 1; // ST @types: 1 = 插入到聊天中
 }
 
-/** 注入消息角色 0=system 1=user 2=assistant */
+/**
+ * 根据用户选择的注入位置计算对应 depth（ST "插入聊天中" 时，depth 表示"从末尾往前数第 N 条消息"，数值越小越靠近末尾/当前生成）
+ * @param {number} chatLen 当前聊天消息条数
+ */
+function cdResolveInjectDepth(chatLen) {
+  const s = cdGetSettings();
+  const pos = s.injectPosition || 'after';
+  const len = Math.max(1, chatLen || 1);
+  if (pos === 'before') return Math.floor(len * 0.98);  // 靠近开头（接近最早一条）
+  if (pos === 'chat')   return Math.floor(len * 0.5);    // 对话中
+  return 1;                                               // 对话末尾：最贴近当前生成（depth=1 最后一条）
+}
+
+/** 注入消息角色 0=system 1=user 2=assistant → ST @types 定义为 number */
 function cdGetInjectRole() {
   const s = cdGetSettings();
   const r = (s.injectRole !== undefined) ? s.injectRole : 0;
-  const er = (typeof extension_prompt_roles !== 'undefined' && extension_prompt_roles) ? extension_prompt_roles : null;
-  if (r === 1) return (er && er.USER !== undefined) ? er.USER : 1;
-  if (r === 2) return (er && er.ASSISTANT !== undefined) ? er.ASSISTANT : 2;
-  return (er && er.SYSTEM !== undefined) ? er.SYSTEM : 0;
+  if (r === 1) return 1;
+  if (r === 2) return 2;
+  return 0;
 }
 /** 注入层内深度 */
 function cdGetInjectDepth() {
@@ -1726,25 +1750,173 @@ function cdGetInjectDepth() {
 async function cdRegisterInjection() {
   try {
     const text = await cdBuildDiaryInjectionText();
-    const ctx = SillyTavern.getContext();
-    if (ctx && typeof ctx.setExtensionPrompt === 'function') {
-      if (text) {
-        ctx.setExtensionPrompt(_cdInjectionKey, text, cdGetInjectPosition(), cdGetInjectDepth(), false, cdGetInjectRole());
-        cdLog('[注入] setExtensionPrompt 已更新:', text.length, '字符');
-      } else {
-        ctx.setExtensionPrompt(_cdInjectionKey, '', 0);
-        cdLog('[注入] setExtensionPrompt 已清除（无数据）');
-      }
-    } else {
-      cdWarn('[注入] setExtensionPrompt 不可用');
-    }
+    // 缓存注入内容，供 CHAT_COMPLETION_PROMPT_READY 在生成前手动按位置插入（setExtensionPrompt 的位置控制在此 ST 版本不生效）
+    _cdInjectMsg = text || null;
+    _cdInjectMsgRole = cdGetInjectRole();
+    const _s = cdGetSettings();
+    cdAddLog('info', '[注入] 注入内容已缓存', { 用户设置位置: _s.injectPosition, 字符数: text ? text.length : 0 });
   } catch (e) {
-    cdWarn('[注入] cdRegisterInjection 失败', e);
+    cdAddLog('warn', '[注入] cdRegisterInjection 失败: ' + e.message);
   }
 }
 
+/**
+ * 测试注入：手动触发一次注入，并记录 ST 注入相关的关键信息到日志面板，便于用户导出分析
+ */
+async function cdTestInjection() {
+  try {
+    cdAddLog('info', '========== 测试注入开始 ==========');
+    const ctx = SillyTavern.getContext();
 
-// ===== 填表注入：生成本次要发送给正文AI的填表指令 =====
+    // 1. ST 位置/角色常量是否暴露
+    const ept = (typeof extension_prompt_types !== 'undefined' && extension_prompt_types) ? extension_prompt_types : null;
+    cdAddLog('info', '[注入测试] extension_prompt_types', { 是否存在: !!ept, 值: ept });
+
+    // 2. setExtensionPrompt 是否可用
+    cdAddLog('info', '[注入测试] setExtensionPrompt', { 可用: !!(ctx && typeof ctx.setExtensionPrompt === 'function') });
+
+    // 3. 用户设置（新的注入机制：事件里按位置手动插入 prompt chat）
+    const sRef = cdGetSettings();
+    const chatLen = (ctx && ctx.chat && Array.isArray(ctx.chat)) ? ctx.chat.length : 0;
+    cdAddLog('info', '[注入测试] 注入配置', {
+      机制: 'CHAT_COMPLETION_PROMPT_READY 手动按位置插入',
+      用户位置: sRef.injectPosition,
+      聊天条数: chatLen,
+      消息角色: sRef.injectRole,
+      层内深度设置: sRef.injectDepth,
+    });
+
+    // 4. 读取注入文本长度（确认内容是否生成）
+    const text = await cdBuildDiaryInjectionText();
+    cdAddLog('info', '[注入测试] 注入文本', { 长度: text ? text.length : 0, 前100字: text ? text.slice(0, 100) : '' });
+
+    // 5. ST 当前已注册的扩展提示词（能看到实际注入位置/内容）
+    try {
+      const ep = ctx && ctx.extensionPrompts;
+      if (ep) {
+        const arr = (typeof ep.toArray === 'function') ? ep.toArray() : (Array.isArray(ep) ? ep : null);
+        if (arr) {
+          cdAddLog('info', '[注入测试] ST已注册扩展提示词', arr.map(function (x) {
+            return { key: x && (x.name || x.key || x.id), 位置: x && x.position, 角色: x && x.role, 深度: x && x.depth };
+          }));
+        } else {
+          cdAddLog('info', '[注入测试] extensionPrompts 存在但无法枚举', { 类型: typeof ep });
+        }
+      } else {
+        cdAddLog('info', '[注入测试] 未发现 ctx.extensionPrompts（可能不暴露）');
+      }
+    } catch (e2) {
+      cdAddLog('warn', '[注入测试] 读取 extensionPrompts 失败: ' + e2.message);
+    }
+
+    // 6. 真实触发一次注入
+    await cdRegisterInjection();
+    cdAddLog('info', '========== 测试注入结束 ==========');
+    window.setTimeout(function () { cdRenderLog(); }, 300);
+  } catch (e) {
+    cdAddLog('warn', '[注入测试] 测试注入异常: ' + e.message);
+  }
+}
+
+/**
+ * 自定义追踪项诊断：记录配置、已有数据、提示词注入、解析情况，便于定位"追踪项不生效"问题
+ */
+async function cdTestCustomFields() {
+  try {
+    cdAddLog('info', '========== 追踪项诊断开始 ==========');
+    const s = cdGetSettings();
+    const data = await cdGetData();
+
+    // 1. 当前配置的追踪项
+    const cf = Array.isArray(s.customFields) ? s.customFields : [];
+    cdAddLog('info', '[追踪项] 当前配置', {
+      数量: cf.length,
+      字段: cf.map(f => ({ key: f && f.key, label: f && f.label, desc: f && f.desc })),
+    });
+
+    // 2. archive.custom 已有数据
+    const arc = data && data.archive ? data.archive : {};
+    const customMap = (arc.custom && typeof arc.custom === 'object') ? arc.custom : {};
+    cdAddLog('info', '[追踪项] archive.custom 数据', {
+      字段数: Object.keys(customMap).length,
+      各字段条数: Object.keys(customMap).map(k => ({ key: k, 条数: Array.isArray(customMap[k]) ? customMap[k].length : 0 })),
+      前几条示例: (()=>{ const o={}; for(const k of Object.keys(customMap)){ const arr=Array.isArray(customMap[k])?customMap[k]:[]; if(arr.length) o[k]=arr.slice(0,2).map(it=>it.time+' '+it.desc).join(' | '); } return o; })(),
+    });
+
+    // 3. 提示词注入：尝试构建一次剧情档案提示词，看是否包含自定义字段名（不真正请求 API）
+    try {
+      const fakeFloors = [{ message_id: 1, name: '测试', mes: '（用最近楼层做提示词注入检查）' }];
+      const msgs = cdBuildArchivePrompt(fakeFloors, data, s);
+      const sysTxt = msgs && msgs.length ? (msgs[0] && msgs[0].content) || '' : '';
+      const userTxt = msgs && msgs.length > 1 ? (msgs[1] && msgs[1].content) || '' : '';
+      const missing = cf.filter(f => f && f.label && sysTxt.indexOf(f.label) < 0).map(f => f.label);
+      cdAddLog('info', '[追踪项] 剧情档案提示词', {
+        sysLen: sysTxt.length,
+        userTxtPreview: userTxt.slice(0, 200),
+        missingLabels: missing,
+      });
+    } catch (e3) {
+      cdAddLog('warn', '[追踪项] 提示词构建失败: ' + e3.message);
+    }
+
+    // 4. 测试解析：给一个含自定义字段的模拟 AI 输出，看能否正确解析
+    try {
+      const testTxt = '主线：\n【第1天】到达\n\n' + cf.map(f => `${f.label}：\n【第1天】模拟内容`).join('\n\n');
+      const parsed = parseArchiveJson(testTxt, cf);
+      cdAddLog('info', '[追踪项] 解析测试', {
+        解析到自定义字段: Object.keys(parsed.custom || {}).map(k => `${k}:${(parsed.custom[k]||[]).length}条`),
+      });
+    } catch (e4) {
+      cdAddLog('warn', '[追踪项] 解析测试失败: ' + e4.message);
+    }
+
+    cdAddLog('info', '========== 追踪项诊断结束 ==========');
+    window.setTimeout(function () { cdRenderLog(); }, 300);
+  } catch (e) {
+    cdAddLog('warn', '[追踪项] 诊断异常: ' + e.message);
+  }
+}
+
+/**
+ * 全局保存自定义追踪项（供时间线按钮 inline onclick 调用，最可靠，不依赖事件绑定）
+ */
+function cdCustomSaveFields() {
+  try {
+    cdAddLog('info', '[追踪项] 点击保存按钮');
+    const curS = cdGetSettings();
+    const oldCustom = Array.isArray(curS.customFields) ? curS.customFields : [];
+    const ta = document.getElementById('cd-custom-fields-input');
+    const raw = (ta && ta.value ? ta.value : '');
+    cdAddLog('info', '[追踪项] 输入框内容', { 长度: raw.length, 内容: raw.slice(0, 200) });
+    const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+    const customFields = [];
+    let autoIdx = 1;
+    const usedKeys = {};
+    for (const line of lines) {
+      const m = line.match(/^(.+?)[：:]\s*(.*)$/);
+      const label = (m ? m[1] : line).trim();
+      const desc = (m ? m[2] : '').trim();
+      if (!label) continue;
+      const existing = oldCustom.find(f => f && f.label === label);
+      let key = existing && existing.key ? existing.key : null;
+      if (!key) { do { key = 'custom_' + autoIdx++; } while (usedKeys[key]); }
+      usedKeys[key] = true;
+      customFields.push({ key, label, desc });
+    }
+    cdSaveSettings({ customFields });
+    cdAddLog('info', '[追踪项] 已写入 settings', { 数量: customFields.length, 字段: customFields.map(f => f.label) });
+    if (customFields.length) {
+      toastr.success(`已保存 ${customFields.length} 个追踪项：已注入提示词 · 已接入解析`);
+    } else {
+      toastr.info('已清空自定义追踪项（不再注入提示词）');
+    }
+    if (typeof cdRenderArchive === 'function') cdRenderArchive();
+  } catch (e) {
+    cdAddLog('warn', '[追踪项] 保存失败: ' + e.message + ' | ' + (e && e.stack ? e.stack.split('\n')[1] : ''));
+  }
+}
+if (typeof window !== 'undefined') window.cdCustomSaveFields = cdCustomSaveFields;
+
 function cdBuildLiveTableInjectText() {
   try {
     const s = cdGetSettings();
@@ -1783,18 +1955,31 @@ async function cdOnBeforeGeneration(eventData) {
     const data = eventData && typeof eventData === 'object' ? eventData : {};
     const chat = data.chat || [];
     const dryRun = data.dryRun === true || data.dry_run === true;
-    if (dryRun || !Array.isArray(chat)) return;
-    
-    const text = await cdBuildDiaryInjectionText();
-    if (text) {
-      // 在 prompt chat 的末尾插入一条 system 消息（日记+关系+剧情+填表指令）
-      const sysMsg = {
-        role: 'system',
-        content: text,
-        name: 'system',
-      };
-      chat.push(sysMsg);
-      cdLog('cdOnBeforeGeneration: 已注入到 prompt chat', text.length, '字符');
+    if (dryRun || !Array.isArray(chat) || !chat.length) return;
+
+    if (!_cdInjectMsg) return; // 无注入内容
+    const sysMsg = { role: _cdInjectMsgRole === 1 ? 'user' : (_cdInjectMsgRole === 2 ? 'assistant' : 'system'), content: _cdInjectMsg };
+
+    const s = cdGetSettings();
+    const pos = s.injectPosition || 'after';
+    const userDepth = Math.max(1, parseInt(s.injectDepth, 10) || 1);
+    let idx;
+    if (pos === 'before') {
+      // 开头：插到第一个用户消息之前（尽量靠前）
+      idx = 0;
+      while (idx < chat.length && chat[idx].role === 'system') idx++;
+      chat.splice(idx, 0, sysMsg);
+      cdAddLog('info', '[注入] 开头注入', { 插入位置: idx, 字符数: _cdInjectMsg.length });
+    } else if (pos === 'chat') {
+      // 对话中：插到 chat 中间
+      idx = Math.floor(chat.length / 2);
+      chat.splice(idx, 0, sysMsg);
+      cdAddLog('info', '[注入] 对话中注入', { 插入位置: idx, 字符数: _cdInjectMsg.length });
+    } else {
+      // 末尾：从末尾倒数第 userDepth 条消息之后插入（depth 越小越贴近生成末尾，越大越往前偏移）
+      idx = Math.max(0, chat.length - userDepth);
+      chat.splice(idx, 0, sysMsg);
+      cdAddLog('info', '[注入] 末尾注入', { 插入位置: idx, 深度: userDepth, 总条数: chat.length, 字符数: _cdInjectMsg.length });
     }
   } catch (e) {
     cdWarn('cdOnBeforeGeneration 失败', e);
@@ -1918,9 +2103,11 @@ function cdRenderLog() {
   
   let html;
   // ★ 测试按钮区
-  const testBtnHtml = `<div style="display:flex;gap:6px;margin-bottom:8px;">
-    <button class="cd-btn-secondary" id="cd-btn-test-api" style="flex:1;"><i class="fa-regular fa-flask"></i> 三路API调试</button>
-    <button class="cd-btn-secondary" id="cd-btn-test-trigger" style="flex:1;"><i class="fa-regular fa-clock"></i> 检查自动触发</button>
+  const testBtnHtml = `<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
+    <button class="cd-btn-secondary" id="cd-btn-test-api" style="flex:1;min-width:90px;"><i class="fa-regular fa-flask"></i> 三路API调试</button>
+    <button class="cd-btn-secondary" id="cd-btn-test-trigger" style="flex:1;min-width:90px;"><i class="fa-regular fa-clock"></i> 检查自动触发</button>
+    <button class="cd-btn-secondary" id="cd-btn-test-inject" style="flex:1;min-width:90px;"><i class="fa-regular fa-magnifying-glass"></i> 测试注入</button>
+    <button class="cd-btn-secondary" id="cd-btn-test-custom" style="flex:1;min-width:90px;"><i class="fa-regular fa-layer-group"></i> 追踪项诊断</button>
   </div>`;
 
   if (!logs.length) {
@@ -1975,6 +2162,8 @@ function cdRenderLog() {
   // ★ 测试按钮事件绑定
   $('#cd-btn-test-api').off('click').on('click', cdTestDiary);
   $('#cd-btn-test-trigger').off('click').on('click', cdCheckAutoTrigger);
+  $('#cd-btn-test-inject').off('click').on('click', cdTestInjection);
+  $('#cd-btn-test-custom').off('click').on('click', cdTestCustomFields);
   $('#cd-btn-clear-log')?.off('click').on('click', () => { cdClearLogs(); cdRenderLog(); });
   // ★ 导出日志
   $('#cd-btn-export-log')?.off('click').on('click', function () {
@@ -3098,14 +3287,15 @@ async function _cdDoInit() {
     } else {
       cdLog('[init] 注册ST事件...');
       
-      // === 注入机制：优先使用 setExtensionPrompt ===
+      // === 注入机制：监听 CHAT_COMPLETION_PROMPT_READY，在生成前按用户位置手动插入 ===
+      // （此 ST 版本 setExtensionPrompt 的 position/depth 不控制最终位置，因此改为事件里直接操作 prompt chat 数组）
       if (!_cdInjectionRegistered) {
-        // 注册 CHAT_COMPLETION_PROMPT_READY 作为 fallback（直接修改 prompt chat）
+        cdLog('[init] 使用 CHAT_COMPLETION_PROMPT_READY 手动注入');
         if (et.CHAT_COMPLETION_PROMPT_READY) {
           es.on(et.CHAT_COMPLETION_PROMPT_READY, cdOnBeforeGeneration);
-          cdLog('[init] 注册 CHAT_COMPLETION_PROMPT_READY 注入 (fallback)');
+          cdLog('[init] 已注册 CHAT_COMPLETION_PROMPT_READY 注入');
         }
-        // 初始注册一次 setExtensionPrompt
+        // 刷新注入内容缓存
         cdRegisterInjection();
         _cdInjectionRegistered = true;
         cdLog('[init] 初始注入注册完成');
@@ -4047,101 +4237,39 @@ async function cdRenderArchive() {
   const data = await cdGetData();
   const s = cdGetSettings();
 
-  // 保存自定义追踪项（时间线顶部字段管理）——渲染后调用直接绑定
-  function bindCustomSave() {
-    const btn = document.getElementById('cd-custom-fields-save');
-    if (!btn) return;
-    btn.onclick = () => {
-      const curS = cdGetSettings();
-      const oldCustom = Array.isArray(curS.customFields) ? curS.customFields : [];
-      const lines = (document.getElementById('cd-custom-fields-input')?.value || '').split('\n').map(l => l.trim()).filter(Boolean);
-      const customFields = [];
-      let autoIdx = 1;
-      const usedKeys = {};
-      for (const line of lines) {
-        const m = line.match(/^(.+?)[：:]\s*(.*)$/);
-        const label = (m ? m[1] : line).trim();
-        const desc = (m ? m[2] : '').trim();
-        if (!label) continue;
-        const existing = oldCustom.find(f => f && f.label === label);
-        let key = existing && existing.key ? existing.key : null;
-        if (!key) {
-          do { key = 'custom_' + autoIdx++; } while (usedKeys[key]);
-        }
-        usedKeys[key] = true;
-        customFields.push({ key, label, desc });
-      }
-      cdSaveSettings({ customFields });
-      if (customFields.length) {
-        toastr.success(`已保存 ${customFields.length} 个追踪项：已注入提示词 · 已接入解析`);
-      } else {
-        toastr.info('已清空自定义追踪项（不再注入提示词）');
-      }
-      cdRenderArchive();
-    };
-  }
-
   const arc = data.archive || emptyData().archive;
   const customFields = Array.isArray(s.customFields) ? s.customFields.filter(f => f && f.key && f.label) : [];
   const customMap = (arc.custom && typeof arc.custom === 'object') ? arc.custom : {};
   const hasCustom = customFields.some(f => Array.isArray(customMap[f.key]) && customMap[f.key].length);
   const empty = !arc.mainline && !arc.sideline && !arc.states && !arc.unresolved && !((Array.isArray(arc.items) && arc.items.length)) && !hasCustom;
   
-  // ★ 用户自定义追踪项（默认折叠，顶部展示 + 字段管理）
-  // 数据展示分区
-  const sections = customFields.map(f => {
-    const list = Array.isArray(customMap[f.key]) ? customMap[f.key] : [];
-    return { label: f.label, items: list };
-  }).filter(f => f.items.length);
-  const categorized = sections.map(sec => `
-    <div style="margin-bottom:10px;">
-      <h4 style="font-size: calc(0.72rem * var(--cd-fs, 1));font-weight:600;color:#a855f7;margin:0 0 5px;display:flex;align-items:center;gap:4px;">
-        <i class="fa-regular fa-bookmark"></i> ${escapeHtml(sec.label)}
-      </h4>
-      <div class="cd-timeline">
-        ${sec.items.map(item => {
-          const tm = item.time || '';
-          return `
-            <div class="cd-tl-item">
-              ${tm ? `<div class="cd-tl-date">${escapeHtml(tm)}</div>` : ''}
-              <div class="cd-tl-dot" style="background:#a855f7;border-color:#a855f7 22;"></div>
-              <div class="cd-tl-card"><div class="cd-tl-text">${escapeHtml(item.desc || '')}</div></div>
-            </div>`;
-        }).join('')}
-      </div>
-    </div>
-  `).join('');
-  // 字段管理区（textarea + 保存）
+  // ★ 用户自定义追踪项（字段管理入口，默认折叠；数据已平铺到时间线主体物品记录之后）
   const editText = customFields.map(f => f.label + (f.desc ? '：' + f.desc : '')).join('\n');
-  const emptyDataNote = sections.length ? '' : '<p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;margin:4px 0 8px;">尚未配置自定义追踪项，可在下方添加字段。</p>';
   const editBlock = `
     <div class="cd-custom-edit">
       <div style="font-size: calc(0.6rem * var(--cd-fs, 1));font-weight:600;color:#7a5c34;margin-bottom:4px;"><i class="fa-regular fa-sliders"></i> 字段管理 <span style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;font-weight:normal;">（每行一项「显示名：给AI的描述」，保存后生效）</span></div>
       <textarea id="cd-custom-fields-input" rows="4" spellcheck="false" placeholder="主角状态：主角当前的情绪、处境、身体状况&#10;女巫好感：女巫对主角的好感变化"
         style="width:100%;box-sizing:border-box;padding:6px;font-size: calc(0.6rem * var(--cd-fs, 1));background:#fdfaf3;border:1px solid #e3d5b8;border-radius:6px;color:#3c2f1f;resize:vertical;line-height:1.5;">${escapeHtml(editText)}</textarea>
-      <button type="button" class="cd-btn-primary" id="cd-custom-fields-save" style="font-size: calc(0.6rem * var(--cd-fs, 1));padding:3px 10px;min-width:auto;margin-top:4px;">保存追踪项</button>
+      <button type="button" class="cd-btn-primary" id="cd-custom-fields-save" onclick="cdCustomSaveFields()" style="font-size: calc(0.6rem * var(--cd-fs, 1));padding:3px 10px;min-width:auto;margin-top:4px;">保存追踪项</button>
       <p style="font-size: calc(0.53rem * var(--cd-fs, 1));color:#8b7355;margin:4px 0 0;line-height:1.6;">
         写一个追踪项占一行，格式：<b>显示名：给AI的描述</b><br>
         例：<span style="color:#a855f7;">主角状态：主角当前的情绪、处境、身体状况</span><br>
         例：<span style="color:#a855f7;">女巫好感：女巫对主角的好感变化</span><br>
-        「显示名」会作为时间线的分类标题，「描述」告诉 AI 具体要追踪什么。描述可留空（只写显示名）。填写后点「保存追踪项」，AI 写剧情档案时就会同步输出这些内容，并按【时间标记】逐条追加到对应分区；删除某行即删除该追踪项及其记录数据。
+        「显示名」会作为时间线的分类标题，「描述」告诉 AI 具体要追踪什么。描述可留空（只写显示名）。填写后点「保存追踪项」，AI 写剧情档案时就会同步输出这些内容，并按【时间标记】展示在时间线（物品记录之后）；删除某行即删除该追踪项及其记录数据。
       </p>
     </div>`;
-  let customHtml = `
+  const customHtml = customFields.length > 0 || true ? `
     <details class="cd-custom-panel">
-      <summary class="cd-custom-head"><i class="fa-regular fa-bookmark"></i> 自定义追踪项 <span class="cd-custom-count">${sections.length}</span></summary>
+      <summary class="cd-custom-head"><i class="fa-regular fa-bookmark"></i> 自定义追踪项管理 <span class="cd-custom-count">${customFields.length}</span></summary>
       <div class="cd-custom-body">
-        ${emptyDataNote}
-        ${categorized}
         ${editBlock}
       </div>
-    </details>`;
+    </details>` : '';
   // ★ 撤销提示（撤销栏已禁用，undoHtml 恒为空）
   let undoHtml = '';
   
   if (empty) {
     $('#cd-content').html(customHtml + undoHtml + `<div class="cd-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg><p>暂无剧情档案</p><p class="cd-empty-sub">写日记时将自动生成，AI 会为每条事件标注时间</p></div>`);
-    bindCustomSave();
     return;
   }
 
@@ -4211,6 +4339,18 @@ async function cdRenderArchive() {
     { label: '未解决', icon: 'fa-triangle-exclamation', color: '#ef4444', items: extractTimelineItems(arc.unresolved, '未解决', 'fa-triangle-exclamation') },
     { label: '物品记录', icon: 'fa-box', color: '#a855f7', items: (Array.isArray(arc.items) ? arc.items : []).map(it => ({ time: it.time || '', content: it.desc || '', category: '物品记录', icon: 'fa-box' })).filter(it => it.content) },
   ];
+  // 颜色分配：随机打乱并从池中按顺序取（尽量让每个字段颜色不同，且避开物品记录紫色）
+  const CUSTOM_COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#14b8a6', '#f97316', '#ec4899', '#84cc16', '#06b6d4', '#eab308', '#0ea5e9', '#d946ef']; // 避开物品记录紫色 #a855f7 与 #c084fc
+  const shuffledColors = CUSTOM_COLORS.slice();
+  for (let i = shuffledColors.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffledColors[i], shuffledColors[j]] = [shuffledColors[j], shuffledColors[i]];
+  }
+  for (const f of customFields) {
+    const color = shuffledColors[(customFields.indexOf(f)) % shuffledColors.length];
+    const list = Array.isArray(customMap[f.key]) ? customMap[f.key] : [];
+    categoryConfig.push({ label: f.label, icon: 'fa-bookmark', color, items: list.filter(it => it && it.desc).map(it => ({ time: it.time || '', content: it.desc || '', category: f.label, icon: 'fa-bookmark' })) });
+  }
   
   const hasAnyItems = categoryConfig.some(c => c.items.length > 0);
   
@@ -4250,6 +4390,11 @@ async function cdRenderArchive() {
     const categoryColors = { '主线': '#22c55e', '支线': '#3b82f6', '状态': '#f59e0b', '未解决': '#ef4444', '物品记录': '#a855f7' };
     const categoryIcons = { '主线': 'fa-route', '支线': 'fa-code-branch', '状态': 'fa-chart-simple', '未解决': 'fa-triangle-exclamation', '物品记录': 'fa-box' };
     const itemsFallbackText = (Array.isArray(arc.items) && arc.items.length) ? arc.items.map(it => it.time ? `【${it.time}】${it.desc}` : it.desc).join('\n') : '';
+    const customFallback = customFields.map(f => {
+      const arr = Array.isArray(customMap[f.key]) ? customMap[f.key] : [];
+      if (!arr.length) return null;
+      return { label: f.label, text: arr.map(it => it.time ? `【${it.time}】${it.desc}` : it.desc).join('\n') };
+    }).filter(Boolean);
     const fallbackHtml = !empty ? `
       <div class="cd-timeline">
         ${[
@@ -4258,12 +4403,13 @@ async function cdRenderArchive() {
           arc.states ? { label: '状态', text: arc.states } : null,
           arc.unresolved ? { label: '未解决', text: arc.unresolved } : null,
           itemsFallbackText ? { label: '物品记录', text: itemsFallbackText } : null,
+          ...customFallback,
         ].filter(Boolean).map(section => `
           <div class="cd-tl-item">
-            <div class="cd-tl-dot" style="background:${categoryColors[section.label]};border-color:${categoryColors[section.label]}22;"></div>
+            <div class="cd-tl-dot" style="background:${categoryColors[section.label] || '#f97316'};border-color:${(categoryColors[section.label] || '#f97316')}22;"></div>
             <div class="cd-tl-card">
               <div class="cd-tl-head">
-                <span class="cd-tl-cat" style="color:${categoryColors[section.label]}"><i class="fa-regular ${categoryIcons[section.label]}"></i> ${section.label}</span>
+                <span class="cd-tl-cat" style="color:${categoryColors[section.label] || '#f97316'}"><i class="fa-regular ${categoryIcons[section.label] || 'fa-bookmark'}"></i> ${section.label}</span>
               </div>
               <div class="cd-tl-text">${escapeHtml(section.text).replace(/\n/g, '<br>')}</div>
             </div>
@@ -4278,9 +4424,6 @@ async function cdRenderArchive() {
       ${locHtml}
       ${fallbackHtml}`);
   }
-
-  // 绑定自定义追踪项保存按钮（hasAnyItems / fallback 两条路径均已渲染）
-  bindCustomSave();
 
   // ★ 底部区域：剧情回放 + 卡牌
   // 收集所有日记条目
@@ -5394,9 +5537,9 @@ async function cdRenderSettings() {
         <div class="cd-set-row">
           <label>注入位置</label>
           <select id="cd-s-injpos" class="cd-input" style="width:auto;min-width:150px;">
-            <option value="after" ${(s.injectPosition || 'after') === 'after' ? 'selected' : ''}>末尾（在提示词之后）</option>
-            <option value="chat" ${(s.injectPosition || 'after') === 'chat' ? 'selected' : ''}>对话中</option>
-            <option value="before" ${(s.injectPosition || 'after') === 'before' ? 'selected' : ''}>开头（在提示词之前）</option>
+            <option value="after" ${(s.injectPosition || 'after') === 'after' ? 'selected' : ''}>对话末尾（贴近生成）</option>
+            <option value="chat" ${(s.injectPosition || 'after') === 'chat' ? 'selected' : ''}>系统提示词后</option>
+            <option value="before" ${(s.injectPosition || 'after') === 'before' ? 'selected' : ''}>开头（最前）</option>
           </select>
         </div>
         <div class="cd-set-row">
@@ -6014,15 +6157,27 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
+    version: 'v2.2.7',
+    date: '2026-08-02',
+    items: [
+      '新增「自定义剧情追踪项」：用户可自由添加任意追踪维度（主角状态、好感、势力局势等），AI 写剧情档案时同步输出并按【时间标记】记录',
+      '自定义追踪项数据平铺展示在时间线物品记录之后，样式与其他字段统一，多种随机配色区分（自动避开物品记录紫色）',
+      '时间线顶部保留「字段管理」入口：每行一个「显示名：给AI的描述」，保存即注入提示词并接入解析',
+      '修复注入重复/位置不生效：改为监听 CHAT_COMPLETION_PROMPT_READY 手动按位置注入，支持开头/对话中/末尾精确控制',
+      '重写设置保存机制：改用 getContext().saveSettingsDebounced()，修复此前所有设置保存失效的问题',
+      '修复时间线界面某些情况下无法渲染的问题',
+      '移除浏览界面单条日记的「删除」按钮（批量删除请前往管理视图）',
+      '物品记录/自定义追踪项随各链路完善（导出/统计/向量/压缩均支持）',
+    ],
+  },
+  {
     version: 'v2.2.6',
     date: '2026-08-02',
     items: [
-      '新增「自定义剧情追踪项」：可在时间线界面顶部分区自由添加任意追踪维度（如主角状态、好感、势力局势等），AI 写剧情档案时同步输出并按【时间标记】逐条记录，时间线上分类展示',
-      '时间线顶部新增「自定义追踪项」可折叠分区：默认折叠、点击展开，内置字段管理（每行一个「显示名：给AI的描述」，保存即注入提示词并接入解析）',
-      '修复时间线界面某些情况下无法渲染的问题',
-      '修复注入配置不生效：保存设置后立即重新注册注入，切换「注入位置/消息角色/层内深度」即刻生效，不再出现旧位置残留重复注入',
-      '移除浏览界面单条日记的「删除」按钮（批量删除请前往管理视图）',
-      'PDF 导出兼容细节优化：自定义追踪项也会写入导出内容',
+      '新增「自定义剧情追踪项」初始实现',
+      '新增物品记录：AI 输出获得/失去/交换的重要物品，按【时间标记】记录于时间线',
+      '修复时间线渲染问题',
+      '移除浏览界面单条日记的「删除」按钮',
     ],
   },
   {
@@ -6211,7 +6366,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.2.6 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.2.7 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
