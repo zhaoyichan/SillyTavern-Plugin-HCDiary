@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.2.3';
+const PLUGIN_VERSION = '2.2.4';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -47,6 +47,11 @@ const DEFAULT_SETTINGS = {
   diaryMode     : 'append',   // 'append' | 'vector' 角色日记模式
   vectorTopK    : 5,          // 向量检索召回条数
   vectorThreshold : 0.6,      // 向量检索相似度阈值
+  retryTimes      : 3,        // LLM 失败自动重试次数(0=不重试)
+  retryDelay      : 2,        // LLM 重试间隔(秒)
+  injectPosition  : 'after',  // 注入位置 'after'(末尾,默认) | 'before'(开头) | 'chat'(对话中)
+  injectRole      : 0,        // 注入消息角色 0=system 1=user 2=assistant
+  injectDepth     : 1,        // 注入层内深度(默认1)
   endpoints: {
     openai:  { url: 'https://api.openai.com/v1',               key: '', model: '' },
     claude:  { url: 'https://api.anthropic.com/v1',             key: '', model: '' },
@@ -1465,16 +1470,29 @@ async function cdBuildDiaryInjectionText() {
     
     // ====== 剧情档案（受 injectArchive 控制）======
     if (s.injectArchive !== false) {
-      const arc = data.archive;
-      if (arc) {
-        const arcParts = [];
-        if (arc.mainline) arcParts.push(`主线：${arc.mainline}`);
-        if (arc.sideline) arcParts.push(`支线：${arc.sideline}`);
-        if (arc.states) arcParts.push(`重要状态：${arc.states}`);
-        if (arc.unresolved) arcParts.push(`待解决事项：${arc.unresolved}`);
-        if (arcParts.length) {
-          blocks.push('[剧情档案]');
-          arcParts.forEach(p => blocks.push(`- ${p}`));
+      // ★ 向量模式：从历史档案中检索最相关的几条注入，避免全量几万 token
+      if (s.archiveMode === 'vector' && Array.isArray(data.archiveVectors) && data.archiveVectors.length > 0 && typeof cdSearchVectors === 'function') {
+        const chat = _cdGetChat();
+        const recent = (Array.isArray(chat) ? chat.slice(-6) : [])
+          .map(function (m) { return (m && m.mes) ? m.mes : ''; }).join('\n');
+        const topK = s.vectorTopK || 5;
+        const threshold = s.vectorThreshold || 0.6;
+        const results = cdSearchVectors(recent || '当前剧情', data.archiveVectors, topK, threshold);
+        const vecTxt = results.length > 0 ? results.map(function (r) { return r.text; }).join('\n') : '（未检索到相关历史事件）';
+        blocks.push('[剧情档案·向量检索]');
+        blocks.push(vecTxt);
+      } else {
+        const arc = data.archive;
+        if (arc) {
+          const arcParts = [];
+          if (arc.mainline) arcParts.push(`主线：${arc.mainline}`);
+          if (arc.sideline) arcParts.push(`支线：${arc.sideline}`);
+          if (arc.states) arcParts.push(`重要状态：${arc.states}`);
+          if (arc.unresolved) arcParts.push(`待解决事项：${arc.unresolved}`);
+          if (arcParts.length) {
+            blocks.push('[剧情档案]');
+            arcParts.forEach(p => blocks.push(`- ${p}`));
+          }
         }
       }
     }
@@ -1524,13 +1542,38 @@ let _cdInjectionRegistered = false;
 let _cdInjectionKey = 'character-diary-memory';
 
 /** 使用 setExtensionPrompt 注册注入（日记+关系+剧情+填表指令，统一走 cdBuildDiaryInjectionText） */
+/** 注入位置解析: 支持 'top'(开头) / 'bottom'(末尾), 优先用酒馆 extension_prompt_types 常量, 缺失则用常见数值 */
+function cdGetInjectPosition() {
+  const s = cdGetSettings();
+  const t = (typeof extension_prompt_types !== 'undefined' && extension_prompt_types) ? extension_prompt_types : null;
+  const pos = s.injectPosition || 'after';
+  if (pos === 'before') return (t && t.BEFORE_PROMPT !== undefined) ? t.BEFORE_PROMPT : 2;
+  if (pos === 'chat') return (t && t.IN_CHAT !== undefined) ? t.IN_CHAT : 1;
+  return (t && t.AFTER_PROMPT !== undefined) ? t.AFTER_PROMPT : 0;
+}
+
+/** 注入消息角色 0=system 1=user 2=assistant */
+function cdGetInjectRole() {
+  const s = cdGetSettings();
+  const r = (s.injectRole !== undefined) ? s.injectRole : 0;
+  const er = (typeof extension_prompt_roles !== 'undefined' && extension_prompt_roles) ? extension_prompt_roles : null;
+  if (r === 1) return (er && er.USER !== undefined) ? er.USER : 1;
+  if (r === 2) return (er && er.ASSISTANT !== undefined) ? er.ASSISTANT : 2;
+  return (er && er.SYSTEM !== undefined) ? er.SYSTEM : 0;
+}
+/** 注入层内深度 */
+function cdGetInjectDepth() {
+  const s = cdGetSettings();
+  const d = parseInt(s.injectDepth, 10);
+  return (isFinite(d) && d >= 0) ? d : 1;
+}
 async function cdRegisterInjection() {
   try {
     const text = await cdBuildDiaryInjectionText();
     const ctx = SillyTavern.getContext();
     if (ctx && typeof ctx.setExtensionPrompt === 'function') {
       if (text) {
-        ctx.setExtensionPrompt(_cdInjectionKey, text, 1000);
+        ctx.setExtensionPrompt(_cdInjectionKey, text, cdGetInjectPosition(), cdGetInjectDepth(), false, cdGetInjectRole());
         cdLog('[注入] setExtensionPrompt 已更新:', text.length, '字符');
       } else {
         ctx.setExtensionPrompt(_cdInjectionKey, '', 0);
@@ -2083,30 +2126,41 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
 
     /** 辅助：为单路 API 调用记录日志 */
     const _cdCallApi = async (name, msgs) => {
-      const start = Date.now();
-      cdAddLog('api_req', `[${name}] 开始请求`, {消息数: msgs.length});
-      try {
-        const res = await cdWithTimeout(cdApiComplete(msgs, s), 120000, name);
-        const elapsed = Date.now() - start;
-        const logDetail = {长度: res.text.length, 预览: res.text.slice(0, 100), 耗时: elapsed + 'ms'};
-        if (res.tokenUsage) {
-          const tu = res.tokenUsage;
-          logDetail.token用量 = `↑${tu.prompt} ↓${tu.completion} = ${tu.total}`;
-          if (tu.cacheHit !== undefined) {
-            logDetail.缓存命中 = tu.cacheHit;
-            logDetail.缓存未命中 = tu.cacheMiss;
+      const maxRetry = Math.max(0, parseInt(s.retryTimes, 10) || 0);
+      const delayMs = Math.max(0, (parseFloat(s.retryDelay) || 0)) * 1000;
+      let lastErr = null;
+      for (let attempt = 0; attempt <= maxRetry; attempt++) {
+        const start = Date.now();
+        cdAddLog('api_req', `[${name}] 开始请求(第${attempt + 1}/${maxRetry + 1}次)`, {消息数: msgs.length});
+        try {
+          const res = await cdWithTimeout(cdApiComplete(msgs, s), 120000, name);
+          const elapsed = Date.now() - start;
+          const logDetail = {长度: res.text.length, 预览: res.text.slice(0, 100), 耗时: elapsed + 'ms'};
+          if (res.tokenUsage) {
+            const tu = res.tokenUsage;
+            logDetail.token用量 = `\u2191${tu.prompt} \u2193${tu.completion} = ${tu.total}`;
+            if (tu.cacheHit !== undefined) {
+              logDetail.缓存命中 = tu.cacheHit;
+              logDetail.缓存未命中 = tu.cacheMiss;
+            }
+            logDetail.prompt_tokens = tu.prompt;
+            logDetail.completion_tokens = tu.completion;
+            logDetail.total_tokens = tu.total;
           }
-          logDetail.prompt_tokens = tu.prompt;
-          logDetail.completion_tokens = tu.completion;
-          logDetail.total_tokens = tu.total;
+          cdAddLog('api_res', `[${name}] 请求成功`, logDetail);
+          return { text: res.text, tokenUsage: res.tokenUsage, name };
+        } catch (e) {
+          const elapsed = Date.now() - start;
+          lastErr = e;
+          const still = attempt < maxRetry;
+          cdAddLog('warn', `[${name}] 请求${attempt + 1}次失败 (${elapsed}ms): ${e && e.message ? e.message : e}` + (still ? `，${delayMs / 1000}秒后重试` : ''));
+          if (still && delayMs > 0) {
+            await new Promise(r => setTimeout(r, delayMs));
+          }
         }
-        cdAddLog('api_res', `[${name}] 请求成功`, logDetail);
-        return { text: res.text, tokenUsage: res.tokenUsage, name };
-      } catch (e) {
-        const elapsed = Date.now() - start;
-        cdAddLog('error', `[${name}] 请求失败 (${elapsed}ms): ` + e.message);
-        throw e;
       }
+      cdAddLog('error', `[${name}] 重试${maxRetry}次后仍失败: ` + ((lastErr && lastErr.message) || '未知错误'));
+      throw lastErr || new Error('请求失败');
     };
 
     const _cdRunAll = Promise.allSettled(calls.map(c => _cdCallApi(c.name, c.msgs)));
@@ -4955,6 +5009,39 @@ async function cdRenderSettings() {
       <label>生成温度</label>
       <input type="number" id="cd-s-temp" value="${s.temperature}" step="0.1" min="0" max="2" class="cd-input">
     </div>
+    <div class="cd-set-row">
+      <label>LLM 报错/超时自动重试次数 (0=不重试)</label>
+      <input type="number" id="cd-s-retry" value="${s.retryTimes !== undefined ? s.retryTimes : 3}" min="0" max="10" class="cd-input">
+    </div>
+    <div class="cd-set-row">
+      <label>每次重试间隔 (秒)</label>
+      <input type="number" id="cd-s-retrydelay" value="${s.retryDelay !== undefined ? s.retryDelay : 2}" min="0" max="30" step="1" class="cd-input">
+    </div>
+    <details class="cd-settings-collapse">
+      <summary class="cd-settings-collapse-summary">注入策略（高级：位置 / 角色 / 深度）</summary>
+      <div class="cd-settings-collapse-body">
+        <div class="cd-set-row">
+          <label>注入位置</label>
+          <select id="cd-s-injpos" class="cd-input" style="width:auto;min-width:150px;">
+            <option value="after" ${(s.injectPosition || 'after') === 'after' ? 'selected' : ''}>末尾（在提示词之后）</option>
+            <option value="chat" ${(s.injectPosition || 'after') === 'chat' ? 'selected' : ''}>对话中</option>
+            <option value="before" ${(s.injectPosition || 'after') === 'before' ? 'selected' : ''}>开头（在提示词之前）</option>
+          </select>
+        </div>
+        <div class="cd-set-row">
+          <label>消息角色</label>
+          <select id="cd-s-injrole" class="cd-input" style="width:auto;min-width:150px;">
+            <option value="0" ${(s.injectRole || 0) === 0 ? 'selected' : ''}>系统 (system)</option>
+            <option value="1" ${(s.injectRole || 0) === 1 ? 'selected' : ''}>用户 (user)</option>
+            <option value="2" ${(s.injectRole || 0) === 2 ? 'selected' : ''}>助手 (assistant)</option>
+          </select>
+        </div>
+        <div class="cd-set-row">
+          <label>层内深度</label>
+          <input type="number" id="cd-s-injdepth" value="${(s.injectDepth === undefined) ? 1 : s.injectDepth}" min="0" max="999" step="1" class="cd-input" style="width:80px;">
+        </div>
+      </div>
+    </details>
 
     <div class="cd-set-row">
       <label>快捷入口</label>
@@ -5234,6 +5321,11 @@ async function cdRenderSettings() {
       interval: parseInt($('#cd-s-interval').val(), 10) || 5,
       cameoThreshold: parseInt($('#cd-s-cameo').val(), 10) || 3,
       temperature: parseFloat($('#cd-s-temp').val()) || 0.7,
+      retryTimes: Math.max(0, parseInt($('#cd-s-retry').val(), 10) || 0),
+      retryDelay: Math.max(0, parseFloat($('#cd-s-retrydelay').val()) || 0),
+      injectPosition: $('#cd-s-injpos').val() || 'after',
+      injectRole: parseInt($('#cd-s-injrole').val(), 10) || 0,
+      injectDepth: Math.max(0, parseInt($('#cd-s-injdepth').val(), 10) || 1),
       fabShow: $('#cd-s-fab').is(':checked'),
       enableDiary: $('#cd-s-diary').is(':checked'),
       enableRelation: $('#cd-s-relation').is(':checked'),
@@ -5549,6 +5641,15 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
+    version: 'v2.2.4',
+    date: '2026-08-01',
+    items: [
+      '新增 LLM 自动重试：报错/超时自动重试，可在设置中自定义重试次数与重试间隔（0=不重试）',
+      '修复向量检索模式下剧情档案仍被全量注入的问题：改为检索相关条目注入，避免几万 token 占用',
+      '新增「注入策略」高级设置：可折叠配置注入位置（末尾/对话中/开头）、消息角色与层内深度',
+    ],
+  },
+  {
     version: 'v2.2.3',
     date: '2026-08-01',
     items: [
@@ -5715,7 +5816,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.2.3 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.2.4 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
