@@ -43,6 +43,7 @@ const DEFAULT_SETTINGS = {
   autoHideKeep    : 5,            // 保留最新 N 条 AI 楼层可见
   autoCompress    : false,        // 自动压缩剧情档案
   autoCompressThreshold : 30,    // 累计多少条事件触发压缩
+  customFields : [],             // 用户自定义剧情追踪项定义 [{ key, label, desc }]
   archiveMode   : 'append',   // 'append' | 'vector' 剧情档案模式
   diaryMode     : 'append',   // 'append' | 'vector' 角色日记模式
   vectorTopK    : 5,          // 向量检索召回条数
@@ -132,6 +133,8 @@ function emptyData() {
       sideline:  '',   // 支线摘要
       states:    '',   // 重要状态变化
       unresolved:'',   // 未解决事项
+      items: [],       // 物品记录 [{ time, desc }]（获得/失去/使用的重要物品，按追加顺序，保持楼层顺序）
+      custom: {},      // 用户自定义剧情追踪项 { key: [{ time, desc }] }（key 来自设置 customFields）
     },
     cards: [],         // 剧情卡牌收集 [{ title, desc, time, icon }]
     snapshots: [],     // 历史快照 [{ time, type, diaryCount, relationCount, archiveUpdated, archiveEntryCount, chapterTitle }]
@@ -500,7 +503,7 @@ const ARCHIVE_SYSTEM = [
   '3. 不要擅自补日期、时间、动机、立场或因果。原文没有，就保持没有。',
   '',
   '输出目标与格式：',
-  '请严格按以下四个字段输出纯文本，每个字段一段文字，不编号不列表：',
+  '请严格按以下五个字段输出纯文本，每个字段一段文字，不编号不列表：',
   '',
   '主线：',
   '（每条事件以【时间标记】开头，多个事件用换行分隔）',
@@ -513,10 +516,27 @@ const ARCHIVE_SYSTEM = [
   '',
   '未解决事项：',
   '（列出未解决事项，每条以【时间标记】开头记录该事项产生的时间）',
+  '',
+  '物品记录：',
+  '（列出涉及物品的事件，如获得、失去、交换、使用的重要物品（含道具、证据、金额、药物、武器、信物、战利品等），每条以【时间标记】开头。没有物品变化则输出"无"）',
 ].join('\n');
 
 function cdBuildArchivePrompt(windowFloors, data, _s) {
   const existing = data.archive || emptyData().archive;
+  // ★ 用户自定义剧情追踪项
+  const customFields = Array.isArray(_s?.customFields) ? _s.customFields.filter(f => f && f.key && f.label) : [];
+  const customFormatBlock = customFields.length
+    ? customFields.map(f =>
+        `${f.label}：\n（${f.desc || '记录该追踪项的变化'}。每条以【时间标记】开头；无变化则输出"无）`
+      ).join('\n')
+    : '';
+  const customOutputNames = customFields.map(f => f.label).join('、');
+  // 已有自定义数据（普通模式增量扩展用）
+  const existingCustomTxt = customFields.map(f => {
+    const arr = (existing.custom && Array.isArray(existing.custom[f.key])) ? existing.custom[f.key] : [];
+    if (!arr.length) return '';
+    return `已知${f.label}：\n` + arr.map(it => it.time ? `【${it.time}】${it.desc}` : it.desc).join('\n');
+  }).filter(Boolean).join('\n');
   // ★ 楼层文本经过标签过滤
   const tags = _s?.filterTags || [];
   const scene = windowFloors.map(m => `[#${m.message_id} ${m.name}] ${cdFilterTags(m.mes, tags)}`).join('\n\n');
@@ -536,13 +556,15 @@ function cdBuildArchivePrompt(windowFloors, data, _s) {
       const sys = [
         ARCHIVE_SYSTEM,
         '',
+        customFormatBlock ? '自定义追踪项（同样严格按格式输出）：\n' + customFormatBlock : '',
+        '',
         '**从历史档案中检索到的相关事件（供参考）**：',
         retrievedText,
       ].filter(Boolean).join('\n');
       const usr = [
         `本次新增楼层：\n${scene}`,
         '',
-        '请分析新增楼层中的剧情推进，输出：主线、支线、重要状态变化、未解决事项。',
+        `请分析新增楼层中的剧情推进，输出：主线、支线、重要状态变化、未解决事项、物品记录${customOutputNames ? '、' + customOutputNames : ''}。`,
         '可以引用上面"检索到的相关事件"中的内容，但不要重复输出，只做增量更新。',
       ].join('\n');
       return [
@@ -556,6 +578,9 @@ function cdBuildArchivePrompt(windowFloors, data, _s) {
   }
   
   // 普通模式（原逻辑）
+  const existingItemsTxt = (Array.isArray(existing.items) && existing.items.length)
+    ? existing.items.map(it => it.time ? `【${it.time}】${it.desc}` : it.desc).join('\n')
+    : '';
   const sys = [
     ARCHIVE_SYSTEM,
     '',
@@ -564,11 +589,13 @@ function cdBuildArchivePrompt(windowFloors, data, _s) {
     existing.sideline ? `已知支线：${existing.sideline}` : '',
     existing.states ? `已知重要状态：${existing.states}` : '',
     existing.unresolved ? `已知未解决事项：${existing.unresolved}` : '',
+    existingItemsTxt ? `已知物品记录：\n${existingItemsTxt}` : '',
+    existingCustomTxt ? `\n${existingCustomTxt}` : '',
   ].filter(Boolean).join('\n');
   const usr = [
     `本次新增楼层：\n${scene}`,
     '',
-    '请输出：主线、支线、重要状态变化、未解决事项',
+    `请输出：主线、支线、重要状态变化、未解决事项、物品记录${customOutputNames ? '、' + customOutputNames : ''}`,
   ].join('\n');
   return [
     { role: 'system', content: sys },
@@ -577,25 +604,70 @@ function cdBuildArchivePrompt(windowFloors, data, _s) {
   ];
 }
 
-/** 解析剧情档案的四个字段 */
-function parseArchiveJson(text) {
-  const raw = String(text || '').trim();
-  // 按四个标签切分
-  const re = /(?:^|\n)(主线|支线|重要状态变化|未解决事项)[：:]([\s\S]*?)(?=(?:\n主线|\n支线|\n重要状态变化|\n未解决事项)[：:]|$)/g;
-  let mainline = '', sideline = '', states = '', unresolved = '';
-  let match;
-  while ((match = re.exec(raw)) !== null) {
-    const label = match[1].trim();
-    const body  = match[2].trim();
-    switch (label) {
-      case '主线': mainline = body; break;
-      case '支线': sideline = body; break;
-      case '重要状态变化': states = body; break;
-      case '未解决事项': unresolved = body; break;
+/** 把物品字段文本解析成有序数组 [{ time, desc }]，保持原文追加顺序 */
+function parseItemsText(text) {
+  const out = [];
+  if (!text) return out;
+  let curTime = '';
+  for (const line of String(text).split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const m = trimmed.match(/^【([^】]+)】\s*(.*)/);
+    if (m) {
+      curTime = m[1];
+      out.push({ time: curTime, desc: m[2] });
+    } else if (curTime && trimmed.length > 1 && out.length) {
+      out[out.length - 1].desc += ' ' + trimmed;
     }
   }
-  return { mainline, sideline, states, unresolved };
+  return out;
 }
+
+/** 解析剧情档案的字段（主线/支线/重要状态变化/未解决事项/物品记录 + 用户自定义追踪项） */
+function parseArchiveJson(text, customDefs) {
+  const raw = String(text || '').trim();
+  const defs = Array.isArray(customDefs) ? customDefs : [];
+  // 全部字段标签：内置五个 + 每个自定义项的 label
+  const builtin = ['主线', '支线', '重要状态变化', '未解决事项', '物品记录'];
+  const customLabels = defs.map(d => d && d.label ? d.label : '').filter(Boolean);
+  // 按长度降序排列，避免「主角状态」被「状态」抢先截断
+  const allLabels = builtin.concat(customLabels).sort((a, b) => b.length - a.length);
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const labelAlt = allLabels.map(esc).join('|');
+  const labelRe = new RegExp('^(' + labelAlt + ')[：:]');
+  // 逐行切分（稳健，避免非贪婪正则跨界吞标签）
+  const parts = {};
+  let curLabel = null;
+  const splitLines = String(raw).split('\n');
+  for (const line of splitLines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const hm = trimmed.match(labelRe);
+    if (hm) {
+      curLabel = hm[1].trim();
+      parts[curLabel] = '';
+      continue;
+    }
+    if (curLabel !== null) {
+      parts[curLabel] = (parts[curLabel] ? parts[curLabel] + '\n' : '') + trimmed;
+    }
+  }
+  // 内置字段
+  const mainline   = parts['主线'] || '';
+  const sideline   = parts['支线'] || '';
+  const states     = parts['重要状态变化'] || '';
+  const unresolved = parts['未解决事项'] || '';
+  const itemsText  = parts['物品记录'] || '';
+  // 自定义字段（同样按时间标记解析成数组）
+  const custom = {};
+  for (const d of defs) {
+    if (!d || !d.key || !d.label) continue;
+    const body = parts[d.label];
+    custom[d.key] = body ? parseItemsText(body) : [];
+  }
+  return { mainline, sideline, states, unresolved, items: parseItemsText(itemsText), custom };
+}
+
 function cdBuildRelationPrompt(windowFloors, data, _s) {
   const known = Object.keys(data.diaries);
   // ★ 楼层文本经过标签过滤
@@ -649,9 +721,19 @@ function cdFilterTags(text, tags) {
 /** 统计剧情档案中所有带【时间标记】的条目总数 */
 function cdCountArchiveEntries(archive) {
   if (!archive) return 0;
-  const allText = [archive.mainline, archive.sideline, archive.states, archive.unresolved].filter(Boolean).join('\n');
-  const matches = allText.match(/【[^】]+】/g);
-  return matches ? matches.length : 0;
+  const itemsText = (Array.isArray(archive.items) && archive.items.length) ? archive.items.map(it => it.time ? `【${it.time}】${it.desc}` : it.desc).join('\n') : '';
+  const allText = [archive.mainline, archive.sideline, archive.states, archive.unresolved, itemsText].filter(Boolean).join('\n');
+  let count = (allText.match(/【[^】]+】/g) || []).length;
+  // 自定义追踪项（每条的时间标记也算一条）
+  if (archive.custom && typeof archive.custom === 'object') {
+    for (const key of Object.keys(archive.custom)) {
+      const arr = Array.isArray(archive.custom[key]) ? archive.custom[key] : [];
+      for (const it of arr) {
+        if (it && (it.time || it.desc)) count += 1;
+      }
+    }
+  }
+  return count;
 }
 
 /* ============================== 向量化工具 ============================== */
@@ -757,6 +839,26 @@ async function cdVectorizeArchive(data) {
       if (trimmed && !existingTexts.has(trimmed)) {
         entries.push({ text: trimmed, category });
       }
+    }
+  }
+  // 物品记录也纳入向量库（每条独立，便于 vector 模式下检索到物品变化）
+  if (Array.isArray(archive.items)) {
+    for (const it of archive.items) {
+      if (!it || !it.desc) continue;
+      const t = (it.time ? `【${it.time}】${it.desc}` : it.desc).trim();
+      if (t && !existingTexts.has(t)) entries.push({ text: t, category: '物品' });
+    }
+  }
+  // ★ 自定义剧情追踪项也纳入向量库（每条独立，category 用字段名）
+  const vecCustomFields = Array.isArray(cdGetSettings().customFields) ? cdGetSettings().customFields : [];
+  const vecCustomMap = (archive.custom && typeof archive.custom === 'object') ? archive.custom : {};
+  for (const def of vecCustomFields) {
+    if (!def || !def.key || !def.label) continue;
+    const arr = Array.isArray(vecCustomMap[def.key]) ? vecCustomMap[def.key] : [];
+    for (const it of arr) {
+      if (!it || !it.desc) continue;
+      const t = (it.time ? `【${it.time}】${it.desc}` : it.desc).trim();
+      if (t && !existingTexts.has(t)) entries.push({ text: t, category: def.label });
     }
   }
   
@@ -1532,6 +1634,17 @@ async function cdBuildDiaryInjectionText() {
           if (arc.sideline) arcParts.push(`支线：${arc.sideline}`);
           if (arc.states) arcParts.push(`重要状态：${arc.states}`);
           if (arc.unresolved) arcParts.push(`待解决事项：${arc.unresolved}`);
+          if (Array.isArray(arc.items) && arc.items.length) {
+            arcParts.push(`物品记录：${arc.items.map(it => it.time ? `【${it.time}】${it.desc}` : it.desc).join('\n')}`);
+          }
+          // ★ 自定义剧情追踪项注入
+          const injCustomFields = Array.isArray(s.customFields) ? s.customFields.filter(f => f && f.key && f.label) : [];
+          const injCustomMap = (arc.custom && typeof arc.custom === 'object') ? arc.custom : {};
+          for (const def of injCustomFields) {
+            const arr = Array.isArray(injCustomMap[def.key]) ? injCustomMap[def.key] : [];
+            if (!arr.length) continue;
+            arcParts.push(`自定义${def.label}：${arr.map(it => it.time ? `【${it.time}】${it.desc}` : it.desc).join('\n')}`);
+          }
           if (arcParts.length) {
             blocks.push('[剧情档案]');
             arcParts.forEach(p => blocks.push(`- ${p}`));
@@ -1966,9 +2079,18 @@ async function cdTestDiary() {
     }
     cdAddLog('info', '测试 [剧情档案] API成功', detail);
     try {
-      const arc = parseArchiveJson(archiveRes.value.text);
-      if (arc.mainline || arc.sideline || arc.states || arc.unresolved) {
-        cdAddLog('info', '测试 [剧情档案] 解析成功', {主线: arc.mainline?.slice(0, 80), 支线: arc.sideline?.slice(0, 80), 状态: arc.states?.slice(0, 80), 未解决: arc.unresolved?.slice(0, 80)});
+      const customDefs = Array.isArray(s.customFields) ? s.customFields : [];
+      const arc = parseArchiveJson(archiveRes.value.text, customDefs);
+      // 自定义字段解析预览
+      const customPreview = {};
+      for (const def of customDefs) {
+        if (def && def.key) {
+          const arr = (arc.custom && arc.custom[def.key]) || [];
+          customPreview[def.label || def.key] = arr.map(it => `${it.time || ''} ${(it.desc || '').slice(0, 40)}`).slice(0, 3);
+        }
+      }
+      if (arc.mainline || arc.sideline || arc.states || arc.unresolved || (arc.items && arc.items.length) || Object.keys(customPreview).length) {
+        cdAddLog('info', '测试 [剧情档案] 解析成功', {主线: arc.mainline?.slice(0, 80), 支线: arc.sideline?.slice(0, 80), 状态: arc.states?.slice(0, 80), 未解决: arc.unresolved?.slice(0, 80), 物品: (arc.items || []).map(it => `${it.time || ''} ${(it.desc || '').slice(0, 40)}`).slice(0, 5), 自定义: customPreview});
       } else {
         cdAddLog('warn', '测试 [剧情档案] 解析为空', {原文前300字: archiveRes.value.text.slice(0, 300)});
       }
@@ -2267,13 +2389,32 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
     // 处理剧情档案（独立，不影响日记/关系）
     if (archiveRes?.status === 'fulfilled') {
       try {
-        const arc = parseArchiveJson(archiveRes.value.text);
-        if (arc.mainline || arc.sideline || arc.states || arc.unresolved) {
+        const customDefs = Array.isArray(s.customFields) ? s.customFields : [];
+        const arc = parseArchiveJson(archiveRes.value.text, customDefs);
+        if (arc.mainline || arc.sideline || arc.states || arc.unresolved || (arc.items && arc.items.length) || (arc.custom && Object.keys(arc.custom).length)) {
           if (!data.archive) data.archive = Object.assign({}, emptyData().archive);
           if (arc.mainline)   data.archive.mainline   = data.archive.mainline   ? data.archive.mainline   + '\n\n' + arc.mainline   : arc.mainline;
           if (arc.sideline)   data.archive.sideline   = data.archive.sideline   ? data.archive.sideline   + '\n\n' + arc.sideline   : arc.sideline;
           if (arc.states)     data.archive.states     = data.archive.states     ? data.archive.states     + '\n\n' + arc.states     : arc.states;
           if (arc.unresolved) data.archive.unresolved = data.archive.unresolved ? data.archive.unresolved + '\n\n' + arc.unresolved : arc.unresolved;
+          if (arc.items && arc.items.length) {
+            if (!Array.isArray(data.archive.items)) data.archive.items = [];
+            // 追加式：保持楼层顺序，不按时间重排
+            for (const it of arc.items) {
+              if (it.desc) data.archive.items.push({ time: it.time || '', desc: it.desc });
+            }
+          }
+          // 自定义追踪项（追加式数组）
+          if (arc.custom && Object.keys(arc.custom).length) {
+            if (!data.archive.custom || typeof data.archive.custom !== 'object') data.archive.custom = {};
+            for (const key of Object.keys(arc.custom)) {
+              const list = arc.custom[key] || [];
+              if (!Array.isArray(data.archive.custom[key])) data.archive.custom[key] = [];
+              for (const it of list) {
+                if (it && it.desc) data.archive.custom[key].push({ time: it.time || '', desc: it.desc });
+              }
+            }
+          }
           archiveOk = true;
           cdAddLog('info', '剧情档案追加成功');
         } else {
@@ -2429,7 +2570,7 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
           if (entryCount >= threshold && (entryCount - lastCount) >= Math.floor(threshold / 2)) {
             cdAddLog('info', `自动压缩触发: 当前 ${entryCount} 条事件, 阈值 ${threshold}`);
             toastr.info('剧情档案条目数已达阈值，正在自动压缩融合...');
-            // 复用现有的压缩逻辑，只压缩四个字段
+            // 复用现有的压缩逻辑，只压缩四个文本字段
             const fields = ['mainline', 'sideline', 'states', 'unresolved'];
             const labels = { mainline: '主线', sideline: '支线', states: '重要状态变化', unresolved: '未解决事项' };
             const COMPRESS_PROMPT = '你是一个剧情档案整理员。把下面的剧情总结压缩融合成一版更紧凑但仍然完整可续写的版本。保留所有关键事实、时间标记、地点、关系变化、物品流转。不要丢失信息。输出纯文本。';
@@ -2446,6 +2587,59 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
                 compressed = compressed.replace(new RegExp(`^${labels[field]}[：:]\\s*`), '');
                 data.archive[field] = compressed;
                 cdAddLog('info', `自动压缩 ${labels[field]}: ${content.length}→${compressed.length} 字`);
+              }
+            }
+            // ★ 自动压缩物品记录：限制条数上限，超出的旧条目折叠进主线后裁剪，保持信息不丢失
+            {
+              const items = Array.isArray(data.archive.items) ? data.archive.items : [];
+              const MAX_ITEMS = Math.max(20, s.autoCompressThreshold ? s.autoCompressThreshold * 2 : 60);
+              if (items.length > MAX_ITEMS) {
+                const excess = items.slice(0, items.length - MAX_ITEMS);
+                const kept = items.slice(items.length - MAX_ITEMS);
+                if (excess.length) {
+                  const t0 = excess[0].time || '';
+                  const t1 = excess[excess.length - 1].time || '';
+                  const range = (t0 && t1 && t0 !== t1) ? `${t0}～${t1}` : (t0 || t1);
+                  const foldedTime = range ? `早期物品(${range})` : '早期物品';
+                  const foldedDesc = excess.map(it => it.time ? `${it.time}：${it.desc}` : it.desc).join('；');
+                  // 折叠出的早期物品摘要追加到主线末尾，避免信息丢失
+                  if (foldedDesc) {
+                    const oldMain = data.archive.mainline || '';
+                    const append = `\n【${foldedTime}】${foldedDesc}`;
+                    if (oldMain.length + append.length < 8000 || !oldMain) {
+                      data.archive.mainline = oldMain ? oldMain.trimEnd() + append : append.trim();
+                    }
+                  }
+                  data.archive.items = kept;
+                  cdAddLog('info', `自动压缩物品记录: ${items.length}→${kept.length} 条（旧条目已折叠进主线）`);
+                }
+              }
+            }
+            // ★ 自动压缩自定义剧情追踪项：同样限制条数上限，超出的旧条目折叠进主线后裁剪
+            {
+              const cpCustomFields = Array.isArray(s.customFields) ? s.customFields.filter(f => f && f.key && f.label) : [];
+              const cpCustomMap = (data.archive.custom && typeof data.archive.custom === 'object') ? data.archive.custom : {};
+              const MAX_CUSTOM = Math.max(20, s.autoCompressThreshold ? s.autoCompressThreshold * 2 : 60);
+              for (const def of cpCustomFields) {
+                const arr = Array.isArray(cpCustomMap[def.key]) ? cpCustomMap[def.key] : [];
+                if (arr.length <= MAX_CUSTOM) continue;
+                const excess = arr.slice(0, arr.length - MAX_CUSTOM);
+                const kept = arr.slice(arr.length - MAX_CUSTOM);
+                if (!excess.length) continue;
+                const t0 = excess[0].time || '';
+                const t1 = excess[excess.length - 1].time || '';
+                const range = (t0 && t1 && t0 !== t1) ? `${t0}～${t1}` : (t0 || t1);
+                const foldedTime = range ? `早期${def.label}(${range})` : `早期${def.label}`;
+                const foldedDesc = excess.map(it => it.time ? `${it.time}：${it.desc}` : it.desc).join('；');
+                if (foldedDesc) {
+                  const oldMain = data.archive.mainline || '';
+                  const append = `\n【${foldedTime}】${foldedDesc}`;
+                  if (oldMain.length + append.length < 8000 || !oldMain) {
+                    data.archive.mainline = oldMain ? oldMain.trimEnd() + append : append.trim();
+                  }
+                }
+                cpCustomMap[def.key] = kept;
+                cdAddLog('info', `自动压缩自定义追踪项【${def.label}】: ${arr.length}→${kept.length} 条（旧条目已折叠进主线）`);
               }
             }
             data._lastCompressEntryCount = entryCount;
@@ -3574,7 +3768,6 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
                     <button class="cd-entry-fav-btn ${e2.fav ? 'cd-fav-active' : ''}" title="收藏"><i class="fa-regular fa-star"></i></button>
                     <button class="cd-entry-psyche-btn" title="心理补全"><i class="fa-regular fa-brain"></i></button>
                     <button class="cd-entry-edit-btn" title="编辑这条日记"><i class="fa-regular fa-pen-to-square"></i></button>
-                    <button class="cd-entry-del-btn" title="删除这条日记"><i class="fa-regular fa-trash-can"></i></button>
                   </div>
                   <div class="cd-entry-text">${entryHtml2}</div>
                   ${secretHtml2 ? `<div class="cd-entry-secret">${secretHtml2}</div>` : ''}
@@ -3671,29 +3864,6 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
     cdSyncGlobalFav(name, entry, entry.fav);
     btn.toggleClass('cd-fav-active', entry.fav);
     await cdSaveData(curData);
-  });
-
-  // 删除按钮
-  $('#cd-content').on('click', '.cd-entry-del-btn', async function (e) {
-    e.stopPropagation();
-    const entryDiv = $(this).closest('.cd-entry');
-    const name = entryDiv.data('name');
-    const idx = entryDiv.data('idx');
-    if (name === undefined || idx === undefined) return;
-    if (!confirm(`确定删除 ${name} 的这条日记吗？`)) return;
-    const curData = await cdGetData();
-    if (curData.diaries[name]?.[idx]) {
-      curData.diaries[name].splice(idx, 1);
-      if (curData.diaries[name].length === 0) {
-        delete curData.diaries[name];
-        delete curData.aliases[name];
-        delete curData.promoted[name];
-      }
-      await cdSaveData(curData);
-      await cdRefreshInjection();
-      toastr.success('日记已删除');
-      cdRenderBrowse($('#cd-browse-search-input').val(), $('#cd-browse-char-filter').val());
-    }
   });
 
   // ★ 撤销/复原按钮（写在浏览视图事件绑定内，但点击时切到对应视图刷新）
@@ -3875,14 +4045,103 @@ async function cdRenderGraph() {
 /** 🕐 剧情时间线（基于剧情档案，按时间标记排序） */
 async function cdRenderArchive() {
   const data = await cdGetData();
+  const s = cdGetSettings();
+
+  // 保存自定义追踪项（时间线顶部字段管理）——渲染后调用直接绑定
+  function bindCustomSave() {
+    const btn = document.getElementById('cd-custom-fields-save');
+    if (!btn) return;
+    btn.onclick = () => {
+      const curS = cdGetSettings();
+      const oldCustom = Array.isArray(curS.customFields) ? curS.customFields : [];
+      const lines = (document.getElementById('cd-custom-fields-input')?.value || '').split('\n').map(l => l.trim()).filter(Boolean);
+      const customFields = [];
+      let autoIdx = 1;
+      const usedKeys = {};
+      for (const line of lines) {
+        const m = line.match(/^(.+?)[：:]\s*(.*)$/);
+        const label = (m ? m[1] : line).trim();
+        const desc = (m ? m[2] : '').trim();
+        if (!label) continue;
+        const existing = oldCustom.find(f => f && f.label === label);
+        let key = existing && existing.key ? existing.key : null;
+        if (!key) {
+          do { key = 'custom_' + autoIdx++; } while (usedKeys[key]);
+        }
+        usedKeys[key] = true;
+        customFields.push({ key, label, desc });
+      }
+      cdSaveSettings({ customFields });
+      if (customFields.length) {
+        toastr.success(`已保存 ${customFields.length} 个追踪项：已注入提示词 · 已接入解析`);
+      } else {
+        toastr.info('已清空自定义追踪项（不再注入提示词）');
+      }
+      cdRenderArchive();
+    };
+  }
+
   const arc = data.archive || emptyData().archive;
-  const empty = !arc.mainline && !arc.sideline && !arc.states && !arc.unresolved;
+  const customFields = Array.isArray(s.customFields) ? s.customFields.filter(f => f && f.key && f.label) : [];
+  const customMap = (arc.custom && typeof arc.custom === 'object') ? arc.custom : {};
+  const hasCustom = customFields.some(f => Array.isArray(customMap[f.key]) && customMap[f.key].length);
+  const empty = !arc.mainline && !arc.sideline && !arc.states && !arc.unresolved && !((Array.isArray(arc.items) && arc.items.length)) && !hasCustom;
   
+  // ★ 用户自定义追踪项（默认折叠，顶部展示 + 字段管理）
+  // 数据展示分区
+  const sections = customFields.map(f => {
+    const list = Array.isArray(customMap[f.key]) ? customMap[f.key] : [];
+    return { label: f.label, items: list };
+  }).filter(f => f.items.length);
+  const categorized = sections.map(sec => `
+    <div style="margin-bottom:10px;">
+      <h4 style="font-size: calc(0.72rem * var(--cd-fs, 1));font-weight:600;color:#a855f7;margin:0 0 5px;display:flex;align-items:center;gap:4px;">
+        <i class="fa-regular fa-bookmark"></i> ${escapeHtml(sec.label)}
+      </h4>
+      <div class="cd-timeline">
+        ${sec.items.map(item => {
+          const tm = item.time || '';
+          return `
+            <div class="cd-tl-item">
+              ${tm ? `<div class="cd-tl-date">${escapeHtml(tm)}</div>` : ''}
+              <div class="cd-tl-dot" style="background:#a855f7;border-color:#a855f7 22;"></div>
+              <div class="cd-tl-card"><div class="cd-tl-text">${escapeHtml(item.desc || '')}</div></div>
+            </div>`;
+        }).join('')}
+      </div>
+    </div>
+  `).join('');
+  // 字段管理区（textarea + 保存）
+  const editText = customFields.map(f => f.label + (f.desc ? '：' + f.desc : '')).join('\n');
+  const emptyDataNote = sections.length ? '' : '<p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;margin:4px 0 8px;">尚未配置自定义追踪项，可在下方添加字段。</p>';
+  const editBlock = `
+    <div class="cd-custom-edit">
+      <div style="font-size: calc(0.6rem * var(--cd-fs, 1));font-weight:600;color:#7a5c34;margin-bottom:4px;"><i class="fa-regular fa-sliders"></i> 字段管理 <span style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;font-weight:normal;">（每行一项「显示名：给AI的描述」，保存后生效）</span></div>
+      <textarea id="cd-custom-fields-input" rows="4" spellcheck="false" placeholder="主角状态：主角当前的情绪、处境、身体状况&#10;女巫好感：女巫对主角的好感变化"
+        style="width:100%;box-sizing:border-box;padding:6px;font-size: calc(0.6rem * var(--cd-fs, 1));background:#fdfaf3;border:1px solid #e3d5b8;border-radius:6px;color:#3c2f1f;resize:vertical;line-height:1.5;">${escapeHtml(editText)}</textarea>
+      <button type="button" class="cd-btn-primary" id="cd-custom-fields-save" style="font-size: calc(0.6rem * var(--cd-fs, 1));padding:3px 10px;min-width:auto;margin-top:4px;">保存追踪项</button>
+      <p style="font-size: calc(0.53rem * var(--cd-fs, 1));color:#8b7355;margin:4px 0 0;line-height:1.6;">
+        写一个追踪项占一行，格式：<b>显示名：给AI的描述</b><br>
+        例：<span style="color:#a855f7;">主角状态：主角当前的情绪、处境、身体状况</span><br>
+        例：<span style="color:#a855f7;">女巫好感：女巫对主角的好感变化</span><br>
+        「显示名」会作为时间线的分类标题，「描述」告诉 AI 具体要追踪什么。描述可留空（只写显示名）。填写后点「保存追踪项」，AI 写剧情档案时就会同步输出这些内容，并按【时间标记】逐条追加到对应分区；删除某行即删除该追踪项及其记录数据。
+      </p>
+    </div>`;
+  let customHtml = `
+    <details class="cd-custom-panel">
+      <summary class="cd-custom-head"><i class="fa-regular fa-bookmark"></i> 自定义追踪项 <span class="cd-custom-count">${sections.length}</span></summary>
+      <div class="cd-custom-body">
+        ${emptyDataNote}
+        ${categorized}
+        ${editBlock}
+      </div>
+    </details>`;
   // ★ 撤销提示（撤销栏已禁用，undoHtml 恒为空）
   let undoHtml = '';
   
   if (empty) {
-    $('#cd-content').html(undoHtml + `<div class="cd-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg><p>暂无剧情档案</p><p class="cd-empty-sub">写日记时将自动生成，AI 会为每条事件标注时间</p></div>`);
+    $('#cd-content').html(customHtml + undoHtml + `<div class="cd-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg><p>暂无剧情档案</p><p class="cd-empty-sub">写日记时将自动生成，AI 会为每条事件标注时间</p></div>`);
+    bindCustomSave();
     return;
   }
 
@@ -3950,13 +4209,14 @@ async function cdRenderArchive() {
     { label: '支线', icon: 'fa-code-branch', color: '#3b82f6', items: extractTimelineItems(arc.sideline, '支线', 'fa-code-branch') },
     { label: '状态', icon: 'fa-chart-simple', color: '#f59e0b', items: extractTimelineItems(arc.states, '状态', 'fa-chart-simple') },
     { label: '未解决', icon: 'fa-triangle-exclamation', color: '#ef4444', items: extractTimelineItems(arc.unresolved, '未解决', 'fa-triangle-exclamation') },
+    { label: '物品记录', icon: 'fa-box', color: '#a855f7', items: (Array.isArray(arc.items) ? arc.items : []).map(it => ({ time: it.time || '', content: it.desc || '', category: '物品记录', icon: 'fa-box' })).filter(it => it.content) },
   ];
   
   const hasAnyItems = categoryConfig.some(c => c.items.length > 0);
   
   if (hasAnyItems) {
     // 有时间标记的按时间线样式展示（但按类别分开，不混排）
-    let html = undoHtml + chapterHtml + locHtml;
+    let html = customHtml + undoHtml + chapterHtml + locHtml;
     
     for (const cat of categoryConfig) {
       if (!cat.items.length) continue;
@@ -3987,8 +4247,9 @@ async function cdRenderArchive() {
     $('#cd-content').html(html);
   } else {
     // 没有时间标记就 fallback 到卡片式展示（用时间线卡片样式包裹）
-    const categoryColors = { '主线': '#22c55e', '支线': '#3b82f6', '状态': '#f59e0b', '未解决': '#ef4444' };
-    const categoryIcons = { '主线': 'fa-route', '支线': 'fa-code-branch', '状态': 'fa-chart-simple', '未解决': 'fa-triangle-exclamation' };
+    const categoryColors = { '主线': '#22c55e', '支线': '#3b82f6', '状态': '#f59e0b', '未解决': '#ef4444', '物品记录': '#a855f7' };
+    const categoryIcons = { '主线': 'fa-route', '支线': 'fa-code-branch', '状态': 'fa-chart-simple', '未解决': 'fa-triangle-exclamation', '物品记录': 'fa-box' };
+    const itemsFallbackText = (Array.isArray(arc.items) && arc.items.length) ? arc.items.map(it => it.time ? `【${it.time}】${it.desc}` : it.desc).join('\n') : '';
     const fallbackHtml = !empty ? `
       <div class="cd-timeline">
         ${[
@@ -3996,6 +4257,7 @@ async function cdRenderArchive() {
           arc.sideline ? { label: '支线', text: arc.sideline } : null,
           arc.states ? { label: '状态', text: arc.states } : null,
           arc.unresolved ? { label: '未解决', text: arc.unresolved } : null,
+          itemsFallbackText ? { label: '物品记录', text: itemsFallbackText } : null,
         ].filter(Boolean).map(section => `
           <div class="cd-tl-item">
             <div class="cd-tl-dot" style="background:${categoryColors[section.label]};border-color:${categoryColors[section.label]}22;"></div>
@@ -4010,11 +4272,15 @@ async function cdRenderArchive() {
       </div>
     ` : '';
     $('#cd-content').html(`
+      ${customHtml}
       ${undoHtml}
       ${chapterHtml}
       ${locHtml}
       ${fallbackHtml}`);
   }
+
+  // 绑定自定义追踪项保存按钮（hasAnyItems / fallback 两条路径均已渲染）
+  bindCustomSave();
 
   // ★ 底部区域：剧情回放 + 卡牌
   // 收集所有日记条目
@@ -4151,8 +4417,8 @@ async function cdRenderFloors() {
 5. 如果多次总结里有重复信息，要融合，不要机械重复抄写。
 6. 输出纯文本，不要解释，不要多余说明。】`;
   const arc = data.archive || {};
-  const hasArchive = !!(arc.mainline || arc.sideline || arc.states || arc.unresolved);
-  
+  const hasArchive = !!(arc.mainline || arc.sideline || arc.states || arc.unresolved || (Array.isArray(arc.items) && arc.items.length) || (arc.custom && Object.values(arc.custom).some(a => Array.isArray(a) && a.length)));
+
   // 标记已记录和未记录
   const floorItems = allAi.map(m => ({
     ...m,
@@ -4740,7 +5006,7 @@ function cdCalcAchievements(data) {
   const diaryNames = Object.keys(data.diaries || {});
   const totalEntries = diaryNames.reduce((sum, n) => sum + (data.diaries[n]?.length || 0), 0);
   const totalRels = Object.values(data.relations || {}).reduce((sum, t) => sum + Object.keys(t).length, 0);
-  const hasArchive = !!(data.archive?.mainline || data.archive?.sideline);
+  const hasArchive = !!(data.archive?.mainline || data.archive?.sideline || data.archive?.states || data.archive?.unresolved || (Array.isArray(data.archive?.items) && data.archive.items.length) || (data.archive?.custom && Object.values(data.archive.custom).some(a => Array.isArray(a) && a.length)));
   const hasPsyche = diaryNames.some(n => data.diaries[n].some(e => e.psyche));
   const hasFav = diaryNames.some(n => data.diaries[n].some(e => e.fav));
   const moodChanges = diaryNames.filter(n => {
@@ -4903,6 +5169,27 @@ function cdRenderExport() {
       if (arc.sideline) lines.push('### 支线', arc.sideline, '');
       if (arc.states) lines.push('### 重要状态', arc.states, '');
       if (arc.unresolved) lines.push('### 未解决事项', arc.unresolved, '');
+      const arcItems = Array.isArray(arc.items) ? arc.items : [];
+      if (arcItems.length) {
+        lines.push('### 物品记录', '');
+        for (const it of arcItems) {
+          lines.push(`- ${it.time ? `【${it.time}】` : ''}${it.desc || ''}`);
+        }
+        lines.push('');
+      }
+      // ★ 自定义剧情追踪项
+      const expCustomFields = Array.isArray(cdGetSettings().customFields) ? cdGetSettings().customFields : [];
+      const customMap = (arc.custom && typeof arc.custom === 'object') ? arc.custom : {};
+      for (const def of expCustomFields) {
+        if (!def || !def.key || !def.label) continue;
+        const arr = Array.isArray(customMap[def.key]) ? customMap[def.key] : [];
+        if (!arr.length) continue;
+        lines.push(`### ${def.label}`, '');
+        for (const it of arr) {
+          lines.push(`- ${it.time ? `【${it.time}】` : ''}${it.desc || ''}`);
+        }
+        lines.push('');
+      }
     }
     const blob = new Blob([lines.join('\n')], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
@@ -4964,6 +5251,23 @@ function cdRenderExport() {
         if (iarc.sideline) current.archive.sideline = current.archive.sideline ? current.archive.sideline + '\n\n' + iarc.sideline : iarc.sideline;
         if (iarc.states) current.archive.states = current.archive.states ? current.archive.states + '\n\n' + iarc.states : iarc.states;
         if (iarc.unresolved) current.archive.unresolved = current.archive.unresolved ? current.archive.unresolved + '\n\n' + iarc.unresolved : iarc.unresolved;
+        if (Array.isArray(iarc.items) && iarc.items.length) {
+          if (!Array.isArray(current.archive.items)) current.archive.items = [];
+          for (const it of iarc.items) {
+            if (it && it.desc) current.archive.items.push({ time: it.time || '', desc: it.desc });
+          }
+        }
+        // 合并自定义追踪项（追加）
+        if (iarc.custom && typeof iarc.custom === 'object') {
+          if (!current.archive.custom || typeof current.archive.custom !== 'object') current.archive.custom = {};
+          for (const key of Object.keys(iarc.custom)) {
+            const list = Array.isArray(iarc.custom[key]) ? iarc.custom[key] : [];
+            if (!Array.isArray(current.archive.custom[key])) current.archive.custom[key] = [];
+            for (const it of list) {
+              if (it && it.desc) current.archive.custom[key].push({ time: it.time || '', desc: it.desc });
+            }
+          }
+        }
       }
       await cdSaveData(current);
       await cdRefreshInjection();
@@ -5435,8 +5739,8 @@ async function cdRenderEgg() {
   // 生成随机彩蛋内容
   function randomEgg() {
     const eggs = [
-      { icon: 'fa-regular fa-compass', title: '浏览视图', text: '顶部横向展示心情分布、心情趋势热力图和随机回顾。搜索框支持全文搜索日记内容，下拉框可按角色过滤。每条日记右侧有编辑、收藏、心理补全、删除按钮。' },
-      { icon: 'fa-regular fa-timeline', title: '时间线', text: '基于剧情档案的时间线展示。AI 在写剧情档案时会为每条事件标注【时间标记】，时间线会按时间顺序排列所有事件。主线/支线/状态/未解决用不同颜色区分。' },
+      { icon: 'fa-regular fa-compass', title: '浏览视图', text: '顶部横向展示心情分布、心情趋势热力图和随机回顾。搜索框支持全文搜索日记内容，下拉框可按角色过滤。每条日记右侧有编辑、收藏、心理补全按钮；批量删除请前往「管理」视图。' },
+      { icon: 'fa-regular fa-timeline', title: '时间线', text: '基于剧情档案的时间线展示。AI 在写剧情档案时会为每条事件标注【时间标记】，时间线会按时间顺序排列所有事件。主线/支线/状态/未解决/物品记录用不同颜色区分；顶部「自定义追踪项」分区可自由添加任意追踪维度（如主角状态、好感等），默认折叠、点击展开，AI 会同步输出并按时间逐条记录。' },
       { icon: 'fa-regular fa-diagram-project', title: '关系力图', text: '角色关系可视化。使用弹簧算法自动布局，角色为彩色节点，关系为彩色连线（绿=友好/红=排斥/灰=中立）。下方保留文本关系列表备查。' },
       { icon: 'fa-regular fa-gem', title: '娱乐页面', text: '集中展示数据总览、成就系统、塔罗占卜、角色剧场、年度报告和名场面收藏。每个功能都是独立的趣味体验。' },
       { icon: 'fa-regular fa-layer-group', title: '楼层', text: '浏览所有 AI 楼层，勾选未记录楼层补写，支持手动区间补写和一键分批补写全部历史，并可压缩融合剧情档案。' },
@@ -5449,7 +5753,7 @@ async function cdRenderEgg() {
       { icon: 'fa-regular fa-compress', title: '压缩融合', text: '在楼层视图中可对剧情档案进行压缩融合。AI 会将多次累计的剧情总结融合成一版更紧凑的版本，保留所有关键信息。' },
       { icon: 'fa-regular fa-link', title: '跨聊天继承', text: '在旧聊天中导出 JSON，切换到新聊天后导入。数据按角色和 message_id 合并，不会重复添加已有条目。' },
       { icon: 'fa-regular fa-pen-to-square', title: '日记编辑', text: '在浏览视图中点击 ✏️ 按钮可编辑单条日记的全部字段：日期、心情、态度、正文、心声、关键事件。编辑后自动刷新注入。' },
-      { icon: 'fa-regular fa-trash-can', title: '日记删除', text: '在浏览视图中点击 🗑️ 按钮可删除单条日记。如果角色的最后一条日记被删除，自动清除该角色的别名和 promoted 状态。' },
+      { icon: 'fa-regular fa-trash-can', title: '日记删除', text: '单条日记的 🗑️ 删除按钮已在浏览视图移除。如需删除日记，可前往「管理」视图多选删除，或移除整个角色的全部日记。' },
       { icon: 'fa-regular fa-magnifying-glass', title: '搜索技巧', text: '搜索框支持按日记正文、心声、心情、态度、关键事件、日期全文检索。支持中文/英文关键词。搜索时会自动隐藏顶部概览区域。' },
       { icon: 'fa-regular fa-rotate', title: '自动触发机制', text: '每次 AI 回复到达时检查从上次触发到现在新增了多少楼层。达到间隔（默认5）时自动触发写日记。使用独立的计数器与手动触发互不干扰。' },
       { icon: 'fa-regular fa-floppy-disk', title: '数据存储', text: '日记数据存储在 SillyTavern 的 chatMetadata 中，跟随聊天保存。日志存储在浏览器 localStorage。导出为 JSON 可永久备份。' },
@@ -5473,7 +5777,7 @@ async function cdRenderEgg() {
   const totalEntries = diaryNames.reduce((sum, n) => sum + (data.diaries[n]?.length || 0), 0);
   const totalRels = Object.values(data.relations || {}).reduce((sum, t) => sum + Object.keys(t).length, 0);
   const arc = data.archive || {};
-  const hasArchive = !!(arc.mainline || arc.sideline || arc.states || arc.unresolved);
+  const hasArchive = !!(arc.mainline || arc.sideline || arc.states || arc.unresolved || (Array.isArray(arc.items) && arc.items.length) || (arc.custom && Object.values(arc.custom).some(a => Array.isArray(a) && a.length)));
   let minFloor = Infinity, maxFloor = -1;
   for (const list of Object.values(data.diaries || {})) {
     for (const e of list) {
@@ -5708,6 +6012,17 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
+    version: 'v2.2.6',
+    date: '2026-08-02',
+    items: [
+      '新增「自定义剧情追踪项」：可在时间线界面顶部分区自由添加任意追踪维度（如主角状态、好感、势力局势等），AI 写剧情档案时同步输出并按【时间标记】逐条记录，时间线上分类展示',
+      '时间线顶部新增「自定义追踪项」可折叠分区：默认折叠、点击展开，内置字段管理（每行一个「显示名：给AI的描述」，保存即注入提示词并接入解析）',
+      '修复时间线界面某些情况下无法渲染的问题',
+      '移除浏览界面单条日记的「删除」按钮（批量删除请前往管理视图）',
+      'PDF 导出兼容细节优化：自定义追踪项也会写入导出内容',
+    ],
+  },
+  {
     version: 'v2.2.5',
     date: '2026-08-01',
     items: [
@@ -5893,7 +6208,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.2.5 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.2.6 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
@@ -6036,7 +6351,7 @@ async function cdRenderManage() {
   const snaps = Array.isArray(data.liveTableSnapshots) ? data.liveTableSnapshots : [];
 
   const archive = data.archive || {};
-  const hasArchive = !!(archive.mainline || archive.sideline || archive.states || archive.unresolved);
+  const hasArchive = !!(archive.mainline || archive.sideline || archive.states || archive.unresolved || (Array.isArray(archive.items) && archive.items.length) || (archive.custom && Object.values(archive.custom).some(a => Array.isArray(a) && a.length)));
 
   // 确认对话框
   function confirmDelete(msg) {
@@ -6128,7 +6443,8 @@ async function cdRenderManage() {
         <div style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#6b5a48;">
           ${hasArchive ? `
             <div style="padding:4px 6px;">
-              主线 ${(archive.mainline||'').length} 字 · 支线 ${(archive.sideline||'').length} 字 · 状态 ${(archive.states||'').length} 字 · 未解决 ${(archive.unresolved||'').length} 字
+主线 ${(archive.mainline||'').length} 字 · 支线 ${(archive.sideline||'').length} 字 · 状态 ${(archive.states||'').length} 字 · 未解决 ${(archive.unresolved||'').length} 字 · 物品 ${(Array.isArray(archive.items)?archive.items.length:0)} 条${(archive.custom && Object.keys(archive.custom).length) ? (' · 自定义 ' + Object.values(archive.custom).reduce((sum,a)=>sum+((Array.isArray(a)?a.length:0)||0),0) + ' 条') : ''}
+
             </div>
             <button class="cd-btn-danger cd-mgr-clear-archive" style="margin-top:4px;font-size: calc(0.6rem * var(--cd-fs, 1));padding:3px 10px;min-width:auto;"><i class="fa-regular fa-trash-can"></i> 清空剧情档案</button>
           ` : '<p style="padding:4px 0;">暂无剧情档案</p>'}
