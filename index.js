@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.2.4';
+const PLUGIN_VERSION = '2.2.5';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -59,6 +59,7 @@ const DEFAULT_SETTINGS = {
   },
   // ===== 填表功能（LIWE 情报表）=====
   liveTableEnabled  : true,      // 填表总开关
+  liveSnapshotLimit : 15,       // 表格自动快照保留上限(可自定义)
   liveTableInject   : true,      // 是否把填表提示词发给正文AI
   liveCharFields    : ['状态', '衣着', '对用户好感', '备注'],  // 状态表子字段（可自定义增删改）
   liveLowerFields   : ['经历事情', '持有物品', '任务'],        // 履历字段（可自定义增删改）
@@ -137,6 +138,7 @@ function emptyData() {
     archiveVectors: [], // 剧情档案向量库 [{ id, text, category, vector }]
     diaryVectors: [],  // 角色日记向量库 [{ id, role, text, vector }]
     liveTableData: [], // 填表功能：当前聊天的填表值 [{ defId, upper:{}, lower:{} }]
+    liveTableSnapshots: [], // 填表数据自动快照 [{ mid, time, table }]
   };
 }
 
@@ -1060,6 +1062,35 @@ function cdFavMigrate(data) {
   }
   if (changed) cdSaveGlobalFavs(arr);
 }
+/** ===== 数据防丢失：独立备份(localStorage, 不跟随聊天) ===== */
+const CD_BACKUP_KEY = 'cd-data-backups';
+function cdGetBackups() {
+  try { const raw = localStorage.getItem(CD_BACKUP_KEY); const arr = raw ? JSON.parse(raw) : []; return Array.isArray(arr) ? arr : []; } catch (e) { return []; }
+}
+function cdSaveBackups(arr) { try { localStorage.setItem(CD_BACKUP_KEY, JSON.stringify(arr)); } catch (e) {} }
+function cdDiaryTotal(data) {
+  let n = 0; const d = (data && data.diaries) || {};
+  Object.keys(d).forEach(function(k){ const l=d[k]; if(Array.isArray(l)) n += l.length; });
+  return n;
+}
+function cdPushBackup(data, label) {
+  try {
+    const arr = cdGetBackups();
+    arr.unshift({
+      time: Date.now(),
+      label: label || '自动备份',
+      diaryCount: cdDiaryTotal(data),
+      diaries: (data && data.diaries) || {},
+      relations: (data && data.relations) || {},
+      archive: (data && data.archive) || {},
+      liveTableData: (data && data.liveTableData) || [],
+      liveTableSnapshots: (data && data.liveTableSnapshots) || [],
+      cards: (data && data.cards) || [],
+    });
+    if (arr.length > 10) arr.splice(10);
+    cdSaveBackups(arr);
+  } catch (e) {}
+}
 async function cdGetData() {
   try {
     // ST 原生：用 chatMetadata 存数据
@@ -1083,10 +1114,14 @@ async function cdGetData() {
             result._baselineChatLength = chat.length;
           }
         }
+        if (typeof cdDiaryTotal === 'function') _cdLastDiaryTotal = cdDiaryTotal(result);
         return result;
       }
     }
     cdLog('cdGetData: chatMetadata 为空，返回空数据');
+    if (typeof cdGetBackups === 'function' && cdGetBackups().length) {
+      if (typeof toastr !== 'undefined') toastr.info('[角色日记] 本聊天暂无日记数据，但本地存有 ' + cdGetBackups().length + ' 份备份，可在「管理 → 备份恢复」查看');
+    }
     return emptyData();
   } catch (e) {
     cdWarn('cdGetData 失败', e);
@@ -1096,6 +1131,13 @@ async function cdGetData() {
 
 async function cdSaveData(data) {
   try {
+    // ★ 数据保护: 检测日记数量异常骤减(主动删除也会提示, 无副作用)
+    const _dc = (typeof cdDiaryTotal === 'function') ? cdDiaryTotal(data) : 0;
+    if (_cdLastDiaryTotal >= 0 && _dc < _cdLastDiaryTotal) {
+      if (typeof cdAddLog === 'function') cdAddLog('warn', '[数据保护] 检测到日记数量骤减', {之前: _cdLastDiaryTotal, 现在: _dc});
+      if (typeof toastr !== 'undefined') toastr.warning('[角色日记] 日记数量异常减少，如属异常可在「管理 → 备份恢复」找回');
+      _cdLastDiaryTotal = _dc;
+    }
     // ST 原生：用 chatMetadata + saveMetadata
     const ctx = SillyTavern.getContext();
     if (ctx && ctx.chatMetadata) {
@@ -1404,6 +1446,7 @@ async function cdRollbackFrom(floor) {
 
 /** 互斥锁 — 防止并发生成导致数据损坏 */
 let cdBusy = false;
+let _cdLastDiaryTotal = -1;   // 数据保护: 最近一次完整数据的日记总数基线
 let cdBrowseLoadMore = {};   // 浏览界面每个角色已显示(懒加载)的日记条数
 let cdBusyLabel = '';   // 当前占用锁的任务名
 let cdBusyAt = 0;        // 占用锁开始时间戳
@@ -2186,6 +2229,7 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
         const npcs = parseDiaryJson(diaryRes.value.text);
         if (npcs.length) {
           data = mergeDiaries(data, npcs, windowFloors, s);
+          if (typeof cdPushBackup === 'function') { cdPushBackup(data, '写日记'); _cdLastDiaryTotal = cdDiaryTotal(data); }
           diaryOk = true;
           cdAddLog('info', '日记解析成功', {角色数: npcs.length, 角色: npcs.map(n => n.name)});
         } else {
@@ -2632,6 +2676,28 @@ function cdAppendLine(current, next) {
 
 // 把解析出的动作写入 data.liveTableData
 // 角色子字段与履历字段均按用户配置存储
+/** 每次表格变化后自动存一份快照(裁剪到保留上限) */
+function cdSaveTableSnapshot(data) {
+  try {
+    const s = cdGetSettings();
+    const limit = Math.max(1, parseInt(s.liveSnapshotLimit, 10) || 15);
+    const rec = Array.isArray(data.liveTableData) && data.liveTableData[0] ? data.liveTableData[0] : null;
+    if (!rec) return false;
+    if (!Array.isArray(data.liveTableSnapshots)) data.liveTableSnapshots = [];
+    const snap = {
+      mid: (typeof getLastFloorId === 'function') ? (getLastFloorId() || 0) : 0,
+      time: Date.now(),
+      table: JSON.parse(JSON.stringify(rec)),
+    };
+    const last = data.liveTableSnapshots[data.liveTableSnapshots.length - 1];
+    if (last && last.table && JSON.stringify(last.table) === JSON.stringify(snap.table)) return false;
+    data.liveTableSnapshots.push(snap);
+    if (data.liveTableSnapshots.length > limit) {
+      data.liveTableSnapshots = data.liveTableSnapshots.slice(-limit);
+    }
+    return true;
+  } catch (e) { if (typeof cdWarn === 'function') cdWarn('存表格快照失败', e); return false; }
+}
 async function cdApplyLiveTable(actions) {
   if (!Array.isArray(actions) || !actions.length) return 0;
   const s = cdGetSettings();
@@ -2695,6 +2761,7 @@ async function cdApplyLiveTable(actions) {
     }
   });
   if (changed) { await cdSaveData(data); cdLog('[填表] 采集并写入', changed, '项'); }
+  if (changed) { if (cdSaveTableSnapshot(data)) await cdSaveData(data); }
   return changed;
 }
 // 指纹去重（避免重复采集同一楼层）
@@ -5641,6 +5708,16 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
+    version: 'v2.2.5',
+    date: '2026-08-01',
+    items: [
+      '表格数据自动快照：每次表格变化自动存一份，可在管理界面查看并删除快照来回退',
+      '表格数据手动编辑：填表界面新增「编辑」入口，弹窗自由修改地点/角色行/履历并保存',
+      '向量「每次召回条数」上限放开（不再锁死 100），可自行设更大值',
+      '数据防丢失：写日记成功自动独立备份到本地(最多10份)，检测异常骤减提醒，管理界面可备份/恢复',
+    ],
+  },
+  {
     version: 'v2.2.4',
     date: '2026-08-01',
     items: [
@@ -5816,7 +5893,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.2.4 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.2.5 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
@@ -5956,6 +6033,7 @@ async function cdRenderManage() {
 
   // 收集剧情卡牌
   const cards = data.cards || [];
+  const snaps = Array.isArray(data.liveTableSnapshots) ? data.liveTableSnapshots : [];
 
   const archive = data.archive || {};
   const hasArchive = !!(archive.mainline || archive.sideline || archive.states || archive.unresolved);
@@ -6071,6 +6149,19 @@ async function cdRenderManage() {
             履历: 经历${((data.liveTableData && data.liveTableData[0] && data.liveTableData[0].lower && data.liveTableData[0].lower['经历事情']) || '').split('\n').filter(Boolean).length}条 · 物品${((data.liveTableData && data.liveTableData[0] && data.liveTableData[0].lower && data.liveTableData[0].lower['持有物品']) || '').split('\n').filter(Boolean).length}条 · 任务${((data.liveTableData && data.liveTableData[0] && data.liveTableData[0].lower && data.liveTableData[0].lower['任务']) || '').split('\n').filter(Boolean).length}条
           </div>
           <button class="cd-btn-danger cd-mgr-clear-table" style="margin-top:4px;font-size: calc(0.6rem * var(--cd-fs, 1));padding:3px 10px;min-width:auto;"><i class="fa-regular fa-trash-can"></i> 清空填表数据</button>
+          <div style="margin-top:8px;border-top:1px dashed #d8c9a8;padding-top:6px;">
+            <label style="font-size: calc(0.66rem * var(--cd-fs,1));font-weight:700;color:#7a5c34;"><i class="fa-regular fa-clock-rotate-left"></i> 表格快照（${snaps.length} 份，最新一份即当前表格）</label>
+            ${snaps.length ? `<div style="margin-top:4px;max-height:160px;overflow-y:auto;">
+              ${snaps.map((sp, i) => {
+                const isLast = i === snaps.length - 1;
+                const tStr = sp.time ? new Date(sp.time).toLocaleString() : '';
+                return `<div style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size: calc(0.6rem * var(--cd-fs,1));color:#6b5a48;border-bottom:1px solid rgba(180,150,120,0.05);">
+                  <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">快照#${i + 1} 楼层${sp.mid !== undefined ? '#' + sp.mid : ''} ${tStr}${isLast ? '（当前）' : ''}</span>
+                  <button class="cd-snap-del" data-idx="${i}" title="删除此快照，表格回退到删除后的最新一份"><i class="fa-regular fa-trash-can"></i></button>
+                </div>`;
+              }).join('')}
+            </div>` : '<p style="font-size: calc(0.58rem * var(--cd-fs,1));color:#8b7355;opacity:0.5;margin:4px 0 0;">表格每次变化会自动生成快照，删除后面的快照即可回退到之前的表格</p>'}
+          </div>
         </div>
       </div>
 
@@ -6102,12 +6193,52 @@ async function cdRenderManage() {
         <button class="cd-btn-danger" id="cd-mgr-delete-all" style="flex:1;"><i class="fa-regular fa-trash-can"></i> 清空所有数据</button>
       </div>
       <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#c84632;opacity:0.5;margin:4px 0 0;">删除操作不可恢复，请谨慎操作。</p>
+      <div class="cd-write-divider"></div>
+      <!-- 📦 备份恢复 -->
+      <div class="cd-egg-section">
+        <div class="cd-set-row" style="margin-bottom:4px;">
+          <label><i class="fa-solid fa-database" style="color:#4a3a2a;"></i> 数据备份/恢复 <span style="font-size: calc(0.58rem * var(--cd-fs, 1));opacity:0.5;">(独立保存于本地，可找回丢失的数据)</span></label>
+        </div>
+        ${cdGetBackups().length ? `<div style="max-height:180px;overflow-y:auto;">
+          ${cdGetBackups().map(function(b, i) {
+            const t = b.time ? new Date(b.time).toLocaleString() : '';
+            return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size: calc(0.6rem * var(--cd-fs,1));color:#6b5a48;border-bottom:1px solid rgba(180,150,120,0.05);">
+              <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">备份#${i + 1} ${b.label || ''} ${t} 日记${b.diaryCount || 0}篇</span>
+              <button class="cd-bk-restore" data-idx="${i}" title="用此备份恢复当前数据" style="font-size:0.62rem;color:#7a5c34;background:none;border:none;cursor:pointer;">恢复</button>
+              <button class="cd-bk-del" data-idx="${i}" title="删除此备份" style="font-size:0.62rem;color:#c84632;background:none;border:none;cursor:pointer;">删除</button>
+            </div>`;
+          }).join('')}
+        </div>` : '<p style="font-size: calc(0.58rem * var(--cd-fs,1));color:#8b7355;opacity:0.5;margin:4px 0 0;">暂无备份。写日记成功时会自动在本地保存备份，可用于恢复丢失的数据。</p>'}
+      </div>
 
     </div>`;
 
   $('#cd-content').html(html);
 
   // ★ 全选/取消全选
+  // ★ 备份/恢复
+  $('#cd-content').off('click', '.cd-bk-restore').on('click', '.cd-bk-restore', async function () {
+    const idx = parseInt($(this).data('idx'), 10);
+    const bk = cdGetBackups()[idx];
+    if (!bk) return;
+    if (!await confirmDelete('用此备份恢复当前数据？当前数据将被覆盖。')) return;
+    const d = await cdGetData();
+    d.diaries = bk.diaries || {};
+    d.relations = bk.relations || {};
+    d.archive = bk.archive || {};
+    d.liveTableData = bk.liveTableData || [];
+    d.liveTableSnapshots = bk.liveTableSnapshots || [];
+    d.cards = bk.cards || [];
+    if (typeof cdDiaryTotal === 'function') _cdLastDiaryTotal = cdDiaryTotal(d);
+    await cdSaveData(d);
+    if (typeof toastr !== 'undefined') toastr.success('已从备份恢复');
+    cdRenderManage();
+  });
+  $('#cd-content').off('click', '.cd-bk-del').on('click', '.cd-bk-del', function () {
+    const idx = parseInt($(this).data('idx'), 10);
+    const arr = cdGetBackups();
+    if (idx >= 0 && idx < arr.length) { arr.splice(idx, 1); cdSaveBackups(arr); cdRenderManage(); }
+  });
   $('.cd-mgr-checkall').off('change').on('change', function () {
     const target = $(this).data('target');
     $(`.cd-mgr-cb[data-group="${target}"]`).prop('checked', $(this).is(':checked'));
@@ -6133,6 +6264,23 @@ async function cdRenderManage() {
     d.liveTableData = [];
     await cdSaveData(d);
     toastr.success('填表数据已清空');
+    cdRenderManage();
+  });
+  // ★ 删除表格快照（删除后最新一份成为当前表格 = 回退）
+  $('#cd-content').off('click', '.cd-snap-del').on('click', '.cd-snap-del', async function () {
+    const idx = parseInt($(this).data('idx'), 10);
+    if (isNaN(idx)) return;
+    const d = await cdGetData();
+    if (!Array.isArray(d.liveTableSnapshots) || idx < 0 || idx >= d.liveTableSnapshots.length) return;
+    if (!await confirmDelete('删除此表格快照？表格将回退为删除后最新的一份。')) return;
+    d.liveTableSnapshots.splice(idx, 1);
+    if (d.liveTableSnapshots.length) {
+      const latest = d.liveTableSnapshots[d.liveTableSnapshots.length - 1];
+      d.liveTableData = (latest && latest.table) ? [latest.table] : [];
+    } else {
+      d.liveTableData = [];
+    }
+    await cdSaveData(d);
     cdRenderManage();
   });
 
@@ -6219,6 +6367,86 @@ async function cdRenderManage() {
 function escV(v) {
   try { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') || ''; } catch(e){ return ''; }
 }
+/** 表格数据弹窗编辑器：可编辑地点/各角色行/主角履历，保存后写入当前表格并自动存快照 */
+async function cdOpenTableEditor() {
+  const data = await cdGetData();
+  const s = cdGetSettings();
+  const cf = (Array.isArray(s.liveCharFields) && s.liveCharFields.length) ? s.liveCharFields : ['状态','衣着','对用户好感','备注'];
+  const lf = (Array.isArray(s.liveLowerFields) && s.liveLowerFields.length) ? s.liveLowerFields : ['经历事情','持有物品','任务'];
+  const rec = (Array.isArray(data.liveTableData) && data.liveTableData[0]) || { location:'', chars:{}, lower:{} };
+  let h = '<div style="font-size:0.8rem;font-weight:700;color:#4a3a2a;margin-bottom:10px;">编辑表格数据</div>';
+  h += '<div style="margin-bottom:8px;"><label style="font-size:0.65rem;color:#6b5a48;">地点</label><br><input id="ed-loc" value="'+escapeHtml(rec.location||'')+'" style="width:100%;box-sizing:border-box;padding:4px 6px;border:1px solid #e3d5b8;border-radius:4px;"></div>';
+  const chars = (rec.chars && typeof rec.chars==='object') ? rec.chars : {};
+  h += '<div style="font-size:0.65rem;color:#6b5a48;margin:8px 0 4px;">角色状态行（可在角色名输入框修改名字）</div>';
+  Object.keys(chars).forEach(function(nm){
+    const ch = chars[nm]||{};
+    h += '<div class="cd-ed-char" style="border:1px dashed #d8c9a8;border-radius:6px;padding:6px;margin-bottom:6px;">';
+    h += '<input class="ed-cname" value="'+escapeHtml(nm)+'" style="font-weight:600;width:100%;box-sizing:border-box;padding:4px 6px;border:1px solid #e3d5b8;border-radius:4px;margin-bottom:4px;">';
+    cf.forEach(function(f){ h += '<label style="font-size:0.6rem;color:#8b7355;display:block;margin:2px 0;">'+f+'<input class="ed-cfield" data-f="'+escapeAttr(f)+'" value="'+escapeHtml(ch[f]||'')+'" style="width:100%;box-sizing:border-box;padding:3px 6px;border:1px solid #e3d5b8;border-radius:4px;"></label>'; });
+    h += '<button type="button" class="ed-del-char" style="font-size:0.6rem;color:#c84632;background:none;border:none;cursor:pointer;">删除此角色行</button></div>';
+  });
+  h += '<button type="button" id="ed-add-char" style="font-size:0.65rem;color:#7a5c34;background:none;border:1px dashed #c8b08a;padding:4px 10px;border-radius:6px;cursor:pointer;margin-bottom:8px;">+ 添加角色行</button>';
+  h += '<div style="font-size:0.65rem;color:#6b5a48;margin:10px 0 4px;">主角履历（每行一条）</div>';
+  const lower = (rec.lower && typeof rec.lower==='object') ? rec.lower : {};
+  lf.forEach(function(f){ h += '<div style="margin-bottom:6px;"><label style="font-size:0.6rem;color:#8b7355;">'+f+'</label><textarea class="ed-lower" data-f="'+escapeAttr(f)+'" style="width:100%;box-sizing:border-box;min-height:40px;padding:4px 6px;border:1px solid #e3d5b8;border-radius:4px;">'+escapeHtml(lower[f]||'')+'</textarea></div>'; });
+  h += '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;"><button type="button" id="ed-cancel" style="font-size:0.68rem;padding:5px 14px;border:1px solid #e3d5b8;border-radius:6px;cursor:pointer;">取消</button><button type="button" id="ed-save" style="font-size:0.68rem;padding:5px 16px;background:#c9a87c;color:#fff;border:none;border-radius:6px;cursor:pointer;">保存</button></div>';
+  const wrap = document.createElement('div');
+  wrap.id='cd-table-editor-wrap';
+  wrap.style.cssText='position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;';
+  const panel = document.createElement('div');
+  panel.className='cd-table-editor';
+  panel.style.cssText='width:min(640px,92vw);max-height:84vh;overflow:auto;background:#fffdf8;border:1px solid #e3d5b8;border-radius:12px;padding:16px;box-shadow:0 8px 40px rgba(0,0,0,0.3);';
+  panel.innerHTML = h;
+  wrap.appendChild(panel);
+  document.documentElement.appendChild(wrap);
+  function closeEdit(){ const w=document.getElementById('cd-table-editor-wrap'); if(w) w.remove(); }
+  function addCharRow(){
+    const b=document.createElement('div'); b.className='cd-ed-char'; b.style.cssText='border:1px dashed #d8c9a8;border-radius:6px;padding:6px;margin-bottom:6px;';
+    const nmIn=document.createElement('input'); nmIn.className='ed-cname'; nmIn.value='新角色'; nmIn.style.cssText='font-weight:600;width:100%;box-sizing:border-box;padding:4px 6px;border:1px solid #e3d5b8;border-radius:4px;margin-bottom:4px;'; b.appendChild(nmIn);
+    cf.forEach(function(f){
+      const lab=document.createElement('label'); lab.style.cssText='font-size:0.6rem;color:#8b7355;display:block;margin:2px 0;'; lab.textContent=f;
+      const inp=document.createElement('input'); inp.className='ed-cfield'; inp.setAttribute('data-f',f); inp.style.cssText='width:100%;box-sizing:border-box;padding:3px 6px;border:1px solid #e3d5b8;border-radius:4px;'; lab.appendChild(inp); b.appendChild(lab);
+    });
+    const del=document.createElement('button'); del.type='button'; del.className='ed-del-char'; del.textContent='删除此角色行'; del.style.cssText='font-size:0.6rem;color:#c84632;background:none;border:none;cursor:pointer;'; b.appendChild(del);
+    const addBtn=document.getElementById('ed-add-char'); addBtn.parentNode.insertBefore(b, addBtn);
+  }
+  function delCharRow(btn){ const b=btn.closest('.cd-ed-char'); if(b) b.remove(); }
+  async function edSave(){
+    let loc=((document.getElementById('ed-loc')||{}).value)||''; loc=String(loc).trim();
+    let saveErr=null;
+    try {
+      const newChars={};
+      panel.querySelectorAll('.cd-ed-char').forEach(function(block){
+        const nmInput=block.querySelector('.ed-cname'); let nm=nmInput?nmInput.value:''; nm=String(nm||'').trim(); if(!nm) return;
+        const ch={};
+        block.querySelectorAll('.ed-cfield').forEach(function(inp){ ch[inp.getAttribute('data-f')]=inp.value; });
+        newChars[nm]=ch;
+      });
+      const newLower={};
+      panel.querySelectorAll('.ed-lower').forEach(function(ta){ newLower[ta.getAttribute('data-f')]=ta.value; });
+      const d=await cdGetData();
+      if(!Array.isArray(d.liveTableData)) d.liveTableData=[];
+      let rec2=(d.liveTableData.length?d.liveTableData[0]:null)||{id:'T-main',location:'',chars:{},lower:{}};
+      if(!d.liveTableData.length) d.liveTableData.push(rec2);
+      rec2.location=loc; rec2.chars=newChars; rec2.lower=newLower;
+      try { cdSaveTableSnapshot(d); } catch(e){}
+      await cdSaveData(d);
+    } catch(e){ saveErr=e; if(typeof console!=='undefined') console.error('[表格编辑] 保存失败', e); }
+    finally {
+      closeEdit();
+      if(!saveErr){ if(typeof toastr!=='undefined') toastr.success('表格已保存'); cdRenderTable(); }
+      else { if(typeof toastr!=='undefined') toastr.error('保存失败: ' + ((saveErr&&saveErr.message)||saveErr)); }
+    }
+  }
+  panel.addEventListener('click', function(ev){
+    const t=ev.target;
+    if(t.id==='ed-cancel') closeEdit();
+    else if(t.id==='ed-add-char') addCharRow();
+    else if(t.classList.contains('ed-del-char')) delCharRow(t);
+    else if(t.id==='ed-save') edSave();
+  });
+}
+
 async function cdRenderTable() {
   try {
     const s = cdGetSettings();
@@ -6288,6 +6516,11 @@ async function cdRenderTable() {
             <span class="cd-slider"></span>
           </label>
         </div>
+        <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-bottom:6px;">
+          <label style="font-size: calc(0.68rem * var(--cd-fs,1));">表格快照保留上限</label>
+          <input type="number" id="cd-lt-snaplimit" value="${(s.liveSnapshotLimit === undefined) ? 15 : s.liveSnapshotLimit}" min="1" max="200" style="width:60px;font-size: calc(0.68rem * var(--cd-fs,1));">
+          <span style="font-size: calc(0.55rem * var(--cd-fs,1));color:#8b7355;opacity:0.6;">表格每次变化自动存快照，最多保留此份数（删除多余快照可回退）</span>
+        </div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px;">
           <button class="cd-btn-primary" id="cd-lt-save" style="font-size: calc(0.68rem * var(--cd-fs,1));">保存设置</button>
         </div>
@@ -6316,6 +6549,7 @@ async function cdRenderTable() {
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <label style="font-size: calc(0.75rem * var(--cd-fs,1));font-weight:700;"><i class="fa-regular fa-file-lines"></i> 表值（当前聊天）</label>
           <button class="cd-btn-primary" id="cd-lt-refresh" style="font-size: calc(0.68rem * var(--cd-fs,1));">刷新</button>
+          <button type="button" class="cd-btn-primary" id="cd-lt-edit" title="编辑表格数据" style="font-size: calc(0.68rem * var(--cd-fs,1));padding:3px 10px;min-width:auto;"><i class="fa-regular fa-pen-to-square"></i> 编辑</button>
         </div>
         <div style="border-top:1px dashed #d8c9a8;padding-top:6px;">
 `;
@@ -6379,6 +6613,7 @@ async function cdRenderTable() {
         liveTableInject: $('#cd-lt-inject').is(':checked'),
         liveTableBatch: Math.max(1, parseInt($('#cd-lt-batch').val(), 10) || 1),
         liveTableBatchSource: $('#cd-lt-batchsrc').val() || 'tavern',
+        liveSnapshotLimit: Math.max(1, parseInt($('#cd-lt-snaplimit').val(), 10) || 15),
         liveTablePrompt: $('#cd-lt-prompt').val() || '',
         liveCharFields: _cf.length ? _cf : s.liveCharFields || ['状态', '衣着', '对用户好感', '备注'],
         liveLowerFields: _lf.length ? _lf : s.liveLowerFields || ['经历事情', '持有物品', '任务'],
@@ -6386,6 +6621,7 @@ async function cdRenderTable() {
       try { cdRefreshInjection(); } catch(e) {}
       toastr.success('填表设置已保存');
     });
+    $('#cd-lt-edit').off('click').on('click', function () { cdOpenTableEditor(); });
     $('#cd-lt-refresh').off('click').on('click', function () {
       cdRenderTable();
     });
@@ -6473,7 +6709,7 @@ async function cdRenderVector() {
       <div class="cd-egg-section">
         <div class="cd-set-row">
           <label>每次召回条数</label>
-          <input type="number" id="cd-vec-topk" value="${s.vectorTopK || 5}" min="1" max="100" style="width:50px;font-size: calc(0.68rem * var(--cd-fs, 1));padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
+          <input type="number" id="cd-vec-topk" value="${s.vectorTopK || 5}" min="1" max="99999" style="width:50px;font-size: calc(0.68rem * var(--cd-fs, 1));padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
         </div>
         <div class="cd-set-row">
           <label>相似度阈值</label>
@@ -6678,7 +6914,7 @@ async function cdRenderVector() {
     const settings = cdGetSettings();
     settings.archiveMode = mode;
     settings.diaryMode = $('#cd-content input[name="cd-vec-diary-mode"]:checked').val() || 'append';
-    settings.vectorTopK = Math.max(1, Math.min(100, topK));
+    settings.vectorTopK = Math.max(1, topK);
     settings.vectorThreshold = Math.max(0, Math.min(1, threshold));
     settings.vectorEmbedding = {
       source: window._cdEditVecSource || 'tavern',
