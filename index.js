@@ -5721,6 +5721,8 @@ async function cdRenderSettings() {
     // 更新 FAB 可见性
     const fab = document.getElementById(FAB_ID);
     if (fab) fab.style.display = $('#cd-s-fab').is(':checked') ? '' : 'none';
+    // 重新注册注入，使注入位置/角色/深度等配置立即生效
+    try { cdRefreshInjection(); } catch (e) { cdWarn('保存设置后刷新注入失败', e); }
     toastr.success('设置已保存');
   });
 
