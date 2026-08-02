@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.3.0';
+const PLUGIN_VERSION = '2.3.1';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -1280,10 +1280,19 @@ function cdPushBackup(data, label) {
 }
 async function cdGetData() {
   try {
-    // ST 原生：用 chatMetadata 存数据
+    // ST 原生：用 chatMetadata 存数据（存于 extensions 标准位置，兼容旧的顶层存储自动迁移）
     const ctx = SillyTavern.getContext();
     if (ctx && ctx.chatMetadata) {
-      const stored = ctx.chatMetadata[PLUGIN_ID];
+      // 优先读 extensions[PLUGIN_ID]（ST 标准扩展位置），其次读旧的顶层 [PLUGIN_ID]
+      const extStore = (ctx.chatMetadata.extensions && ctx.chatMetadata.extensions[PLUGIN_ID]) || null;
+      const legacyStore = ctx.chatMetadata[PLUGIN_ID] || null;
+      let stored = extStore || legacyStore;
+      // 若用了旧的位置且 extensions 是空对象，把数据迁移到 extensions 标准位置
+      if (legacyStore && !extStore) {
+        if (!ctx.chatMetadata.extensions || typeof ctx.chatMetadata.extensions !== 'object') ctx.chatMetadata.extensions = {};
+        ctx.chatMetadata.extensions[PLUGIN_ID] = legacyStore;
+        stored = legacyStore;
+      }
       if (stored && typeof stored === 'object') {
         const result = Object.assign(emptyData(), stored);
         cdLog('cdGetData (chatMetadata): diaries=', Object.keys(result.diaries).length, 'lastFloor=', result.lastFloor);
@@ -1315,21 +1324,68 @@ async function cdGetData() {
 
 async function cdSaveData(data) {
   try {
-    // ★ 数据保护: 检测日记数量异常骤减(主动删除也会提示, 无副作用)
+    // ★ 数据保护: 检测日记数量异常骤减(断网回滚覆盖等)，自动从最近备份补回丢失条目
     const _dc = (typeof cdDiaryTotal === 'function') ? cdDiaryTotal(data) : 0;
     if (_cdLastDiaryTotal >= 0 && _dc < _cdLastDiaryTotal) {
       if (typeof cdAddLog === 'function') cdAddLog('warn', '[数据保护] 检测到日记数量骤减', {之前: _cdLastDiaryTotal, 现在: _dc});
-      if (typeof toastr !== 'undefined') toastr.warning('[角色日记] 日记数量异常减少，如属异常可在「管理 → 备份恢复」找回');
-      _cdLastDiaryTotal = _dc;
+      // ★ 尝试从最近 localStorage 备份自动补回丢失的日记（避免断网/回滚覆盖导致丢失）
+      let restored = 0;
+      try {
+        const bk = (typeof cdGetBackups === 'function' && cdGetBackups()[0]) || null;
+        if (bk && bk.diaries && typeof bk.diaries === 'object') {
+          if (!data.diaries) data.diaries = {};
+          for (const [name, bkList] of Object.entries(bk.diaries)) {
+            if (!Array.isArray(bkList)) continue;
+            if (!Array.isArray(data.diaries[name])) data.diaries[name] = [];
+            const curIds = new Set(data.diaries[name].map(e => e.message_id));
+            for (const e of bkList) {
+              if (!e) continue;
+              // 用 message_id 去重：备份里当前缺失的条目补回
+              const dup = data.diaries[name].some(x => x && x.message_id === e.message_id && x.entry === e.entry);
+              if (!dup && (!e.message_id || !curIds.has(e.message_id))) {
+                data.diaries[name].push(e);
+                restored++;
+              }
+            }
+          }
+        }
+      } catch (e2) { cdAddLog('warn', '[数据保护] 自动恢复备份失败: ' + (e2 && e2.message)); }
+      if (restored > 0) {
+        if (typeof toastr !== 'undefined') toastr.success(`检测到日记骤减，已从最近备份自动恢复 ${restored} 条（断网/回滚可能导致覆盖丢失）`);
+      } else {
+        if (typeof toastr !== 'undefined') toastr.warning('[角色日记] 日记数量异常减少，如有丢失可在「管理 → 备份恢复」找回');
+      }
+      _cdLastDiaryTotal = cdDiaryTotal(data);
     }
-    // ST 原生：用 chatMetadata + saveMetadata
+    // ST 原生：用 chatMetadata + saveChat 等标准链路持久化（存于 extensions 标准位置，参照成熟插件）
     const ctx = SillyTavern.getContext();
     if (ctx && ctx.chatMetadata) {
-      ctx.chatMetadata[PLUGIN_ID] = data;
-      if (typeof ctx.saveMetadata === 'function') {
-        await ctx.saveMetadata();
+      if (!ctx.chatMetadata.extensions || typeof ctx.chatMetadata.extensions !== 'object') ctx.chatMetadata.extensions = {};
+      ctx.chatMetadata.extensions[PLUGIN_ID] = data;
+      // ★ 保存优先级（参照 yuzuki-Memory）：chatMetadata 存在聊天文件，需 saveChat() 写盘，saveMetadata 可能不持久化
+      const meth = [
+        ['ctx.saveChat', () => ctx.saveChat && ctx.saveChat()],
+        ['window.saveChatConditional', () => window.saveChatConditional && window.saveChatConditional()],
+        ['window.saveChat', () => window.saveChat && window.saveChat()],
+        ['ctx.saveMetadata', () => ctx.saveMetadata && ctx.saveMetadata()],
+        ['window.saveMetadataDebounced', () => window.saveMetadataDebounced && window.saveMetadataDebounced()],
+      ];
+      let used = '';
+      for (const [name, fn] of meth) {
+        try {
+          if (fn()) { used = name; break; }
+        } catch (e) { cdWarn(name + ' 失败: ' + e.message); }
       }
-      cdLog('cdSaveData (chatMetadata): 保存成功, diaries=', Object.keys(data.diaries||{}).length);
+      // 记录各保存方法是否可用（只检测存在性，不调用）
+      const avail = {
+        ctxSaveChat: !!(ctx && typeof ctx.saveChat === 'function'),
+        winSaveChatConditional: !!(typeof window !== 'undefined' && typeof window.saveChatConditional === 'function'),
+        winSaveChat: !!(typeof window !== 'undefined' && typeof window.saveChat === 'function'),
+        ctxSaveMetadata: !!(ctx && typeof ctx.saveMetadata === 'function'),
+        winSaveMetadataDebounced: !!(typeof window !== 'undefined' && typeof window.saveMetadataDebounced === 'function'),
+      };
+      cdAddLog('info', '[保存] 聊天数据', { 使用方式: used, 可用方法: avail, diaries: Object.keys(data.diaries || {}).length });
+      cdLog('cdSaveData (chatMetadata): 保存成功, diaries=', Object.keys(data.diaries || {}).length);
       return;
     }
     // fallback: 用 insertOrAssignVariables
@@ -5298,15 +5354,112 @@ function cdRenderExport() {
       <button class="cd-btn-primary" id="cd-do-export-json" style="margin-bottom:6px;">导出 JSON</button>
       <button class="cd-btn-secondary" id="cd-do-export-md">导出 Markdown</button>
       <button class="cd-btn-secondary" id="cd-do-export-bio" style="margin-top:6px;">导出角色自传</button>
-
       <div class="cd-write-divider"></div>
-
+      <h3 class="cd-write-title"><i class="fa-regular fa-box-archive"></i> 全量迁移</h3>
+      <p class="cd-write-desc">导出当前角色的完整聊天记录 + 插件回忆（日记/关系/档案/自定义追踪项），换设备可一键恢复。</p>
+      <button class="cd-btn-primary" id="cd-do-export-full" style="margin-bottom:4px;">导出全量迁移包</button>
+      <p style="font-size: calc(0.53rem * var(--cd-fs, 1));color:#8b7355;opacity:0.6;margin:0 0 8px;">迁移包含当前聊天全部楼层与插件回忆数据。换设备导入时，请先在该设备 SillyTavern 中选择好同一个角色卡，再导入迁移包。</p>
+      <input type="file" id="cd-import-full" accept=".json,.jsonl" style="display:none;">
+      <button class="cd-btn-secondary" id="cd-do-import-full" style="margin-bottom:4px;">导入全量迁移包（新建聊天）</button>
+      <p style="font-size: calc(0.53rem * var(--cd-fs, 1));color:#8b7355;opacity:0.6;margin:0 0 8px;">导入会为当前选中的角色新建一个聊天对话并写入迁移包中的楼层，同时恢复插件回忆数据。</p>
+      <div class="cd-write-divider"></div>
       <h3 class="cd-write-title"><i class="fa-regular fa-upload"></i> 导入数据</h3>
       <p class="cd-write-desc">从 JSON 文件恢复日记数据（会合并到现有数据中）</p>
       <input type="file" id="cd-import-file" accept=".json" style="display:none;">
       <button class="cd-btn-primary" id="cd-do-import">选择 JSON 文件导入</button>
     </div>`);
-
+  // ★ 导出全量迁移包（当前聊天记录 + 插件回忆），换设备可一键恢复
+  $('#cd-do-export-full').off('click').on('click', async () => {
+    try {
+      const data = await cdGetData();
+      const chat = _cdGetChat() || [];
+      const ctx = SillyTavern.getContext();
+      const charName = (ctx && (ctx.name2 || '')) || '';
+      const pkg = {
+        type: 'hcdiary-full-migration',
+        version: 1,
+        exportTime: new Date().toISOString(),
+        character: charName,
+        chat: chat.map(function (m) {
+          if (!m) return null;
+          return {
+            name: m.name || '',
+            is_user: !!m.is_user,
+            is_system: !!m.is_system,
+            mes: m.mes || '',
+            extra: m.extra || {},
+            swipes: Array.isArray(m.swipes) ? m.swipes : undefined,
+            swipe_id: m.swipe_id != null ? m.swipe_id : undefined,
+          };
+        }).filter(Boolean),
+        memory: data,
+      };
+      const blob = new Blob([JSON.stringify(pkg, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `全量迁移_${charName || '角色'}_${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toastr.success(`已导出全量迁移包（聊天 ${pkg.chat.length} 楼 + 回忆）`);
+    } catch (e) {
+      toastr.error('导出全量迁移包失败: ' + (e && e.message));
+    }
+  });
+  // ★ 导入全量迁移包（新建聊天 + 恢复回忆）
+  $('#cd-do-import-full').off('click').on('click', () => { $('#cd-import-full').click(); });
+  $('#cd-import-full').off('change').on('change', async function () {
+    const file = this.files?.[0];
+    if (!file) return;
+    try {
+      const pkg = JSON.parse(await file.text());
+      if (!pkg || pkg.type !== 'hcdiary-full-migration') {
+        toastr.error('这不是有效的全量迁移包'); return;
+      }
+      const ctx = SillyTavern.getContext();
+      if (!ctx) { toastr.error('无法获取 ST 上下文'); return; }
+      // 1. 新建对话（保留当前聊天不删除），参照柏宝书：import('/script.js').doNewChat
+      let fn = null;
+      try { const mod = await import('/script.js'); fn = mod && typeof mod.doNewChat === 'function' ? mod.doNewChat : null; } catch (e) {}
+      if (!fn) { toastr.error('当前 ST 不提供 doNewChat，无法新建聊天'); return; }
+      try { await ctx.saveChat(); } catch (e) {}
+      await fn({ deleteCurrentChat: false });
+      // 2. 写入新对话的聊天记录（此刻 ctx.chat 已指向新聊天）
+      const targetCtx = SillyTavern.getContext();
+      const chat = targetCtx && Array.isArray(targetCtx.chat) ? targetCtx.chat : [];
+      const msgs = Array.isArray(pkg.chat) ? pkg.chat : [];
+      // 清空开场白（保留 #0 锚点）
+      if (chat.length) chat.splice(0, chat.length);
+      for (const m of msgs) {
+        if (!m) continue;
+        chat.push({
+          name: m.name || '',
+          is_user: !!m.is_user,
+          is_system: !!m.is_system,
+          mes: m.mes || '',
+          extra: m.extra || {},
+          ...(Array.isArray(m.swipes) ? { swipes: m.swipes } : {}),
+          ...(m.swipe_id != null ? { swipe_id: m.swipe_id } : {}),
+        });
+      }
+      // 3. 恢复插件回忆
+      if (pkg.memory && typeof pkg.memory === 'object') {
+        if (!targetCtx || !targetCtx.chatMetadata) { toastr.error('无法写入回忆（chatMetadata 不可用）'); return; }
+        if (!targetCtx.chatMetadata.extensions || typeof targetCtx.chatMetadata.extensions !== 'object') targetCtx.chatMetadata.extensions = {};
+        targetCtx.chatMetadata.extensions[PLUGIN_ID] = pkg.memory;
+      }
+      // 4. 保存 + 刷新显示（参照柏宝书：saveChat 后需 reloadCurrentChat 才把内存 chat 加载到 UI/落盘）
+      if (typeof targetCtx.saveChat === 'function') { try { await targetCtx.saveChat(); } catch (e) {} }
+      if (typeof targetCtx.saveMetadata === 'function') { try { await targetCtx.saveMetadata(); } catch (e) {} }
+      if (typeof targetCtx.reloadCurrentChat === 'function') { try { await targetCtx.reloadCurrentChat(); } catch (e) {} }
+      toastr.success(`已导入全量迁移包：新建聊天 ${msgs.length} 楼 + 回忆已恢复`);
+      if (typeof cdRenderExport === 'function') cdRenderExport();
+    } catch (e) {
+      toastr.error('导入全量迁移包失败: ' + (e && e.message));
+      cdAddLog('error', '导入全量迁移包失败: ' + (e && e.message));
+    }
+    this.value = '';
+  });
   $('#cd-do-export-json').off('click').on('click', async () => {
     const data = await cdGetData();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -6194,6 +6347,17 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
+    version: 'v2.3.1',
+    date: '2026-08-03',
+    items: [
+      '新增「全量迁移」：导出当前角色的完整聊天记录 + 插件回忆（日记/关系/档案/自定义追踪项），换设备可导入恢复',
+      '「全量迁移」导入：为当前选中的角色新建一个聊天并写入楼层，同时恢复插件回忆（先在 ST 选好对应角色卡再导入）',
+      '数据存储迁移到 ST 标准位置 chatMetadata.extensions，并自动兼容迁移旧数据；保存链路修复（saveChat 优先），退出不再丢数据',
+      '日记数据保护增强：检测到日记数量骤减（断网/回滚覆盖导致丢失）时，自动从最近备份补回丢失的日记条目',
+      '修复剧情档案解析主线缺失、填表注入、物品记录移除、主开关全面生效等问题',
+    ],
+  },
+  {
     version: 'v2.3.0',
     date: '2026-08-02',
     items: [
@@ -6433,7 +6597,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.3.0 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.3.1 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
