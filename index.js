@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.2.8';
+const PLUGIN_VERSION = '2.2.9';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -48,6 +48,9 @@ const DEFAULT_SETTINGS = {
   diaryMode     : 'append',   // 'append' | 'vector' 角色日记模式
   vectorTopK    : 5,          // 向量检索召回条数
   vectorThreshold : 0.6,      // 向量检索相似度阈值
+  rerankEnabled : false,      // Rerank 重排序总开关
+  rerankTarget  : 'both',     // 'story' | 'diary' | 'both' 要 rerank 的目标
+  rerankApi     : { base: '', key: '', model: '' }, // Rerank 端点（OpenAI 兼容 /rerank）
   retryTimes      : 3,        // LLM 失败自动重试次数(0=不重试)
   retryDelay      : 2,        // LLM 重试间隔(秒)
   injectPosition  : 'after',  // 注入位置 'after'(末尾,默认) | 'before'(开头) | 'chat'(对话中)
@@ -252,6 +255,72 @@ async function callOpenAI(messages, ep, s) {
   return j.choices?.[0]?.message?.content ?? '';
 }
 
+/**
+ * Rerank 重排序（OpenAI 兼容 /rerank，退路 /v1/rerank）
+ * @param {string} query 查询文本
+ * @param {Array} documents 待重排的文本数组
+ * @param {object} cfg { base, key, model }
+ * @returns {Promise<{index:number, score:number}[]>} 按倒序分排序的结果
+ */
+async function cdRerank(query, documents, cfg) {
+  if (!query || !Array.isArray(documents) || !documents.length) return [];
+  const base = String(cfg.base || '').replace(/\/+$/, '');
+  const key = cfg.key || '';
+  const model = cfg.model || '';
+  if (!base || !model) throw new Error('Rerank 未配置 base/model');
+  const body = { model, query, documents };
+  const headers = { 'Content-Type': 'application/json' };
+  if (key) headers.Authorization = `Bearer ${key}`;
+  let lastErr = null;
+  // 尝试 /rerank 与 /v1/rerank 两种路径
+  for (const suffix of ['/rerank', '/v1/rerank']) {
+    try {
+      const res = await fetch(`${base}${suffix}`, { method: 'POST', headers, body: JSON.stringify(body) });
+      if (!res.ok) { lastErr = new Error(`${suffix} ${res.status}: ${await textOr(res)}`); continue; }
+      const j = await res.json();
+      const results = Array.isArray(j.results) ? j.results
+        : (Array.isArray(j.data) ? j.data : null);
+      if (!results) { lastErr = new Error('Rerank 返回格式不含 results'); continue; }
+      // 按 relevance_score（或 score）倒序排
+      return results
+        .filter(r => r && typeof r.index === 'number')
+        .map(r => ({ index: r.index, score: r.relevance_score ?? r.score ?? 0 }))
+        .sort((a, b) => b.score - a.score);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error('Rerank 调用失败');
+}
+
+/**
+ * 对已召回的向量结果做 rerank 重排（失败自动降级返回原结果）
+ * @param {string} query 查询文本
+ * @param {Array} results 召回结果 [{ text, ... }]
+ * @param {object} s 设置（读 rerankEnabled/rerankTarget/rerankApi）
+ * @param {string} target 当前链路 'story' | 'diary'
+ * @returns {Promise<Array>} 重排后的结果（与入参同结构）
+ */
+async function cdRerankResults(query, results, s, target) {
+  try {
+    if (!s?.rerankEnabled) return results;
+    if (!results || !results.length) return results;
+    // target 匹配：'both' 通吃，或等于当前 target
+    const want = s.rerankTarget || 'both';
+    if (want !== 'both' && want !== target) return results;
+    const docs = results.map(r => (r && r.text) || '').filter(Boolean);
+    if (!docs.length) return results;
+    const cfg = s.rerankApi || {};
+    const idxArr = await cdRerank(query, docs, cfg);
+    // 按 rerank 顺序重排
+    const ranked = idxArr.map(ri => results[ri.index]).filter(Boolean);
+    if (ranked.length) return ranked;
+  } catch (e) {
+    cdAddLog('warn', '[rerank] 重排序失败，降级使用原结果: ' + e.message);
+  }
+  return results;
+}
+
 async function callClaude(messages, ep, s) {
   const base = ep.url.replace(/\/+$/, '');
   const system = messages.filter(m => m.role === 'system').map(m => m.content).join('\n\n');
@@ -326,7 +395,7 @@ function textOr(res) { return res.text().then(t => t.slice(0, 200)); }// =======
 'use strict';
 
 /* ============================== Prompt: 日记 ============================== */
-function cdBuildDiaryPrompt(windowFloors, data, s) {
+async function cdBuildDiaryPrompt(windowFloors, data, s) {
   const known = Object.keys(data.diaries).map(name => {
     const al = (data.aliases[name] || []);
     return al.length ? `${name}(别名: ${al.join('、')})` : name;
@@ -347,7 +416,9 @@ function cdBuildDiaryPrompt(windowFloors, data, s) {
       if (Array.isArray(data.diaryVectors) && data.diaryVectors.length > 0) {
         const topK = s.vectorTopK || 5;
         const threshold = s.vectorThreshold || 0.6;
-        const results = cdSearchVectors(scene, data.diaryVectors, topK, threshold);
+        let results = cdSearchVectors(scene, data.diaryVectors, topK, threshold);
+        // ★ rerank 重排序（角色日记链路）
+        results = await cdRerankResults(scene, results, s, 'diary');
         if (results.length) {
           diaryMemory = '相关历史日记（向量检索）：\n' + results.map(r => '  - ' + (r.text || '').trim()).join('\n');
         }
@@ -516,12 +587,9 @@ const ARCHIVE_SYSTEM = [
   '',
   '未解决事项：',
   '（列出未解决事项，每条以【时间标记】开头记录该事项产生的时间）',
-  '',
-  '物品记录：',
-  '（列出涉及物品的事件，如获得、失去、交换、使用的重要物品（含道具、证据、金额、药物、武器、信物、战利品等），每条以【时间标记】开头。没有物品变化则输出"无"）',
 ].join('\n');
 
-function cdBuildArchivePrompt(windowFloors, data, _s) {
+async function cdBuildArchivePrompt(windowFloors, data, _s) {
   const existing = data.archive || emptyData().archive;
   // ★ 用户自定义剧情追踪项
   const customFields = Array.isArray(_s?.customFields) ? _s.customFields.filter(f => f && f.key && f.label) : [];
@@ -549,7 +617,9 @@ function cdBuildArchivePrompt(windowFloors, data, _s) {
       const threshold = _s.vectorThreshold || 0.6;
       // 用当前楼层文本做检索
       const sceneText = windowFloors.map(m => `${m.name}: ${cdFilterTags(m.mes, tags)}`).join('\n');
-      const results = cdSearchVectors(sceneText, vectors, topK, threshold);
+      let results = cdSearchVectors(sceneText, vectors, topK, threshold);
+      // ★ rerank 重排序（剧情档案链路）
+      results = await cdRerankResults(sceneText, results, _s, 'story');
       const retrievedText = results.length > 0
         ? results.map(r => r.text).join('\n')
         : '（未检索到相关历史事件）';
@@ -564,7 +634,7 @@ function cdBuildArchivePrompt(windowFloors, data, _s) {
       const usr = [
         `本次新增楼层：\n${scene}`,
         '',
-        `请分析新增楼层中的剧情推进，输出：主线、支线、重要状态变化、未解决事项、物品记录${customOutputNames ? '、' + customOutputNames : ''}。`,
+        `请分析新增楼层中的剧情推进，输出：主线、支线、重要状态变化、未解决事项${customOutputNames ? '、' + customOutputNames : ''}。`,
         '可以引用上面"检索到的相关事件"中的内容，但不要重复输出，只做增量更新。',
       ].join('\n');
       return [
@@ -578,9 +648,6 @@ function cdBuildArchivePrompt(windowFloors, data, _s) {
   }
   
   // 普通模式（原逻辑）
-  const existingItemsTxt = (Array.isArray(existing.items) && existing.items.length)
-    ? existing.items.map(it => it.time ? `【${it.time}】${it.desc}` : it.desc).join('\n')
-    : '';
   const sys = [
     ARCHIVE_SYSTEM,
     '',
@@ -589,14 +656,13 @@ function cdBuildArchivePrompt(windowFloors, data, _s) {
     existing.sideline ? `已知支线：${existing.sideline}` : '',
     existing.states ? `已知重要状态：${existing.states}` : '',
     existing.unresolved ? `已知未解决事项：${existing.unresolved}` : '',
-    existingItemsTxt ? `已知物品记录：\n${existingItemsTxt}` : '',
     existingCustomTxt ? `\n${existingCustomTxt}` : '',
     customFormatBlock ? '\n自定义追踪项（同样严格按格式输出，与主线等字段并列）：\n' + customFormatBlock : '',
   ].filter(Boolean).join('\n');
   const usr = [
     `本次新增楼层：\n${scene}`,
     '',
-    `请输出：主线、支线、重要状态变化、未解决事项、物品记录${customOutputNames ? '、' + customOutputNames : ''}`,
+    `请输出：主线、支线、重要状态变化、未解决事项${customOutputNames ? '、' + customOutputNames : ''}`,
   ].join('\n');
   return [
     { role: 'system', content: sys },
@@ -624,12 +690,12 @@ function parseItemsText(text) {
   return out;
 }
 
-/** 解析剧情档案的字段（主线/支线/重要状态变化/未解决事项/物品记录 + 用户自定义追踪项） */
+/** 解析剧情档案的字段（主线/支线/重要状态变化/未解决事项 + 用户自定义追踪项） */
 function parseArchiveJson(text, customDefs) {
   const raw = String(text || '').trim();
   const defs = Array.isArray(customDefs) ? customDefs : [];
-  // 全部字段标签：内置五个 + 每个自定义项的 label
-  const builtin = ['主线', '支线', '重要状态变化', '未解决事项', '物品记录'];
+  // 全部字段标签：内置四个 + 每个自定义项的 label
+  const builtin = ['主线', '支线', '重要状态变化', '未解决事项'];
   const customLabels = defs.map(d => d && d.label ? d.label : '').filter(Boolean);
   // 按长度降序排列，避免「主角状态」被「状态」抢先截断
   const allLabels = builtin.concat(customLabels).sort((a, b) => b.length - a.length);
@@ -660,7 +726,6 @@ function parseArchiveJson(text, customDefs) {
   const sideline   = parts['支线'] || '';
   const states     = parts['重要状态变化'] || '';
   const unresolved = parts['未解决事项'] || '';
-  const itemsText  = parts['物品记录'] || '';
   // 自定义字段（同样按时间标记解析成数组）
   const custom = {};
   for (const d of defs) {
@@ -668,7 +733,7 @@ function parseArchiveJson(text, customDefs) {
     const body = parts[d.label];
     custom[d.key] = body ? parseItemsText(body) : [];
   }
-  return { mainline, sideline, states, unresolved, items: parseItemsText(itemsText), custom };
+  return { mainline, sideline, states, unresolved, items: [], custom };
 }
 
 function cdBuildRelationPrompt(windowFloors, data, _s) {
@@ -842,14 +907,6 @@ async function cdVectorizeArchive(data) {
       if (trimmed && !existingTexts.has(trimmed)) {
         entries.push({ text: trimmed, category });
       }
-    }
-  }
-  // 物品记录也纳入向量库（每条独立，便于 vector 模式下检索到物品变化）
-  if (Array.isArray(archive.items)) {
-    for (const it of archive.items) {
-      if (!it || !it.desc) continue;
-      const t = (it.time ? `【${it.time}】${it.desc}` : it.desc).trim();
-      if (t && !existingTexts.has(t)) entries.push({ text: t, category: '物品' });
     }
   }
   // ★ 自定义剧情追踪项也纳入向量库（每条独立，category 用字段名）
@@ -1634,7 +1691,9 @@ async function cdBuildDiaryInjectionText() {
           .map(function (m) { return (m && m.mes) ? m.mes : ''; }).join('\n');
         const topK = s.vectorTopK || 5;
         const threshold = s.vectorThreshold || 0.6;
-        const results = cdSearchVectors(recent || '当前剧情', data.archiveVectors, topK, threshold);
+        let results = cdSearchVectors(recent || '当前剧情', data.archiveVectors, topK, threshold);
+        // ★ rerank 重排序（剧情档案注入链路）
+        results = await cdRerankResults(recent || '当前剧情', results, s, 'story');
         const vecTxt = results.length > 0 ? results.map(function (r) { return r.text; }).join('\n') : '（未检索到相关历史事件）';
         blocks.push('[剧情档案·向量检索]');
         blocks.push(vecTxt);
@@ -1646,10 +1705,7 @@ async function cdBuildDiaryInjectionText() {
           if (arc.sideline) arcParts.push(`支线：${arc.sideline}`);
           if (arc.states) arcParts.push(`重要状态：${arc.states}`);
           if (arc.unresolved) arcParts.push(`待解决事项：${arc.unresolved}`);
-          if (Array.isArray(arc.items) && arc.items.length) {
-            arcParts.push(`物品记录：${arc.items.map(it => it.time ? `【${it.time}】${it.desc}` : it.desc).join('\n')}`);
-          }
-          // ★ 自定义剧情追踪项注入
+  // ★ 自定义剧情追踪项注入
           const injCustomFields = Array.isArray(s.customFields) ? s.customFields.filter(f => f && f.key && f.label) : [];
           const injCustomMap = (arc.custom && typeof arc.custom === 'object') ? arc.custom : {};
           for (const def of injCustomFields) {
@@ -1748,11 +1804,18 @@ function cdGetInjectDepth() {
 }
 async function cdRegisterInjection() {
   try {
+    const _s = cdGetSettings();
+    // ★ 主开关关闭：清空注入内容，完全停用注入
+    if (_s.enabled === false) {
+      _cdInjectMsg = null;
+      _cdInjectMsgRole = 0;
+      cdAddLog('info', '[注入] 主开关关闭，注入已停用');
+      return;
+    }
     const text = await cdBuildDiaryInjectionText();
     // 缓存注入内容，供 CHAT_COMPLETION_PROMPT_READY 在生成前手动按位置插入（setExtensionPrompt 的位置控制在此 ST 版本不生效）
     _cdInjectMsg = text || null;
     _cdInjectMsgRole = cdGetInjectRole();
-    const _s = cdGetSettings();
     cdAddLog('info', '[注入] 注入内容已缓存', { 用户设置位置: _s.injectPosition, 字符数: text ? text.length : 0 });
   } catch (e) {
     cdAddLog('warn', '[注入] cdRegisterInjection 失败: ' + e.message);
@@ -1845,7 +1908,7 @@ async function cdTestCustomFields() {
     // 3. 提示词注入：尝试构建一次剧情档案提示词，看是否包含自定义字段名（不真正请求 API）
     try {
       const fakeFloors = [{ message_id: 1, name: '测试', mes: '（用最近楼层做提示词注入检查）' }];
-      const msgs = cdBuildArchivePrompt(fakeFloors, data, s);
+      const msgs = await cdBuildArchivePrompt(fakeFloors, data, s);
       const sysTxt = msgs && msgs.length ? (msgs[0] && msgs[0].content) || '' : '';
       const userTxt = msgs && msgs.length > 1 ? (msgs[1] && msgs[1].content) || '' : '';
       const missing = cf.filter(f => f && f.label && sysTxt.indexOf(f.label) < 0).map(f => f.label);
@@ -1956,10 +2019,14 @@ async function cdOnBeforeGeneration(eventData) {
     const dryRun = data.dryRun === true || data.dry_run === true;
     if (dryRun || !Array.isArray(chat) || !chat.length) return;
 
+    // ★ 主开关关闭则不注入
+    const _s = cdGetSettings();
+    if (_s.enabled === false) return;
+
     if (!_cdInjectMsg) return; // 无注入内容
     const sysMsg = { role: _cdInjectMsgRole === 1 ? 'user' : (_cdInjectMsgRole === 2 ? 'assistant' : 'system'), content: _cdInjectMsg };
 
-    const s = cdGetSettings();
+    const s = _s;
     const pos = s.injectPosition || 'after';
     const userDepth = Math.max(1, parseInt(s.injectDepth, 10) || 1);
     let idx;
@@ -2210,9 +2277,9 @@ async function cdTestDiary() {
   const testFloors = windowFloors.slice(-(s.maxWindowFloors || 40));
   cdAddLog('info', '测试: 楼层数 ' + testFloors.length, {起始: testFloors[0]?.message_id, 结束: testFloors[testFloors.length - 1]?.message_id});
   
-  const diaryMsgs   = cdBuildDiaryPrompt(testFloors, data, s);
-  const relMsgs     = cdBuildRelationPrompt(testFloors, data, s);
-  const archiveMsgs = cdBuildArchivePrompt(testFloors, data, s);
+  const diaryMsgs   = await cdBuildDiaryPrompt(testFloors, data, s);
+const relMsgs     = cdBuildRelationPrompt(testFloors, data, s);
+    const archiveMsgs = await cdBuildArchivePrompt(testFloors, data, s);
   
   toastr.info('测试请求中...');
   const startAll = Date.now();
@@ -2463,7 +2530,7 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
     // ★ 根据开关决定调哪几路 API
     const calls = [];
     if (s.enableDiary !== false) {
-      const diaryMsgs = cdBuildDiaryPrompt(windowFloors, data, s);
+      const diaryMsgs = await cdBuildDiaryPrompt(windowFloors, data, s);
       calls.push({ name: '日记', msgs: diaryMsgs });
     }
     if (s.enableRelation !== false) {
@@ -2471,7 +2538,7 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
       calls.push({ name: '关系', msgs: relMsgs });
     }
     if (s.enableArchive !== false) {
-      const archiveMsgs = cdBuildArchivePrompt(windowFloors, data, s);
+      const archiveMsgs = await cdBuildArchivePrompt(windowFloors, data, s);
       calls.push({ name: '剧情档案', msgs: archiveMsgs });
     }
 
@@ -2579,19 +2646,12 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
       try {
         const customDefs = Array.isArray(s.customFields) ? s.customFields : [];
         const arc = parseArchiveJson(archiveRes.value.text, customDefs);
-        if (arc.mainline || arc.sideline || arc.states || arc.unresolved || (arc.items && arc.items.length) || (arc.custom && Object.keys(arc.custom).length)) {
+        if (arc.mainline || arc.sideline || arc.states || arc.unresolved || (arc.custom && Object.keys(arc.custom).length)) {
           if (!data.archive) data.archive = Object.assign({}, emptyData().archive);
           if (arc.mainline)   data.archive.mainline   = data.archive.mainline   ? data.archive.mainline   + '\n\n' + arc.mainline   : arc.mainline;
           if (arc.sideline)   data.archive.sideline   = data.archive.sideline   ? data.archive.sideline   + '\n\n' + arc.sideline   : arc.sideline;
           if (arc.states)     data.archive.states     = data.archive.states     ? data.archive.states     + '\n\n' + arc.states     : arc.states;
           if (arc.unresolved) data.archive.unresolved = data.archive.unresolved ? data.archive.unresolved + '\n\n' + arc.unresolved : arc.unresolved;
-          if (arc.items && arc.items.length) {
-            if (!Array.isArray(data.archive.items)) data.archive.items = [];
-            // 追加式：保持楼层顺序，不按时间重排
-            for (const it of arc.items) {
-              if (it.desc) data.archive.items.push({ time: it.time || '', desc: it.desc });
-            }
-          }
           // 自定义追踪项（追加式数组）
           if (arc.custom && Object.keys(arc.custom).length) {
             if (!data.archive.custom || typeof data.archive.custom !== 'object') data.archive.custom = {};
@@ -2775,32 +2835,6 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
                 compressed = compressed.replace(new RegExp(`^${labels[field]}[：:]\\s*`), '');
                 data.archive[field] = compressed;
                 cdAddLog('info', `自动压缩 ${labels[field]}: ${content.length}→${compressed.length} 字`);
-              }
-            }
-            // ★ 自动压缩物品记录：限制条数上限，超出的旧条目折叠进主线后裁剪，保持信息不丢失
-            {
-              const items = Array.isArray(data.archive.items) ? data.archive.items : [];
-              const MAX_ITEMS = Math.max(20, s.autoCompressThreshold ? s.autoCompressThreshold * 2 : 60);
-              if (items.length > MAX_ITEMS) {
-                const excess = items.slice(0, items.length - MAX_ITEMS);
-                const kept = items.slice(items.length - MAX_ITEMS);
-                if (excess.length) {
-                  const t0 = excess[0].time || '';
-                  const t1 = excess[excess.length - 1].time || '';
-                  const range = (t0 && t1 && t0 !== t1) ? `${t0}～${t1}` : (t0 || t1);
-                  const foldedTime = range ? `早期物品(${range})` : '早期物品';
-                  const foldedDesc = excess.map(it => it.time ? `${it.time}：${it.desc}` : it.desc).join('；');
-                  // 折叠出的早期物品摘要追加到主线末尾，避免信息丢失
-                  if (foldedDesc) {
-                    const oldMain = data.archive.mainline || '';
-                    const append = `\n【${foldedTime}】${foldedDesc}`;
-                    if (oldMain.length + append.length < 8000 || !oldMain) {
-                      data.archive.mainline = oldMain ? oldMain.trimEnd() + append : append.trim();
-                    }
-                  }
-                  data.archive.items = kept;
-                  cdAddLog('info', `自动压缩物品记录: ${items.length}→${kept.length} 条（旧条目已折叠进主线）`);
-                }
               }
             }
             // ★ 自动压缩自定义剧情追踪项：同样限制条数上限，超出的旧条目折叠进主线后裁剪
@@ -4240,9 +4274,9 @@ async function cdRenderArchive() {
   const customFields = Array.isArray(s.customFields) ? s.customFields.filter(f => f && f.key && f.label) : [];
   const customMap = (arc.custom && typeof arc.custom === 'object') ? arc.custom : {};
   const hasCustom = customFields.some(f => Array.isArray(customMap[f.key]) && customMap[f.key].length);
-  const empty = !arc.mainline && !arc.sideline && !arc.states && !arc.unresolved && !((Array.isArray(arc.items) && arc.items.length)) && !hasCustom;
+  const empty = !arc.mainline && !arc.sideline && !arc.states && !arc.unresolved && !hasCustom;
   
-  // ★ 用户自定义追踪项（字段管理入口，默认折叠；数据已平铺到时间线主体物品记录之后）
+  // ★ 用户自定义追踪项（字段管理入口，默认折叠；数据已平铺到时间线主体）
   const editText = customFields.map(f => f.label + (f.desc ? '：' + f.desc : '')).join('\n');
   const editBlock = `
     <div class="cd-custom-edit">
@@ -4254,7 +4288,7 @@ async function cdRenderArchive() {
         写一个追踪项占一行，格式：<b>显示名：给AI的描述</b><br>
         例：<span style="color:#a855f7;">主角状态：主角当前的情绪、处境、身体状况</span><br>
         例：<span style="color:#a855f7;">女巫好感：女巫对主角的好感变化</span><br>
-        「显示名」会作为时间线的分类标题，「描述」告诉 AI 具体要追踪什么。描述可留空（只写显示名）。填写后点「保存追踪项」，AI 写剧情档案时就会同步输出这些内容，并按【时间标记】展示在时间线（物品记录之后）；删除某行即删除该追踪项及其记录数据。
+        「显示名」会作为时间线的分类标题，「描述」告诉 AI 具体要追踪什么。描述可留空（只写显示名）。填写后点「保存追踪项」，AI 写剧情档案时就会同步输出这些内容，并按【时间标记】展示在时间线；删除某行即删除该追踪项及其记录数据。
       </p>
     </div>`;
   const customHtml = customFields.length > 0 || true ? `
@@ -4336,9 +4370,8 @@ async function cdRenderArchive() {
     { label: '支线', icon: 'fa-code-branch', color: '#3b82f6', items: extractTimelineItems(arc.sideline, '支线', 'fa-code-branch') },
     { label: '状态', icon: 'fa-chart-simple', color: '#f59e0b', items: extractTimelineItems(arc.states, '状态', 'fa-chart-simple') },
     { label: '未解决', icon: 'fa-triangle-exclamation', color: '#ef4444', items: extractTimelineItems(arc.unresolved, '未解决', 'fa-triangle-exclamation') },
-    { label: '物品记录', icon: 'fa-box', color: '#a855f7', items: (Array.isArray(arc.items) ? arc.items : []).map(it => ({ time: it.time || '', content: it.desc || '', category: '物品记录', icon: 'fa-box' })).filter(it => it.content) },
   ];
-  // 颜色分配：随机打乱并从池中按顺序取（尽量让每个字段颜色不同，且避开物品记录紫色）
+  // 颜色分配：随机打乱并从池中按顺序取（尽量让每个字段颜色不同）
   const CUSTOM_COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#14b8a6', '#f97316', '#ec4899', '#84cc16', '#06b6d4', '#eab308', '#0ea5e9', '#d946ef']; // 避开物品记录紫色 #a855f7 与 #c084fc
   const shuffledColors = CUSTOM_COLORS.slice();
   for (let i = shuffledColors.length - 1; i > 0; i--) {
@@ -4386,9 +4419,8 @@ async function cdRenderArchive() {
     $('#cd-content').html(html);
   } else {
     // 没有时间标记就 fallback 到卡片式展示（用时间线卡片样式包裹）
-    const categoryColors = { '主线': '#22c55e', '支线': '#3b82f6', '状态': '#f59e0b', '未解决': '#ef4444', '物品记录': '#a855f7' };
-    const categoryIcons = { '主线': 'fa-route', '支线': 'fa-code-branch', '状态': 'fa-chart-simple', '未解决': 'fa-triangle-exclamation', '物品记录': 'fa-box' };
-    const itemsFallbackText = (Array.isArray(arc.items) && arc.items.length) ? arc.items.map(it => it.time ? `【${it.time}】${it.desc}` : it.desc).join('\n') : '';
+    const categoryColors = { '主线': '#22c55e', '支线': '#3b82f6', '状态': '#f59e0b', '未解决': '#ef4444' };
+    const categoryIcons = { '主线': 'fa-route', '支线': 'fa-code-branch', '状态': 'fa-chart-simple', '未解决': 'fa-triangle-exclamation' };
     const customFallback = customFields.map(f => {
       const arr = Array.isArray(customMap[f.key]) ? customMap[f.key] : [];
       if (!arr.length) return null;
@@ -4401,7 +4433,6 @@ async function cdRenderArchive() {
           arc.sideline ? { label: '支线', text: arc.sideline } : null,
           arc.states ? { label: '状态', text: arc.states } : null,
           arc.unresolved ? { label: '未解决', text: arc.unresolved } : null,
-          itemsFallbackText ? { label: '物品记录', text: itemsFallbackText } : null,
           ...customFallback,
         ].filter(Boolean).map(section => `
           <div class="cd-tl-item">
@@ -5311,14 +5342,6 @@ function cdRenderExport() {
       if (arc.sideline) lines.push('### 支线', arc.sideline, '');
       if (arc.states) lines.push('### 重要状态', arc.states, '');
       if (arc.unresolved) lines.push('### 未解决事项', arc.unresolved, '');
-      const arcItems = Array.isArray(arc.items) ? arc.items : [];
-      if (arcItems.length) {
-        lines.push('### 物品记录', '');
-        for (const it of arcItems) {
-          lines.push(`- ${it.time ? `【${it.time}】` : ''}${it.desc || ''}`);
-        }
-        lines.push('');
-      }
       // ★ 自定义剧情追踪项
       const expCustomFields = Array.isArray(cdGetSettings().customFields) ? cdGetSettings().customFields : [];
       const customMap = (arc.custom && typeof arc.custom === 'object') ? arc.custom : {};
@@ -5884,7 +5907,7 @@ async function cdRenderEgg() {
   function randomEgg() {
     const eggs = [
       { icon: 'fa-regular fa-compass', title: '浏览视图', text: '顶部横向展示心情分布、心情趋势热力图和随机回顾。搜索框支持全文搜索日记内容，下拉框可按角色过滤。每条日记右侧有编辑、收藏、心理补全按钮；批量删除请前往「管理」视图。' },
-      { icon: 'fa-regular fa-timeline', title: '时间线', text: '基于剧情档案的时间线展示。AI 在写剧情档案时会为每条事件标注【时间标记】，时间线会按时间顺序排列所有事件。主线/支线/状态/未解决/物品记录用不同颜色区分；顶部「自定义追踪项」分区可自由添加任意追踪维度（如主角状态、好感等），默认折叠、点击展开，AI 会同步输出并按时间逐条记录。' },
+      { icon: 'fa-regular fa-timeline', title: '时间线', text: '基于剧情档案的时间线展示。AI 在写剧情档案时会为每条事件标注【时间标记】，时间线会按时间顺序排列所有事件。主线/支线/状态/未解决用不同颜色区分；自定义追踪项（如主角状态、好感等）会作为独立分区平铺展示，可自由增删配置。' },
       { icon: 'fa-regular fa-diagram-project', title: '关系力图', text: '角色关系可视化。使用弹簧算法自动布局，角色为彩色节点，关系为彩色连线（绿=友好/红=排斥/灰=中立）。下方保留文本关系列表备查。' },
       { icon: 'fa-regular fa-gem', title: '娱乐页面', text: '集中展示数据总览、成就系统、塔罗占卜、角色剧场、年度报告和名场面收藏。每个功能都是独立的趣味体验。' },
       { icon: 'fa-regular fa-layer-group', title: '楼层', text: '浏览所有 AI 楼层，勾选未记录楼层补写，支持手动区间补写和一键分批补写全部历史，并可压缩融合剧情档案。' },
@@ -6156,6 +6179,15 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
+    version: 'v2.2.9',
+    date: '2026-08-02',
+    items: [
+      '新增「向量 Rerank 重排序」：对向量召回结果用 Rerank 模型二次重排，提升检索相关性（配置于向量界面，作用于剧情/日记/两者可选，OpenAI 兼容 /rerank 端点）',
+      '彻底移除「物品记录」：AI 不再输出、解析、存储及在时间线展示物品记录，界面更简洁',
+      '主开关全面生效：关闭主开关后，自动写日记、自动触发、AI 上下文注入全部停用，插件处于完全关闭状态',
+    ],
+  },
+  {
     version: 'v2.2.8',
     date: '2026-08-02',
     items: [
@@ -6374,7 +6406,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.2.8 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.2.9 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
@@ -7198,6 +7230,37 @@ async function cdRenderVector() {
           <input type="number" id="cd-vec-threshold" value="${s.vectorThreshold || 0.6}" min="0" max="1" step="0.05" style="width:50px;font-size: calc(0.68rem * var(--cd-fs, 1));padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
         </div>
       </div>
+
+      <div class="cd-egg-section">
+        <div class="cd-set-row" style="margin-bottom:4px;">
+          <label><i class="fa-regular fa-list-ol"></i> Rerank 重排序</label>
+          <label class="cd-switch">
+            <input type="checkbox" id="cd-rerank-enabled" ${s.rerankEnabled ? 'checked' : ''}>
+            <span class="cd-slider"></span>
+          </label>
+        </div>
+        <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;opacity:0.6;margin:0 0 6px;">对向量召回结果用 Rerank 模型二次重排，提升相关性。需配置 OpenAI 兼容的 /rerank 端点（如 Cohere/Jina/One-API 中转）。失败自动降级为原始结果。</p>
+        <div class="cd-set-row">
+          <label>作用于</label>
+          <select id="cd-rerank-target" class="cd-input" style="width:auto;min-width:120px;">
+            <option value="both" ${(s.rerankTarget||'both') === 'both' ? 'selected' : ''}>剧情 + 日记</option>
+            <option value="story" ${(s.rerankTarget||'both') === 'story' ? 'selected' : ''}>仅剧情档案</option>
+            <option value="diary" ${(s.rerankTarget||'both') === 'diary' ? 'selected' : ''}>仅角色日记</option>
+          </select>
+        </div>
+        <div class="cd-set-row">
+          <label>API 地址</label>
+          <input type="text" id="cd-rerank-base" value="${escapeAttr((s.rerankApi&&s.rerankApi.base) || '')}" placeholder="https://api.cohere.com" style="flex:1;font-size: calc(0.65rem * var(--cd-fs, 1));padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
+        </div>
+        <div class="cd-set-row">
+          <label>API 密钥</label>
+          <input type="password" id="cd-rerank-key" value="${escapeAttr((s.rerankApi&&s.rerankApi.key) || '')}" placeholder="sk-..." style="flex:1;font-size: calc(0.65rem * var(--cd-fs, 1));padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
+        </div>
+        <div class="cd-set-row">
+          <label>模型名</label>
+          <input type="text" id="cd-rerank-model" value="${escapeAttr((s.rerankApi&&s.rerankApi.model) || '')}" placeholder="rerank-multilingual-v3 / bge-reranker-large" style="flex:1;font-size: calc(0.65rem * var(--cd-fs, 1));padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
+        </div>
+      </div>
       
       <div class="cd-egg-section">
         <div class="cd-set-row" style="margin-bottom:4px;">
@@ -7404,8 +7467,15 @@ async function cdRenderVector() {
       key: $('#cd-vec-emb-key').val() || '',
       model: $('#cd-vec-emb-model').val() || 'text-embedding-ada-002',
     };
+    settings.rerankEnabled = $('#cd-rerank-enabled').is(':checked');
+    settings.rerankTarget = $('#cd-rerank-target').val() || 'both';
+    settings.rerankApi = {
+      base: $('#cd-rerank-base').val() || '',
+      key: $('#cd-rerank-key').val() || '',
+      model: $('#cd-rerank-model').val() || '',
+    };
     cdSaveSettings(settings);
-    toastr.success('向量化设置已保存');
+    toastr.success('向量化设置已保存（含 Rerank）');
   });
   
   // 清空向量库
