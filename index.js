@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.2.9';
+const PLUGIN_VERSION = '2.3.0';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -264,30 +264,38 @@ async function callOpenAI(messages, ep, s) {
  */
 async function cdRerank(query, documents, cfg) {
   if (!query || !Array.isArray(documents) || !documents.length) return [];
-  const base = String(cfg.base || '').replace(/\/+$/, '');
+  const rawBase = String(cfg.base || '').replace(/\/+$/, '');
   const key = cfg.key || '';
   const model = cfg.model || '';
-  if (!base || !model) throw new Error('Rerank 未配置 base/model');
+  if (!rawBase || !model) throw new Error('Rerank 未配置 base/model');
   const body = { model, query, documents };
   const headers = { 'Content-Type': 'application/json' };
   if (key) headers.Authorization = `Bearer ${key}`;
+  // base 可能带 /v1 也可能不带，生成候选端点组合：base/v1 是否带 + 后缀 /rerank /v1/rerank
+  const bases = [rawBase];
+  // 若 base 以 /v1 结尾，额外尝试去掉 /v1；若不带，额外尝试补 /v1
+  const hasV1 = /\/v1$/.test(rawBase);
+  const altBase = hasV1 ? rawBase.replace(/\/v1$/, '') : rawBase + '/v1';
+  if (altBase !== rawBase) bases.push(altBase);
+  const suffixes = ['/rerank', '/v1/rerank'];
   let lastErr = null;
-  // 尝试 /rerank 与 /v1/rerank 两种路径
-  for (const suffix of ['/rerank', '/v1/rerank']) {
-    try {
-      const res = await fetch(`${base}${suffix}`, { method: 'POST', headers, body: JSON.stringify(body) });
-      if (!res.ok) { lastErr = new Error(`${suffix} ${res.status}: ${await textOr(res)}`); continue; }
-      const j = await res.json();
-      const results = Array.isArray(j.results) ? j.results
-        : (Array.isArray(j.data) ? j.data : null);
-      if (!results) { lastErr = new Error('Rerank 返回格式不含 results'); continue; }
-      // 按 relevance_score（或 score）倒序排
-      return results
-        .filter(r => r && typeof r.index === 'number')
-        .map(r => ({ index: r.index, score: r.relevance_score ?? r.score ?? 0 }))
-        .sort((a, b) => b.score - a.score);
-    } catch (e) {
-      lastErr = e;
+  for (const b of bases) {
+    for (const suffix of suffixes) {
+      if (!cfg.__noDupCheck && /rerank$/.test(b) && suffix.startsWith('/')) continue; // 防 b 已含 rerank
+      try {
+        const res = await fetch(`${b}${suffix}`, { method: 'POST', headers, body: JSON.stringify(body) });
+        if (!res.ok) { lastErr = new Error(`${b}${suffix} ${res.status}: ${await textOr(res)}`); continue; }
+        const j = await res.json();
+        const results = Array.isArray(j.results) ? j.results
+          : (Array.isArray(j.data) ? j.data : null);
+        if (!results) { lastErr = new Error(`${b}${suffix} 返回格式不含 results`); continue; }
+        return results
+          .filter(r => r && typeof r.index === 'number')
+          .map(r => ({ index: r.index, score: r.relevance_score ?? r.score ?? 0 }))
+          .sort((a, b) => b.score - a.score);
+      } catch (e) {
+        lastErr = e;
+      }
     }
   }
   throw lastErr || new Error('Rerank 调用失败');
@@ -6186,12 +6194,24 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
+    version: 'v2.3.0',
+    date: '2026-08-02',
+    items: [
+      '新增「向量 Rerank 重排序」：对向量召回结果用 Rerank 模型二次重排，提升检索相关性（配置于向量界面，作用于剧情/日记/两者可选）',
+      'Rerank 配置区新增「拉取模型」与「测试连接」：一键拉取模型列表点选填入，测试连接可查看真实调用结果与具体报错',
+      '优化 Rerank 兼容性：自动适配 base 带/不带 /v1、/rerank 与 /v1/rerank 等多种端点组合（兼容硅基流动等）',
+      '修复关闭填表开关后仍在注入的问题：表格现状也受「是否开始填表 / 发送表单给AI」开关控制',
+      '彻底移除「物品记录」：AI 不再输出、解析、存储及展示，界面更简洁',
+      '主开关全面生效：关闭后自动写日记、自动触发、AI 上下文注入全部停用',
+    ],
+  },
+  {
     version: 'v2.2.9',
     date: '2026-08-02',
     items: [
-      '新增「向量 Rerank 重排序」：对向量召回结果用 Rerank 模型二次重排，提升检索相关性（配置于向量界面，作用于剧情/日记/两者可选，OpenAI 兼容 /rerank 端点）',
-      '彻底移除「物品记录」：AI 不再输出、解析、存储及在时间线展示物品记录，界面更简洁',
-      '主开关全面生效：关闭主开关后，自动写日记、自动触发、AI 上下文注入全部停用，插件处于完全关闭状态',
+      '新增「向量 Rerank 重排序」初始实现',
+      '彻底移除「物品记录」',
+      '主开关全面生效',
     ],
   },
   {
@@ -6413,7 +6433,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.2.9 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.3.0 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
@@ -7266,7 +7286,13 @@ async function cdRenderVector() {
         <div class="cd-set-row">
           <label>模型名</label>
           <input type="text" id="cd-rerank-model" value="${escapeAttr((s.rerankApi&&s.rerankApi.model) || '')}" placeholder="rerank-multilingual-v3 / bge-reranker-large" style="flex:1;font-size: calc(0.65rem * var(--cd-fs, 1));padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
+          <button type="button" class="cd-btn-secondary" id="cd-rerank-fetch" style="font-size: calc(0.6rem * var(--cd-fs, 1));padding:3px 10px;min-width:auto;"><i class="fa-regular fa-rotate"></i> 拉取模型</button>
         </div>
+        <div id="cd-rerank-model-list" style="margin-top:6px;max-height:120px;overflow-y:auto;display:none;flex-wrap:wrap;gap:4px;"></div>
+        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
+          <button type="button" class="cd-btn-secondary" id="cd-rerank-test" style="font-size: calc(0.6rem * var(--cd-fs, 1));padding:3px 10px;min-width:auto;"><i class="fa-regular fa-flask"></i> 测试连接</button>
+        </div>
+        <div id="cd-rerank-test-result" style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#6b5a48;margin-top:4px;word-break:break-all;"></div>
       </div>
       
       <div class="cd-egg-section">
@@ -7483,6 +7509,56 @@ async function cdRenderVector() {
     };
     cdSaveSettings(settings);
     toastr.success('向量化设置已保存（含 Rerank）');
+  });
+  
+  // 拉取 Rerank 模型列表
+  $('#cd-rerank-fetch').off('click').on('click', async function () {
+    const btn = $(this);
+    const base = $('#cd-rerank-base').val() || '';
+    const key = $('#cd-rerank-key').val() || '';
+    if (!base) { toastr.warning('请先填写 Rerank API 地址'); return; }
+    btn.prop('disabled', true).html('<i class="fa-regular fa-spinner"></i> 拉取中...');
+    try {
+      const models = await cdFetchModels('openai', { url: base, key, model: '' });
+      if (!models.length) { toastr.warning('未获取到模型，请检查 API 地址/密钥，或手动填写模型名'); return; }
+      const listEl = $('#cd-rerank-model-list');
+      listEl.css('display', 'flex')
+        .html(models.map(m => `<span class="cd-btn-secondary" style="font-size: calc(0.55rem * var(--cd-fs, 1));padding:2px 6px;cursor:pointer;display:inline-block;" data-model="${escapeAttr(m)}">${escapeHtml(m)}</span>`).join(''));
+      listEl.off('click').on('click', 'span[data-model]', function () {
+        $('#cd-rerank-model').val($(this).data('model'));
+        listEl.find('span').css('background', '').css('color', '');
+        $(this).css('background', '#c9a87c').css('color', '#fff');
+      });
+      toastr.success(`获取到 ${models.length} 个 Rerank 模型，点击下方标签填入`);
+    } catch (e) {
+      toastr.error('拉取 Rerank 模型失败: ' + e.message);
+    } finally {
+      btn.prop('disabled', false).html('<i class="fa-regular fa-rotate"></i> 拉取模型');
+    }
+  });
+  
+  // 测试 Rerank 连接（真实调用一次，显示具体报错）
+  $('#cd-rerank-test').off('click').on('click', async function () {
+    const btn = $(this);
+    const base = $('#cd-rerank-base').val() || '';
+    const key = $('#cd-rerank-key').val() || '';
+    const model = $('#cd-rerank-model').val() || '';
+    const $res = $('#cd-rerank-test-result');
+    if (!base || !model) { $res.html('<span style="color:#c84632;">请先填写 API 地址和模型名</span>'); return; }
+    btn.prop('disabled', true).html('<i class="fa-regular fa-spinner"></i> 测试中...');
+    try {
+      const query = '主角在酒馆与女巫对话';
+      const docs = ['主角在酒馆与女巫交谈获得解药', '主角在森林里打猎', '无关的天气描写'];
+      const result = await cdRerank(query, docs, { base, key, model });
+      const orderInfo = result.map(r => `第${r.index}号(分${r.score.toFixed(3)})`).join(' → ');
+      $res.html(`<span style="color:#5a9;">✅ 连接成功！重排结果：${escapeHtml(orderInfo)}</span>`);
+      cdAddLog('info', '[rerank] 测试连接成功', { base, model, 重排: orderInfo });
+    } catch (e) {
+      $res.html(`<span style="color:#c84632;">❌ 测试失败：${escapeHtml(e.message || String(e))}</span>`);
+      cdAddLog('warn', '[rerank] 测试连接失败', { base, model, 错误: String(e && e.message || e) });
+    } finally {
+      btn.prop('disabled', false).html('<i class="fa-regular fa-flask"></i> 测试连接');
+    }
   });
   
   // 清空向量库
