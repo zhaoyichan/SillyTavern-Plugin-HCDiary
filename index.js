@@ -1175,9 +1175,14 @@ function cdSaveSettings(patch) {
   // ST 中 saveSettingsDebounced 是 getContext() 上下文对象上的方法，不是全局变量（裸调用会 ReferenceError）
   try {
     const ctx = SillyTavern.getContext();
-    if (ctx && typeof ctx.saveSettingsDebounced === 'function') {
+    const canCtx = ctx && typeof ctx.saveSettingsDebounced === 'function';
+    const canGlob = typeof saveSettingsDebounced === 'function';
+    // 读回确认是否真的写入了设置对象
+    const verify = Object.keys(patch || {}).reduce((o, k) => { o[k] = cdGetSettings()[k]; return o; }, {});
+    cdAddLog('info', '[设置] 保存', { patchKeys: Object.keys(patch || {}), ctx可持久化: !!canCtx, 全局可持久化: !!canGlob, 保存后读回: verify });
+    if (canCtx) {
       ctx.saveSettingsDebounced();
-    } else if (typeof saveSettingsDebounced === 'function') {
+    } else if (canGlob) {
       saveSettingsDebounced();
     } else {
       cdWarn('saveSettingsDebounced 不可用，设置仅在内存生效');
@@ -1726,7 +1731,9 @@ async function cdBuildDiaryInjectionText() {
     let lt = '';
     try {
       const ltInstr = cdBuildLiveTableInjectText();
-      const ltData = Array.isArray(data.liveTableData) && data.liveTableData[0] ? data.liveTableData[0] : null;
+      // ★ 填表开关关闭时，即使有历史表格数据也不拼入填表内容（避免"关了还在注入"）
+      const _ltOn = s.liveTableEnabled !== false && s.liveTableInject !== false;
+      const ltData = _ltOn && Array.isArray(data.liveTableData) && data.liveTableData[0] ? data.liveTableData[0] : null;
       let tableTxt = '';
       const ltLower = (ltData && ltData.lower) || {};
       const hasLower = Object.keys(ltLower).some((k) => ltLower[k]);
@@ -1745,9 +1752,9 @@ async function cdBuildDiaryInjectionText() {
         });
         tableTxt = '[当前表格现状]\n' + tl.join('\n');
       }
-      lt = ltInstr ? (ltInstr + (tableTxt ? '\n\n' + tableTxt : '')) : tableTxt;
+      lt = ltInstr ? (ltInstr + (tableTxt ? '\n\n' + tableTxt : '')) : (tableTxt || '');
     } catch (e) {}
-    if (lt) {
+    if (lt && s.liveTableEnabled !== false && s.liveTableInject !== false) {
       const prompt = lt ? (lt + '\n\n' + (base || '')) : base;
       cdLog('[填表] 注入填表（含表格现状）长度', { promptLen: String(prompt).length });
       return prompt;
