@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.2.7';
+const PLUGIN_VERSION = '2.2.8';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -638,7 +638,9 @@ function parseArchiveJson(text, customDefs) {
   const labelRe = new RegExp('^(' + labelAlt + ')[：:]');
   // 逐行切分（稳健，避免非贪婪正则跨界吞标签）
   const parts = {};
-  let curLabel = null;
+  // assistant 预填充为"主线："，故 AI 响应开头的续写默认归入主线，直到遇到下一个标签
+  let curLabel = '主线';
+  parts['主线'] = '';
   const splitLines = String(raw).split('\n');
   for (const line of splitLines) {
     const trimmed = line.trim();
@@ -1234,9 +1236,6 @@ async function cdGetData() {
       }
     }
     cdLog('cdGetData: chatMetadata 为空，返回空数据');
-    if (typeof cdGetBackups === 'function' && cdGetBackups().length) {
-      if (typeof toastr !== 'undefined') toastr.info('[角色日记] 本聊天暂无日记数据，但本地存有 ' + cdGetBackups().length + ' 份备份，可在「管理 → 备份恢复」查看');
-    }
     return emptyData();
   } catch (e) {
     cdWarn('cdGetData 失败', e);
@@ -6157,6 +6156,15 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
+    version: 'v2.2.8',
+    date: '2026-08-02',
+    items: [
+      '修复剧情档案解析时主线可能缺失的问题：AI 以「主线：」预填续写时，主线内容现在能正确捕获并展示于时间线',
+      '修复新开空聊天时自动弹出「本地存有备份」提示的打扰问题',
+      '优化时间线自定义追踪项配色分配',
+    ],
+  },
+  {
     version: 'v2.2.7',
     date: '2026-08-02',
     items: [
@@ -6366,7 +6374,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.2.7 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.2.8 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
