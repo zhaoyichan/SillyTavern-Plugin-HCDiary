@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.3.1';
+const PLUGIN_VERSION = '2.4.0';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -28,11 +28,11 @@ const DEFAULT_SETTINGS = {
   themeMode       : 'day',       // 'auto' | 'day' | 'night'
   fontScale       : 1,            // 界面字号缩放 0.8~1.4（1=标准）
   autoSummary     : true,         // 自动总结开关（独立于手动写日记）
-  enableDiary     : true,         // 生成角色日记
-  enableRelation  : true,         // 生成人物关系
-  enableArchive   : true,         // 生成剧情档案
+  enableDiary     : true,         // 生成角色日记（默认开）
+  enableRelation  : false,        // 生成人物关系（默认关，可手动开启）
+  enableArchive   : true,         // 生成剧情档案（默认开）
   injectDiary     : true,         // 注入角色日记到AI上下文
-  injectRelation  : true,         // 注入人物关系到AI上下文
+  injectRelation  : false,        // 注入人物关系到AI上下文（跟随关系生成默认关）
   injectArchive   : true,         // 注入剧情档案到AI上下文
   filterTags      : [             // 内容过滤标签对（不发送给AI总结）
     { start: '<user_thought>', end: '</user_thought>' },
@@ -62,9 +62,9 @@ const DEFAULT_SETTINGS = {
     gemini:  { url: 'https://generativelanguage.googleapis.com/v1beta', key: '', model: '' },
   },
   // ===== 填表功能（LIWE 情报表）=====
-  liveTableEnabled  : true,      // 填表总开关
+  liveTableEnabled  : false,     // 填表总开关（默认关，可手动开启）
   liveSnapshotLimit : 15,       // 表格自动快照保留上限(可自定义)
-  liveTableInject   : true,      // 是否把填表提示词发给正文AI
+  liveTableInject   : false,     // 是否把填表提示词发给正文AI（跟随填表生成默认关）
   liveCharFields    : ['状态', '衣着', '对用户好感', '备注'],  // 状态表子字段（可自定义增删改）
   liveLowerFields   : ['经历事情', '持有物品', '任务'],        // 履历字段（可自定义增删改）
   liveTableMode     : 'auto',    // 填表触发模式: 'auto'(正文末尾自动) | 'batch'(每N层批量)
@@ -131,6 +131,7 @@ function emptyData() {
     relations:{},      // { from: { to: { type, attitude, note } } }
     lastFloor: -1,     // 日记引擎进度（mergeDiaries 更新），手动/自动共用
     _baselineChatLength: -1, // [自动触发专用] 基于 chat.length，不受分片影响
+    _lastDiaryChatLength: 0, // [自动触发同步] 上次检测新增楼层的 chat.length 基线
     archive: {         // 剧情档案（增量版）
       mainline:  '',   // 主线摘要
       sideline:  '',   // 支线摘要
@@ -141,6 +142,7 @@ function emptyData() {
     },
     cards: [],         // 剧情卡牌收集 [{ title, desc, time, icon }]
     snapshots: [],     // 历史快照 [{ time, type, diaryCount, relationCount, archiveUpdated, archiveEntryCount, chapterTitle }]
+    focusRoles: [],    // 重点角色（手动指定）：[{ name, note }]，写日记/总结时引导 AI 围绕这些角色写
     archiveVectors: [], // 剧情档案向量库 [{ id, text, category, vector }]
     diaryVectors: [],  // 角色日记向量库 [{ id, role, text, vector }]
     liveTableData: [], // 填表功能：当前聊天的填表值 [{ defId, upper:{}, lower:{} }]
@@ -454,8 +456,12 @@ async function cdBuildDiaryPrompt(windowFloors, data, s) {
     known.length ? `已知角色名单: ${known.join('; ')}` : '已知角色名单: (暂无)',
     diaryMemory ? `各角色已有记忆(最新日记):\n${diaryMemory}` : '各角色已有记忆: (暂无)',
     `本次剧情片段:\n${scene}`,
+    // ★ 重点角色：用户手动指定的角色必须详写，避免被遗漏/脱离设定
+    (Array.isArray(data.focusRoles) && data.focusRoles.length)
+      ? `【重点角色(必须为其详细写日记)】\n${data.focusRoles.map(f => '  - ' + (f.name || '') + (f.note ? `：${f.note}` : '')).join('\n')}\n要求：即使这些角色在本次片段中出场较少，也要根据已有记忆与设定，为其补全完整、符合人设的日记。`
+      : '',
     '请输出 JSON。',
-  ].join('\n\n');
+  ].filter(Boolean).join('\n\n');
   return [
     { role: 'system', content: JAILBREAK + '\n\n' + sys },
     { role: 'user', content: usr },
@@ -671,7 +677,11 @@ async function cdBuildArchivePrompt(windowFloors, data, _s) {
     `本次新增楼层：\n${scene}`,
     '',
     `请输出：主线、支线、重要状态变化、未解决事项${customOutputNames ? '、' + customOutputNames : ''}`,
-  ].join('\n');
+    // ★ 重点角色：引导剧情档案围绕这些角色记录，防止其脱离设定
+    (Array.isArray(data.focusRoles) && data.focusRoles.length)
+      ? `【重点角色（档案中须重点记录其状态/动向/关系变化）】\n${data.focusRoles.map(f => '  - ' + (f.name || '') + (f.note ? `：${f.note}` : '')).join('\n')}`
+      : '',
+  ].filter(Boolean).join('\n');
   return [
     { role: 'system', content: sys },
     { role: 'user', content: usr },
@@ -1309,10 +1319,34 @@ async function cdGetData() {
           if ((result._baselineChatLength ?? -1) > chat.length) {
             result._baselineChatLength = chat.length;
           }
+          // ★ 切换聊天隔离：若基线为 -1（新聊天或从未自动触发过），
+          //   把基线初始化为当前 chat 长度，避免把该聊天已有历史楼层当作"新增"而自动重写。
+          if ((result._baselineChatLength ?? -1) < 0 && !result._baselineInitialized) {
+            cdLog('cdGetData: 首次进入，初始化自动触发基线', {基线: chat.length});
+            result._baselineChatLength = chat.length;
+            result._lastDiaryChatLength = result._lastDiaryChatLength ?? chat.length;
+            result._baselineInitialized = true;
+          }
         }
         if (typeof cdDiaryTotal === 'function') _cdLastDiaryTotal = cdDiaryTotal(result);
         return result;
       }
+    }
+    // ★ 新聊天首次进入：chatMetadata 为空但聊天已有历史楼层时，
+    //   同样初始化自动触发基线到当前长度，实现"切换聊天干净隔离"（不自动重写历史），
+    //   并立即落盘，使基线固定为首次进入时的值，后续新增楼层才会被统计。
+    const _emptyChat = _cdGetChat();
+    if (_emptyChat.length > 0) {
+      const fresh = emptyData();
+      fresh._baselineChatLength = _emptyChat.length;
+      fresh._lastDiaryChatLength = _emptyChat.length;
+      fresh._baselineInitialized = true;
+      // 切换新聊天：重置全局日记总数基线，避免 cdSaveData 把上一聊天的数量误判为"骤减"
+      if (typeof cdDiaryTotal === 'function') _cdLastDiaryTotal = cdDiaryTotal(fresh);
+      cdLog('cdGetData: chatMetadata 为空，初始化新聊天自动触发基线', {基线: _emptyChat.length});
+      // 落盘保存一次，让后续 cdGetData 进入"已有数据"分支读取固定基线
+      try { await cdSaveData(fresh); } catch (_e) { cdWarn('新聊天初始化保存失败', _e); }
+      return fresh;
     }
     cdLog('cdGetData: chatMetadata 为空，返回空数据');
     return emptyData();
@@ -1324,36 +1358,16 @@ async function cdGetData() {
 
 async function cdSaveData(data) {
   try {
-    // ★ 数据保护: 检测日记数量异常骤减(断网回滚覆盖等)，自动从最近备份补回丢失条目
+    // ★ 日记数量异常（骤减）检测：只记录日志 + 轻提示，不再自动从备份补回。
+    //   (原「数据保护自动回滚/补回」会因跨聊天复用全局 _cdLastDiaryTotal，
+    //    把别的聊天/同批 message_id 的备份日记混入，导致重复。改为手动恢复，
+    //    用户可在「管理 → 数据备份/恢复」手动选取备份还原。)
     const _dc = (typeof cdDiaryTotal === 'function') ? cdDiaryTotal(data) : 0;
     if (_cdLastDiaryTotal >= 0 && _dc < _cdLastDiaryTotal) {
-      if (typeof cdAddLog === 'function') cdAddLog('warn', '[数据保护] 检测到日记数量骤减', {之前: _cdLastDiaryTotal, 现在: _dc});
-      // ★ 尝试从最近 localStorage 备份自动补回丢失的日记（避免断网/回滚覆盖导致丢失）
-      let restored = 0;
-      try {
-        const bk = (typeof cdGetBackups === 'function' && cdGetBackups()[0]) || null;
-        if (bk && bk.diaries && typeof bk.diaries === 'object') {
-          if (!data.diaries) data.diaries = {};
-          for (const [name, bkList] of Object.entries(bk.diaries)) {
-            if (!Array.isArray(bkList)) continue;
-            if (!Array.isArray(data.diaries[name])) data.diaries[name] = [];
-            const curIds = new Set(data.diaries[name].map(e => e.message_id));
-            for (const e of bkList) {
-              if (!e) continue;
-              // 用 message_id 去重：备份里当前缺失的条目补回
-              const dup = data.diaries[name].some(x => x && x.message_id === e.message_id && x.entry === e.entry);
-              if (!dup && (!e.message_id || !curIds.has(e.message_id))) {
-                data.diaries[name].push(e);
-                restored++;
-              }
-            }
-          }
-        }
-      } catch (e2) { cdAddLog('warn', '[数据保护] 自动恢复备份失败: ' + (e2 && e2.message)); }
-      if (restored > 0) {
-        if (typeof toastr !== 'undefined') toastr.success(`检测到日记骤减，已从最近备份自动恢复 ${restored} 条（断网/回滚可能导致覆盖丢失）`);
-      } else {
-        if (typeof toastr !== 'undefined') toastr.warning('[角色日记] 日记数量异常减少，如有丢失可在「管理 → 备份恢复」找回');
+      const _gap = _cdLastDiaryTotal - _dc;
+      if (typeof cdAddLog === 'function') cdAddLog('warn', '[数据保护] 检测到日记数量减少（已改为手动恢复，不再自动补回）', {之前: _cdLastDiaryTotal, 现在: _dc, 减少: _gap});
+      if (typeof toastr !== 'undefined') {
+        toastr.warning(`[角色日记] 检测到日记减少 ${_gap} 条。若为误删，可在「管理 → 数据备份/恢复」手动恢复。`);
       }
       _cdLastDiaryTotal = cdDiaryTotal(data);
     }
@@ -1509,10 +1523,17 @@ function mergeDiaries(data, npcs, windowFloors, s) {
     data.aliases[mainName] = Array.from(new Set([...(data.aliases[mainName] || []), ...incomingAliases]));
 
     if (!data.diaries[mainName]) data.diaries[mainName] = [];
+    // ★ 防重复：按 (message_id + entry) 去重，避免同一批楼层因切换/重复触发被追加重写
+    const _newEntry = npc.entry || '';
+    const _dup = data.diaries[mainName].some(x => x && x.message_id === topFloor && (x.entry || '') === _newEntry);
+    if (_dup) {
+      cdLog('mergeDiaries: 跳过重复日记', {角色: mainName, 楼层: topFloor});
+      continue;
+    }
     data.diaries[mainName].push({
       turn: npc.turn ?? topFloor,
       date: npc.date || '',
-      entry: npc.entry || '',
+      entry: _newEntry,
       mood: npc.mood || '',
       attitude_to_user: npc.attitude_to_user || '',
       secret: npc.secret || '',
@@ -1650,35 +1671,32 @@ async function cdSyncWorldbook(data) {
     cdAddLog('warn', '世界书同步失败（不影响日记）: ' + e.message);
   }
 }
-
-/** 楼层回滚: 当聊天楼层被删除/撤回时, 移除 >= floor 的日记条目 */
+/**
+ * 楼层回滚: 当聊天楼层被删除/撤回时触发。
+ * ★ 参考「剧情档案」模式（追加式、不随楼层删除而丢失）：楼层被删时**不自动删除日记**，
+ *   避免误删/分片加载导致日记丢失。改为仅记录 A 楼层被删信息并提示，用户可在
+ *   「管理 → 数据备份/恢复」手动处理或重新生成。真正要把某段剧情作废时，
+ *   由用户手动在管理界面删除对应日记。
+ */
 async function cdRollbackFrom(floor) {
-  const data = await cdGetData();
-  let changed = false;
-  for (const [npc, list] of Object.entries(data.diaries)) {
-    const kept = list.filter(e => (e.message_id ?? -1) < floor);
-    if (kept.length !== list.length) {
-      changed = true;
-      const removed = list.length - kept.length;
-      data.cameo[npc] = Math.max(0, (data.cameo[npc] || 0) - removed);
-      if (kept.length === 0) {
-        delete data.diaries[npc];
-        data.promoted[npc] = false;
-      } else {
-        data.diaries[npc] = kept;
-      }
+  // 仅统计受影响角色数作诊断提示（不修改 diaries 本身）
+  try {
+    const data = await cdGetData();
+    const affected = [];
+    for (const [npc, list] of Object.entries(data.diaries)) {
+      if (!Array.isArray(list)) continue;
+      const hit = list.filter(e => (e.message_id ?? -1) >= floor).length;
+      if (hit > 0) affected.push({ 角色: npc, 受影响条目: hit });
     }
-  }
-  if (changed) {
-    let maxFloor = -1;
-    for (const list of Object.values(data.diaries)) {
-      for (const e of list) maxFloor = Math.max(maxFloor, e.message_id ?? -1);
+    cdAddLog('info', '[楼层回滚] 楼层删除已检测，日记已保留（不再自动删除，参考剧情档案模式）', { floor, 受影响角色: affected });
+    if (typeof toastr !== 'undefined' && affected.length) {
+      toastr.info(`[角色日记] 检测到楼层 ${floor} 被删除，对应日记已保留以防丢失。如需作废可在「管理 → 数据备份/恢复」手动处理。`);
     }
-    data.lastFloor = maxFloor;
-    await cdSaveData(data);
-    await cdSyncWorldbook(data);
+  } catch (e) {
+    cdWarn('同楼层回滚提示失败', e);
   }
-}// ============================================================
+}
+// ============================================================
 // 角色日记 插件 v2.0.0 — 日记引擎 (核心流程)
 // 路径: SillyTavern/extensions/character-diary/engine.js
 // ============================================================
@@ -2719,10 +2737,22 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
         const arc = parseArchiveJson(archiveRes.value.text, customDefs);
         if (arc.mainline || arc.sideline || arc.states || arc.unresolved || (arc.custom && Object.keys(arc.custom).length)) {
           if (!data.archive) data.archive = Object.assign({}, emptyData().archive);
-          if (arc.mainline)   data.archive.mainline   = data.archive.mainline   ? data.archive.mainline   + '\n\n' + arc.mainline   : arc.mainline;
-          if (arc.sideline)   data.archive.sideline   = data.archive.sideline   ? data.archive.sideline   + '\n\n' + arc.sideline   : arc.sideline;
-          if (arc.states)     data.archive.states     = data.archive.states     ? data.archive.states     + '\n\n' + arc.states     : arc.states;
-          if (arc.unresolved) data.archive.unresolved = data.archive.unresolved ? data.archive.unresolved + '\n\n' + arc.unresolved : arc.unresolved;
+          // ★ 补写/重写去重：按「\n\n 分段」做幂等追加，同一段剧情即使重复补写也不重复展出，
+          //   根治「手动补齐后时间线多生成一遍」问题。
+          const _appendIfNew = (cur, nxt) => {
+            if (!nxt) return cur;
+            const _key = String(nxt).trim();
+            if (!_key) return cur;
+            if (!cur) return _key;
+            const _curSegs = String(cur).split(/\n\n+/).map(function (x) { return String(x).trim(); }).filter(Boolean);
+            if (_curSegs.some(function (seg) { return seg === _key; })) return cur;
+            if (String(cur).trimEnd().endsWith(_key)) return cur;
+            return String(cur).trimEnd() + '\n\n' + _key;
+          };
+          if (arc.mainline)   data.archive.mainline   = _appendIfNew(data.archive.mainline,   arc.mainline);
+          if (arc.sideline)   data.archive.sideline   = _appendIfNew(data.archive.sideline,   arc.sideline);
+          if (arc.states)     data.archive.states     = _appendIfNew(data.archive.states,     arc.states);
+          if (arc.unresolved) data.archive.unresolved = _appendIfNew(data.archive.unresolved, arc.unresolved);
           // 自定义追踪项（追加式数组）
           if (arc.custom && Object.keys(arc.custom).length) {
             if (!data.archive.custom || typeof data.archive.custom !== 'object') data.archive.custom = {};
@@ -2776,35 +2806,26 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
         }
       }
 
-      // ★ 从剧情档案中提取剧情卡牌
+      // ★ 从剧情档案中提取剧情卡牌 —— 已停用（不再生成新卡牌、不再匹配正则），保留旧数据
+      /*
       if (archiveOk && data.archive) {
         try {
           const allText = [data.archive.mainline, data.archive.sideline, data.archive.states, data.archive.unresolved].filter(Boolean).join('\n');
-          // 找带【时间标记】的事件，每条作为一张卡牌
           const cardMatches = allText.matchAll(/【([^】]+)】\s*([^」\n]{10,80})/g);
           let newCards = 0;
           const existingTitles = new Set(data.cards.map(c => c.title));
           for (const m of cardMatches) {
             const title = m[2].trim().slice(0, 30);
             if (title.length > 5 && !existingTitles.has(title)) {
-              data.cards.push({
-                title: title + (m[2].length > 30 ? '...' : ''),
-                desc: m[2].trim().slice(0, 80),
-                time: m[1],
-                icon: ['fa-regular fa-star', 'fa-regular fa-bolt', 'fa-regular fa-crown', 'fa-regular fa-skull', 'fa-regular fa-heart'][Math.floor(Math.random() * 5)],
-              });
+              data.cards.push({ title: title + (m[2].length > 30 ? '...' : ''), desc: m[2].trim().slice(0, 80), time: m[1], icon: 'fa-regular fa-star' });
               existingTitles.add(title);
               newCards++;
             }
           }
-          if (newCards > 0) {
-            await cdSaveData(data);
-            cdAddLog('info', `收集到 ${newCards} 张剧情卡牌`);
-          }
-        } catch (e) {
-          cdLog('卡牌提取失败（不影响主流程）:', e.message);
-        }
+          if (newCards > 0) { await cdSaveData(data); cdAddLog('info', `收集到 ${newCards} 张剧情卡牌`); }
+        } catch (e) { cdLog('卡牌提取失败（不影响主流程）:', e.message); }
       }
+      */
 
       // ★ 自动隐藏已总结的旧楼层
       if (diaryOk && s.autoHideEnabled) {
@@ -2818,21 +2839,6 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
       
       await cdRefreshInjection();
       cdAddLog('info', '日记保存完成并刷新注入');
-
-      // ★ 记录历史快照
-      if (diaryOk || relOk || archiveOk) {
-        if (!data.snapshots) data.snapshots = [];
-        data.snapshots.push({
-          time: new Date().toLocaleString(),
-          type: manual ? 'manual' : 'auto',
-          diaryCount: Object.keys(data.diaries || {}).length,
-          relationCount: Object.values(data.relations || {}).reduce((s, t) => s + Object.keys(t).length, 0),
-          archiveUpdated: archiveOk,
-          archiveEntryCount: cdCountArchiveEntries(data.archive),
-          chapterTitle: data._chapterTitle || '',
-        });
-        if (data.snapshots.length > 100) data.snapshots = data.snapshots.slice(-100);
-      }
 
       // ★ 剧情档案向量化入库（向量模式）
       if (archiveOk && s.archiveMode === 'vector') {
@@ -3779,31 +3785,26 @@ function cdInjectModal() {
         </div>
 
         <div class="cd-toolbar">
-          <button class="cd-tb-btn cd-tb-active" id="cd-tb-browse" data-mode="browse"><i class="fa-regular fa-list"></i> 浏览
-          </button>
-          <button class="cd-tb-btn" id="cd-tb-archive" data-mode="archive"><i class="fa-regular fa-timeline"></i> 时间线
-</button>
-<button class="cd-tb-btn" id="cd-tb-graph" data-mode="graph"><i class="fa-regular fa-diagram-project"></i> 关系
-</button>
-<button class="cd-tb-btn" id="cd-tb-table" data-mode="table"><i class="fa-regular fa-table"></i> 表
-</button>
-<button class="cd-tb-btn" id="cd-tb-floors" data-mode="floors"><i class="fa-regular fa-layer-group"></i> 楼层
-</button>
-          <button class="cd-tb-btn" id="cd-tb-manage" data-mode="manage"><i class="fa-regular fa-database"></i> 管理
-          </button>
-          <button class="cd-tb-btn" id="cd-tb-egg" data-mode="egg"><i class="fa-regular fa-gem"></i> 娱乐
-          </button>
-          
-          <button class="cd-tb-btn" id="cd-tb-export" data-mode="export"><i class="fa-regular fa-download"></i> 导出
-          </button>
-          <button class="cd-tb-btn" id="cd-tb-log" data-mode="log"><i class="fa-regular fa-clipboard-list"></i> 日志
-</button>
-<button class="cd-tb-btn" id="cd-tb-changelog" data-mode="changelog"><i class="fa-regular fa-tag"></i> 更新
-</button>
-<button class="cd-tb-btn" id="cd-tb-help" data-mode="help"><i class="fa-regular fa-circle-question"></i> 说明
-</button>
-<button class="cd-tb-btn" id="cd-tb-vector" data-mode="vector"><i class="fa-regular fa-brain"></i> 向量
-</button>
+          <!-- 核心功能区（高频主 tab）：日记 / 剧情 / 关系 / 表 -->
+          <button class="cd-tb-btn cd-tb-active" id="cd-tb-browse" data-mode="browse"><i class="fa-regular fa-list"></i> 日记</button>
+          <button class="cd-tb-btn" id="cd-tb-archive" data-mode="archive"><i class="fa-regular fa-timeline"></i> 剧情</button>
+          <button class="cd-tb-btn" id="cd-tb-graph" data-mode="graph"><i class="fa-regular fa-diagram-project"></i> 关系</button>
+          <button class="cd-tb-btn" id="cd-tb-table" data-mode="table"><i class="fa-regular fa-table"></i> 表</button>
+
+          <!-- 更多（低频 / 工具 / 信息收纳） -->
+          <button class="cd-tb-btn cd-tb-more" id="cd-tb-more" title="更多工具"><i class="fa-regular fa-ellipsis"></i> 更多</button>
+          <div class="cd-more-menu" id="cd-more-menu" style="display:none;">
+            <div class="cd-more-group-label">工具</div>
+            <button class="cd-more-item" data-mode="floors"><i class="fa-regular fa-layer-group"></i> 楼层补写</button>
+            <button class="cd-more-item" data-mode="manage"><i class="fa-regular fa-database"></i> 数据管理</button>
+            <button class="cd-more-item" data-mode="export"><i class="fa-regular fa-download"></i> 导出 / 迁移</button>
+            <button class="cd-more-item" data-mode="vector"><i class="fa-regular fa-brain"></i> 向量</button>
+            <div class="cd-more-group-label">信息</div>
+            <button class="cd-more-item" data-mode="log"><i class="fa-regular fa-clipboard-list"></i> 日志</button>
+            <button class="cd-more-item" data-mode="changelog"><i class="fa-regular fa-tag"></i> 更新记录</button>
+            <button class="cd-more-item" data-mode="help"><i class="fa-regular fa-circle-question"></i> 说明帮助</button>
+            <button class="cd-more-item" data-mode="egg"><i class="fa-regular fa-gem"></i> 娱乐彩蛋</button>
+          </div>
         </div>
 
         <div class="cd-body cd-scroll" id="cd-body">
@@ -3856,6 +3857,40 @@ function cdInjectModal() {
   $('#cd-tb-table').on('click',   () => cdSwitchView('table'));
 $('#cd-tb-vector').on('click',   () => cdSwitchView('vector'));
   $('#cd-tb-manage').on('click',  () => cdSwitchView('manage'));
+
+  // ★ 更多菜单：点击「更多」开/关下拉菜单（用 fixed 定位，避免被 cd-sheet 的 overflow:hidden 裁切）
+  $('#cd-tb-more').on('click', function (e) {
+    e.stopPropagation();
+    const menu = $('#cd-more-menu');
+    const show = menu.is(':hidden');
+    if (show) {
+      // 依据按钮位置，把菜单用 fixed 定位到按钮下方
+      const rect = this.getBoundingClientRect();
+      menu.css('display', 'block');
+      menu.css('position', 'fixed');
+      menu.css('top', (rect.bottom + 6) + 'px');
+      // 左对齐或右对齐：按钮靠右时右对齐
+      const menuW = menu.outerWidth() || 190;
+      const viewportW = window.innerWidth || document.documentElement.clientWidth;
+      const left = (rect.right + menuW > viewportW - 8) ? (rect.right - menuW) : rect.left;
+      menu.css('left', Math.max(8, left) + 'px');
+      menu.css('right', 'auto');
+    } else {
+      menu.css('display', 'none');
+    }
+  });
+  // ★ 更多菜单项：点击切换到对应视图并收起菜单
+  $('#cd-content, #cd-more-menu').on('click', '.cd-more-item', function () {
+    const mode = $(this).data('mode');
+    $('#cd-more-menu').css('display', 'none');
+    if (mode) cdSwitchView(mode);
+  });
+  // 点击菜单外任意处收起「更多」菜单
+  $(document).on('click.cdmore', function (e) {
+    if ($('#cd-more-menu').is(':visible') && !$(e.target).closest('#cd-more-menu, #cd-tb-more').length) {
+      $('#cd-more-menu').css('display', 'none');
+    }
+  });
   cdLog('[cdInjectModal] 模态面板注入完成, Modal根元素存在:', !!document.getElementById(MODAL_ID));
 }
 
@@ -3902,13 +3937,36 @@ async function cdRefreshPanelContent() {
 
 async function cdSwitchView(mode) {
   cdViewMode = mode;
-  // 更新工具栏按钮状态
+  // 更新工具栏按钮状态：主 tab 才有对应 data-mode 的高亮；菜单里的视图不点亮主 tab
   $(`#${MODAL_ID} .cd-tb-btn`).removeClass('cd-tb-active');
   $(`#${MODAL_ID} .cd-tb-btn[data-mode="${mode}"]`).addClass('cd-tb-active');
+  // 若切到「更多」菜单里的视图，收起下拉菜单
+  const menuEl = document.getElementById('cd-more-menu');
+  if (menuEl) menuEl.style.display = 'none';
   // 隐藏设置面板
   $('#cd-settings-panel').hide();
   $('#cd-body').show();
+  // ★ 顶部加载进度条反馈（重视图渲染时避免"卡住没反应"的错觉）
+  const bar = cdTopbarProgress('show');
   await cdRefreshPanelContent();
+  if (bar) setTimeout(function () { cdTopbarProgress('hide'); }, 150);
+}
+
+/** 顶部加载进度条（show / hide）。轻量反馈，不参与逻辑。 */
+function cdTopbarProgress(action) {
+  try {
+    const root = document.getElementById(MODAL_ID);
+    if (!root) return null;
+    let p = root.querySelector('.cd-topbar-progress');
+    if (action === 'hide') { if (p) p.remove(); return null; }
+    if (!p) {
+      p = document.createElement('div');
+      p.className = 'cd-topbar-progress';
+      p.innerHTML = '<div class="cd-bar"></div>';
+      root.appendChild(p);
+    }
+    return p;
+  } catch (e) { return null; }
 }
 
 function cdToggleFullscreen() {
@@ -3938,12 +3996,67 @@ function cdToggleSettings() {
 
 /* ============================== 各视图渲染 ============================== */
 
+/* ── 新手引导「跳过」状态（本地记忆）── */
+const CD_ONBOARDING_KEY = 'cdOnboardingSkipped';
+function cdOnboardingSkipped() {
+  try { return localStorage.getItem(CD_ONBOARDING_KEY) === '1'; } catch (e) { return false; }
+}
+function cdSetOnboardingSkipped(v) {
+  try { localStorage.setItem(CD_ONBOARDING_KEY, v ? '1' : '0'); } catch (e) {}
+}
+
 /** 浏览模式: 角色卡片列表（可编辑+搜索+过滤+删除） */
 async function cdRenderBrowse(filterText = '', filterChar = '') {
   const data = await cdGetData();
   const names = Object.keys(data.diaries);
   if (!names.length) {
-    $('#cd-content').html(`<div class="cd-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z"/></svg><p>暂无日记</p><p class="cd-empty-sub">开始一段对话后自动记录</p></div>`);
+    // ★ 空态引导：新手第一眼看到这里，给出清晰的上手说明 + 快捷设置入口
+    const _s = cdGetSettings();
+    const _disabled = _s.enabled === false;
+    const _hasApi = !!((_s.endpoints && (_s.endpoints.openai?.url || _s.endpoints.claude?.url || _s.endpoints.gemini?.url)) || !_s.source || _s.source === 'tavern');
+    // ★ 老手跳过标记：跳过后不再显示完整新手引导
+    const _skipped = cdOnboardingSkipped();
+    if (_skipped) {
+      // 已跳过：显示极简空态，不打扰
+      $('#cd-content').html(`<div class="cd-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z"/></svg><p>暂无日记</p><p class="cd-empty-sub">开始一段对话后自动记录</p></div>`);
+      return;
+    }
+    $('#cd-content').html(`
+      <div class="cdb-empty-guide">
+        <div class="cdb-empty-guide-hero">
+          <div class="cdb-empty-guide-icon"><i class="fa-regular fa-book-open"></i></div>
+          <div class="cdb-empty-guide-title">欢迎使用「角色日记」</div>
+          <div class="cdb-empty-guide-desc">它会自动为剧情中的每个角色写第一人称日记、梳理剧情档案，并把这些记忆注入给 AI，让角色记得发生过的事。</div>
+        </div>
+        <div class="cdb-empty-guide-steps">
+          <div class="cdb-step ${_disabled ? '' : 'cdb-step-done'}"><span class="cdb-step-num">1</span><span>${_disabled ? '打开「主开关」' : '主开关已开启 ✓'}</span></div>
+          <div class="cdb-step ${_hasApi ? 'cdb-step-done' : ''}"><span class="cdb-step-num">2</span><span>${_hasApi ? 'API 已配置 ✓' : '选择 API 来源'}</span></div>
+          <div class="cdb-step"><span class="cdb-step-num">3</span><span>回到酒馆正常聊天，AI 回复后自动生成</span></div>
+        </div>
+        <div class="cdb-empty-guide-features">
+          <span class="cdb-feat on"><i class="fa-regular fa-check"></i> 日记 / 剧情：默认开启</span>
+          <span class="cdb-feat off"><i class="fa-regular fa-minus"></i> 关系 / 填表：默认关闭</span>
+          <span class="cdb-feat on"><i class="fa-regular fa-check"></i> 自动压缩：可开启</span>
+        </div>
+        <div class="cdb-empty-guide-actions">
+          <button class="cd-btn-primary cdb-btn-setup" id="cdb-btn-open-settings"><i class="fa-regular fa-sliders"></i> 去设置</button>
+          <span class="cdb-empty-guide-foot">顶部切换「剧情 / 关系 / 表」可查看档案、关系网与表格</span>
+        </div>
+        <div class="cdb-empty-guide-skip"><button type="button" class="cdb-skip-btn" id="cdb-btn-skip">我是老手，跳过引导</button></div>
+        ${_disabled ? '<div class="cdb-empty-guide-warn"><i class="fa-regular fa-triangle-exclamation"></i> 主开关当前关闭，需要先在设置中打开插件才会工作。</div>' : ''}
+      </div>`);
+    // ★ 空态分支提前 return，事件绑定必须在这里完成（否则新手点「去设置」没反应）
+    $('#cd-content').off('click', '#cdb-btn-open-settings').on('click', '#cdb-btn-open-settings', function (e) {
+      e.stopPropagation();
+      cdToggleSettings();
+    });
+    // ★ 老手跳过：设置标记并刷新（本次引导及之后的新手提示都不再出现）
+    $('#cd-content').off('click', '#cdb-btn-skip').on('click', '#cdb-btn-skip', function (e) {
+      e.stopPropagation();
+      cdSetOnboardingSkipped(true);
+      if (typeof toastr !== 'undefined') toastr.success('已跳过新手引导');
+      cdRenderBrowse();
+    });
     return;
   }
 
@@ -3977,6 +4090,12 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
 
   // 概要区域（横向：心情分布 | 热力图 | 随机回顾），只有未搜索/未过滤时显示
   let overviewHtml = '';
+  // ★ 数据统计（角色 / 日记 / 档案字数 / 关系数），供数据概览标题行小字显示
+  const _diaryTotal = Object.values(data.diaries || {}).reduce(function (a, l) { return a + (Array.isArray(l) ? l.length : 0); }, 0);
+  const _arc = data.archive || {};
+  const _arcLen = String(_arc.mainline || '') + String(_arc.sideline || '') + String(_arc.states || '') + String(_arc.unresolved || '');
+  const _relTotal = Object.values(data.relations || {}).reduce(function (a, t) { return a + Object.keys(t || {}).length; }, 0);
+  const _ovStats = `${names.length} 角色 · ${_diaryTotal} 日记 · ${_arcLen.length} 字档案 · ${_relTotal} 关系`;
   if (!filterText && !filterChar) {
     // 概览折叠状态记忆(保存在 localStorage)
     const ov = localStorage.getItem('cdBrowseOverviewOpen');
@@ -3985,7 +4104,7 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
     const heatmapHtml = cdRenderHeatmap(data);
     const randomHtml = cdRenderRandomEntry(data);
     overviewHtml = `<details class="cd-browse-overview-wrap" ${ovOpen ? 'open' : ''}>
-      <summary class="cd-browse-overview-summary"><i class="fa-solid fa-chart-pie"></i> 数据概览<span class="cd-browse-overview-toggle"><i class="fa-solid fa-chevron-down"></i></span></summary>
+      <summary class="cd-browse-overview-summary"><i class="fa-solid fa-chart-pie"></i> 数据概览<span class="cd-overview-stats">${_ovStats}</span><span class="cd-browse-overview-toggle"><i class="fa-solid fa-chevron-down"></i></span></summary>
       <div class="cd-browse-overview">
       <div class="cd-browse-overview-item cd-browse-mood">
         <h4 class="cd-browse-overview-title"><i class="fa-regular fa-chart-line"></i> 心情分布</h4>
@@ -4014,8 +4133,46 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
   // ★ 撤销提示（撤销栏已禁用，undoHtml 恒为空）
   let undoHtml = '';
 
+  // ★ 数据统计已上移到「数据概览」标题行（cd-overview-stats），此处不再单独渲染状态条
+  let statusHtml = '';
+
+  // ★ 重点角色面板：手动指定要重点写的角色（写日记/总结时引导 AI 围绕它们）
+  const _focus = Array.isArray(data.focusRoles) ? data.focusRoles : [];
+  const focusRolesHtml = (!filterText && !filterChar) ? `
+    <details class="cd-focus-panel" ${_focus.length ? 'open' : ''}>
+      <summary class="cd-focus-head"><i class="fa-regular fa-bullseye"></i> 重点角色 <span class="cd-focus-count">${_focus.length}</span><span class="cd-focus-desc">手动指定，写日记/总结时重点围绕这些角色</span></summary>
+      <div class="cd-focus-body">
+        <div class="cd-focus-add">
+          <input type="text" id="cd-focus-input" class="cd-input" placeholder="角色名" style="flex:1.2;min-width:90px;">
+          <input type="text" id="cd-focus-note" class="cd-input" placeholder="备注（可选：人设/当前目标）" style="flex:2;min-width:110px;">
+          <button class="cd-btn-primary cd-focus-add-btn" id="cd-focus-add" style="padding:3px 10px;">添加</button>
+        </div>
+        ${_focus.length ? `<div class="cd-focus-list">
+          ${_focus.map(function (f, fi) {
+            return `<div class="cd-focus-card">
+              <span class="cd-focus-name">${escapeHtml(f.name || '')}</span>
+              ${f.note ? `<span class="cd-focus-note-txt">${escapeHtml(f.note)}</span>` : ''}
+              <button class="cd-focus-del" data-idx="${fi}" title="移除"><i class="fa-regular fa-xmark"></i></button>
+            </div>`;
+          }).join('')}
+        </div>` : '<p class="cd-focus-empty">还没有重点角色。添加一个你想重点描写的角色，插件会始终为它写详尽的日记。</p>'}
+      </div>
+    </details>` : '';
+
   // 搜索栏 + 角色筛选 + 卡片列表
-  let html = `${undoHtml}${overviewHtml}
+  let html = `${undoHtml}${statusHtml}
+  ${!filterText && !filterChar && !cdOnboardingSkipped() ? `
+  <details class="cd-tip">
+    <summary>新手看这里：怎么操作日记？<span class="cd-tip-toggle"></span></summary>
+    <div class="cd-tip-body">
+      <div class="tip-step"><b>看详情</b><span>点角色卡展开，再点任意一条日记可以看完整内容。</span></div>
+      <div class="tip-step"><b>重新生成某条</b><span>展开该条 → 点 <i class="fa-regular fa-arrow-rotate-right cd-ico"></i> 图标，只重写这一条（不会重复）。</span></div>
+      <div class="tip-step"><b>删除某条</b><span>展开该条 → 点 <i class="fa-regular fa-trash-can cd-ico cd-ico-del"></i> 图标。不想看/写错了就删。</span></div>
+      <div class="tip-step"><b>编辑 / 收藏 / 心理补全</b><span>对应展开条里的 <i class="fa-regular fa-pen-to-square cd-ico"></i> / <i class="fa-regular fa-star cd-ico"></i> / <i class="fa-regular fa-brain cd-ico"></i> 按钮。</span></div>
+      <p class="tip-warn"><i class="fa-regular fa-lightbulb"></i> 想看整体剧情进展，切到顶部「剧情」；想看角色关系，切到「关系」。</p>
+    </div>
+  </details>` : ''}
+  ${focusRolesHtml}${overviewHtml}
   <div class="cd-browse-toolbar">
     <div class="cd-browse-search">
       <i class="fa-regular fa-search cd-browse-search-icon"></i>
@@ -4062,6 +4219,8 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
                     <button class="cd-entry-fav-btn ${e2.fav ? 'cd-fav-active' : ''}" title="收藏"><i class="fa-regular fa-star"></i></button>
                     <button class="cd-entry-psyche-btn" title="心理补全"><i class="fa-regular fa-brain"></i></button>
                     <button class="cd-entry-edit-btn" title="编辑这条日记"><i class="fa-regular fa-pen-to-square"></i></button>
+                    <button class="cd-entry-regen-btn" title="重新生成这条日记（替换本条，不追加）"><i class="fa-regular fa-arrow-rotate-right"></i></button>
+                    <button class="cd-entry-del-btn" title="删除这条日记"><i class="fa-regular fa-trash-can"></i></button>
                   </div>
                   <div class="cd-entry-text">${entryHtml2}</div>
                   ${secretHtml2 ? `<div class="cd-entry-secret">${secretHtml2}</div>` : ''}
@@ -4104,6 +4263,40 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
     cdRenderBrowse($('#cd-browse-search-input').val(), $(this).val());
   });
 
+  // 空态引导里的「去设置」
+  $('#cd-content').off('click', '#cdb-btn-open-settings').on('click', '#cdb-btn-open-settings', function () {
+    cdToggleSettings();
+  });
+
+  // ★ 重点角色：添加
+  $('#cd-content').off('click', '#cd-focus-add').on('click', '#cd-focus-add', async function () {
+    const name = String($('#cd-focus-input').val() || '').trim();
+    const note = String($('#cd-focus-note').val() || '').trim();
+    if (!name) { if (typeof toastr !== 'undefined') toastr.warning('请输入角色名'); return; }
+    const d = await cdGetData();
+    if (!Array.isArray(d.focusRoles)) d.focusRoles = [];
+    if (d.focusRoles.some(f => f && f.name === name)) { if (typeof toastr !== 'undefined') toastr.info('该角色已在重点名单中'); return; }
+    d.focusRoles.push({ name: name, note: note });
+    await cdSaveData(d);
+    if (typeof toastr !== 'undefined') toastr.success('已加入重点角色');
+    cdRenderBrowse($('#cd-browse-search-input').val(), $('#cd-browse-char-filter').val());
+  });
+  // ★ 重点角色：回车也可添加
+  $('#cd-content').off('keydown', '#cd-focus-note').on('keydown', '#cd-focus-note', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); $('#cd-focus-add').trigger('click'); }
+  });
+  // ★ 重点角色：移除
+  $('#cd-content').off('click', '.cd-focus-del').on('click', '.cd-focus-del', async function () {
+    const idx = parseInt($(this).data('idx'), 10);
+    if (isNaN(idx)) return;
+    const d = await cdGetData();
+    if (!Array.isArray(d.focusRoles)) return;
+    d.focusRoles.splice(idx, 1);
+    await cdSaveData(d);
+    if (typeof toastr !== 'undefined') toastr.success('已移除重点角色');
+    cdRenderBrowse($('#cd-browse-search-input').val(), $('#cd-browse-char-filter').val());
+  });
+
   // 编辑按钮
   $('#cd-content').on('click', '.cd-entry-edit-btn', async function (e) {
     e.stopPropagation();
@@ -4137,7 +4330,7 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
       if (existing.length) {
         existing.remove();
       } else {
-        entryDiv.append(`<div class="cd-entry-psyche"><div class="cd-entry-psyche-label">🧠 内心独白</div><div class="cd-entry-psyche-text">${escapeHtml(psyche)}</div></div>`);
+        entryDiv.append(`<div class="cd-entry-psyche"><div class="cd-entry-psyche-label"><i class="fa-regular fa-brain"></i> 内心独白</div><div class="cd-entry-psyche-text">${escapeHtml(psyche)}</div></div>`);
       }
       toastr.success('心理独白已生成');
     }
@@ -4158,6 +4351,26 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
     cdSyncGlobalFav(name, entry, entry.fav);
     btn.toggleClass('cd-fav-active', entry.fav);
     await cdSaveData(curData);
+  });
+
+  // 重新生成单条日记（替换本条，不追加、不触碰剧情档案/时间线）
+  $('#cd-content').on('click', '.cd-entry-regen-btn', async function (e) {
+    e.stopPropagation();
+    const entryDiv = $(this).closest('.cd-entry');
+    const name = entryDiv.data('name');
+    const idx = entryDiv.data('idx');
+    if (name === undefined || idx === undefined) return;
+    await cdRegenSingleEntry(name, idx);
+  });
+
+  // 删除单条日记（仅移除本条，不影响楼层与时间线）
+  $('#cd-content').on('click', '.cd-entry-del-btn', async function (e) {
+    e.stopPropagation();
+    const entryDiv = $(this).closest('.cd-entry');
+    const name = entryDiv.data('name');
+    const idx = entryDiv.data('idx');
+    if (name === undefined || idx === undefined) return;
+    await cdDeleteSingleEntry(name, idx);
   });
 
   // ★ 撤销/复原按钮（写在浏览视图事件绑定内，但点击时切到对应视图刷新）
@@ -4393,14 +4606,17 @@ async function cdRenderArchive() {
     locationCounts[loc] = (locationCounts[loc] || 0) + 1;
   }
   const sortedLocs = Object.entries(locationCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  // ★ 地点统计：折叠收起（不再占用主视线，需要时展开）
   const locHtml = sortedLocs.length > 0 ? `
-    <div class="cd-location-bar">
-      <span class="cd-location-label"><i class="fa-regular fa-location-dot"></i> 地点</span>
-      ${sortedLocs.map(([loc, count], idx) => {
-        const barWidth = 30 + (count / sortedLocs[0][1]) * 70;
-        return `<span class="cd-location-tag" style="--bar-width:${barWidth}%"><span class="cd-location-name">${escapeHtml(loc)}</span><span class="cd-location-count">${count}</span></span>`;
-      }).join('')}
-    </div>
+    <details class="cd-location-wrap">
+      <summary class="cd-location-summary"><i class="fa-regular fa-location-dot"></i> 地点统计 <span class="cd-location-count">${sortedLocs.length} 处</span></summary>
+      <div class="cd-location-bar" style="margin-top:6px;">
+        ${sortedLocs.map(([loc, count]) => {
+          const barWidth = 30 + (count / sortedLocs[0][1]) * 70;
+          return `<span class="cd-location-tag" style="--bar-width:${barWidth}%"><span class="cd-location-name">${escapeHtml(loc)}</span><span class="cd-location-count">${count}</span></span>`;
+        }).join('')}
+      </div>
+    </details>
   ` : '';
 
   // 从四个字段中提取所有带【时间标记】的事件
@@ -4459,12 +4675,49 @@ async function cdRenderArchive() {
   
   if (hasAnyItems) {
     // 有时间标记的按时间线样式展示（但按类别分开，不混排）
-    let html = customHtml + undoHtml + chapterHtml + locHtml;
+    let html = customHtml + undoHtml;
+    // ★ 剧情页新手提示（老手跳过后不再显示）
+    if (!cdOnboardingSkipped()) {
+      html += `
+      <details class="cd-tip">
+        <summary>新手看这里：时间线 / 剧情档案怎么看？怎么删掉不要的？<span class="cd-tip-toggle"></span></summary>
+        <div class="cd-tip-body">
+          <p><b>这里是把剧情按「主线 / 支线 / 重要状态 / 未解决」归类的大事记</b>，按时间顺序记录，帮助你快速回顾发生了什么。</p>
+          <div class="tip-step"><b>删除不要的内容</b><span>点上方「<b>批量管理</b>」→ 每条后面出现勾选框 → 勾选 → 「删除选中」。删的是档案文字，不影响聊天记录。</span></div>
+          <div class="tip-step"><b>改追踪项</b><span>页面的「自定义追踪项」可自定义要持续跟踪的字段（如主角状态、好感度）。</span></div>
+          <p class="tip-warn"><i class="fa-regular fa-triangle-exclamation"></i> 人物关系默认关闭；想生成关系图，去「设置 → 生成内容」打开「人物关系」。</p>
+        </div>
+      </details>`;
+    }
+    // ★ 章回标题 + 地点统计（放在提示卡之后，标题醒目）
+    html += ' ' + chapterHtml + locHtml;
+    // ★ 时间线批量管理栏：进入多选模式后可勾选多条并一键删除
+    html += `
+      <div class="cd-tl-manage-bar">
+        <button class="cd-btn-secondary cd-tl-manage-btn" id="cd-tl-manage-btn"><i class="fa-regular fa-check-double"></i> 批量管理</button>
+        <span class="cd-tl-manage-hint">勾选要删除的时间线条目</span>
+        <div class="cd-tl-manage-ops" style="display:none;">
+          <span class="cd-tl-sel-count">已选 <b id="cd-tl-sel-num">0</b> 条</span>
+          <button class="cd-btn-secondary" id="cd-tl-select-all">全选</button>
+          <button class="cd-btn-primary" id="cd-tl-del-selected">删除选中</button>
+          <button class="cd-btn-secondary" id="cd-tl-cancel">取消</button>
+        </div>
+      </div>`;
+    
+    // ★ 剧情分组 tab：主线 / 支线 / 状态 / 未解决 点击切换，避免一屏长滚动
+    const _tabs = [{ label: '全部', color: '#8b7355' }].concat(
+      categoryConfig.filter(function (c) { return c.items.length > 0; }).map(function (c) { return { label: c.label, color: c.color }; })
+    );
+    html += `<div class="cd-tl-tabs">
+      ${_tabs.map(function (t, ti) {
+        return `<button type="button" class="cd-tl-tab${ti === 0 ? ' cd-tl-tab-active' : ''}" data-tab="${escapeAttr(t.label)}" ${t.color ? 'style="--tl-tab-color:' + t.color + ';"' : ''}><i class="fa-regular ${t.label === '全部' ? 'fa-layer-group' : ''}"></i>${t.label}</button>`;
+      }).join('')}
+    </div>`;
     
     for (const cat of categoryConfig) {
       if (!cat.items.length) continue;
       
-      html += `<div style="margin-bottom:12px;">
+      html += `<div class="cd-tl-group" data-group="${escapeAttr(cat.label)}" style="margin-bottom:12px;">
         <h4 style="font-size: calc(0.75rem * var(--cd-fs, 1));font-weight:600;color:${cat.color};margin:0 0 6px;display:flex;align-items:center;gap:4px;">
           <i class="fa-regular ${cat.icon}"></i> ${cat.label}
         </h4>
@@ -4474,12 +4727,19 @@ async function cdRenderArchive() {
       for (const item of cat.items) {
         const showTime = item.time !== lastTime;
         lastTime = item.time;
+        // ★ 时间线条目：仅保留勾选框（配合顶部「批量管理」进行多选删除）
+        //   单条删除已移除，避免每个条目右侧的删除按钮造成误解/不美观
+        const tlActions = `
+          <div class="cd-tl-actions">
+            <label class="cd-tl-cb-wrap" title="批量管理模式勾选"><input type="checkbox" class="cd-tl-cb" data-cat="${escapeAttr(item.category)}" data-time="${escapeAttr(item.time)}" data-content="${escapeAttr(item.content)}"></label>
+          </div>`;
         html += `
           <div class="cd-tl-item">
             ${showTime ? `<div class="cd-tl-date">${escapeHtml(item.time)}</div>` : ''}
             <div class="cd-tl-dot" style="background:${cat.color};border-color:${cat.color}22;"></div>
             <div class="cd-tl-card">
               <div class="cd-tl-text">${escapeHtml(item.content)}</div>
+              ${tlActions}
             </div>
           </div>`;
       }
@@ -4562,29 +4822,23 @@ async function cdRenderArchive() {
       </div>
     </div>
 
-    <div class="cd-write-divider" style="margin:12px 0;"></div>
-
-    <!-- 剧情卡牌 -->
-    <div class="cd-egg-section">
-      <h3 class="cd-write-title" style="margin-bottom:4px;"><i class="fa-regular fa-layer-group"></i> 剧情卡牌 (${cards.length})</h3>
-      ${cards.length ? `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
-        ${cards.slice().reverse().slice(0, 30).map(c => `
-          <div class="cd-card-item" style="border:1px solid rgba(180,150,120,0.1);border-radius:6px;background:rgba(248,243,237,0.3);cursor:pointer;overflow:hidden;">
-            <div class="cd-card-head" style="padding:5px 6px;font-size: calc(0.58rem * var(--cd-fs, 1));text-align:center;">
-              <div style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;margin-bottom:2px;"><i class="${c.icon}"></i></div>
-              <div style="font-weight:500;color:#4a3a2a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(c.title)}</div>
-              <div style="color:#8b7355;opacity:0.6;font-size: calc(0.5rem * var(--cd-fs, 1));overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(c.time)}</div>
-            </div>
-            <div class="cd-card-body" style="display:none;padding:4px 6px;font-size: calc(0.56rem * var(--cd-fs, 1));color:#6b5a48;line-height:1.4;border-top:1px solid rgba(180,150,120,0.05);word-break:break-word;text-align:left;">${escapeHtml(c.desc || c.title)}</div>
-          </div>
-        `).join('')}
-        ${cards.length > 30 ? `<span style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;padding:4px 0;">...还有 ${cards.length-30} 张，可在管理页查看</span>` : ''}
-      </div>` : '<p style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;padding:4px 0;">写日记时自动从剧情档案中提取</p>'}
-    </div>
   `;
 
   // 追加到底部
   $('#cd-content').append(bottomHtml);
+
+  // ★ 剧情分组 tab 切换：点击「主线/支线/…」只显示对应分组
+  $('#cd-content').off('click', '.cd-tl-tab').on('click', '.cd-tl-tab', function () {
+    const tab = $(this).data('tab');
+    $('#cd-content .cd-tl-tab').removeClass('cd-tl-tab-active');
+    $(this).addClass('cd-tl-tab-active');
+    if (tab === '全部') {
+      $('#cd-content .cd-tl-group').css('display', '');
+    } else {
+      $('#cd-content .cd-tl-group').css('display', 'none');
+      $('#cd-content .cd-tl-group[data-group="' + CSS.escape(tab) + '"]').css('display', '');
+    }
+  });
 
   // 剧情卡牌点击展开/收起
   $('#cd-content').off('click', '.cd-card-item').on('click', '.cd-card-item', function () {
@@ -4641,6 +4895,115 @@ async function cdRenderArchive() {
     $('#cd-do-replay-tl').show();
     $('#cd-do-replay-tl-stop').hide();
   });
+
+  // ── 可复用的时间线条目移除逻辑（批量管理共用）──
+  // 接收 data 对象、分类 label、时间、内容，就地修改 data.archive；返回是否改动
+  const removeOneTl = (d2, catL, tm, ctn) => {
+    if (!d2.archive) d2.archive = Object.assign({}, emptyData().archive);
+    const _rm = (fieldText) => {
+      if (!fieldText) return fieldText;
+      const segKey = tm ? `【${tm}】${ctn}` : ctn;
+      const lines = String(fieldText).split('\n');
+      const kept = [];
+      let i = 0;
+      while (i < lines.length) {
+        const t = lines[i].trim();
+        if (t === segKey || (tm && new RegExp('^【' + tm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '】' + '\\s*' + ctn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$').test(lines[i]))) {
+          i++;
+          while (i < lines.length) {
+            const cont = lines[i].trim();
+            if (!cont) { i++; continue; }
+            if (/^【[^】]+】/.test(cont) || cont.length <= 5) break;
+            i++;
+          }
+          continue;
+        }
+        kept.push(lines[i]);
+        i++;
+      }
+      return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    };
+    let changed = false;
+    switch (catL) {
+      case '主线': { const nv = _rm(d2.archive.mainline); changed = nv !== d2.archive.mainline; d2.archive.mainline = nv; break; }
+      case '支线': { const nv = _rm(d2.archive.sideline); changed = nv !== d2.archive.sideline; d2.archive.sideline = nv; break; }
+      case '状态': { const nv = _rm(d2.archive.states); changed = nv !== d2.archive.states; d2.archive.states = nv; break; }
+      case '未解决': { const nv = _rm(d2.archive.unresolved); changed = nv !== d2.archive.unresolved; d2.archive.unresolved = nv; break; }
+      default: {
+        const cf = Array.isArray(s.customFields) ? s.customFields.filter(f => f && f.label === catL) : [];
+        const key = cf[0] && cf[0].key;
+        if (key && d2.archive.custom && Array.isArray(d2.archive.custom[key])) {
+          const before = d2.archive.custom[key].length;
+          d2.archive.custom[key] = d2.archive.custom[key].filter(it => !(it.time === tm && it.desc === ctn));
+          changed = d2.archive.custom[key].length !== before;
+        }
+        break;
+      }
+    }
+    return changed;
+  };
+
+  // ★ 批量管理：进入/退出多选模式
+  $('#cd-content').off('click', '#cd-tl-manage-btn').on('click', '#cd-tl-manage-btn', function () {
+    const content = $('#cd-content');
+    const managing = content.hasClass('cd-tl-managing');
+    content.toggleClass('cd-tl-managing', !managing);
+    $('#cd-content .cd-tl-manage-ops').toggle(!managing);
+    $('#cd-content .cd-tl-manage-hint').toggle(managing);
+    $(this).toggleClass('cd-tl-manage-active', !managing);
+    if (managing) { $('#cd-content .cd-tl-cb').prop('checked', false); $('#cd-tl-sel-num').text('0'); }
+  });
+  // 取消
+  $('#cd-content').off('click', '#cd-tl-cancel').on('click', '#cd-tl-cancel', function () {
+    $('#cd-content').removeClass('cd-tl-managing');
+    $('#cd-content .cd-tl-manage-ops').hide();
+    $('#cd-content .cd-tl-manage-hint').show();
+    $('#cd-tl-manage-btn').removeClass('cd-tl-manage-active');
+    $('#cd-content .cd-tl-cb').prop('checked', false);
+    $('#cd-tl-sel-num').text('0');
+  });
+  // 勾选变化更新计数
+  $('#cd-content').off('change', '.cd-tl-cb').on('change', '.cd-tl-cb', function () {
+    const n = $('#cd-content .cd-tl-cb:checked').length;
+    $('#cd-tl-sel-num').text(String(n));
+  });
+  // 全选/全不选
+  $('#cd-content').off('click', '#cd-tl-select-all').on('click', '#cd-tl-select-all', function () {
+    const allChk = $('#cd-content .cd-tl-cb');
+    const allOn = allChk.length === allChk.filter(':checked').length;
+    allChk.prop('checked', !allOn);
+    $('#cd-tl-sel-num').text(String(allChk.filter(':checked').length));
+    const btn = $(this);
+    btn.text(allOn ? '全选' : '全不选');
+  });
+  // 批量删除选中
+  $('#cd-content').off('click', '#cd-tl-del-selected').on('click', '#cd-tl-del-selected', async function () {
+    const sel = $('#cd-content .cd-tl-cb:checked');
+    if (!sel.length) { if (typeof toastr !== 'undefined') toastr.warning('请先勾选要删除的时间线条目'); return; }
+    if (typeof confirm === 'function' && !confirm(`确定删除选中的 ${sel.length} 条时间线内容？将从剧情档案中移除。`)) return;
+    try {
+      const d = await cdGetData();
+      let removed = 0;
+      sel.each(function () {
+        const $b = $(this);
+        const catL = $b.data('cat');
+        const tm = $b.data('time');
+        const ctn = $b.data('content');
+        if (catL && removeOneTl(d, catL, tm, ctn)) removed++;
+      });
+      if (removed) {
+        await cdSaveData(d);
+        if (typeof toastr !== 'undefined') toastr.success(`已批量删除 ${removed} 条时间线内容`);
+      } else {
+        if (typeof toastr !== 'undefined') toastr.info('所选条目均未发生变更');
+      }
+      await cdRenderArchive();
+    } catch (er) {
+      cdWarn('批量删除时间线内容失败', er);
+      if (typeof toastr !== 'undefined') toastr.error('批量删除失败: ' + (er && er.message));
+    }
+  });
+
 }
 
 /** 楼层管理器：浏览所有AI楼层，勾选要补写的 */
@@ -4709,6 +5072,16 @@ async function cdRenderFloors() {
     
     $('#cd-content').html(`
       <div class="cd-floor-panel">
+        <details class="cd-tip">
+          <summary>新手看这里：楼层补写是什么？怎么用？<span class="cd-tip-toggle"></span></summary>
+          <div class="cd-tip-body">
+            <p><b>这个页面是干嘛的？</b> 平时插件会自动为剧情写日记。这里用来<b>手动补写 / 修正</b>——当你觉得某段剧情的日记没写好，或想为新加进去的楼层补写时用。</p>
+            <div class="tip-step"><b>①</b><span>每个 AI 楼层左边有勾选框（灰色的＝已记录，可勾选强制重写）。</span></div>
+            <div class="tip-step"><b>②</b><span>勾选要补写的楼层。</span></div>
+            <div class="tip-step"><b>③</b><span>点蓝色「写勾选的楼层」按钮，就会为这几楼重新生成日记 / 关系 / 剧情档案。</span></div>
+            <p class="tip-warn"><i class="fa-regular fa-triangle-exclamation"></i> 补写会<b>追加</b>新内容。如果只是想重写某条日记，建议回「日记」页对该条点「重新生成」，不会产生重复。</p>
+          </div>
+        </details>
         <div class="cd-floor-header">
           <h3 class="cd-write-title"><i class="fa-regular fa-layer-group"></i> 楼层管理</h3>
           <p class="cd-write-desc">共 ${totalCount} 个AI楼层，${unrecordedCount} 条未记录（最近记录楼层: #${lastRecordedFloor >= 0 ? lastRecordedFloor : '无'})</p>
@@ -5177,6 +5550,95 @@ async function cdExpandPsyche(name, entry, data) {
   return null;
 }
 
+/* ============================== 🎯 单条日记：重新生成 / 删除 ============================== */
+/**
+ * ★ 重新生成单条日记。
+ * 只对这条日记所在的单个楼层重新调 AI，生成后【替换】原条目（不追加、不重复），
+ * 且【不触碰】剧情档案 / 关系 / 时间线，避免"补齐后时间线多生成一遍"。
+ * @returns {Promise<boolean>} 是否成功
+ */
+async function cdRegenSingleEntry(name, idx) {
+  const _cur = await cdGetData();
+  const entry0 = _cur.diaries?.[name]?.[idx];
+  if (!entry0) { if (typeof toastr !== 'undefined') toastr.warning('未找到该日记'); return false; }
+  const floor = entry0.message_id;
+  if (floor == null) { if (typeof toastr !== 'undefined') toastr.warning('该日记缺少楼层信息，无法单独重新生成'); return false; }
+  const chat = _cdGetChat();
+  const m = chat[floor];
+  if (!m) { if (typeof toastr !== 'undefined') toastr.warning('原楼层已不存在，无法重新生成'); return false; }
+  const winFloor = { message_id: floor, name: m.name || name, mes: m.mes || '' };
+  const s = cdGetSettings();
+  if (cdBusy) { cdBusyToast(); return false; }
+
+  cdBusy = true; cdBusyLabel = '重新生成日记'; cdBusyAt = Date.now();
+  try {
+    if (typeof toastr !== 'undefined') toastr.info(`正在重新生成 ${name} 的日记...`);
+    cdAddLog('api_req', `[重新生成日记] ${name} 楼层#${floor}`);
+    const msgs = await cdBuildDiaryPrompt([winFloor], _cur, s);
+    const res = await cdWithTimeout(cdApiComplete(msgs, s), 120000, '重新生成日记');
+    if (!res || !res.text) throw new Error('AI 返回为空');
+    const npcs = parseDiaryJson(res.text);
+    // 查找目标角色（含别名归并）
+    const target = npcs.find(n => {
+      const nm = String((n && n.name) || '').trim();
+      if (!nm) return false;
+      if (nm === name) return true;
+      const al = _cur.aliases?.[name] || [];
+      return al.includes(nm);
+    });
+    if (!target) throw new Error('AI 未返回该角色的日记');
+    // 重新读取最新数据，避免并发读到了旧引用
+    const data = await cdGetData();
+    if (!data.diaries?.[name]?.[idx]) { if (typeof toastr !== 'undefined') toastr.warning('数据已变化，已中止'); return false; }
+    const prev = data.diaries[name][idx];
+    // 替换原条目（保留 fav / psyche 等附加字段）
+    data.diaries[name][idx] = {
+      turn: target.turn ?? prev.turn ?? floor,
+      date: target.date || prev.date || '',
+      entry: target.entry || prev.entry || '',
+      mood: target.mood || prev.mood || '',
+      attitude_to_user: target.attitude_to_user || prev.attitude_to_user || '',
+      secret: target.secret || prev.secret || '',
+      key_events: Array.isArray(target.key_events) ? target.key_events : (prev.key_events || []),
+      relationship_with_others: target.relationship_with_others || prev.relationship_with_others || {},
+      message_id: floor,
+      fav: !!prev.fav,
+      psyche: prev.psyche || undefined,
+    };
+    await cdSaveData(data);
+    if (typeof cdPushBackup === 'function') { cdPushBackup(data, '重新生成'); _cdLastDiaryTotal = cdDiaryTotal(data); }
+    await cdRefreshInjection();
+    if (typeof toastr !== 'undefined') toastr.success('日记已重新生成');
+    cdRefreshPanelContent();
+    return true;
+  } catch (e) {
+    cdWarn('重新生成日记失败', e);
+    cdAddLog('warn', '重新生成日记失败: ' + e.message);
+    if (typeof toastr !== 'undefined') toastr.error('重新生成失败: ' + (e && e.message));
+    return false;
+  } finally {
+    cdBusy = false; cdBusyLabel = '';
+  }
+}
+
+/**
+ * ★ 删除单条日记（仅移除本条，不影响楼层 / 剧情档案 / 时间线）。
+ */
+async function cdDeleteSingleEntry(name, idx) {
+  if (typeof confirm === 'function' && !confirm('删除这条日记？此操作仅移除本条日记，不影响楼层与时间线。')) return false;
+  const data = await cdGetData();
+  const list = data.diaries?.[name];
+  if (!Array.isArray(list) || list[idx] === undefined) { if (typeof toastr !== 'undefined') toastr.warning('未找到该日记'); return false; }
+  list.splice(idx, 1);
+  if (list.length === 0) { delete data.diaries[name]; delete data.promoted?.[name]; }
+  await cdSaveData(data);
+  if (typeof cdPushBackup === 'function') { cdPushBackup(data, '删除日记'); _cdLastDiaryTotal = cdDiaryTotal(data); }
+  await cdRefreshInjection();
+  if (typeof toastr !== 'undefined') toastr.success('日记已删除');
+  cdRefreshPanelContent();
+  return true;
+}
+
 /* ============================== 🔍 跨聊天继承 ============================== */
 function cdRenderInherit() {
   // 检查 localStorage 是否有其他聊天的备份
@@ -5349,6 +5811,15 @@ function cdRenderHeatmap(data) {
 function cdRenderExport() {
   $('#cd-content').html(`
     <div class="cd-export-panel">
+      <details class="cd-tip">
+        <summary>新手看这里：导出 / 迁移是干嘛的？<span class="cd-tip-toggle"></span></summary>
+        <div class="cd-tip-body">
+          <p><b>一句话：</b>把记忆<b>备份出来</b>，或<b>搬到新设备 / 新聊天</b>用。平时不用管，需要换设备或清空时再来。</p>
+          <div class="tip-step"><b>导出 JSON / Markdown</b><span>＝把这局聊天的日记、关系、档案存成文件，方便查看或备份。</span></div>
+          <div class="tip-step"><b>全量迁移</b><span>＝连<b>聊天记录＋日记记忆</b>一起打包带走。换设备/换号时用「导出全量迁移包」，到新设备选同一角色卡点「导入全量迁移包」。</span></div>
+          <p class="tip-warn"><i class="fa-regular fa-triangle-exclamation"></i> 跨聊天继承：想在<b>两个聊天之间</b>共享记忆，先在旧聊天导出，再到新聊天导入（按角色合并），不会覆盖新聊天已有内容。</p>
+        </div>
+      </details>
       <h3 class="cd-write-title"><i class="fa-regular fa-download"></i> 导出数据</h3>
       <p class="cd-write-desc">将本局聊天中的日记、关系、剧情档案导出为 JSON 或 Markdown</p>
       <button class="cd-btn-primary" id="cd-do-export-json" style="margin-bottom:6px;">导出 JSON</button>
@@ -5679,8 +6150,35 @@ function cdRenderExport() {
 async function cdRenderSettings() {
   const s = cdGetSettings();
   const panel = $('#cd-settings-panel');
+  // API 是否已配置（用于引导提示）
+  const _hasApi = !!((s.endpoints && (s.endpoints.openai?.url || s.endpoints.claude?.url || s.endpoints.gemini?.url)) || !s.source || s.source === 'tavern');
   panel.html(`
-    <h2 class="cd-settings-h2"><i class="fa-regular fa-gear"></i> 偏好</h2>
+    <!-- ★ 快速开始引导条：让新手第一时间知道要做什么 -->
+    <div class="cd-setup-banner">
+      <div class="cd-setup-banner-title"><i class="fa-regular fa-wand-magic-sparkles"></i> 快速开始</div>
+      <div class="cd-setup-banner-body">
+        <div class="cd-setup-step ${s.enabled === false ? '' : 'cd-setup-done'}">
+          <span class="cd-setup-dot">①</span>
+          <span>打开主开关「${s.enabled === false ? '（待开启）' : '已启用 ✓'}」</span>
+        </div>
+        <div class="cd-setup-step ${_hasApi ? 'cd-setup-done' : ''}">
+          <span class="cd-setup-dot">②</span>
+          <span>选择 API 来源（下方「API 来源」）</span>
+        </div>
+        <div class="cd-setup-step">
+          <span class="cd-setup-dot">③</span>
+          <span>回到酒馆正常聊天，AI 回复后自动生成</span>
+        </div>
+        <div class="cd-setup-features">
+          <div class="cd-setup-feature cd-on"><i class="fa-regular fa-check"></i> 日记 / 剧情档案：默认开启</div>
+          <div class="cd-setup-feature cd-off"><i class="fa-regular fa-minus"></i> 人物关系 / 情报表：默认关闭，可在下方开启</div>
+          <div class="cd-setup-feature cd-on"><i class="fa-regular fa-check"></i> 自动压缩：可开启（档案过长时自动整合）</div>
+        </div>
+      </div>
+      ${!s.enabled ? '<div class="cd-setup-warn"><i class="fa-regular fa-triangle-exclamation"></i> 主开关当前为关闭，插件不会自动工作。请打开主开关。</div>' : ''}
+    </div>
+
+    <h2 class="cd-settings-h2" style="margin-top:12px;"><i class="fa-regular fa-gear"></i> 偏好</h2>
 
     <h3 class="cd-settings-sub">外观</h3>
     <div class="cd-set-row">
@@ -5696,6 +6194,11 @@ async function cdRenderSettings() {
         <input type="checkbox" id="cd-s-enabled" ${s.enabled ? 'checked' : ''}>
         <span class="cd-slider"></span>
       </label>
+    </div>
+
+    <div class="cd-set-row">
+      <label><i class="fa-regular fa-rotate-left"></i> 新手引导（已"跳过"后想再看时可重新开启）</label>
+      <button class="cd-btn-secondary" id="cd-btn-reset-onboarding" style="font-size: calc(0.6rem * var(--cd-fs, 1));padding:3px 10px;min-width:auto;">重新显示新手引导</button>
     </div>
 
     <div class="cd-set-row">
@@ -5807,6 +6310,9 @@ async function cdRenderSettings() {
       </label>
     </div>
 
+    <details class="cd-settings-collapse cd-settings-advanced">
+      <summary class="cd-settings-collapse-summary advanced-summary">更多高级设置（内容过滤 / 自动隐藏 / 自动压缩）</summary>
+      <div class="cd-settings-collapse-body">
     <h3 class="cd-settings-sub">内容过滤（标签内的内容不发送给AI总结）</h3>
 
     <div id="cd-filter-tags-container">
@@ -5862,6 +6368,8 @@ async function cdRenderSettings() {
       <input type="number" id="cd-s-autocompress-threshold" value="${s.autoCompressThreshold || 30}" min="5" max="200" class="cd-input">
       <span class="cd-hint">累计 ${s.autoCompressThreshold || 30} 条【时间标记】事件时触发压缩</span>
     </div>
+      </div>
+    </details>
 
     <h3 class="cd-settings-sub">API 来源</h3>
 
@@ -5918,6 +6426,12 @@ async function cdRenderSettings() {
       $('#cd-s-key').val(ep.key || '');
       $('#cd-s-model').val(ep.model || '');
     }
+  });
+
+  // ★ 重新显示新手引导
+  $('#cd-btn-reset-onboarding').on('click', function () {
+    cdSetOnboardingSkipped(false);
+    if (typeof toastr !== 'undefined') toastr.success('已重新开启新手引导');
   });
 
   $('#cd-btn-fetch-models').on('click', async function () {
@@ -6083,12 +6597,12 @@ async function cdRenderEgg() {
       { icon: 'fa-regular fa-download', title: '导出功能', text: '支持导出 JSON（完整数据结构，可重新导入）和 Markdown（可读格式，含角色日记/关系/剧情档案）。导入 JSON 时按 message_id 去重合并。' },
       { icon: 'fa-regular fa-clipboard-list', title: '日志功能', text: '记录所有 API 请求、响应、报错信息，保存在 localStorage 中，刷新页面不丢失。方便排查配置问题和调试。' },
       { icon: 'fa-regular fa-gear', title: '设置说明', text: '总开关控制是否自动写日记。自动总结独立开关。触发间隔默认5楼。路人转正阈值默认3次。来源可选手动配置或跟随酒馆连接。' },
-      { icon: 'fa-regular fa-brain', title: '心理补全', text: '在浏览视图中点击日记旁的 🧠 按钮，AI 会基于该日记内容生成一段200-500字的角色内心独白，保存在日记详情中。' },
+      { icon: 'fa-regular fa-brain', title: '心理补全', text: '在浏览视图中点击日记旁的「心理补全」按钮，AI 会基于该日记内容生成一段200-500字的角色内心独白，保存在日记详情中。' },
       { icon: 'fa-regular fa-star', title: '名场面收藏', text: '在浏览视图中点击日记旁的 ☆ 按钮即可收藏。收藏的条目会出现在彩蛋页面的"名场面收藏"列表中，方便回顾精彩瞬间。' },
       { icon: 'fa-regular fa-compress', title: '压缩融合', text: '在楼层视图中可对剧情档案进行压缩融合。AI 会将多次累计的剧情总结融合成一版更紧凑的版本，保留所有关键信息。' },
       { icon: 'fa-regular fa-link', title: '跨聊天继承', text: '在旧聊天中导出 JSON，切换到新聊天后导入。数据按角色和 message_id 合并，不会重复添加已有条目。' },
-      { icon: 'fa-regular fa-pen-to-square', title: '日记编辑', text: '在浏览视图中点击 ✏️ 按钮可编辑单条日记的全部字段：日期、心情、态度、正文、心声、关键事件。编辑后自动刷新注入。' },
-      { icon: 'fa-regular fa-trash-can', title: '日记删除', text: '单条日记的 🗑️ 删除按钮已在浏览视图移除。如需删除日记，可前往「管理」视图多选删除，或移除整个角色的全部日记。' },
+      { icon: 'fa-regular fa-pen-to-square', title: '日记编辑', text: '在浏览视图中点击「编辑」按钮可编辑单条日记的全部字段：日期、心情、态度、正文、心声、关键事件。编辑后自动刷新注入。' },
+      { icon: 'fa-regular fa-trash-can', title: '日记删除', text: '单条日记的「删除」按钮位于展开条右下角。如需删除日记，可前往「管理」视图多选删除，或移除整个角色的全部日记。' },
       { icon: 'fa-regular fa-magnifying-glass', title: '搜索技巧', text: '搜索框支持按日记正文、心声、心情、态度、关键事件、日期全文检索。支持中文/英文关键词。搜索时会自动隐藏顶部概览区域。' },
       { icon: 'fa-regular fa-rotate', title: '自动触发机制', text: '每次 AI 回复到达时检查从上次触发到现在新增了多少楼层。达到间隔（默认5）时自动触发写日记。使用独立的计数器与手动触发互不干扰。' },
       { icon: 'fa-regular fa-floppy-disk', title: '数据存储', text: '日记数据存储在 SillyTavern 的 chatMetadata 中，跟随聊天保存。日志存储在浏览器 localStorage。导出为 JSON 可永久备份。' },
@@ -6347,6 +6861,24 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
+    version: 'v2.4.0',
+    date: '2026-08-08',
+    items: [
+      'UI 全面重构：工具栏收敛为「日记/剧情/关系/表」主 tab，其余收纳到「更多」菜单',
+      '新手引导系统：空态引导页 + 各页「新手看这里」提示卡，支持「我是老手跳过」，可在设置里重新开启',
+      '新增「重点角色」：手动指定角色，写日记/总结时引导 AI 围绕其详写，防止脱离人设',
+      '浏览页数据概览标题行显示统计（角色/日记/档案/关系）',
+      '剧情页分组 tab（主线/支线/状态/未解决 点击切换）+ 地点统计折叠收起',
+      '整体视觉高级化：渐变、精致圆角、无彩色线条图标（移除彩色 emoji）、顶部加载进度条',
+      '修复：切换聊天不再自动重写、日记不随楼层删除丢失、数据保护自动回滚改手动',
+      '修复：管理页上千卡牌导致卡死（分批渲染）、夜间模式标题/工具栏不变色',
+      '新增：单条日记【重新生成】【删除】、时间线批量管理多选删除',
+      '精简：移除历史快照功能；剧情卡牌停止生成与展示（保留旧数据）',
+      '新增：浏览页搜索框可隐藏（保留逻辑便于恢复）',
+      '新增：空态引导可直接「去设置」呼出设置面板',
+    ],
+  },
+  {
     version: 'v2.3.1',
     date: '2026-08-03',
     items: [
@@ -6597,7 +7129,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.3.1 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.4.0 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
@@ -6672,7 +7204,7 @@ function cdRenderHelp() {
         2. 下次写日记前→用当前楼层文本检索最相似的事件<br>
         3. 只把检索到的 Top-N 条拼进 prompt，节省 token<br><br>
         <b>配置方式：</b><br>
-        在工具栏「🧠 向量」页面中：<br>
+        在工具栏「向量」页面中：<br>
         • 选择「向量化检索」模式<br>
         • 配置嵌入 API（独立于主 API，支持 OpenAI 兼容/Gemini/酒馆内置）<br>
         • 调整召回条数和相似度阈值，点击「测试连接」验证<br>
@@ -6681,7 +7213,7 @@ function cdRenderHelp() {
 剧情档案与角色日记均可独立开启向量化（共用同一个嵌入 API）。<br>
 • 写日记成功后，新日记条目会自动向量化入库<br>
 • 下次写日记前，用当前楼层文本检索与剧情最相关的历史日记，仅注入 Top-N 条<br>
-在「🧠 向量」页面可分别切换剧情档案与角色日记的模式，并单独管理两个向量库（含清空/重建/测试检索）。
+在「向量」页面可分别切换剧情档案与角色日记的模式，并单独管理两个向量库（含清空/重建/测试检索）。
       </p>
 
       <h4 class="cd-write-title" style="font-size: calc(0.8rem * var(--cd-fs, 1));"><i class="fa-regular fa-eye-slash"></i> 自动隐藏楼层</h4>
@@ -6695,7 +7227,7 @@ function cdRenderHelp() {
 
       <h4 class="cd-write-title" style="font-size: calc(0.8rem * var(--cd-fs, 1));"><i class="fa-regular fa-lightbulb"></i> 小技巧</h4>
       <ul style="margin:0;padding-left:14px;font-size: calc(0.66rem * var(--cd-fs, 1));color:#6b5a48;line-height:1.7;">
-        <li>浏览视图中点击 ✏️ 可编辑单条日记，点击 🧠 可生成角色内心独白</li>
+        <li>浏览视图中点击「编辑」可编辑单条日记，点击「心理补全」可生成角色内心独白</li>
         <li>点击 ☆ 收藏精彩日记，在娱乐页面集中回顾</li>
         <li>切换聊天后可通过导出 JSON → 导入 JSON 迁移数据</li>
         <li>剧情档案太长时，在楼层视图点「压缩融合剧情档案」一键精简</li>
@@ -6738,6 +7270,11 @@ async function cdRenderManage() {
   // 收集剧情卡牌
   const cards = data.cards || [];
   const snaps = Array.isArray(data.liveTableSnapshots) ? data.liveTableSnapshots : [];
+  // ★ 卡牌分批渲染，避免上千张一次性生成 DOM 导致「管理」按钮卡死（尤其手机端）
+  const CARD_PAGE = 50;
+  const _cardShow = (typeof window !== 'undefined' && window._cdManageShowCards) || CARD_PAGE;
+  const _cardVisible = Math.max(CARD_PAGE, _cardShow || CARD_PAGE);
+  const _cardSlice = cards.slice(0, _cardVisible);
 
   const archive = data.archive || {};
   const hasArchive = !!(archive.mainline || archive.sideline || archive.states || archive.unresolved || (Array.isArray(archive.items) && archive.items.length) || (archive.custom && Object.values(archive.custom).some(a => Array.isArray(a) && a.length)));
@@ -6753,6 +7290,16 @@ async function cdRenderManage() {
   // 渲染分类卡片
   let html = `
     <div class="cd-egg" style="padding:2px 0;">
+      <details class="cd-tip">
+        <summary>新手看这里：在哪删除各种数据？<span class="cd-tip-toggle"></span></summary>
+        <div class="cd-tip-body">
+          <p><b>本页是「总清除站」</b>，可以批量删除已生成的日记、关系、快照、剧情卡牌。删除前请想清楚，删了不可恢复。</p>
+          <div class="tip-step"><b>删单条日记</b><span>更推荐：回「日记」页展开那条，点右下角 <i class="fa-regular fa-trash-can cd-ico cd-ico-del"></i>，比这里精准。</span></div>
+          <div class="tip-step"><b>删时间线/档案内容</b><span>回「剧情」页 → 点「批量管理」→ 勾选一条或多条 → 「删除选中」。</span></div>
+          <div class="tip-step"><b>本页批量删</b><span>勾选下方各分类条目 → 点底部红色「删除选中」。</span></div>
+          <p class="tip-warn"><i class="fa-regular fa-triangle-exclamation"></i>「清空所有数据」会把<b>全部</b>日记、关系、档案、卡牌一次性删光，非常危险，非必要不要点。</p>
+        </div>
+      </details>
 
       <h3 class="cd-write-title" style="font-size: calc(0.85rem * var(--cd-fs, 1));"><i class="fa-regular fa-database"></i> 数据管理</h3>
       <p style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;opacity:0.6;margin:0 0 10px;">勾选要删除的条目，点击底部的「删除选中」按钮。删除后不可恢复。</p>
@@ -6796,30 +7343,6 @@ async function cdRenderManage() {
             </label>
           `).join('')}
         </div>` : '<p style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;opacity:0.4;padding:4px 0;">暂无关系</p>'}
-      </div>
-
-      <div class="cd-write-divider"></div>
-
-      <!-- 📸 历史快照 -->
-      <div class="cd-egg-section">
-        <div class="cd-set-row" style="margin-bottom:4px;">
-          <label><i class="fa-regular fa-camera" style="color:#4a3a2a;"></i> 历史快照 <span style="font-size: calc(0.6rem * var(--cd-fs, 1));opacity:0.5;">(${(data.snapshots||[]).length} 条)</span></label>
-          ${(data.snapshots||[]).length ? `<label style="font-size: calc(0.6rem * var(--cd-fs, 1));"><input type="checkbox" class="cd-mgr-checkall" data-target="snap"> 全选</label>` : ''}
-        </div>
-        ${(data.snapshots||[]).length ? `<div class="cd-mgr-list" data-group="snap" style="max-height:250px;overflow-y:auto;border:1px solid rgba(180,150,120,0.08);border-radius:6px;padding:2px;">
-          ${data.snapshots.slice().reverse().map((s, rawIdx) => {
-            const idx = data.snapshots.length - 1 - rawIdx;
-            return `<label style="display:flex;align-items:center;gap:4px;padding:3px 6px;font-size: calc(0.62rem * var(--cd-fs, 1));border-bottom:1px solid rgba(180,150,120,0.04);cursor:pointer;">
-              <input type="checkbox" class="cd-mgr-cb" data-key="${idx}" data-group="snap">
-              <span style="color:#8b7355;opacity:0.5;flex-shrink:0;font-size: calc(0.55rem * var(--cd-fs, 1));">${s.type === 'auto' ? '自动' : '手动'}</span>
-              <span style="color:#6b5a48;flex-shrink:0;">${escapeHtml(s.time)}</span>
-              <span style="color:#4a3a2a;">${s.diaryCount}角色</span>
-              <span style="color:#8b7355;opacity:0.7;">${s.relationCount}关系</span>
-              ${s.archiveUpdated ? `<span style="color:#22c55e;font-size: calc(0.55rem * var(--cd-fs, 1));">档案✓</span>` : ''}
-              ${s.chapterTitle ? `<span style="color:#4a3a2a;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${escapeHtml(s.chapterTitle)}</span>` : ''}
-            </label>`;
-          }).join('')}
-        </div>` : '<p style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;opacity:0.4;padding:4px 0;">暂无快照。每次写日记后自动生成。</p>'}
       </div>
 
       <div class="cd-write-divider"></div>
@@ -6879,7 +7402,7 @@ async function cdRenderManage() {
           ${cards.length ? `<label style="font-size: calc(0.6rem * var(--cd-fs, 1));"><input type="checkbox" class="cd-mgr-checkall" data-target="card"> 全选</label>` : ''}
         </div>
         ${cards.length ? `<div class="cd-mgr-list" data-group="card" style="max-height:150px;overflow-y:auto;border:1px solid rgba(180,150,120,0.08);border-radius:6px;padding:2px;">
-          ${cards.map((c, i) => `
+          ${_cardSlice.map((c, i) => `
             <label style="display:flex;align-items:center;gap:4px;padding:3px 6px;font-size: calc(0.62rem * var(--cd-fs, 1));border-bottom:1px solid rgba(180,150,120,0.04);cursor:pointer;">
               <input type="checkbox" class="cd-mgr-cb" data-key="${i}" data-group="card">
               <i class="${c.icon}" style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;width:14px;"></i>
@@ -6887,6 +7410,9 @@ async function cdRenderManage() {
               <span style="color:#8b7355;opacity:0.5;">${escapeHtml(c.time)}</span>
             </label>
           `).join('')}
+          ${cards.length > _cardVisible ? `<div style="padding:4px 6px;text-align:center;">
+            <button class="cd-btn-secondary cd-mgr-load-more-cards" style="font-size: calc(0.6rem * var(--cd-fs, 1));padding:3px 12px;">加载更多卡牌（已显示 ${_cardVisible}/${cards.length}）</button>
+          </div>` : ''}
         </div>` : '<p style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;opacity:0.4;padding:4px 0;">暂无卡牌</p>'}
       </div>
 
@@ -6994,9 +7520,8 @@ async function cdRenderManage() {
     const checkedDiary = $('.cd-mgr-cb[data-group="diary"]:checked').map(function () { return $(this).data('key'); }).get();
     const checkedRel = $('.cd-mgr-cb[data-group="rel"]:checked').map(function () { return $(this).data('key'); }).get();
     const checkedCard = $('.cd-mgr-cb[data-group="card"]:checked').map(function () { return $(this).data('key'); }).get();
-    const checkedSnap = $('.cd-mgr-cb[data-group="snap"]:checked').map(function () { return parseInt($(this).data('key'), 10); }).get();
 
-    const totalDeleted = checkedDiary.length + checkedRel.length + checkedCard.length + checkedSnap.length;
+    const totalDeleted = checkedDiary.length + checkedRel.length + checkedCard.length;
     if (totalDeleted === 0) {
       toastr.warning('请先勾选要删除的条目');
       return;
@@ -7034,12 +7559,6 @@ async function cdRenderManage() {
       if (d.cards && d.cards[idx] !== undefined) d.cards.splice(idx, 1);
     }
 
-    // 删除快照
-    const sortedSnap = checkedSnap.sort((a, b) => b - a);
-    for (const idx of sortedSnap) {
-      if (d.snapshots && d.snapshots[idx] !== undefined) d.snapshots.splice(idx, 1);
-    }
-
     await cdSaveData(d);
     await cdRefreshInjection();
     toastr.success(`已删除 ${totalDeleted} 条数据`);
@@ -7048,7 +7567,7 @@ async function cdRenderManage() {
 
   // ★ 清空所有数据
   $('#cd-mgr-delete-all').off('click').on('click', async function () {
-    if (!await confirmDelete('⚠️ 确定清空所有日记、关系、剧情档案、卡牌数据？此操作不可恢复！')) return;
+    if (!await confirmDelete('确定清空所有日记、关系、剧情档案、卡牌数据？此操作不可恢复！')) return;
     const d = await cdGetData();
     d.diaries = {};
     d.aliases = {};
@@ -7063,6 +7582,14 @@ async function cdRenderManage() {
     await cdSaveData(d);
     await cdRefreshInjection();
     toastr.success('所有数据已清空');
+    cdRenderManage();
+  });
+
+  // ★ 加载更多卡牌（分批渲染，避免上千张卡牌导致管理页卡死）
+  $('#cd-content').off('click', '.cd-mgr-load-more-cards').on('click', '.cd-mgr-load-more-cards', function () {
+    const cur = (typeof window !== 'undefined' && window._cdManageShowCards) || CARD_PAGE;
+    const next = Math.min(cards.length, (cur || 50) + 50);
+    if (typeof window !== 'undefined') window._cdManageShowCards = next;
     cdRenderManage();
   });
 }
@@ -7380,6 +7907,20 @@ async function cdRenderVector() {
   
   $('#cd-content').html(`
     <div class="cd-egg" style="padding:2px 0;">
+      <details class="cd-tip">
+        <summary>新手看这里：向量是什么？我需要用吗？<span class="cd-tip-toggle"></span></summary>
+        <div class="cd-tip-body">
+          <p><b>一句话：</b>「向量」让插件只挑<b>和当前剧情最相关</b>的旧记忆给 AI，而不是把几万字历史全部塞进去。<b>剧情很短时不需要；剧情很长 / 要省 token / 想更精准时强烈推荐。</b></p>
+          <p><b>两种模式选哪个？</b></p>
+          <div class="tip-step"><b>普通总结</b><span>＝把全部记忆发给 AI，简单但剧情长了很费 token。</span></div>
+          <div class="tip-step"><b>向量化检索</b><span>＝只检索最相关的 N 条，省 token、更聚焦，适合长剧情。</span></div>
+          <p><b>怎么开启？</b></p>
+          <div class="tip-step"><b>①</b><span>把下方「剧情档案模式」「日记模式」都切到「向量化」。</span></div>
+          <div class="tip-step"><b>②</b><span>在「嵌入 API」填一个 OpenAI 兼容的接口（可填你主 API 相同的地址，或留空自动降级为关键词匹配）。</span></div>
+          <div class="tip-step"><b>③</b><span>点「测试连接」确认可用 → 保存。</span></div>
+          <p class="tip-warn"><i class="fa-regular fa-triangle-exclamation"></i> 不配置嵌入 API 也可以跑（用关键词匹配降级），但记忆命中会差一些。向量是<b>可选高级功能</b>，普通用默认「追加」模式完全够。</p>
+        </div>
+      </details>
       <h3 class="cd-write-title" style="font-size: calc(0.85rem * var(--cd-fs, 1));"><i class="fa-regular fa-brain"></i> 向量化检索</h3>
       <p style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;opacity:0.6;margin:0 0 10px;">剧情档案模式为「向量化」时，写日记不再注入全部历史文本，而是检索最相关的 N 条事件。</p>
       
