@@ -4,7 +4,11 @@
    ============================================================ */
 
 /* ─── Root ─── */
-.cd-root { --cd-fs: 1; 
+/* ★ 样式隔离：插件面板固定悬浮在酒馆之上，必须显式重置酒馆主题可能继承给本面板的
+      文字阴影 / 滤镜 / 描边等效果，否则日间模式下文字会带上酒馆的阴影/模糊。
+      （此规则日夜间统一生效，不影响夜间原有观感） */
+.cd-root {
+  --cd-fs: 1; 
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
   position: fixed;
   z-index: 2000001;
@@ -15,6 +19,23 @@
     0 2px 8px rgba(0,0,0,0.04),
     0 8px 32px rgba(0,0,0,0.06),
     0 24px 64px rgba(0,0,0,0.08);
+  /* ── 重置酒馆继承的视觉效果 ── */
+  text-shadow: none !important;
+  -webkit-text-stroke-width: 0 !important;
+  -webkit-text-stroke-color: transparent !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  isolation: isolate;
+}
+.cd-root *, .cd-root *::before, .cd-root *::after {
+  text-shadow: none !important;
+  -webkit-text-stroke-width: 0 !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 /* ─── Sheet ─── */
@@ -332,6 +353,56 @@
 .cd-tb-btn:active { transform: scale(0.93); opacity: 0.7; }
 .cd-header-btn:active { transform: scale(0.9); opacity: 0.6; }
 
+/* ─── 更多菜单（收纳低频/工具/信息入口） ─── */
+.cd-toolbar { position: relative; }
+.cd-tb-more { position: relative; }
+.cd-tb-more.cd-tb-active { background: #cdb69b !important; color: #fff !important; }
+.cd-more-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 10px;
+  z-index: 2000005;
+  min-width: 190px;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: #fcfaf6;
+  border: 1px solid rgba(180,150,120,0.16);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.06);
+  padding: 6px;
+}
+.cd-more-group-label {
+  font-size: calc(0.58rem * var(--cd-fs, 1));
+  color: #8b7355;
+  opacity: 0.65;
+  padding: 6px 8px 2px;
+  font-weight: 600;
+}
+.cd-more-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: calc(0.68rem * var(--cd-fs, 1));
+  color: #4a3a2a;
+  text-align: left;
+  transition: background 0.12s;
+}
+.cd-more-item i { font-size: calc(0.72rem * var(--cd-fs, 1)); color: #8b7355; width: 16px; text-align: center; }
+.cd-more-item:hover { background: rgba(205,182,155,0.14); color: #3a2c1f; }
+.cd-more-item:hover i { color: #7a5c34; }
+.cd-more-men:active { transform: scale(0.97); }
+.cd-night .cd-more-menu { background: #1e1e34; border-color: rgba(255,255,255,0.1); }
+.cd-night .cd-more-group-label { color: #8b7d6a; }
+.cd-night .cd-more-item { color: #d4c9b8; }
+.cd-night .cd-more-item i { color: #8b7d6a; }
+.cd-night .cd-more-item:hover { background: rgba(255,255,255,0.06); }
+
 /* ─── 设置 ─── */
 .cd-settings-h2 {
   margin: 0 0 10px;
@@ -614,6 +685,57 @@
   line-height: 1; flex-shrink: 0;
 }
 .cd-entry-edit-btn:hover { opacity: 0.8; color: #4a3a2a; }
+
+/* ─── 单条日记：重新生成 / 删除 ─── */
+.cd-entry-regen-btn {
+  background: none; border: none; cursor: pointer; padding: 0 4px;
+  font-size: calc(0.65rem * var(--cd-fs, 1)); color: #3b82f6; opacity: 0.35; transition: opacity 0.15s;
+  line-height: 1; flex-shrink: 0;
+}
+.cd-entry-regen-btn:hover { opacity: 1; color: #2563eb; }
+.cd-entry-del-btn {
+  background: none; border: none; cursor: pointer; padding: 0 4px;
+  font-size: calc(0.65rem * var(--cd-fs, 1)); color: #ef4444; opacity: 0.35; transition: opacity 0.15s;
+  line-height: 1; flex-shrink: 0;
+}
+.cd-entry-del-btn:hover { opacity: 1; color: #dc2626; }
+.cd-night .cd-entry-regen-btn { color: #60a5fa; }
+.cd-night .cd-entry-del-btn { color: #f87171; }
+
+/* ─── 时间线条目（勾选框容器）─── */
+/* 时间线条目不再显示单条删除按钮，仅通过顶部「批量管理」多选删除。
+   .cd-tl-actions 仅承载批量管理模式下的勾选框。 */
+.cd-tl-actions {
+  position: absolute; top: 6px; right: 8px; display: flex; gap: 4px;
+}
+
+/* ─── 时间线批量管理 ─── */
+.cd-tl-manage-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 6px 10px; margin-bottom: 8px; border-radius: 8px;
+  background: rgba(248,243,237,0.45); border: 1px solid rgba(180,150,120,0.08);
+}
+.cd-tl-manage-btn { position: relative; }
+.cd-tl-manage-btn.cd-tl-manage-active {
+  background: #cdb69b; color: #fff !important;
+}
+.cd-tl-manage-hint { font-size: calc(0.6rem * var(--cd-fs, 1)); color: #8b7355; opacity: 0.7; }
+.cd-tl-manage-ops { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cd-tl-sel-count { font-size: calc(0.6rem * var(--cd-fs, 1)); color: #6b5a48; margin-right: 2px; }
+
+/* 勾选框默认隐藏，进入管理模式才显示 */
+.cd-tl-cb-wrap { display: none; align-items: center; }
+.cd-tl-cb { width: 15px; height: 15px; cursor: pointer; accent-color: #ef4444; }
+
+/* 管理模式：显示勾选框 + 卡片可勾选态 */
+.cd-tl-managing .cd-tl-cb-wrap { display: inline-flex; }
+.cd-tl-managing .cd-tl-card { cursor: pointer; }
+.cd-tl-managing .cd-tl-card:has(.cd-tl-cb:checked) {
+  background: rgba(239,68,68,0.06); border-color: rgba(239,68,68,0.28);
+}
+.cd-night .cd-tl-manage-bar { background: rgba(255,255,255,0.03); border-color: rgba(255,255,255,0.06); }
+.cd-night .cd-tl-sel-count { color: #c4b8a5; }
+.cd-night .cd-tl-manage-btn.cd-tl-manage-active { background: #cdb69b; color: #1a1a2e !important; }
 
 /* ─── 编辑器模态 ─── */
 .cd-editor-overlay {
@@ -1020,6 +1142,166 @@
 .cd-settings-collapse-summary::before { content: '\25B8'; margin-right: 6px; font-size: calc(0.6rem * var(--cd-fs, 1)); }
 .cd-settings-collapse[open] .cd-settings-collapse-summary::before { content: '\25BE'; }
 .cd-settings-collapse-body { padding: 2px 10px 8px; border-top: 1px dashed rgba(180,150,120,0.12); }
+.cd-settings-advanced > .cd-settings-collapse-summary.advanced-summary {
+  color: #7a5c34; font-size: calc(0.66rem * var(--cd-fs, 1));
+}
+
+/* ─── 快速开始引导条（设置面板顶部） ─── */
+.cd-setup-banner {
+  border: 1px solid rgba(205,182,155,0.35);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(205,182,155,0.12), rgba(248,243,237,0.5));
+  padding: 10px 12px;
+  margin-bottom: 6px;
+}
+.cd-setup-banner-title {
+  font-size: calc(0.74rem * var(--cd-fs, 1));
+  font-weight: 700;
+  color: #7a5c34;
+  margin-bottom: 6px;
+}
+.cd-setup-banner-body { display: flex; flex-direction: column; gap: 4px; }
+.cd-setup-step { display: flex; align-items: flex-start; gap: 6px; font-size: calc(0.63rem * var(--cd-fs, 1)); color: #6b5a48; line-height: 1.45; }
+.cd-setup-dot { flex-shrink: 0; font-weight: 700; color: #a8824d; }
+.cd-setup-step.cd-setup-done .cd-setup-dot { color: #22c55e; }
+/* 快速开始里的默认功能说明 */
+.cd-setup-features {
+  display: flex; flex-direction: column; gap: 4px;
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px dashed rgba(180,150,120,0.25);
+}
+.cd-setup-feature { display: flex; align-items: center; gap: 6px; font-size: calc(0.6rem * var(--cd-fs, 1)); color: #6b5a48; }
+.cd-setup-feature i { width: 14px; text-align: center; font-size: calc(0.58rem * var(--cd-fs, 1)); }
+.cd-setup-feature.cd-on { color: #2f9e6e; }
+.cd-setup-feature.cd-on i { color: #22c55e; }
+.cd-setup-feature.cd-off { color: #8b7355; }
+.cd-setup-feature.cd-off i { color: #b0a08c; }
+.cd-night .cd-setup-feature { color: #c4b8a5; }
+.cd-night .cd-setup-feature.cd-on { color: #67d8a5; }
+.cd-night .cd-setup-feature.cd-off { color: #9c8f7d; }
+
+/* 浏览空态引导里的默认功能说明 */
+.cdb-empty-guide-features {
+  display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
+  max-width: 320px; margin: 4px auto 12px;
+}
+.cdb-feat {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border-radius: 999px;
+  font-size: calc(0.56rem * var(--cd-fs, 1));
+  border: 1px solid rgba(180,150,120,0.15);
+  background: rgba(255,252,248,0.7);
+  color: #6b5a48;
+}
+.cdb-feat i { font-size: calc(0.54rem * var(--cd-fs, 1)); }
+.cdb-feat.on { color: #2f9e6e; border-color: rgba(47,158,110,0.25); background: rgba(47,158,110,0.06); }
+.cdb-feat.on i { color: #22c55e; }
+.cdb-feat.off { color: #8b7355; }
+.cdb-feat.off i { color: #b0a08c; }
+.cd-night .cdb-feat { background: rgba(255,255,255,0.04); color: #c4b8a5; }
+.cd-night .cdb-feat.on { color: #67d8a5; }
+
+/* ─── 新手提示卡片（各工具页顶部，默认折叠，老手可忽略）─── */
+/* 无彩色、中性灰高级风格 */
+.cd-tip {
+  border: 1px solid rgba(120,130,140,0.18);
+  border-radius: 10px;
+  margin: 4px 0 10px;
+  background: rgba(120,130,140,0.04);
+}
+.cd-tip > summary {
+  display: flex; align-items: center; gap: 7px;
+  padding: 7px 10px; cursor: pointer; user-select: none;
+  font-size: calc(0.66rem * var(--cd-fs, 1)); font-weight: 600;
+  color: #5c6b7a; list-style: none;
+}
+.cd-tip > summary::-webkit-details-marker { display: none; }
+/* 灰色线条灯泡（无彩色） */
+.cd-tip > summary::before {
+  content: '';
+  width: 14px; height: 14px; flex-shrink: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239aa3af' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.7.6 1.2 1.4 1.4 2.1h4.2c.2-.7.7-1.5 1.4-2.1A6 6 0 0 0 12 3z'/%3E%3C/svg%3E") center / contain no-repeat;
+  opacity: 0.75;
+}
+.cd-tip > summary .cd-tip-toggle { margin-left: auto; font-size: calc(0.58rem * var(--cd-fs, 1)); opacity: 0.45; }
+.cd-tip[open] > summary .cd-tip-toggle:before { content: '▲ 收起'; }
+.cd-tip:not([open]) > summary .cd-tip-toggle:before { content: '▼ 展开'; }
+.cd-tip-body { padding: 4px 12px 10px; font-size: calc(0.62rem * var(--cd-fs, 1)); color: #4a4f58; line-height: 1.65; }
+.cd-tip-body p { margin: 4px 0; }
+.cd-tip-body .tip-step { display: flex; gap: 6px; margin: 3px 0; align-items: flex-start; }
+.cd-tip-body .tip-step b { color: #5c6b7a; flex-shrink: 0; }
+/* 警示图标/文字：中性灰描边，弱化刺眼红 */
+.cd-tip-body .tip-warn { color: #8a6d5a; }
+.cd-tip-body .tip-warn i, .cd-tip-body .tip-warn .cd-tip-warn-ico { color: #a08d7d; opacity: 0.75; font-style: normal; }
+.cd-tip-body code { background: rgba(120,130,140,0.1); padding: 1px 5px; border-radius: 4px; font-size: calc(0.58rem * var(--cd-fs, 1)); }
+.cd-night .cd-tip { background: rgba(120,130,140,0.06); }
+.cd-night .cd-tip > summary { color: #9fb0c0; }
+.cd-night .cd-tip-body { color: #c4c8cf; }
+.cd-night .cd-tip-body .tip-step b { color: #9fb0c0; }
+.cd-night .cd-tip-body .tip-warn { color: #c0a894; }
+.cd-night .cd-tip-body .tip-warn i, .cd-night .cd-tip-body .tip-warn .cd-tip-warn-ico { color: #a89a8a; }
+
+.cd-setup-warn {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(200,70,50,0.08);
+  border: 1px solid rgba(200,70,50,0.2);
+  color: #c84632;
+  font-size: calc(0.6rem * var(--cd-fs, 1));
+}
+.cd-night .cd-setup-banner { background: linear-gradient(135deg, rgba(205,182,155,0.12), rgba(255,255,255,0.03)); }
+.cd-night .cd-setup-banner-title { color: #d4c9b8; }
+.cd-night .cd-setup-step { color: #c4b8a5; }
+
+/* ─── 浏览首页空态引导（新手第一眼） ─── */
+.cdb-empty-guide {
+  border: 1px solid rgba(205,182,155,0.3);
+  border-radius: 14px;
+  background: linear-gradient(160deg, rgba(205,182,155,0.14), rgba(252,250,246,0.6));
+  padding: 18px 16px;
+  text-align: center;
+}
+.cdb-empty-guide-hero { margin-bottom: 14px; }
+.cdb-empty-guide-icon {
+  width: 48px; height: 48px; margin: 0 auto 10px;
+  border-radius: 50%;
+  background: rgba(205,182,155,0.25);
+  display: flex; align-items: center; justify-content: center;
+}
+.cdb-empty-guide-icon i { font-size: calc(1.2rem * var(--cd-fs, 1)); color: #7a5c34; }
+.cdb-empty-guide-title { font-size: calc(0.9rem * var(--cd-fs, 1)); font-weight: 700; color: #4a3a2a; }
+.cdb-empty-guide-desc { font-size: calc(0.66rem * var(--cd-fs, 1)); color: #6b5a48; line-height: 1.6; margin-top: 6px; }
+.cdb-empty-guide-steps {
+  display: flex; flex-direction: column; gap: 6px;
+  max-width: 300px; margin: 0 auto 14px; text-align: left;
+}
+.cdb-step {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; border-radius: 8px;
+  background: rgba(255,252,248,0.7); border: 1px solid rgba(180,150,120,0.1);
+  font-size: calc(0.64rem * var(--cd-fs, 1)); color: #6b5a48;
+}
+.cdb-step-num {
+  width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+  background: rgba(205,182,155,0.35); color: #5c4a38;
+  display: flex; align-items: center; justify-content: center;
+  font-size: calc(0.6rem * var(--cd-fs, 1)); font-weight: 700;
+}
+.cdb-step-done .cdb-step-num { background: #22c55e; color: #fff; }
+.cdb-empty-guide-actions { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.cdb-empty-guide-foot { font-size: calc(0.58rem * var(--cd-fs, 1)); color: #8b7355; opacity: 0.7; }
+.cdb-empty-guide-warn {
+  margin-top: 12px; padding: 8px 10px; border-radius: 8px;
+  background: rgba(200,70,50,0.08); border: 1px solid rgba(200,70,50,0.2);
+  color: #c84632; font-size: calc(0.62rem * var(--cd-fs, 1));
+}
+.cd-night .cdb-empty-guide { background: linear-gradient(160deg, rgba(205,182,155,0.12), rgba(255,255,255,0.03)); }
+.cd-night .cdb-empty-guide-title { color: #d4c9b8; }
+.cd-night .cdb-empty-guide-desc { color: #c4b8a5; }
+.cd-night .cdb-step { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.08); color: #d4c9b8; }
+.cd-night .cdb-step-num { background: rgba(255,255,255,0.12); color: #e8dfd3; }
+.cd-night .cdb-empty-guide-icon i { color: #cdb69b; }
 
 /* ─── 自定义剧情追踪项（时间线顶部折叠面板） ─── */
 .cd-custom-panel {
@@ -1046,3 +1328,308 @@
 }
 .cd-night .cd-custom-panel { background: rgba(168,85,247,0.08); border-color: rgba(168,85,247,0.3); }
 .cd-night .cd-custom-head { color: #c084fc; }
+
+/* ══════════════════════════════════════════════════════════════
+   整体「高级化」润色补丁（覆盖基础样式，提升质感，不改结构）
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── 面板：更通透 + 精致阴影（仅日间，夜间另有覆盖） ── */
+.cd-root.cd-day .cd-sheet {
+  background: linear-gradient(180deg, #fffdfa 0%, #faf6ef 100%);
+  border: 1px solid rgba(180,150,120,0.10);
+  border-radius: 18px;
+}
+
+/* ── 标题栏：更干净的米白，细腻底纹（仅日间） ── */
+.cd-root.cd-day .cd-header {
+  background: linear-gradient(180deg, #f5eee2 0%, #f0e8dc 100%);
+  padding: 12px 16px;
+}
+.cd-root.cd-day .cd-header-title {
+  font-size: calc(0.82rem * var(--cd-fs, 1));
+  letter-spacing: 0.08em;
+}
+
+/* ── 工具栏按钮：更精致的胶囊造型 + 细腻动效（仅日间） ── */
+.cd-root.cd-day .cd-toolbar {
+  padding: 7px 14px;
+  background: rgba(248,243,237,0.65);
+}
+.cd-root.cd-day .cd-tb-btn {
+  border-radius: 12px;
+  padding: 6px 13px;
+  color: #7a6a58;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.12s ease;
+}
+.cd-root.cd-day .cd-tb-btn:hover { background: rgba(205,182,155,0.16); color: #4a3a2a; }
+.cd-root.cd-day .cd-tb-active {
+  background: #cdb69b !important;
+  color: #fff !important;
+  box-shadow: 0 1px 4px rgba(160,132,98,0.35), inset 0 1px 0 rgba(255,255,255,0.25);
+}
+
+/* ── 主按钮：微渐变 + 柔和投影，精致却不喧宾夺主 ── */
+.cd-root .cd-btn-primary {
+  background: linear-gradient(180deg, #d6c0a3 0%, #bfa68a 100%);
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(160,132,98,0.2);
+}
+.cd-root .cd-btn-primary:hover { background: linear-gradient(180deg, #cdb69b 0%, #b8a088 100%); }
+
+/* ── 次级按钮 / 危险按钮：中性精致 ── */
+.cd-root .cd-btn-secondary {
+  border: 1px solid rgba(180,150,120,0.18);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.5);
+  color: #6b5a48;
+}
+.cd-root .cd-btn-secondary:hover { background: rgba(255,255,255,0.85); border-color: rgba(180,150,120,0.3); }
+.cd-root .cd-btn-danger { border-radius: 10px; }
+
+/* ── 日记卡片：柔和卡片 + 精致圆角（保留心情左边条） ── */
+.cd-root .cd-diary-card {
+  border-radius: 13px;
+  border: 1px solid rgba(180,150,120,0.09);
+  background: rgba(255,253,250,0.8);
+  box-shadow: 0 1px 2px rgba(180,150,120,0.05);
+}
+.cd-root .cd-card-summary { padding: 11px 14px; }
+
+/* ── 单条日记：更柔和的展开卡片 ── */
+.cd-root .cd-entry {
+  border-radius: 11px;
+  border: 1px solid rgba(180,150,120,0.07);
+}
+.cd-root .cd-entry[open] {
+  box-shadow: 0 2px 10px rgba(180,150,120,0.08);
+}
+
+/* ── 分割线：更细腻，弱化生硬感 ── */
+.cd-root .cd-write-divider {
+  background: linear-gradient(90deg, rgba(180,150,120,0.06), rgba(180,150,120,0.14), rgba(180,150,120,0.06));
+  height: 1px;
+}
+
+/* ── 时间线卡片：精致圆角 + 柔和边 ── */
+.cd-root .cd-tl-card { border-radius: 11px; }
+.cd-root .cd-tl-dot { box-shadow: 0 0 0 2px #fcfaf6, 0 1px 2px rgba(0,0,0,0.08); }
+
+/* ── 设置折叠 / 提示卡：统一精致的圆角与留白 ── */
+.cd-root .cd-settings-sub {
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: calc(0.62rem * var(--cd-fs, 1));
+}
+.cd-root .cd-setup-banner, .cd-root .cd-tip { border-radius: 13px; }
+
+/* ── 滚动条：更细腻 ── */
+.cd-root .cd-scroll::-webkit-scrollbar { width: 4px; }
+.cd-root .cd-scroll::-webkit-scrollbar-thumb { border-radius: 8px; background: rgba(180,150,120,0.22); }
+
+/* ── 夜间模式：也做到同样精致的底（注意 cd-night 与 cd-root 在同一元素，用 .cd-root.cd-night） ── */
+.cd-root.cd-night .cd-sheet {
+  background: linear-gradient(180deg, #23233c 0%, #1a1a2e 100%);
+  border-color: rgba(255,255,255,0.05);
+}
+.cd-root.cd-night .cd-header { background: linear-gradient(180deg, #1d1d36 0%, #16162a 100%); border-bottom-color: rgba(255,255,255,0.05); }
+.cd-root.cd-night .cd-header-title { color: #d4c9b8; }
+.cd-root.cd-night .cd-header-btn { color: #9a8d7a; }
+.cd-root.cd-night .cd-header-btn:hover { background: rgba(255,255,255,0.06); color: #e0d8ca; }
+.cd-root.cd-night .cd-toolbar { background: rgba(30,30,52,0.6); }
+.cd-root.cd-night .cd-tb-btn { color: #9a8d7a; }
+.cd-root.cd-night .cd-tb-btn:hover { background: rgba(255,255,255,0.06); color: #e0d8ca; }
+.cd-root.cd-night .cd-tb-active { background: #cdb69b !important; color: #1a1a2e !important; }
+.cd-root.cd-night .cd-diary-card { background: rgba(30,30,50,0.5); border-color: rgba(255,255,255,0.06); }
+.cd-root.cd-night .cd-btn-primary { background: linear-gradient(180deg, #cdb69b 0%, #b8a088 100%); }
+.cd-root.cd-night .cd-btn-secondary { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.1); }
+
+/* ── 顶部加载进度条（切视图时的轻量反馈） ── */
+.cd-topbar-progress {
+  position: absolute;
+  left: 0; top: 0;
+  width: 100%; height: 2px;
+  z-index: 2000006;
+  background: transparent;
+  overflow: hidden;
+  border-radius: 2px;
+}
+.cd-topbar-progress .cd-bar {
+  height: 100%;
+  width: 35%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #cdb69b, #e0cfb5);
+  animation: cd-progress-slide 0.9s ease-in-out infinite;
+}
+@keyframes cd-progress-slide {
+  0% { transform: translateX(-100%); }
+  60% { transform: translateX(160%); }
+  100% { transform: translateX(200%); }
+}
+.cd-night .cd-topbar-progress .cd-bar { background: linear-gradient(90deg, #8a7a6a, #b8a088); }
+
+/* ── 浏览首页状态摘要条（数据量一眼可见） ── */
+.cd-statusbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  border-radius: 11px;
+  background: rgba(255,253,250,0.6);
+  border: 1px solid rgba(180,150,120,0.08);
+}
+.cd-stat-item { display: inline-flex; align-items: center; gap: 4px; font-size: calc(0.6rem * var(--cd-fs, 1)); color: #7a6a58; }
+.cd-stat-item i { font-size: calc(0.62rem * var(--cd-fs, 1)); color: #a1886c; opacity: 0.7; }
+.cd-stat-item b { font-size: calc(0.7rem * var(--cd-fs, 1)); color: #4a3a2a; font-weight: 650; }
+.cd-stat-updated { margin-left: auto; font-size: calc(0.55rem * var(--cd-fs, 1)); color: #a08b6c; opacity: 0.75; display: inline-flex; align-items: center; gap: 4px; }
+.cd-night .cd-statusbar { background: rgba(30,30,50,0.5); border-color: rgba(255,255,255,0.06); }
+.cd-night .cd-stat-item { color: #b0a28a; }
+.cd-night .cd-stat-item b { color: #e0d9cb; }
+.cd-night .cd-stat-updated { color: #9c8f7d; }
+
+/* ── 剧情分组 tab（主线/支线/状态/未解决 点击切换） ── */
+.cd-tl-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(180,150,120,0.1);
+}
+.cd-tl-tab {
+  border: 1px solid rgba(180,150,120,0.14);
+  background: rgba(255,253,250,0.6);
+  color: #7a6a58;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: calc(0.62rem * var(--cd-fs, 1));
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-weight: 500;
+}
+.cd-tl-tab i { font-size: calc(0.6rem * var(--cd-fs, 1)); margin-right: 4px; opacity: 0.7; }
+.cd-tl-tab:hover { border-color: var(--tl-tab-color, rgba(180,150,120,0.3)); color: #4a3a2a; }
+.cd-tl-tab.cd-tl-tab-active {
+  border-color: var(--tl-tab-color, #8b7355);
+  color: var(--tl-tab-color, #8b7355);
+  background: color-mix(in srgb, var(--tl-tab-color, #8b7355) 12%, #fff);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.cd-night .cd-tl-tab { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.1); color: #b0a28a; }
+.cd-night .cd-tl-tab.cd-tl-tab-active { background: rgba(255,255,255,0.08); }
+
+/* ── 新手提示内联图标：无彩色线条符号（替换彩色 emoji） ── */
+.cd-ico {
+  font-size: calc(0.7rem * var(--cd-fs, 1));
+  color: #8a94a0;
+  vertical-align: -0.08em;
+  margin: 0 1px;
+}
+.cd-ico-del { color: #a0806f; }
+.cd-night .cd-ico { color: #9aa4ae; }
+.cd-night .cd-ico-del { color: #b09080; }
+
+/* ── 重点角色面板（手动指定要重点写的角色） ── */
+.cd-focus-panel {
+  border: 1px solid rgba(205,182,155,0.3);
+  border-radius: 12px;
+  margin: 4px 0 10px;
+  background: rgba(205,182,155,0.06);
+}
+.cd-focus-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 9px 12px; cursor: pointer; user-select: none;
+  font-size: calc(0.68rem * var(--cd-fs, 1)); font-weight: 600;
+  color: #7a5c34; list-style: none;
+}
+.cd-focus-head::-webkit-details-marker { display: none; }
+.cd-focus-head::before { content: '\25B8'; font-size: calc(0.6rem * var(--cd-fs, 1)); margin-right: 2px; opacity: 0.6; }
+.cd-focus-panel[open] .cd-focus-head::before { content: '\25BE'; }
+.cd-focus-head i { color: #a8824d; }
+.cd-focus-count {
+  font-size: calc(0.58rem * var(--cd-fs, 1)); font-weight: 600; color: #fff;
+  background: #cdb69b; border-radius: 9px; padding: 0 6px; line-height: 1.5;
+}
+.cd-focus-desc { margin-left: auto; font-size: calc(0.56rem * var(--cd-fs, 1)); color: #8b8760; opacity: 0.7; font-weight: 400; }
+.cd-focus-body { padding: 6px 12px 12px; border-top: 1px dashed rgba(205,182,155,0.25); }
+.cd-focus-add { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.cd-focus-add .cd-input { font-size: calc(0.62rem * var(--cd-fs, 1)); padding: 5px 8px; border-radius: 8px; }
+.cd-focus-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.cd-focus-card {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border-radius: 999px;
+  background: rgba(255,253,250,0.8); border: 1px solid rgba(180,150,120,0.16);
+  font-size: calc(0.62rem * var(--cd-fs, 1));
+}
+.cd-focus-name { font-weight: 600; color: #5c4a38; }
+.cd-focus-note-txt { color: #8b7a5a; opacity: 0.75; font-size: calc(0.56rem * var(--cd-fs, 1)); }
+.cd-focus-del { background: none; border: none; cursor: pointer; color: #a0806f; font-size: calc(0.66rem * var(--cd-fs, 1)); padding: 0; opacity: 0.7; }
+.cd-focus-del:hover { opacity: 1; color: #c84632; }
+.cd-focus-empty { font-size: calc(0.58rem * var(--cd-fs, 1)); color: #8b7a5a; opacity: 0.7; margin: 0; }
+.cd-night .cd-focus-panel { background: rgba(205,182,155,0.08); border-color: rgba(205,182,155,0.2); }
+.cd-night .cd-focus-head { color: #c9b48e; }
+.cd-night .cd-focus-head i { color: #cdb69b; }
+.cd-night .cd-focus-card { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); }
+.cd-night .cd-focus-name { color: #e0d0b4; }
+
+/* ── 隐藏浏览页搜索框（保留 JS 逻辑，需要时可恢复显示） ── */
+.cd-browse-search { display: none !important; }
+
+/* ── 数据概览标题行右侧的统计小字 ── */
+.cd-overview-stats {
+  margin-left: 8px;
+  font-size: calc(0.56rem * var(--cd-fs, 1));
+  color: #a08b6c;
+  opacity: 0.75;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cd-browse-overview-summary { align-items: baseline; }
+.cd-night .cd-overview-stats { color: #9c8f7d; }
+
+/* ── 剧情页地点统计折叠 ── */
+.cd-location-wrap {
+  border: 1px solid rgba(180,150,120,0.12);
+  border-radius: 9px;
+  margin: 4px 0 10px;
+  background: rgba(248,243,237,0.35);
+}
+.cd-location-summary {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 11px; cursor: pointer; user-select: none;
+  font-size: calc(0.62rem * var(--cd-fs, 1)); font-weight: 600;
+  color: #7a6a58; list-style: none;
+}
+.cd-location-summary::-webkit-details-marker { display: none; }
+.cd-location-summary::before { content: '\25B8'; font-size: calc(0.58rem * var(--cd-fs, 1)); opacity: 0.6; margin-right: 2px; }
+.cd-location-wrap[open] .cd-location-summary::before { content: '\25BE'; }
+.cd-location-summary i { color: #a1886c; }
+.cd-location-summary .cd-location-count { color: #a08b6c; opacity: 0.7; font-weight: 400; }
+.cd-night .cd-location-wrap { background: rgba(255,255,255,0.03); border-color: rgba(255,255,255,0.07); }
+.cd-night .cd-location-summary { color: #c4b8a5; }
+.cd-night .cd-location-summary i { color: #9c8f7d; }
+
+/* ── 空态引导页底部「老手跳过」 ── */
+.cdb-empty-guide-skip {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(180,150,120,0.2);
+}
+.cdb-skip-btn {
+  background: none;
+  border: 1px solid rgba(180,150,120,0.25);
+  color: #8b7355;
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: calc(0.6rem * var(--cd-fs, 1));
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.cdb-skip-btn:hover { background: rgba(180,150,120,0.1); color: #5c4a38; border-color: rgba(180,150,120,0.4); }
+.cd-night .cdb-skip-btn { color: #9c8f7d; border-color: rgba(255,255,255,0.15); }
+.cd-night .cdb-skip-btn:hover { background: rgba(255,255,255,0.08); color: #e0d8ca; }
