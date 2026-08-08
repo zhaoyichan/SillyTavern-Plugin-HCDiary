@@ -3385,20 +3385,47 @@ function _cdGetStCtx() {
 /** 主初始化入口 */
 jQuery(async () => {
   cdLog('=== 角色日记初始化开始 ===');
-  
+
+  // ★ 幂等标记：确保 _cdDoInit 只执行一次（多标签页/多事件触发时不重复初始化、不重复注入DOM）
+  let _cdDone = false;
+  function _fireInit() {
+    if (_cdDone) return;
+    _cdDone = true;
+    try { _cdDoInit(); }
+    catch (e) { cdWarn('初始化异常:', e); }
+  }
+
   const { es, et } = _cdGetStCtx();
-  
-  // 如果 ST 事件系统可用且 APP_READY 存在，等它触发再初始化
-  if (es && et?.APP_READY) {
+
+  // 1) 主路径：ST 事件系统可用 → 等 APP_READY 触发后初始化（正常首开场景）
+  if (es && typeof es.on === 'function' && et?.APP_READY) {
     cdLog('[init] 等待 APP_READY 事件...');
     es.on(et.APP_READY, () => {
       cdLog('[init] APP_READY 触发，执行初始化');
-      _cdDoInit();
+      _fireInit();
     });
-  } else {
-    // 兜底：不存在的变量直接执行
-    cdLog('[init] eventSource/event_types 不可用，延迟 1s 后兜底初始化');
-    setTimeout(() => _cdDoInit(), 1000);
+  }
+
+  // 2) ★ 修复多开（多标签页/多窗口）时插件消失：
+  //    「浏览器访问本地服务」场景下，第二个标签页重开时 APP_READY 事件往往早已触发过、
+  //    不会再重放，es.on(APP_READY) 会永远等不到 → 插件在第二个页面不初始化。
+  //    因此额外加「就绪轮询」兜底：检测到 ST 扩展设置可用即立即初始化一次；
+  //    即使 3 秒内仍未就绪也强制执行一次（避免无限等待）。
+  const _t0 = Date.now();
+  const _iv = setInterval(() => {
+    const _ctx = _cdGetStCtx();
+    const _ready = !!( _ctx.extSettings || (typeof extension_settings !== 'undefined') );
+    const _force = (Date.now() - _t0) > 3000;   // 3 秒兜底强制
+    if (_ready || _force) {
+      clearInterval(_iv);
+      cdLog('[init] 就绪轮询兜底初始化' + (_ready ? '(设置就绪)' : '(超时强制)'));
+      _fireInit();
+    }
+  }, 200);
+
+  // 3) 若事件系统完全不可用，且轮询已由 _fireInit 兜底（无需额外 setTimeout，已覆盖）
+  if (!es || typeof es.on !== 'function') {
+    cdLog('[init] eventSource 不可用，依赖就绪轮询兜底初始化');
   }
 });
 
