@@ -1633,3 +1633,131 @@
 .cdb-skip-btn:hover { background: rgba(180,150,120,0.1); color: #5c4a38; border-color: rgba(180,150,120,0.4); }
 .cd-night .cdb-skip-btn { color: #9c8f7d; border-color: rgba(255,255,255,0.15); }
 .cd-night .cdb-skip-btn:hover { background: rgba(255,255,255,0.08); color: #e0d8ca; }
+
+/* ── 夜间模式：单条日记卡片（修米色背景/金色字，改深色底+浅字） ── */
+.cd-night .cd-root .cd-entry {
+  background: rgba(40,40,62,0.55);
+  border-color: rgba(255,255,255,0.07);
+}
+.cd-night .cd-root .cd-entry:hover {
+  background: rgba(50,50,78,0.8);
+}
+.cd-night .cd-root .cd-entry[open] {
+  background: rgba(45,45,72,0.7);
+  border-color: rgba(205,182,155,0.22);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+}
+.cd-night .cd-entry-summary .cd-entry-date,
+.cd-night .cd-entry[open] > .cd-entry-summary {
+  color: #d8cfc0;
+}
+.cd-night .cd-entry-summary .cd-entry-mood,
+.cd-night .cd-entry-summary .cd-entry-att {
+  color: #9fb0c0;
+}
+.cd-night .cd-entry-toggle { color: #8b7d6a; }
+.cd-night .cd-entry-head .cd-entry-fav-btn { color: #8b7d6a; }
+.cd-night .cd-entry-head .cd-entry-psyche-btn { color: #a78fd6; }
+
+/* ── 空态引导页：重点角色添加 ── */
+.cdb-empty-guide-focus {
+  max-width: 320px;
+  margin: 10px auto 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(205,182,155,0.08);
+  border: 1px dashed rgba(205,182,155,0.3);
+  text-align: left;
+}
+.cdb-focus-label {
+  font-size: calc(0.6rem * var(--cd-fs, 1));
+  color: #7a5c34;
+  margin-bottom: 6px;
+  display: flex; align-items: center; gap: 5px;
+}
+.cdb-focus-label i { color: #a8824d; }
+.cdb-focus-add { display: flex; gap: 6px; }
+.cdb-focus-add .cd-input { font-size: calc(0.62rem * var(--cd-fs, 1)); padding: 5px 8px; border-radius: 8px; }
+.cd-night .cdb-empty-guide-focus { background: rgba(205,182,155,0.08); border-color: rgba(205,182,155,0.22); }
+.cd-night .cdb-focus-label { color: #c9b48e; }
+.cd-night .cdb-focus-label i { color: #cdb69b; }
+
+/* ── 空态引导页：选择性记忆（只记我选的角色）── */
+.cdb-empty-guide-selective {
+  display: flex; align-items: center; gap: 8px;
+  max-width: 320px; margin: 8px auto 0;
+  padding: 8px 10px; border-radius: 10px;
+  background: rgba(179,64,42,0.06);
+  border: 1px solid rgba(179,64,42,0.25);
+  text-align: left; flex-wrap: wrap;
+}
+.cdb-select-label {
+  font-size: calc(0.6rem * var(--cd-fs, 1));
+  color: #9a4a30; font-weight: 600;
+  display: flex; align-items: center; gap: 5px;
+}
+.cdb-select-label i { color: #b3402a; }
+.cdb-select-desc {
+  flex-basis: 100%; font-size: calc(0.55rem * var(--cd-fs, 1));
+  color: #a06a50; line-height: 1.5; opacity: 0.85;
+}
+.cd-night .cdb-empty-guide-selective { background: rgba(179,64,42,0.1); border-color: rgba(205,140,120,0.3); }
+.cd-night .cdb-select-label { color: #d89a80; }
+.cd-night .cdb-select-label i { color: #e08a6a; }
+.cd-night .cdb-select-desc { color: #c48a70; }
+
+/* ── 重点角色面板：世界书联动快捷开关 ── */
+.cd-focus-wbrow {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 8px; padding: 5px 8px;
+  border-radius: 8px;
+  background: rgba(205,182,155,0.06);
+  border: 1px solid rgba(205,182,155,0.18);
+}
+.cd-focus-wblabel {
+  flex: 1;
+  font-size: calc(0.6rem * var(--cd-fs, 1));
+  color: #7a5c34;
+  display: flex; align-items: center; gap: 5px;
+}
+.cd-focus-wblabel i { color: #a8824d; }
+.cd-focus-wbswitch { flex-shrink: 0; }
+.cd-night .cd-focus-wbrow { background: rgba(205,182,155,0.08); border-color: rgba(205,182,155,0.22); }
+.cd-night .cd-focus-wblabel { color: #c9b48e; }
+.cd-night .cd-focus-wblabel i { color: #cdb69b; }
+
+/* ═══ 日记阅读区：强制不跟随酒馆背景（展开后的容器用固有颜色，日/夜分明）═══ */
+.cd-root.cd-day .cd-diary-card,
+.cd-root.cd-day .cd-card-body,
+.cd-root.cd-day .cd-entry-content {
+  background-color: #fffdfa !important;
+}
+.cd-root.cd-day .cd-card-summary,
+.cd-root.cd-day .cd-entry-summary {
+  background-color: #f7f1e6 !important;
+}
+.cd-root.cd-day .cd-entry {
+  background-color: rgba(255,253,250,0.5) !important;
+}
+.cd-root.cd-day .cd-entry[open] {
+  background-color: #fffdfa !important;
+}
+
+.cd-root.cd-night .cd-diary-card,
+.cd-root.cd-night .cd-card-body,
+.cd-root.cd-night .cd-entry-content {
+  background-color: #1e1e34 !important;
+}
+.cd-root.cd-night .cd-card-summary,
+.cd-root.cd-night .cd-entry-summary {
+  background-color: #1a1a2e !important;
+}
+.cd-root.cd-night .cd-entry {
+  background-color: rgba(44,44,70,0.6) !important;
+}
+.cd-root.cd-night .cd-entry[open] {
+  background-color: #24243c !important;
+}
+.cd-root.cd-night .cd-entry-text { color: #e2dcd0 !important; }
+.cd-root.cd-night .cd-entry-summary .cd-entry-date,
+.cd-root.cd-night .cd-entry[open] > .cd-entry-summary { color: #e8e2d6 !important; }

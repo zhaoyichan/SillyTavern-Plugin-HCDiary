@@ -20,6 +20,7 @@ const DEFAULT_SETTINGS = {
   enabled         : true,          // 自动写日记总开关
   interval        : 5,            // 每 N 个 AI 楼层触发一次（默认5楼）
   cameoThreshold  : 3,            // 路人出场 N 次后正式为其创建日记
+  selectiveMemory : false,        // 选择性记忆(白名单)：开启后只记忆「重点角色」，其余角色一律不记录（false=按原机制自动记忆）
   maxWindowFloors : 40,           // 单次回看最多楼数
   temperature     : 0.7,          // 写日记 API 温度
   mainCardIsGM    : true,         // 主卡是 GM 叙述者，不为它写日记（默认开启）
@@ -34,6 +35,7 @@ const DEFAULT_SETTINGS = {
   injectDiary     : true,         // 注入角色日记到AI上下文
   injectRelation  : false,        // 注入人物关系到AI上下文（跟随关系生成默认关）
   injectArchive   : true,         // 注入剧情档案到AI上下文
+  worldbookLink   : true,         // 世界书联动：写日记/总结时注入重点角色的世界书设定
   filterTags      : [             // 内容过滤标签对（不发送给AI总结）
     { start: '<user_thought>', end: '</user_thought>' },
     { start: '', end: '' },
@@ -452,6 +454,14 @@ async function cdBuildDiaryPrompt(windowFloors, data, s) {
     '严格只输出 JSON, 格式:',
     '{"npcs":[{"name":"主名","aliases":["别名"],"is_minor":false,"date":"剧情时间或第N楼","turn":楼号数字,"entry":"第一人称正文(150字内)","mood":"心情(限用以下词之一：开心、难过、生气、紧张、平静、困惑、惊讶、思念)","attitude_to_user":"对用户态度","secret":"没说出口的心思","key_events":["关键事件"],"relationship_with_others":{"某角色":"关系描述"}}]}',
   ].filter(Boolean).join('\n');
+  // ★ 世界书联动：在函数体顶部异步获取登场角色的世界书设定（loadWorldInfo 为异步 API）
+  let _worldbookTxtDiary = '';
+  if (s && s.worldbookLink !== false) {
+    try {
+      const _wr = cdSceneWorldbookRoles(windowFloors, data);
+      if (_wr.length) _worldbookTxtDiary = await cdGetWorldbookForRoles(_wr);
+    } catch (e) { if (typeof cdWarn === 'function') cdWarn('世界书联动（日记）读取失败:', e); }
+  }
   const usr = [
     known.length ? `已知角色名单: ${known.join('; ')}` : '已知角色名单: (暂无)',
     diaryMemory ? `各角色已有记忆(最新日记):\n${diaryMemory}` : '各角色已有记忆: (暂无)',
@@ -460,6 +470,8 @@ async function cdBuildDiaryPrompt(windowFloors, data, s) {
     (Array.isArray(data.focusRoles) && data.focusRoles.length)
       ? `【重点角色(必须为其详细写日记)】\n${data.focusRoles.map(f => '  - ' + (f.name || '') + (f.note ? `：${f.note}` : '')).join('\n')}\n要求：即使这些角色在本次片段中出场较少，也要根据已有记忆与设定，为其补全完整、符合人设的日记。`
       : '',
+    // ★ 世界书联动：注入本次登场角色的世界书设定（写得更贴人设）
+    _worldbookTxtDiary ? '【世界书设定参考（本次登场角色）】\n' + _worldbookTxtDiary : '',
     '请输出 JSON。',
   ].filter(Boolean).join('\n\n');
   return [
@@ -673,6 +685,14 @@ async function cdBuildArchivePrompt(windowFloors, data, _s) {
     existingCustomTxt ? `\n${existingCustomTxt}` : '',
     customFormatBlock ? '\n自定义追踪项（同样严格按格式输出，与主线等字段并列）：\n' + customFormatBlock : '',
   ].filter(Boolean).join('\n');
+  // ★ 世界书联动：异步获取登场角色的世界书设定（loadWorldInfo 为异步 API）
+  let _worldbookTxtArchive = '';
+  if (_s && _s.worldbookLink !== false) {
+    try {
+      const _wr2 = cdSceneWorldbookRoles(windowFloors, data);
+      if (_wr2.length) _worldbookTxtArchive = await cdGetWorldbookForRoles(_wr2);
+    } catch (e) { if (typeof cdWarn === 'function') cdWarn('世界书联动（档案）读取失败:', e); }
+  }
   const usr = [
     `本次新增楼层：\n${scene}`,
     '',
@@ -681,6 +701,8 @@ async function cdBuildArchivePrompt(windowFloors, data, _s) {
     (Array.isArray(data.focusRoles) && data.focusRoles.length)
       ? `【重点角色（档案中须重点记录其状态/动向/关系变化）】\n${data.focusRoles.map(f => '  - ' + (f.name || '') + (f.note ? `：${f.note}` : '')).join('\n')}`
       : '',
+    // ★ 世界书联动：注入本次登场角色的世界书设定
+    _worldbookTxtArchive ? '【世界书设定参考（本次登场角色）】\n' + _worldbookTxtArchive : '',
   ].filter(Boolean).join('\n');
   return [
     { role: 'system', content: sys },
@@ -1503,9 +1525,26 @@ function mergeDiaries(data, npcs, windowFloors, s) {
       if ((al || []).includes(name) || m === name) { mainName = m; break; }
     }
 
+    // ★ 重点角色强制保留：手动指定的重点角色（含别名匹配）即使被 AI 标为路人，也强制转正并写日记
+    const _isFocus = Array.isArray(data.focusRoles) && data.focusRoles.some(function (f) {
+      if (!f || !f.name) return false;
+      if (f.name === mainName || f.name === name) return true;
+      var al2 = data.aliases ? (data.aliases[mainName] || []) : [];
+      return al2.indexOf(f.name) >= 0;
+    });
+
+    // ★ 选择性记忆(白名单)：开启后只记忆「重点角色」，其余角色一律跳过（不记录、不累计cameo）
+    const _selective = s && s.selectiveMemory === true;
+    if (_selective && !_isFocus) {
+      cdLog('mergeDiaries: 选择性记忆开启，跳过非重点角色', {角色: name, 主名: mainName});
+      continue;
+    }
+
     // 路人转正逻辑
     const isMinor = npc.is_minor === true;
-    if (data.promoted[mainName]) {
+    if (_isFocus) {
+      data.promoted[mainName] = true;   // 重点角色直接转正，不受 is_minor / cameo 过滤
+    } else if (data.promoted[mainName]) {
       // 已是正式角色
     } else if (!isMinor) {
       data.promoted[mainName] = true;
@@ -2263,6 +2302,7 @@ function cdRenderLog() {
     <button class="cd-btn-secondary" id="cd-btn-test-trigger" style="flex:1;min-width:90px;"><i class="fa-regular fa-clock"></i> 检查自动触发</button>
     <button class="cd-btn-secondary" id="cd-btn-test-inject" style="flex:1;min-width:90px;"><i class="fa-regular fa-magnifying-glass"></i> 测试注入</button>
     <button class="cd-btn-secondary" id="cd-btn-test-custom" style="flex:1;min-width:90px;"><i class="fa-regular fa-layer-group"></i> 追踪项诊断</button>
+    <button class="cd-btn-secondary" id="cd-btn-test-worldbook" style="flex:1;min-width:90px;"><i class="fa-regular fa-book-bookmark"></i> 测试世界书</button>
   </div>`;
 
   if (!logs.length) {
@@ -2319,6 +2359,7 @@ function cdRenderLog() {
   $('#cd-btn-test-trigger').off('click').on('click', cdCheckAutoTrigger);
   $('#cd-btn-test-inject').off('click').on('click', cdTestInjection);
   $('#cd-btn-test-custom').off('click').on('click', cdTestCustomFields);
+  $('#cd-btn-test-worldbook').off('click').on('click', cdTestWorldbook);
   $('#cd-btn-clear-log')?.off('click').on('click', () => { cdClearLogs(); cdRenderLog(); });
   // ★ 导出日志
   $('#cd-btn-export-log')?.off('click').on('click', function () {
@@ -4005,6 +4046,354 @@ function cdSetOnboardingSkipped(v) {
   try { localStorage.setItem(CD_ONBOARDING_KEY, v ? '1' : '0'); } catch (e) {}
 }
 
+/* ── 世界书联动：收集本次写日记涉及的所有登场角色 ──
+ * 从 windowFloors（本次新增楼层）提取所有角色名（去重），
+ * 并与「重点角色」合并，保证：日记里出现的角色、以及用户重点关注的角色，
+ * 都能参与世界书设定读取（不再只限于重点角色）。
+ * ★ 角色名归一化：楼层显示名 m.name 很可能是聊天名/别名（如"你去死吧"），
+ *   而非日记主名。这里通过 data.diaries 的键（主名）+ data.aliases（主名→[别名]）
+ *   建立「别名→主名」反向映射，把楼层名归并回主名，从而精准命中世界书条目。
+ * 返回可供 cdGetWorldbookForRoles 使用的角色数组 [{name}]
+ */
+function cdSceneWorldbookRoles(windowFloors, data) {
+  data = data || {};
+  var roles = [];
+  var seen = {};
+  // ★ 建立「别名→主名」反向映射（以 data.diaries 键为主名权威来源）
+  var aliasToMain = {};   // 别名(小写) → 主名
+  var _diaries = (data.diaries && typeof data.diaries === 'object') ? data.diaries : {};
+  var _aliases = (data.aliases && typeof data.aliases === 'object') ? data.aliases : {};
+  Object.keys(_diaries).forEach(function (main) {
+    (Array.isArray(_aliases[main]) ? _aliases[main] : []).forEach(function (al) {
+      var ak = String(al || '').trim().toLowerCase();
+      if (ak) aliasToMain[ak] = String(main).trim();
+    });
+  });
+  function add(n) {
+    n = String(n || '').trim();
+    if (!n) return;
+    var k = n.toLowerCase();
+    // ★ 若当前名命中别名，则归一化为对应主名
+    if (aliasToMain[k]) {
+      n = aliasToMain[k];
+      k = n.toLowerCase();
+    }
+    if (seen[k]) return;
+    seen[k] = 1;
+    roles.push({ name: n });
+  }
+  // 1. 本次登场角色（含 AI 角色名 m.name，经别名映射归并到主名）
+  if (Array.isArray(windowFloors)) {
+    windowFloors.forEach(function (m) {
+      if (m && typeof m.name === 'string') add(m.name);
+    });
+  }
+  // 2. 重点角色兜底合并（无论是否登场都参与，同样归一化）
+  if (data && Array.isArray(data.focusRoles)) {
+    data.focusRoles.forEach(function (f) { if (f) add(f.name); });
+  }
+  return roles;
+}
+
+/* ── 世界书联动：读取匹配登场/重点角色的世界书设定 ──
+ * 防御式：尝试多种 ST 方式获取当前世界书条目文本，返回「角色: 设定」片段。
+ * 若 ST 版本不暴露世界书条目文本，返回空字符串（不影响写日记）。
+ * ★ 附带诊断：探测 ST 世界书相关 API/全局是否可用，便于排查
+ * ★ 异步：新版 ST 的 loadWorldInfo 返回 Promise，需 await 才能读取条目，故本函数为 async
+ */
+async function cdGetWorldbookForRoles(focusRoles) {
+  try {
+    if (!Array.isArray(focusRoles) || !focusRoles.length) return '';
+    var names = focusRoles.map(function (f) { return (f && f.name) || ''; }).filter(Boolean);
+    if (!names.length) return '';
+    // ── 诊断：探测 ST 可能暴露的世界书相关 API/全局 ──
+    var _ctx = (typeof SillyTavern !== 'undefined' && SillyTavern.getContext) ? (function(){ try{ return SillyTavern.getContext(); }catch(e){ return null; } })() : null;
+    var _diag = {
+      hasWorldInfo: typeof window !== 'undefined' && !!window.world_info,
+      worldInfoType: (typeof window !== 'undefined' && window.world_info) ? (Array.isArray(window.world_info) ? 'array' : typeof window.world_info) : '无',
+      hasGetWorldInfoPromptGlobal: typeof getWorldInfoPrompt === 'function',
+      hasGetWorldInfoPromptCtx: !!( _ctx && typeof _ctx.getWorldInfoPrompt === 'function'),
+      hasGetWorldInfoGlobal: typeof getWorldInfo === 'function',
+      hasGetWorldInfoNamesGlobal: typeof getWorldInfoNames === 'function',
+      hasGetWorldInfoNamesCtx: !!( _ctx && typeof _ctx.getWorldInfoNames === 'function'),
+      hasLoadWorldInfoGlobal: typeof loadWorldInfo === 'function',
+      hasLoadWorldInfoCtx: !!( _ctx && typeof _ctx.loadWorldInfo === 'function'),
+      hasGetWorldbookNames: typeof getWorldbookNames === 'function',
+      hasGetCharWorldbookNames: typeof getCharWorldbookNames === 'function',
+      ctxKeys: _ctx ? Object.keys(_ctx).filter(function(k){return /world|book|info/i.test(k);}).slice(0,20) : [],
+      globKeys: (typeof window !== 'undefined') ? Object.keys(window).filter(function(k){return /world|book/i.test(k);}).slice(0,30) : [],
+    };
+    if (typeof cdAddLog === 'function') cdAddLog('info', '[世界书诊断] 环境探测', _diag);
+
+    // 候选1：ST 全局 window.world_info 世界书条目对象（部分版本存在）
+    var entries = (typeof window !== 'undefined' && window.world_info) || null;
+    if (entries && typeof entries === 'object') {
+      // ★ 诊断：打印 window.world_info 每个键的类型+值片段，彻底暴露真实结构
+      if (typeof cdAddLog === 'function') {
+        var _wiMeta = '';
+        var _wiEntriesDetail = [];
+        try {
+          var _wiIsArr = Array.isArray(entries);
+          var _allKeys = _wiIsArr ? (function(){ var a=[]; for(var z=0;z<Math.min(entries.length,20);z++)a.push(String(z)); return a; })() : Object.keys(entries);
+          var _fkList = _allKeys.slice(0, 20);
+          for (var _fk = 0; _fk < _fkList.length; _fk++) {
+            var _kk = _fkList[_fk];
+            var _vv = entries[_kk];
+            var _t = typeof _vv;
+            var _desc = _t;
+            if (_vv === null) _desc = 'null';
+            else if (_t === 'object') {
+              var _keys = Object.keys(_vv);
+              _desc = 'obj{' + _keys.slice(0,8).join(',') + (_keys.length>8?'...':'') + '}';
+              _desc += ' fields=[' + (_keys.length ? _keys.join(' ') : '空') + ']';
+              // 若含 key 数组，打印其首元素
+              if (_vv.key !== undefined) { try { _desc += ' key=' + (Array.isArray(_vv.key) ? JSON.stringify(_vv.key).slice(0,40) : String(_vv.key).slice(0,20)); } catch(e){} }
+            } else if (_t === 'string') { _desc = 'str="' + _vv.slice(0,20) + '"'; }
+            _fkList[_fk] = null; // 释放引用
+            _wiEntriesDetail.push(_kk + ':' + _desc);
+          }
+          _wiMeta = (_wiIsArr ? 'array[' + entries.length + ']' : 'object{keys=' + Object.keys(entries).length + '}') + ' 逐键=[' + _wiEntriesDetail.join(' | ') + ']';
+        } catch (e) { _wiMeta = '无法枚举:' + (e && e.message); }
+        cdAddLog('info', '[世界书诊断] window.world_info 结构=' + _wiMeta);
+      }
+      // ★ 条目容器解析：兼容 数组 / entries包装 / 顶层数字键对象(如 {0:条目,1:条目,...}) 三种形态
+      var list = Array.isArray(entries) ? entries : (entries.entries || null);
+      if (!Array.isArray(list) && entries && typeof entries === 'object' && !Array.isArray(entries)) {
+        // 顶层数字键对象：把含条目特征(uid/key/content/entry)的子对象收集进数组
+        var _skList = [];
+        var _wk = Object.keys(entries);
+        for (var _i2 = 0; _i2 < _wk.length; _i2++) {
+          var _k2 = _wk[_i2];
+          var _v2 = entries[_k2];
+          if (_v2 && typeof _v2 === 'object') {
+            // 条目特征：有 uid 或 有 key 或 有 content/entry 且非函数
+            var _hasEntryField = ('uid' in _v2) || ('key' in _v2) || ('content' in _v2) || ('entry' in _v2) || ('keys' in _v2);
+            if (_hasEntryField) _skList.push(_v2);
+          }
+        }
+        if (_skList.length) list = _skList;
+      }
+      if (typeof cdAddLog === 'function') cdAddLog('info', '[世界书诊断] world_info 存在，条目数=' + (Array.isArray(list) ? list.length : '非数组'));
+      if (Array.isArray(list)) {
+        var out = [];
+        list.forEach(function (e) {
+          if (!e || !e.uid && e.uid !== 0) return;
+          var key = String(e.key || '').toLowerCase();
+          var content = String(e.content || '');
+          if (!content) return;
+          for (var i = 0; i < names.length; i++) {
+            if (key.indexOf(names[i].toLowerCase()) >= 0) {
+              out.push(names[i] + '：' + content);
+              break;
+            }
+          }
+        });
+        if (typeof cdAddLog === 'function') cdAddLog('info', '[世界书诊断] 按角色名匹配到 ' + out.length + ' 条世界书条目（候选1）');
+        if (out.length) return out.join('\n');
+      }
+    } else if (typeof cdAddLog === 'function') {
+      cdAddLog('info', '[世界书诊断] 未检测到 window.world_info（候选1不可用）');
+    }
+
+    /* 候选3：ST 的 getWorldInfoNames + loadWorldInfo 精准读取世界书条目（按角色名匹配）
+     * 这是最精准的方式：能按角色名读取其专属条目，而非激活合集。
+     * 防御式：多试几种返回结构，并把中间结构写入诊断日志便于排查。
+     */
+    var foundNames = null;
+    if (_ctx && typeof _ctx.getWorldInfoNames === 'function') {
+      try { foundNames = _ctx.getWorldInfoNames(); } catch (e) { foundNames = null; }
+    } else if (typeof getWorldInfoNames === 'function') {
+      try { foundNames = getWorldInfoNames(); } catch (e) { foundNames = null; }
+    }
+    if (foundNames) {
+      if (typeof cdAddLog === 'function') {
+        var _np = '';
+        try { _np = Array.isArray(foundNames) ? ('数组'+foundNames.length+'项') : (typeof foundNames); } catch (e) { _np = '未知'; }
+        cdAddLog('info', '[世界书诊断] getWorldInfoNames 返回 ' + _np + (Array.isArray(foundNames) && foundNames[0] ? '，首项=' + String(foundNames[0]).slice(0,60) : ''));
+      }
+      var wbNames = [];
+      try { wbNames = (Array.isArray(foundNames)) ? foundNames : (foundNames.names || Object.keys(foundNames) || []); } catch (e) { wbNames = []; }
+      var out3 = [];
+      var notLoaded = [];
+      // 尝试加载每个世界书，遍历其条目按角色名匹配（★ 用 for 循环以便在 async 内 await loadWorldInfo）
+      var _wbNames = wbNames.slice(0, 20);
+      for (var _wbi = 0; _wbi < _wbNames.length; _wbi++) {
+        var wbName = _wbNames[_wbi];
+        try {
+          var wbObj = null;
+          if (_ctx && typeof _ctx.loadWorldInfo === 'function') { try { wbObj = await _ctx.loadWorldInfo(wbName); } catch (e) { wbObj = null; } }
+          else if (typeof loadWorldInfo === 'function') { try { wbObj = await loadWorldInfo(wbName); } catch (e) { wbObj = null; } }
+          if (!wbObj) { notLoaded.push(wbName); return; }
+          // ★ 诊断：打印 loadWorldInfo 返回结构（含空对象/异步Promise情况），便于定位「无法识别」根因
+          var _wbMeta = '';
+          try {
+            var _isArr = Array.isArray(wbObj);
+            var _isPromise = (typeof Promise !== 'undefined') && (wbObj instanceof Promise);
+            var _k = _isArr ? ('数组' + wbObj.length + '项') : Object.keys(wbObj);
+            var _keyStr = _isArr ? '' : (Array.isArray(_k) ? _k.slice(0,12).join(',') + (_k.length>12?'...':'') : String(_k));
+            _wbMeta = (wbObj && typeof wbObj === 'object') ? ((_isArr?'array':('obj{'+(_keyStr||'空/无键')+'}')) + (_isPromise?' [Promise!可能是异步,需await]':'')) : ('类型=' + typeof wbObj);
+          } catch (e) { _wbMeta = '无法枚举:' + (e && e.message); }
+          if (typeof cdAddLog === 'function') cdAddLog('info', '[世界书诊断] loadWorldInfo 返回结构=' + _wbMeta);
+          // ★★ 异步 Promise 兜底：若 loadWorldInfo 返回 Promise，同步无法取内容，记入 notLoaded 并跳过（交由候选2兜底）
+          if (wbObj && typeof Promise !== 'undefined' && wbObj instanceof Promise) { notLoaded.push(wbName + '(异步)'); return; }
+          // ★ 条目容器识别：数组 / 对象(entries:{字符串数字键}) / 查找多种候选字段 / 顶层即条目容器兜底
+          var entriesArr = null;
+          if (Array.isArray(wbObj)) entriesArr = wbObj;
+          else if (wbObj && Object.prototype.hasOwnProperty.call(wbObj,'entries')) entriesArr = wbObj.entries;
+          else if (wbObj && wbObj.world_info) entriesArr = wbObj.world_info;
+          else if (wbObj && wbObj.data) entriesArr = wbObj.data;
+          else if (wbObj && wbObj.lore) entriesArr = wbObj.lore;
+          else if (wbObj && wbObj.list) entriesArr = wbObj.list;
+          else if (wbObj && wbObj.entries) entriesArr = wbObj.entries;
+          // ★ 兜底：若对象本身就是条目容器（无 entries 但含数字键/uid/key/content），直接当作容器
+          if (!entriesArr && wbObj && typeof wbObj === 'object' && !Array.isArray(wbObj)) {
+            var _selfKeys = Object.keys(wbObj);
+            var _hasUid = false, _hasKey = false;
+            for (var _sk = 0; _sk < _selfKeys.length; _sk++) {
+              var _one = wbObj[_selfKeys[_sk]];
+              if (_one && typeof _one === 'object') { if ('uid' in _one) _hasUid = true; if ('key' in _one) _hasKey = true; }
+            }
+            if (_hasUid || _hasKey) entriesArr = wbObj;
+          }
+          // 若仍是对象（非数组），转成数组（按 key 排序保证稳定）
+          var realList = null;
+          if (entriesArr) {
+            if (Array.isArray(entriesArr)) realList = entriesArr;
+            else {
+              var keys = Object.keys(entriesArr);
+              realList = [];
+              keys.sort(function (a, b) { return parseInt(a, 10) - parseInt(b, 10); });
+              keys.forEach(function (k) { if (entriesArr[k]) realList.push(entriesArr[k]); });
+            }
+          }
+          if (typeof cdAddLog === 'function') cdAddLog('info', '[世界书诊断] 世界书「' + String(wbName).slice(0,30) + '」条目数=' + (realList ? realList.length : '无法识别'));
+          if (realList) {
+            realList.forEach(function (e) {
+              if (!e) return;
+              // ★ key 可能是数组(多个关键词) 或 字符串，统一转匹配文本
+              var keyTxt = '';
+              if (Array.isArray(e.key)) keyTxt = String(e.key.join(' '));
+              else keyTxt = String(e.key || e.name || '');
+              var content = String(e.content || e.entry || '');
+              if (!content) return;
+              var keyLower = keyTxt.toLowerCase();
+              for (var j = 0; j < names.length; j++) {
+                var nm = names[j].toLowerCase();
+                if (keyLower.indexOf(nm) >= 0) { out3.push(names[j] + '：【世界书】' + content); break; }
+              }
+            });
+          }
+        } catch (e) { if (typeof cdAddLog === 'function') cdAddLog('warn', '[世界书诊断] 加载世界书失败: ' + String(wbName).slice(0,20) + ' - ' + (e && e.message)); }
+      }
+      if (typeof cdAddLog === 'function') cdAddLog('info', '[世界书诊断] 候选3 按角色名精准匹配到 ' + out3.length + ' 条世界书条目' + (notLoaded.length ? '，有 ' + notLoaded.length + ' 本未能加载(' + notLoaded.slice(0,3).map(String).join('、') + ')' : ''));
+      if (out3.length) return out3.join('\n');
+    } else if (typeof cdAddLog === 'function') {
+      cdAddLog('info', '[世界书诊断] getWorldInfoNames/loadWorldInfo 不可用（候选3不可用）');
+    }
+
+    // 候选2：尝试 ST 的 getWorldInfoPrompt（部分版本存在，返回激活合集，作为候选3失败后的兜底）
+    var getW = (typeof getWorldInfoPrompt === 'function') ? getWorldInfoPrompt
+      : (_ctx && typeof _ctx.getWorldInfoPrompt === 'function') ? _ctx.getWorldInfoPrompt : null;
+    if (typeof getW === 'function') {
+      if (typeof cdAddLog === 'function') cdAddLog('info', '[世界书诊断] getWorldInfoPrompt 可用（候选2）');
+      var res = getW('');
+      if (res) {
+        if (typeof cdAddLog === 'function') cdAddLog('info', '[世界书诊断] getWorldInfoPrompt 返回 ' + String(res).length + ' 字');
+        return '# 当前激活的世界书设定：\n' + String(res).slice(0, 3000);
+      } else if (typeof cdAddLog === 'function') {
+        cdAddLog('info', '[世界书诊断] getWorldInfoPrompt 返回空（可能无激活条目或没绑定世界书）');
+      }
+    } else if (typeof cdAddLog === 'function') {
+      cdAddLog('info', '[世界书诊断] getWorldInfoPrompt 不可用（候选2不可用）');
+    }
+    if (typeof cdAddLog === 'function') cdAddLog('warn', '[世界书诊断] 所有候选均未读到世界书设定，请查看上面环境探测结果');
+  } catch (e) {
+    if (typeof cdAddLog === 'function') cdAddLog('warn', '[世界书诊断] 读取异常: ' + (e && e.message));
+  }
+  return '';
+}
+
+/* ── 测试世界书联动：触发一次诊断，报告当前环境能否读到世界书设定 ── */
+async function cdTestWorldbook() {
+  try {
+    if (typeof cdAddLog === 'function') cdAddLog('info', '========== 测试世界书联动开始 ==========');
+    const data = await cdGetData();
+    const s = (typeof cdGetSettings === 'function') ? cdGetSettings() : {};
+    // 取当前聊天的最近新增楼层（模拟真实写日记场景），提取登场角色
+    let sceneRoles = [];
+    try {
+      const floors = typeof cdGetNewFloors === 'function' ? await cdGetNewFloors(data) : [];
+      if (Array.isArray(floors) && floors.length) {
+        sceneRoles = cdSceneWorldbookRoles(floors.slice(-(s.maxWindowFloors || 40)), data);
+      }
+    } catch (e) { if (typeof cdAddLog === 'function') cdAddLog('warn', '[世界书诊断] 读取最近楼层失败: ' + (e && e.message)); }
+    const roles = sceneRoles.length ? sceneRoles : (Array.isArray(data.focusRoles) ? data.focusRoles.map(f => ({ name: f && f.name })) : []);
+    const roleNames = roles.map(function (f) { return (f && f.name) || ''; }).filter(Boolean);
+    if (!roles.length) {
+      if (typeof toastr !== 'undefined') toastr.info('当前没有登场角色或重点角色，无法测试。请先在对话中发过消息再试。');
+    }
+    // 记录开关 + 参与角色
+    if (typeof cdAddLog === 'function') cdAddLog('info', '[世界书诊断] 设置', {
+      世界书联动开关: s.worldbookLink !== false,
+      登场角色: roleNames.slice(0, 30),
+    });
+    // 调用读取函数（内部会输出详细诊断日志，★ 异步 await）
+    const txt = await cdGetWorldbookForRoles(roles);
+    if (typeof cdAddLog === 'function') cdAddLog('info', '[世界书诊断] 测试结果：' + (txt ? '成功读到 ' + txt.length + ' 字世界书设定' : '未读到任何世界书设定'));
+    if (typeof toastr !== 'undefined') {
+      if (txt) toastr.success('世界书联动可用：已读到世界书设定 ');
+      else toastr.warning('未读到世界书设定（详细诊断见日志页）。若你确实没建世界书，这是正常的。');
+    }
+    if (typeof cdAddLog === 'function') cdAddLog('info', '========== 测试世界书联动结束 ==========');
+    if (typeof cdRenderLog === 'function') window.setTimeout(function () { cdRenderLog(); }, 300);
+  } catch (e) {
+    if (typeof cdAddLog === 'function') cdAddLog('warn', '测试世界书异常: ' + (e && e.message));
+    if (typeof toastr !== 'undefined') toastr.error('测试世界书出错: ' + (e && e.message));
+  }
+}
+
+/* ── 重点角色：添加（空态 / 浏览页共用）──
+ * @param {string} inputSel  角色名输入框选择器
+ * @param {string} [noteSel] 备注输入框选择器（可选）
+ * 添加后询问用户：立即补写 或 下回合自动触发
+ */
+async function cdAddFocusRole(inputSel, noteSel) {
+  try {
+    const name = String($(inputSel).val() || '').trim();
+    const note = noteSel ? String($(noteSel).val() || '').trim() : '';
+    if (!name) { if (typeof toastr !== 'undefined') toastr.warning('请输入角色名'); return; }
+    const d = await cdGetData();
+    if (!Array.isArray(d.focusRoles)) d.focusRoles = [];
+    if (d.focusRoles.some(function (f) { return f && f.name === name; })) {
+      if (typeof toastr !== 'undefined') toastr.info('该角色已在重点名单中');
+      cdRenderBrowse();
+      return;
+    }
+    d.focusRoles.push({ name: name, note: note });
+    await cdSaveData(d);
+    if (typeof toastr !== 'undefined') toastr.success('已加入重点角色');
+    // ★ C：让用户选择「下回合自动触发」或「立即补写」
+    const doNow = (typeof confirm === 'function') && confirm(`已加入重点角色「${name}」。\n\n是否现在立即为该角色补写日记？\n\n确定 = 立即补写\n取消 = 下回合自动触发`);
+    if (doNow) {
+      // 立即补写：取当前未写日记的 AI 楼层，手动跑一次
+      const floors = await cdGetNewFloors(d);
+      const ai = floors.filter(function (m) { return m && !m.is_user && !m.is_system; });
+      if (ai.length) {
+        if (typeof toastr !== 'undefined') toastr.info(`正在为「${name}」补写 ${ai.length} 个楼层...`);
+        const _maxW = (typeof cdGetSettings === 'function' && cdGetSettings().maxWindowFloors) || 40;
+        await cdRunDiary({ manual: true, silent: true, extraFloors: ai.slice(-_maxW) });
+      } else {
+        if (typeof toastr !== 'undefined') toastr.info('暂无未写日记的楼层，下回合自动生效');
+      }
+    } else {
+      if (typeof toastr !== 'undefined') toastr.info('将在下回合自动为重点角色生成日记');
+    }
+    cdRenderBrowse();
+  } catch (e) {
+    if (typeof toastr !== 'undefined') toastr.error('添加重点角色失败: ' + (e && e.message));
+  }
+}
+
 /** 浏览模式: 角色卡片列表（可编辑+搜索+过滤+删除） */
 async function cdRenderBrowse(filterText = '', filterChar = '') {
   const data = await cdGetData();
@@ -4038,6 +4427,21 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
           <span class="cdb-feat off"><i class="fa-regular fa-minus"></i> 关系 / 填表：默认关闭</span>
           <span class="cdb-feat on"><i class="fa-regular fa-check"></i> 自动压缩：可开启</span>
         </div>
+        <div class="cdb-empty-guide-focus">
+          <div class="cdb-focus-label"><i class="fa-regular fa-bullseye"></i> 想重点记忆的角色（可选，可后加）</div>
+          <div class="cdb-focus-add">
+            <input type="text" id="cdb-focus-input" class="cd-input" placeholder="角色名（如：格里菲斯）" style="flex:1;min-width:120px;">
+            <button class="cd-btn-primary cdb-focus-addbtn" id="cdb-focus-add" style="padding:3px 10px;">添加</button>
+          </div>
+        </div>
+        <div class="cdb-empty-guide-selective">
+          <span class="cdb-select-label"><i class="fa-regular fa-sliders"></i> 只记我选的角色（选择性记忆）</span>
+          <label class="cd-switch cdb-select-switch" title="开启后：只有上面添加的角色会被记录日记，其他角色一律不记">
+            <input type="checkbox" id="cdb-s-selective" ${_s.selectiveMemory ? 'checked' : ''}>
+            <span class="cd-slider"></span>
+          </label>
+          <span class="cdb-select-desc">关闭=自动记所有角色；<br>开启=只记上面「重点角色」里的角色，其余不记。</span>
+        </div>
         <div class="cdb-empty-guide-actions">
           <button class="cd-btn-primary cdb-btn-setup" id="cdb-btn-open-settings"><i class="fa-regular fa-sliders"></i> 去设置</button>
           <span class="cdb-empty-guide-foot">顶部切换「剧情 / 关系 / 表」可查看档案、关系网与表格</span>
@@ -4056,6 +4460,20 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
       cdSetOnboardingSkipped(true);
       if (typeof toastr !== 'undefined') toastr.success('已跳过新手引导');
       cdRenderBrowse();
+    });
+    // ★ 空态引导里的重点角色添加（复用 cdAddFocusRole 逻辑）
+    $('#cd-content').off('click', '#cdb-focus-add').on('click', '#cdb-focus-add', async function (e) {
+      e.stopPropagation();
+      await cdAddFocusRole('#cdb-focus-input');
+    });
+    $('#cd-content').off('keydown', '#cdb-focus-input').on('keydown', '#cdb-focus-input', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); $('#cdb-focus-add').trigger('click'); }
+    });
+    // ★ 空态引导里的「选择性记忆」开关：变更即保存设置
+    $('#cd-content').off('change', '#cdb-s-selective').on('change', '#cdb-s-selective', function (e) {
+      e.stopPropagation();
+      if (typeof cdSaveSettings === 'function') cdSaveSettings({ selectiveMemory: $(this).is(':checked') });
+      if (typeof toastr !== 'undefined') toastr.success($(this).is(':checked') ? '已开启选择性记忆：只记你添加的重点角色' : '已关闭选择性记忆');
     });
     return;
   }
@@ -4138,10 +4556,21 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
 
   // ★ 重点角色面板：手动指定要重点写的角色（写日记/总结时引导 AI 围绕它们）
   const _focus = Array.isArray(data.focusRoles) ? data.focusRoles : [];
+  // ★ 选择性记忆(白名单)当前状态：开启时这里就是「唯一记忆名单」
+  const _sMemo = (typeof cdGetSettings === 'function') ? (cdGetSettings().selectiveMemory === true) : false;
+  const _sMemoBadge = _sMemo ? '<span class="cd-focus-badge" style="display:inline-block;margin-left:6px;padding:0 6px;border-radius:8px;background:#b3402a;color:#fff;font-size:calc(0.55rem * var(--cd-fs,1));">白名单记忆·仅此列表</span>' : '';
   const focusRolesHtml = (!filterText && !filterChar) ? `
-    <details class="cd-focus-panel" ${_focus.length ? 'open' : ''}>
-      <summary class="cd-focus-head"><i class="fa-regular fa-bullseye"></i> 重点角色 <span class="cd-focus-count">${_focus.length}</span><span class="cd-focus-desc">手动指定，写日记/总结时重点围绕这些角色</span></summary>
+    <details class="cd-focus-panel" ${(_focus.length || _sMemo) ? 'open' : ''}>
+      <summary class="cd-focus-head"><i class="fa-regular fa-bullseye"></i> 重点角色 <span class="cd-focus-count">${_focus.length}</span><span class="cd-focus-desc">手动指定，写日记/总结时重点围绕这些角色</span>${_sMemoBadge}</summary>
       <div class="cd-focus-body">
+        ${_sMemo ? `<p class="cd-focus-memo-hint" style="margin:0 0 8px;padding:6px 8px;border-radius:6px;background:#fdeee9;color:#8a2f1f;font-size:calc(0.6rem * var(--cd-fs,1));"><i class="fa-regular fa-shield-halved"></i> 已开启「选择性记忆」：插件将<b>只</b>为下面这些角色写日记/存记忆，其他角色一律不会记录。</p>` : ''}
+        <div class="cd-focus-wbrow">
+          <span class="cd-focus-wblabel"><i class="fa-regular fa-book-bookmark"></i> 世界书联动</span>
+          <label class="cd-switch cd-focus-wbswitch">
+            <input type="checkbox" id="cd-focus-worldbook" ${cdGetSettings().worldbookLink !== false ? 'checked' : ''}>
+            <span class="cd-slider"></span>
+          </label>
+        </div>
         <div class="cd-focus-add">
           <input type="text" id="cd-focus-input" class="cd-input" placeholder="角色名" style="flex:1.2;min-width:90px;">
           <input type="text" id="cd-focus-note" class="cd-input" placeholder="备注（可选：人设/当前目标）" style="flex:2;min-width:110px;">
@@ -4270,20 +4699,17 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
 
   // ★ 重点角色：添加
   $('#cd-content').off('click', '#cd-focus-add').on('click', '#cd-focus-add', async function () {
-    const name = String($('#cd-focus-input').val() || '').trim();
-    const note = String($('#cd-focus-note').val() || '').trim();
-    if (!name) { if (typeof toastr !== 'undefined') toastr.warning('请输入角色名'); return; }
-    const d = await cdGetData();
-    if (!Array.isArray(d.focusRoles)) d.focusRoles = [];
-    if (d.focusRoles.some(f => f && f.name === name)) { if (typeof toastr !== 'undefined') toastr.info('该角色已在重点名单中'); return; }
-    d.focusRoles.push({ name: name, note: note });
-    await cdSaveData(d);
-    if (typeof toastr !== 'undefined') toastr.success('已加入重点角色');
-    cdRenderBrowse($('#cd-browse-search-input').val(), $('#cd-browse-char-filter').val());
+    await cdAddFocusRole('#cd-focus-input', '#cd-focus-note');
   });
   // ★ 重点角色：回车也可添加
   $('#cd-content').off('keydown', '#cd-focus-note').on('keydown', '#cd-focus-note', function (e) {
     if (e.key === 'Enter') { e.preventDefault(); $('#cd-focus-add').trigger('click'); }
+  });
+  // ★ 重点角色面板：世界书联动快捷开关
+  $('#cd-content').off('change', '#cd-focus-worldbook').on('change', '#cd-focus-worldbook', function () {
+    const on = $(this).is(':checked');
+    cdSaveSettings({ worldbookLink: on });
+    if (typeof toastr !== 'undefined') toastr.success(on ? '世界书联动：已开启' : '世界书联动：已关闭');
   });
   // ★ 重点角色：移除
   $('#cd-content').off('click', '.cd-focus-del').on('click', '.cd-focus-del', async function () {
@@ -6213,6 +6639,15 @@ async function cdRenderSettings() {
     </div>
 
     <div class="cd-set-row">
+      <label>选择性记忆 <span class="cd-hint" style="display:inline;">（只记你手动指定的重点角色）</span></label>
+      <label class="cd-switch">
+        <input type="checkbox" id="cd-s-selective" ${s.selectiveMemory ? 'checked' : ''}>
+        <span class="cd-slider"></span>
+      </label>
+    </div>
+    <p class="cd-set-hint" style="margin:2px 0 8px;font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;opacity:0.6;">关闭=按原机制自动记忆所有登场角色；开启=仅记忆你在「重点角色」里指定的角色，其余角色一律不记。</p>
+
+    <div class="cd-set-row">
       <label>生成温度</label>
       <input type="number" id="cd-s-temp" value="${s.temperature}" step="0.1" min="0" max="2" class="cd-input">
     </div>
@@ -6280,6 +6715,14 @@ async function cdRenderSettings() {
       <label><i class="fa-regular fa-timeline"></i> 剧情档案</label>
       <label class="cd-switch">
         <input type="checkbox" id="cd-s-archive" ${s.enableArchive !== false ? 'checked' : ''}>
+        <span class="cd-slider"></span>
+      </label>
+    </div>
+
+    <div class="cd-set-row">
+      <label><i class="fa-regular fa-book-bookmark"></i> 世界书联动 <span style="font-weight:normal;font-size:calc(0.55rem * var(--cd-fs, 1));opacity:0.6;">（写日记/总结时参考重点角色的世界书设定）</span></label>
+      <label class="cd-switch">
+        <input type="checkbox" id="cd-s-worldbook" ${s.worldbookLink !== false ? 'checked' : ''}>
         <span class="cd-slider"></span>
       </label>
     </div>
@@ -6538,6 +6981,7 @@ async function cdRenderSettings() {
       enabled: $('#cd-s-enabled').is(':checked'),
       interval: parseInt($('#cd-s-interval').val(), 10) || 5,
       cameoThreshold: parseInt($('#cd-s-cameo').val(), 10) || 3,
+      selectiveMemory: $('#cd-s-selective').is(':checked'),
       temperature: parseFloat($('#cd-s-temp').val()) || 0.7,
       retryTimes: Math.max(0, parseInt($('#cd-s-retry').val(), 10) || 0),
       retryDelay: Math.max(0, parseFloat($('#cd-s-retrydelay').val()) || 0),
@@ -6548,6 +6992,7 @@ async function cdRenderSettings() {
       enableDiary: $('#cd-s-diary').is(':checked'),
       enableRelation: $('#cd-s-relation').is(':checked'),
       enableArchive: $('#cd-s-archive').is(':checked'),
+      worldbookLink: $('#cd-s-worldbook').is(':checked'),
       injectDiary: $('#cd-s-inject-diary').is(':checked'),
       injectRelation: $('#cd-s-inject-relation').is(':checked'),
       injectArchive: $('#cd-s-inject-archive').is(':checked'),
