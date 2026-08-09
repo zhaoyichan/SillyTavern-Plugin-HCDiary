@@ -1398,18 +1398,25 @@ async function cdSaveData(data) {
     if (ctx && ctx.chatMetadata) {
       if (!ctx.chatMetadata.extensions || typeof ctx.chatMetadata.extensions !== 'object') ctx.chatMetadata.extensions = {};
       ctx.chatMetadata.extensions[PLUGIN_ID] = data;
-      // ★ 保存优先级（参照 yuzuki-Memory）：chatMetadata 存在聊天文件，需 saveChat() 写盘，saveMetadata 可能不持久化
+      // ★ 保存优先级：chatMetadata 写入须持久化。优先 saveMetadata*（chatMetadata 专用落盘）并 await 完成；saveChat 兜底
+      // ★ 修复「编辑后不保存」：chatMetadata 变更必须被持久化。
+      //    ST 中 chatMetadata 专用落盘是 saveMetadata* 系列；saveChat 会重写整个聊天文件，
+      //    且返回 Promise 时若只判断 truthy 而不 await，会因竞态导致写入丢失。
+      //    因此：优先并 await 所有可用保存方法（至少一个真正落盘），再以 saveChat 兜底。
       const meth = [
-        ['ctx.saveChat', () => ctx.saveChat && ctx.saveChat()],
-        ['window.saveChatConditional', () => window.saveChatConditional && window.saveChatConditional()],
-        ['window.saveChat', () => window.saveChat && window.saveChat()],
-        ['ctx.saveMetadata', () => ctx.saveMetadata && ctx.saveMetadata()],
-        ['window.saveMetadataDebounced', () => window.saveMetadataDebounced && window.saveMetadataDebounced()],
+        ['window.saveMetadataDebounced', () => typeof window !== 'undefined' && window.saveMetadataDebounced && window.saveMetadataDebounced()],
+        ['ctx.saveMetadata',            () => ctx.saveMetadata && ctx.saveMetadata()],
+        ['window.saveChatConditional',  () => typeof window !== 'undefined' && window.saveChatConditional && window.saveChatConditional()],
+        ['ctx.saveChat',                () => ctx.saveChat && ctx.saveChat()],
+        ['window.saveChat',             () => typeof window !== 'undefined' && window.saveChat && window.saveChat()],
       ];
-      let used = '';
+      const used = [];
       for (const [name, fn] of meth) {
         try {
-          if (fn()) { used = name; break; }
+          const r = fn();
+          if (r && typeof r.then === 'function') { await r; }
+          used.push(name);
+          break;
         } catch (e) { cdWarn(name + ' 失败: ' + e.message); }
       }
       // 记录各保存方法是否可用（只检测存在性，不调用）
