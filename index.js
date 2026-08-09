@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.5.1';
+const PLUGIN_VERSION = '2.5.2';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -1312,66 +1312,60 @@ function cdPushBackup(data, label) {
 }
 async function cdGetData() {
   try {
-    // ST 原生：用 chatMetadata 存数据（存于 extensions 标准位置，兼容旧的顶层存储自动迁移）
-    const ctx = SillyTavern.getContext();
-    if (ctx && ctx.chatMetadata) {
-      // 优先读 extensions[PLUGIN_ID]（ST 标准扩展位置），其次读旧的顶层 [PLUGIN_ID]
-      const extStore = (ctx.chatMetadata.extensions && ctx.chatMetadata.extensions[PLUGIN_ID]) || null;
-      const legacyStore = ctx.chatMetadata[PLUGIN_ID] || null;
-      let stored = extStore || legacyStore;
-      // 若用了旧的位置且 extensions 是空对象，把数据迁移到 extensions 标准位置
-      if (legacyStore && !extStore) {
-        if (!ctx.chatMetadata.extensions || typeof ctx.chatMetadata.extensions !== 'object') ctx.chatMetadata.extensions = {};
-        ctx.chatMetadata.extensions[PLUGIN_ID] = legacyStore;
-        stored = legacyStore;
-      }
-      if (stored && typeof stored === 'object') {
-        const result = Object.assign(emptyData(), stored);
-        cdLog('cdGetData (chatMetadata): diaries=', Object.keys(result.diaries).length, 'lastFloor=', result.lastFloor);
-        // ★ 统一分片检测：如果 lastFloor 或基线大于当前 chat 长度，自动修复
-        const chat = _cdGetChat();
-        if (chat.length > 0) {
-          if (result.lastFloor > chat.length - 1) {
-            cdLog('cdGetData: 修复 lastFloor', {旧值: result.lastFloor, 新值: chat.length - 1});
-            result.lastFloor = chat.length - 1;
-          }
-          if ((result._lastDiaryChatLength ?? 0) > chat.length) {
-            result._lastDiaryChatLength = chat.length;
-          }
-          if ((result._baselineChatLength ?? -1) > chat.length) {
-            result._baselineChatLength = chat.length;
-          }
-          // ★ 切换聊天隔离：若基线为 -1（新聊天或从未自动触发过），
-          //   把基线初始化为当前 chat 长度，避免把该聊天已有历史楼层当作"新增"而自动重写。
-          if ((result._baselineChatLength ?? -1) < 0 && !result._baselineInitialized) {
-            cdLog('cdGetData: 首次进入，初始化自动触发基线', {基线: chat.length});
-            result._baselineChatLength = chat.length;
-            result._lastDiaryChatLength = result._lastDiaryChatLength ?? chat.length;
-            result._baselineInitialized = true;
-          }
+    // ★★ 双轨读取：优先 chatMetadata，其次 Chat Variables（兼容 v8/旧版数据层级）
+    const PLUGIN = PLUGIN_ID;
+    const empty = emptyData();
+    let stored = null;
+
+    // 轨道① chatMetadata（v2.5.x 标准位置，以及旧顶层位置自动迁移）
+    try {
+      const ctx = SillyTavern.getContext();
+      if (ctx && ctx.chatMetadata) {
+        const extStore = (ctx.chatMetadata.extensions && ctx.chatMetadata.extensions[PLUGIN]) || null;
+        const legacyStore = ctx.chatMetadata[PLUGIN] || null;
+        let s = extStore || legacyStore;
+        if (legacyStore && !extStore) {
+          if (!ctx.chatMetadata.extensions || typeof ctx.chatMetadata.extensions !== 'object') ctx.chatMetadata.extensions = {};
+          ctx.chatMetadata.extensions[PLUGIN] = legacyStore;
+          s = legacyStore;
         }
-        if (typeof cdDiaryTotal === 'function') _cdLastDiaryTotal = cdDiaryTotal(result);
-        return result;
+        if (s && typeof s === 'object') { stored = s; }
       }
+    } catch (_c) { /* chatMetadata 不可用时静默 */ }
+
+    // 轨道② Chat Variables（insertOrAssignVariables / getVariables 存储）
+    if (!stored) {
+      try {
+        const cv = (await getVariables({ type: 'chat' })) || {};
+        if (cv && cv[PLUGIN] && typeof cv[PLUGIN] === 'object') stored = cv[PLUGIN];
+      } catch (_v) { /* variables 不可用时静默 */ }
     }
-    // ★ 新聊天首次进入：chatMetadata 为空但聊天已有历史楼层时，
-    //   同样初始化自动触发基线到当前长度，实现"切换聊天干净隔离"（不自动重写历史），
-    //   并立即落盘，使基线固定为首次进入时的值，后续新增楼层才会被统计。
-    const _emptyChat = _cdGetChat();
-    if (_emptyChat.length > 0) {
-      const fresh = emptyData();
-      fresh._baselineChatLength = _emptyChat.length;
-      fresh._lastDiaryChatLength = _emptyChat.length;
-      fresh._baselineInitialized = true;
-      // 切换新聊天：重置全局日记总数基线，避免 cdSaveData 把上一聊天的数量误判为"骤减"
-      if (typeof cdDiaryTotal === 'function') _cdLastDiaryTotal = cdDiaryTotal(fresh);
-      cdLog('cdGetData: chatMetadata 为空，初始化新聊天自动触发基线', {基线: _emptyChat.length});
-      // 落盘保存一次，让后续 cdGetData 进入"已有数据"分支读取固定基线
-      try { await cdSaveData(fresh); } catch (_e) { cdWarn('新聊天初始化保存失败', _e); }
-      return fresh;
+
+    // 数据分片/基线修复（仅当读到真实数据时执行）
+    if (stored) {
+      const result = Object.assign(empty, stored);
+      const chat = _cdGetChat();
+      if (chat.length > 0) {
+        if (result.lastFloor > chat.length - 1) {
+          cdLog('cdGetData: 修复 lastFloor', {old: result.lastFloor, new: chat.length - 1});
+          result.lastFloor = chat.length - 1;
+        }
+        if ((result._lastDiaryChatLength ?? 0) > chat.length) result._lastDiaryChatLength = chat.length;
+        if ((result._baselineChatLength ?? -1) > chat.length) result._baselineChatLength = chat.length;
+        if ((result._baselineChatLength ?? -1) < 0 && !result._baselineInitialized) {
+          result._baselineChatLength = chat.length;
+          result._lastDiaryChatLength = result._lastDiaryChatLength ?? chat.length;
+          result._baselineInitialized = true;
+        }
+      }
+      if (typeof cdDiaryTotal === 'function') _cdLastDiaryTotal = cdDiaryTotal(result);
+      cdLog('cdGetData: 读取成功, diaries=', Object.keys(result.diaries).length, 'lastFloor=', result.lastFloor);
+      return result;
     }
-    cdLog('cdGetData: chatMetadata 为空，返回空数据');
-    return emptyData();
+
+    // 无任何历史数据：返回空数据（不主动落盘，避免抛弃用户可能存在的其它存储层数据）
+    cdLog('cdGetData: 无历史数据，返回空数据');
+    return empty;
   } catch (e) {
     cdWarn('cdGetData 失败', e);
     return emptyData();
@@ -1380,62 +1374,66 @@ async function cdGetData() {
 
 async function cdSaveData(data) {
   try {
-    // ★ 日记数量异常（骤减）检测：只记录日志 + 轻提示，不再自动从备份补回。
-    //   (原「数据保护自动回滚/补回」会因跨聊天复用全局 _cdLastDiaryTotal，
-    //    把别的聊天/同批 message_id 的备份日记混入，导致重复。改为手动恢复，
-    //    用户可在「管理 → 数据备份/恢复」手动选取备份还原。)
+    // 日记数量骤减检测（保留原有逻辑）
     const _dc = (typeof cdDiaryTotal === 'function') ? cdDiaryTotal(data) : 0;
     if (_cdLastDiaryTotal >= 0 && _dc < _cdLastDiaryTotal) {
       const _gap = _cdLastDiaryTotal - _dc;
-      if (typeof cdAddLog === 'function') cdAddLog('warn', '[数据保护] 检测到日记数量减少（已改为手动恢复，不再自动补回）', {之前: _cdLastDiaryTotal, 现在: _dc, 减少: _gap});
-      if (typeof toastr !== 'undefined') {
-        toastr.warning(`[角色日记] 检测到日记减少 ${_gap} 条。若为误删，可在「管理 → 数据备份/恢复」手动恢复。`);
-      }
+      if (typeof cdAddLog === 'function') cdAddLog('warn', '[数据保护] 检测到日记数量减少', {之前: _cdLastDiaryTotal, 现在: _dc, 减少: _gap});
+      if (typeof toastr !== 'undefined') toastr.warning(`[角色日记] 检测到日记减少 ${_gap} 条。若为误删，可在「管理 → 数据备份/恢复」手动恢复。`);
       _cdLastDiaryTotal = cdDiaryTotal(data);
     }
-    // ST 原生：用 chatMetadata + saveChat 等标准链路持久化（存于 extensions 标准位置，参照成熟插件）
-    const ctx = SillyTavern.getContext();
-    if (ctx && ctx.chatMetadata) {
-      if (!ctx.chatMetadata.extensions || typeof ctx.chatMetadata.extensions !== 'object') ctx.chatMetadata.extensions = {};
-      ctx.chatMetadata.extensions[PLUGIN_ID] = data;
-      // ★ 保存优先级：chatMetadata 写入须持久化。优先 saveMetadata*（chatMetadata 专用落盘）并 await 完成；saveChat 兜底
-      // ★ 修复「编辑后不保存」：chatMetadata 变更必须被持久化。
-      //    ST 中 chatMetadata 专用落盘是 saveMetadata* 系列；saveChat 会重写整个聊天文件，
-      //    且返回 Promise 时若只判断 truthy 而不 await，会因竞态导致写入丢失。
-      //    因此：优先并 await 所有可用保存方法（至少一个真正落盘），再以 saveChat 兜底。
-      const meth = [
-        ['window.saveMetadataDebounced', () => typeof window !== 'undefined' && window.saveMetadataDebounced && window.saveMetadataDebounced()],
-        ['ctx.saveMetadata',            () => ctx.saveMetadata && ctx.saveMetadata()],
-        ['window.saveChatConditional',  () => typeof window !== 'undefined' && window.saveChatConditional && window.saveChatConditional()],
-        ['ctx.saveChat',                () => ctx.saveChat && ctx.saveChat()],
-        ['window.saveChat',             () => typeof window !== 'undefined' && window.saveChat && window.saveChat()],
-      ];
-      const used = [];
-      for (const [name, fn] of meth) {
-        try {
-          const r = fn();
-          if (r && typeof r.then === 'function') { await r; }
-          used.push(name);
-          break;
-        } catch (e) { cdWarn(name + ' 失败: ' + e.message); }
+    const PLUGIN = PLUGIN_ID;
+    let saveErr = null;
+    let savedVia = [];
+
+    // 轨道① chatMetadata 写入 + 落盘
+    try {
+      const ctx = SillyTavern.getContext();
+      if (ctx && ctx.chatMetadata) {
+        if (!ctx.chatMetadata.extensions || typeof ctx.chatMetadata.extensions !== 'object') ctx.chatMetadata.extensions = {};
+        ctx.chatMetadata.extensions[PLUGIN] = data;
+        // 依次尝试可用落盘方法并 await（至少一个真正写盘即可）
+        const meth = [
+          ['saveMetadataDebounced',  () => typeof window !== 'undefined' && window.saveMetadataDebounced && window.saveMetadataDebounced()],
+          ['ctx.saveMetadata',       () => ctx.saveMetadata && ctx.saveMetadata()],
+          ['window.saveChatConditional', () => typeof window !== 'undefined' && window.saveChatConditional && window.saveChatConditional()],
+          ['ctx.saveChat',           () => ctx.saveChat && ctx.saveChat()],
+          ['window.saveChat',        () => typeof window !== 'undefined' && window.saveChat && window.saveChat()],
+          ['ctx.saveSettingsDebounced', () => typeof ctx !== 'undefined' && ctx.saveSettingsDebounced && ctx.saveSettingsDebounced()],
+        ];
+        // ★ 修复：不再因第一个方法不抛错就 break，而是把所有可用落盘方法全部执行一遍，
+        //   并优先真正写盘的 saveChat / saveChatConditional，确保数据真正持久化到聊天文件。
+        //   saveMetadataDebounced 是防抖调度，仅靠它可能不会真正落地（Tauri Tavern 实测坑）。
+        for (const [name, fn] of meth) {
+          try {
+            const r = fn();
+            if (r && typeof r.then === 'function') { await r; }
+            savedVia.push(name);
+          } catch (e) { cdWarn(name + ' 失败: ' + (e && e.message)); }
+        }
       }
-      // 记录各保存方法是否可用（只检测存在性，不调用）
-      const avail = {
-        ctxSaveChat: !!(ctx && typeof ctx.saveChat === 'function'),
-        winSaveChatConditional: !!(typeof window !== 'undefined' && typeof window.saveChatConditional === 'function'),
-        winSaveChat: !!(typeof window !== 'undefined' && typeof window.saveChat === 'function'),
-        ctxSaveMetadata: !!(ctx && typeof ctx.saveMetadata === 'function'),
-        winSaveMetadataDebounced: !!(typeof window !== 'undefined' && typeof window.saveMetadataDebounced === 'function'),
-      };
-      cdAddLog('info', '[保存] 聊天数据', { 使用方式: used, 可用方法: avail, diaries: Object.keys(data.diaries || {}).length });
-      cdLog('cdSaveData (chatMetadata): 保存成功, diaries=', Object.keys(data.diaries || {}).length);
-      return;
+    } catch (e) { cdWarn('chatMetadata 写入失败', e); saveErr = saveErr || e; }
+
+    // ★★ 轨道② Chat Variables 强落盘（v8/旧版最稳定机制；双写保证任意 ST 版本都能读回）
+    try {
+      if (typeof insertOrAssignVariables === 'function') {
+        await insertOrAssignVariables({ [PLUGIN]: data }, { type: 'chat' });
+        savedVia.push('insertOrAssignVariables');
+      }
+    } catch (e) {
+      cdWarn('insertOrAssignVariables 保存失败', e);
+      saveErr = saveErr || e;
     }
-    // fallback: 用 insertOrAssignVariables
-    try { await insertOrAssignVariables({ [PLUGIN_ID]: data }, { type: 'chat' }); } catch (_) {}
-    cdLog('cdSaveData (insertOrAssignVariables): diaries=', Object.keys(data.diaries||{}).length);
+
+    if (typeof cdAddLog === 'function') {
+      cdAddLog('info', '[保存] 聊天数据(双轨)', { 方式: savedVia, diaries: Object.keys(data.diaries || {}).length });
+    }
+    cdLog('cdSaveData: 保存完成 方式=', savedVia.join(','), 'diaries=', Object.keys(data.diaries || {}).length);
+    if (saveErr) {
+      cdWarn('cdSaveData 存在未完全落盘路径', saveErr);
+    }
   } catch (e) {
-    cdWarn('保存本局数据失败', e);
+    cdWarn("保存本局数据失败", e);
     if (typeof toastr !== 'undefined') toastr.error('角色日记保存失败: ' + (e && e.message));
   }
 }
@@ -4925,9 +4923,18 @@ function cdShowEntryEditor(name, idx, entry, data) {
       // ★ 修复「保存不了」：改用 message_id 稳定定位，避免 idx(数组下标)
       //   因数据顺序/长度变化而失效，从而误走「保存失败：数据已变化」。
       let targetIdx = idx;
-      if (entry && entry.message_id != null && Array.isArray(curData.diaries[name])) {
-        const found = curData.diaries[name].findIndex(function (x) { return x && x.message_id === entry.message_id; });
-        if (found !== -1) targetIdx = found;
+      // ★ 修复「编辑写错条目」：优先使用用户点击的真实索引 idx，
+      //   绝不用 message_id findIndex 覆盖（该角色的 diaries 会存在相同 message_id 的重复条目，
+      //   findIndex 会误定位到较早的旧副本，导致改错条目、保存后仍是旧值）。
+      //   仅当 idx 越界（数据顺序变化）时才回退，且回退用 lastIndexOf 取最新匹配。
+      if (!Array.isArray(curData.diaries[name]) || curData.diaries[name][targetIdx] === undefined) {
+        let _foundIdx = -1;
+        if (entry && entry.message_id != null && Array.isArray(curData.diaries[name])) {
+          for (let _k = curData.diaries[name].length - 1; _k >= 0; _k--) {
+            if (curData.diaries[name][_k] && curData.diaries[name][_k].message_id === entry.message_id) { _foundIdx = _k; break; }
+          }
+        }
+        if (_foundIdx !== -1) targetIdx = _foundIdx;
       }
       if (curData.diaries[name]?.[targetIdx] !== undefined) {
         curData.diaries[name][targetIdx] = updated;
@@ -7393,6 +7400,14 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
+    version: 'v2.5.2',
+    date: '2026-08-09',
+    items: [
+      '修复：编辑单条日记保存后仍是旧内容（data 存在重复楼层号时，定位错到旧副本导致改错条目）',
+      '修复：保存链路强化——所有可用落盘方法全部执行 + Chat Variables 双轨兜底，确保数据真正写入聊天文件',
+    ],
+  },
+  {
     version: 'v2.5.1',
     date: '2026-08-09',
     items: [
@@ -7669,7 +7684,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.5.1 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.5.2 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
