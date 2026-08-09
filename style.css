@@ -41,9 +41,9 @@
 /* ─── Sheet ─── */
 .cd-sheet {
   width: 92vw;
-  max-width: 380px;
-  height: 68vh;
-  max-height: 500px;
+  max-width: 640px;
+  height: 76vh;
+  max-height: 720px;
   border-radius: 16px;
   display: flex;
   flex-direction: column;
@@ -179,32 +179,104 @@
 .cd-empty p { margin: 0; font-size: calc(0.76rem * var(--cd-fs, 1)); color: #6b5344; }
 .cd-empty-sub { font-size: calc(0.68rem * var(--cd-fs, 1)); opacity: 0.4; color: #8b7355; }
 
-/* ─── 日记卡片 ─── */
-.cd-card-list { display: flex; flex-direction: column; gap: 6px; }
+/* ─── 日记卡片：角色主视觉墙（网格）＋ 堆叠拟物卡 ─── */
+/* ①主视觉墙：角色卡网格排布，未展开时是「封面磁贴」 */
+.cd-card-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+/* ④堆叠拟物卡：底层偏移衬卡 + 顶层封面，hover 展开堆叠 */
 .cd-diary-card {
-  border-radius: 10px;
+  position: relative;
+  border-radius: 12px;
   overflow: hidden;
-  background: rgba(255, 252, 248, 0.8);
-  border: 1px solid rgba(180, 150, 120, 0.08);
-  transition: all 0.15s;
+  background: rgba(255, 252, 248, 0.85);
+  border: 1px solid rgba(180, 150, 120, 0.10);
+  box-shadow:
+    0 1px 0 rgba(180,150,120,0.10),
+    0 2px 6px rgba(0,0,0,0.04),
+    0 6px 18px rgba(0,0,0,0.04);
+  transition: transform 0.22s cubic-bezier(.2,.7,.3,1.2), box-shadow 0.22s ease;
+}
+/* 未展开 = 封面磁贴（矮条） */
+.cd-diary-card:not([open]) {
+  cursor: pointer;
+}
+.cd-diary-card:not([open]):hover {
+  transform: translateY(-4px) scale(1.02) rotate(-0.6deg);
+  box-shadow:
+    0 1px 0 rgba(180,150,120,0.12),
+    0 6px 12px rgba(0,0,0,0.08),
+    0 16px 36px rgba(0,0,0,0.12);
+  border-color: rgba(180, 150, 120, 0.28);
+}
+.cd-diary-card:not([open]):active {
+  transform: translateY(-1px) scale(0.99);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+/* ④多层衬卡：未展开封面叠一层「身后卡」，营造扑克叠放感 */
+.cd-diary-card:not([open])::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  background: rgba(245, 238, 228, 0.55);
+  border: 1px solid rgba(180, 150, 120, 0.14);
+  transform: translate(3px, 4px);
+  z-index: -1;
+}
+.cd-diary-card:not([open]):hover::after {
+  transform: translate(5px, 7px);
+  background: rgba(240, 230, 214, 0.7);
+}
+/* 展开：横跨整行，日记流铺开阅读 */
+.cd-diary-card[open] {
+  grid-column: 1 / -1;
+  grid-row: span 2;
 }
 .cd-diary-card:hover {
-  border-color: rgba(180, 150, 120, 0.15);
+  border-color: rgba(180, 150, 120, 0.20);
 }
 
+/* 封面摘要：默认状态像「标签条」 */
 .cd-card-summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 10px 12px;
   cursor: pointer;
   user-select: none;
   outline: none;
-  background: rgba(245, 238, 228, 0.3);
+  background: rgba(245, 238, 228, 0.35);
   transition: background 0.1s;
 }
-.cd-card-summary:hover { background: rgba(245, 238, 228, 0.5); }
+.cd-card-summary:hover { background: rgba(245, 238, 228, 0.55); }
 .cd-card-summary::-webkit-details-marker { display: none; }
+
+/* 未展开的封面磁贴：更高、名字更醒目，像「角色标签牌」 */
+.cd-diary-card:not([open]) .cd-card-summary {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 16px 14px;
+  background: linear-gradient(135deg, rgba(245,238,228,0.5), rgba(255,252,248,0.7));
+}
+.cd-diary-card:not([open]) .cd-card-name {
+  font-size: calc(0.86rem * var(--cd-fs, 1));
+  font-weight: 700;
+}
+.cd-diary-card:not([open]) .cd-card-meta {
+  flex-wrap: wrap;
+  opacity: 0.55;
+}
+.cd-diary-card:not([open]) .cd-card-meta::after {
+  content: '▸ 展开';
+  font-size: calc(0.56rem * var(--cd-fs, 1));
+  opacity: 0.5;
+  margin-left: auto;
+}
 
 .cd-card-name {
   font-weight: 600;
@@ -219,7 +291,7 @@
   color: #8b7355;
   opacity: 0.6;
 }
-.cd-card-body { padding: 0 12px 10px; }
+.cd-card-body { padding: 0 12px 12px; }
 
 /* ─── 条目 ─── */
 .cd-entry {
@@ -1761,3 +1833,825 @@
 .cd-root.cd-night .cd-entry-text { color: #e2dcd0 !important; }
 .cd-root.cd-night .cd-entry-summary .cd-entry-date,
 .cd-root.cd-night .cd-entry[open] > .cd-entry-summary { color: #e8e2d6 !important; }
+
+/* ══════════════════════════════════════════════════════════════
+   ★ 角色主视觉墙 最终覆盖（①网格墙 + ④堆叠卡）
+   放在文件最末尾，确保不被上方「高级化补丁」/夜间覆盖干扰
+   ══════════════════════════════════════════════════════════════ */
+.cd-root .cd-card-list {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)) !important;
+  gap: 14px !important;
+  align-items: start !important;
+}
+.cd-root .cd-diary-card {
+  position: relative !important;
+  border-radius: 14px !important;
+  overflow: hidden;
+  transition: transform 0.22s cubic-bezier(.2,.7,.3,1.2), box-shadow 0.22s ease !important;
+}
+/* 日间封面卡 */
+.cd-root.cd-day .cd-diary-card {
+  background: linear-gradient(160deg, #fffefe 0%, #faf5ec 100%) !important;
+  border: 1px solid rgba(180,150,120,0.13) !important;
+  box-shadow:
+    0 1px 0 rgba(180,150,120,0.10),
+    0 3px 8px rgba(0,0,0,0.05),
+    0 10px 26px rgba(0,0,0,0.06) !important;
+}
+/* 未展开 = 封面磁贴 + hover 漂浮旋转 */
+.cd-root .cd-diary-card:not([open]) { cursor: pointer; }
+.cd-root .cd-diary-card:not([open]) .cd-card-summary {
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  gap: 4px;
+  padding: 18px 16px !important;
+  background: transparent !important;
+}
+.cd-root .cd-diary-card:not([open]) .cd-card-name {
+  font-size: calc(0.9rem * var(--cd-fs, 1)) !important;
+  font-weight: 700;
+}
+.cd-root .cd-diary-card:not([open]) .cd-card-meta { flex-wrap: wrap; opacity: 0.55; }
+.cd-root .cd-diary-card:not([open]) .cd-card-meta::after { content: '▸ 展开'; font-size: calc(0.55rem * var(--cd-fs,1)); opacity: 0.5; margin-left: auto; }
+.cd-root .cd-diary-card:not([open]):hover {
+  transform: translateY(-5px) scale(1.03) !important;
+  box-shadow:
+    0 1px 0 rgba(180,150,120,0.12),
+    0 10px 18px rgba(0,0,0,0.09),
+    0 22px 46px rgba(0,0,0,0.14) !important;
+}
+.cd-root .cd-diary-card:not([open]):active { transform: translateY(-1px) scale(0.99); }
+/* 堆叠衬卡（身后露出半张卡） */
+.cd-root .cd-diary-card:not([open])::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  transform: translate(4px, 6px);
+  z-index: -1;
+  pointer-events: none;
+}
+.cd-root.cd-day .cd-diary-card:not([open])::after {
+  background: rgba(238,226,207,0.55);
+  border: 1px solid rgba(180,150,120,0.14);
+}
+.cd-root .cd-diary-card:not([open]):hover::after { transform: translate(6px, 9px); }
+/* 展开：横跨整行，日记流铺满 */
+.cd-root .cd-diary-card[open] {
+  grid-column: 1 / -1 !important;
+}
+/* 展开态背景：与面板底色融合（避免展开后露出封面卡的米色小方块） */
+.cd-root.cd-day .cd-diary-card[open] {
+  background: #fffdf9 !important;
+  border-color: rgba(180,150,120,0.10) !important;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.05) !important;
+}
+.cd-root.cd-night .cd-diary-card[open] {
+  background: rgba(28,28,48,0.85) !important;
+  border-color: rgba(255,255,255,0.07) !important;
+  box-shadow: none !important;
+}
+.cd-root .cd-diary-card[open] .cd-card-summary {
+  background: rgba(245,238,228,0.45);
+}
+.cd-root.cd-night .cd-diary-card[open] .cd-card-summary { background: rgba(255,255,255,0.04); }
+/* 夜间：保持深色底，但网格/堆叠/浮动效果不变 */
+.cd-root.cd-night .cd-diary-card {
+  background: rgba(30,30,50,0.6) !important;
+  border-color: rgba(255,255,255,0.08) !important;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.35) !important;
+}
+.cd-root.cd-night .cd-diary-card:not([open]) .cd-card-summary { background: transparent !important; }
+.cd-root.cd-night .cd-diary-card:not([open]) .cd-card-name { color: #e4dccb !important; }
+.cd-root.cd-night .cd-diary-card:not([open]) .cd-card-meta { color: #a59986 !important; }
+.cd-root.cd-night .cd-diary-card:not([open])::after {
+  background: rgba(20,20,38,0.6);
+  border: 1px solid rgba(255,255,255,0.05);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   按钮 / 面板统一「堆叠卡」风格（与角色卡一致）
+   工具栏 tab、普通按钮、更多菜单项 统一：衬卡 + hover 上浮
+   ══════════════════════════════════════════════════════════════ */
+/* ── 工具栏 tab：像一张张小卡，hover 上浮 + 身后衬卡撑开 ── */
+.cd-root .cd-tb-btn {
+  position: relative;
+  border-radius: 12px;
+  padding: 6px 13px;
+  transition: transform 0.18s cubic-bezier(.2,.7,.3,1.2), box-shadow 0.18s ease, background 0.15s;
+}
+.cd-root.cd-day .cd-tb-btn:not(.cd-tb-active):not(.cd-tb-danger):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 12px rgba(150,120,90,0.12);
+  background: rgba(255,253,249,0.9);
+}
+.cd-root.cd-day .cd-tb-btn:not(.cd-tb-active):not(.cd-tb-danger):active {
+  transform: translateY(0);
+}
+.cd-root.cd-night .cd-tb-btn:not(.cd-tb-active):not(.cd-tb-danger):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 14px rgba(0,0,0,0.35);
+  background: rgba(60,60,90,0.6);
+}
+
+/* ── 普通按钮：统一上浮 + 柔和投影（main / secondary / danger） ── */
+.cd-root .cd-btn-primary,
+.cd-root .cd-btn-secondary,
+.cd-root .cd-btn-danger {
+  transition: transform 0.15s cubic-bezier(.2,.7,.3,1.2), box-shadow 0.15s ease, background 0.15s;
+}
+.cd-root .cd-btn-primary:not(:disabled):hover,
+.cd-root .cd-btn-secondary:not(:disabled):hover,
+.cd-root .cd-btn-danger:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+.cd-root .cd-btn-primary:not(:disabled):hover { box-shadow: 0 4px 10px rgba(160,132,98,0.25); }
+.cd-root .cd-btn-secondary:not(:disabled):hover { box-shadow: 0 4px 10px rgba(0,0,0,0.08); }
+.cd-root .cd-btn-danger:not(:disabled):hover { box-shadow: 0 4px 10px rgba(200,70,50,0.18); }
+.cd-root .cd-btn-primary:not(:disabled):active,
+.cd-root .cd-btn-secondary:not(:disabled):active,
+.cd-root .cd-btn-danger:not(:disabled):active { transform: translateY(0); box-shadow: none; }
+
+/* ── 更多菜单项：hover 微微左移 + 轻微浮起提示 ── */
+.cd-root .cd-more-item {
+  transition: transform 0.13s ease, background 0.13s ease;
+}
+.cd-root .cd-more-item:hover { transform: translateX(2px); }
+
+/* ── 单条日记 / 折叠面板：圆角统一 + 浮起手感（轻微） ── */
+.cd-root .cd-entry,
+.cd-root .cd-focus-panel,
+.cd-root .cd-tl-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.cd-root.cd-day .cd-entry[open],
+.cd-root.cd-day .cd-focus-panel[open] {
+  box-shadow: 0 3px 12px rgba(150,120,90,0.08);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ★ 全组件「扁平淡金」统一风格（日记卡同源设计语言）
+   要点：扁平 + 淡金色点缀 + 轻盈浮起（不做厚重立体）
+   设计令牌：淡金描边/高光、极轻扁平影、大圆角、细字重
+   ══════════════════════════════════════════════════════════════ */
+.cd-root {
+  /* 扁平淡金令牌 */
+  --cd-gold: #c9a87c;          /* 主金色 */
+  --cd-gold-light: #e2d3b6;    /* 浅金 */
+  --cd-gold-soft: rgba(201,168,124,0.16);  /* 淡金底 */
+  --cd-gold-line: 1px solid rgba(201,168,124,0.30);  /* 淡金描边 */
+}
+
+/* ── 面板 sheet：扁平纯色 + 顶部淡金光带，底部轻影 ── */
+.cd-root.cd-day .cd-sheet {
+  border: 1px solid rgba(201,168,124,0.22);
+  box-shadow: 0 6px 24px rgba(120,95,60,0.10);
+}
+.cd-root.cd-day .cd-sheet::before {
+  content: '';
+  position: absolute; top: 0; left: 16px; right: 16px; height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: linear-gradient(90deg, transparent, #e2d3b6 20%, #c9a87c 50%, #e2d3b6 80%, transparent);
+  pointer-events: none;
+}
+.cd-root.cd-day .cd-sheet { position: relative; }
+.cd-root.cd-night .cd-sheet {
+  border-color: rgba(205,182,155,0.16);
+  box-shadow: 0 10px 34px rgba(0,0,0,0.4);
+}
+
+/* ── 标题栏：扁平 + 底部细金线 ── */
+.cd-root .cd-header { position: relative; }
+.cd-root.cd-day .cd-header {
+  border-bottom: 1px solid rgba(201,168,124,0.26);
+}
+.cd-root.cd-night .cd-header { border-bottom-color: rgba(255,255,255,0.08); }
+
+/* ── 按钮：扁平淡金（主按钮金底；次按钮白底+金描边），hover 淡金提亮 ── */
+.cd-root .cd-btn-primary,
+.cd-root .cd-btn-secondary,
+.cd-root .cd-btn-danger {
+  border-radius: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  transition: transform 0.14s ease, background 0.14s ease, box-shadow 0.14s ease;
+}
+.cd-root.cd-day .cd-btn-primary {
+  background: linear-gradient(180deg, #d9c09a 0%, #c9a87c 100%);
+  color: #fff;
+  border: 1px solid rgba(201,168,124,0.4);
+  box-shadow: 0 2px 6px rgba(201,168,124,0.22);
+}
+.cd-root.cd-day .cd-btn-primary:hover {
+  background: linear-gradient(180deg, #e0caa6 0%, #d0b188 100%);
+  box-shadow: 0 4px 12px rgba(201,168,124,0.3);
+  transform: translateY(-1px);
+}
+.cd-root.cd-day .cd-btn-secondary {
+  background: #fffdfa;
+  color: #6b5a48;
+  border: 1px solid rgba(201,168,124,0.32);
+  box-shadow: 0 1px 3px rgba(120,95,60,0.05);
+}
+.cd-root.cd-day .cd-btn-secondary:hover {
+  background: #fdf8ee;
+  border-color: rgba(201,168,124,0.5);
+  box-shadow: 0 2px 8px rgba(201,168,124,0.15);
+  transform: translateY(-1px);
+}
+.cd-root.cd-day .cd-btn-danger {
+  background: linear-gradient(180deg, #d95a46 0%, #cb4a36 100%);
+  color: #fff;
+  border: 1px solid rgba(200,70,50,0.3);
+}
+.cd-root .cd-btn-primary:active,
+.cd-root .cd-btn-secondary:active,
+.cd-root .cd-btn-danger:active { transform: scale(0.97); }
+
+/* ── 输入框 / 下拉：扁平淡金描边，聚焦时金色提亮 ── */
+.cd-root .cd-input,
+.cd-root .cd-select {
+  border-radius: 10px;
+  border: 1px solid rgba(201,168,124,0.30);
+  background: #fffdfa;
+  color: #4a3a2a;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+.cd-root .cd-input:focus,
+.cd-root .cd-select:focus {
+  border-color: rgba(201,168,124,0.6);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(201,168,124,0.12);
+}
+
+/* ── 工具栏：扁平底 + 分隔细线；tab 小卡 hover 淡金浮起 ── */
+.cd-root.cd-day .cd-toolbar {
+  background: rgba(250,246,240,0.6);
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(201,168,124,0.16);
+}
+.cd-root .cd-tb-btn {
+  border-radius: 11px;
+  padding: 6px 12px;
+  transition: transform 0.14s ease, background 0.14s ease, box-shadow 0.14s ease;
+}
+.cd-root.cd-day .cd-tb-btn:not(.cd-tb-active):not(.cd-tb-danger) {
+  color: #8a7a66;
+  border: 1px solid transparent;
+}
+.cd-root.cd-day .cd-tb-btn:not(.cd-tb-active):not(.cd-tb-danger):hover {
+  color: #6b5a48;
+  background: #fdfaf2;
+  border-color: rgba(201,168,124,0.3);
+  box-shadow: 0 2px 8px rgba(201,168,124,0.12);
+  transform: translateY(-1px);
+}
+.cd-root .cd-tb-active {
+  background: linear-gradient(180deg, #d9c09a 0%, #c9a87c 100%) !important;
+  color: #fff !important;
+  box-shadow: 0 2px 6px rgba(201,168,124,0.24);
+}
+.cd-root.cd-night .cd-tb-btn:not(.cd-tb-active):not(.cd-tb-danger) { color: #b0a28a; }
+.cd-root.cd-night .cd-tb-btn:not(.cd-tb-active):not(.cd-tb-danger):hover {
+  background: rgba(255,255,255,0.05);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  transform: translateY(-1px);
+}
+
+/* ── 折叠面板 / 卡片：扁平浅底 + 细金描边 + 右侧淡金光带 ── */
+.cd-root.cd-day .cd-focus-panel,
+.cd-root.cd-day .cd-custom-panel,
+.cd-root.cd-day .cd-location-wrap,
+.cd-root.cd-day .cd-tl-card,
+.cd-root.cd-day .cd-browse-overview-item,
+.cd-root.cd-day .cd-entry,
+.cd-root.cd-day .cd-diary-card {
+  border-radius: 13px;
+  border: 1px solid rgba(201,168,124,0.14);
+  background: #fffdfa;
+}
+.cd-root.cd-day .cd-diary-card:not([open])::after {
+  border-color: rgba(201,168,124,0.16);
+}
+.cd-root.cd-night .cd-focus-panel,
+.cd-root.cd-night .cd-custom-panel,
+.cd-root.cd-night .cd-location-wrap,
+.cd-root.cd-night .cd-tl-card,
+.cd-root.cd-night .cd-entry {
+  background: rgba(36,36,60,0.6);
+  border-color: rgba(205,182,155,0.10);
+}
+
+/* ── 设置行 / 状态条：扁平 + 细分隔 + 浅金底 ── */
+.cd-root .cd-set-row { border-radius: 10px; }
+.cd-root.cd-day .cd-set-row:hover { background: rgba(201,168,124,0.06); }
+.cd-root.cd-day .cd-statusbar {
+  border-radius: 13px;
+  background: rgba(253,248,240,0.8);
+  border: 1px solid rgba(201,168,124,0.16);
+}
+.cd-root.cd-day .cd-browse-overview-item .cd-browse-overview-title i { color: #c9a87c; }
+
+/* ── 角色卡 hover：扁平轻盈浮起 + 淡金边，右侧淡金光（不厚重） ── */
+.cd-root .cd-diary-card:not([open]):hover {
+  transform: translateY(-3px) scale(1.01);
+  box-shadow:
+    0 6px 16px rgba(201,168,124,0.16),
+    0 14px 30px rgba(120,95,60,0.08);
+  border-color: rgba(201,168,124,0.35);
+}
+.cd-root.cd-night .cd-diary-card:not([open]):hover {
+  box-shadow: 0 10px 26px rgba(0,0,0,0.35);
+  border-color: rgba(205,182,155,0.25);
+}
+
+/* ── 下拉 select 的选项区 ── */
+.cd-root .cd-select option { background: #fffdfa; color: #4a3a2a; }
+
+/* ══════════════════════════════════════════════════════════════
+   ★ 奶油莫兰迪 · 材质主题 v2（最终权威配色层）
+   设计原则（参考现代高级 UI）：
+   · 中性色占主导（奶油底 + 纯白卡片 + 浅灰褐文字）
+   · 层次靠「弥散带色阴影 + 明度」而非描边/贴金
+   · 杏仁色低饱和点缀，只用在小面积（激活态/图标/强调）
+   · 大量留白 + 克制字重
+   ══════════════════════════════════════════════════════════════ */
+.cd-root {
+  /* 材质令牌 */
+  --ca-bg: #f7f3ec;            /* 面板奶油底 */
+  --ca-card: #ffffff;          /* 卡片纯白 */
+  --ca-ink: #3d3a35;           /* 主文字 暖黑 */
+  --ca-sub: #9a9284;           /* 辅助文字 灰褐 */
+  --ca-line: rgba(150,132,108,0.13);   /* 极淡分隔 */
+  --ca-accent: #c1936d;        /* 杏仁点缀（低饱和陶土金） */
+  --ca-accent-soft: rgba(193,147,109,0.10);
+  --ca-shadow: 0 6px 20px rgba(150,120,90,0.10), 0 2px 8px rgba(150,120,90,0.06);
+  --ca-shadow-hover: 0 12px 32px rgba(150,120,90,0.16), 0 4px 12px rgba(150,120,90,0.08);
+}
+
+/* ── 面板 sheet：奶油渐变底 + 弥散暖影 + 无描边的干净感 ── */
+.cd-root.cd-day .cd-sheet {
+  background: linear-gradient(180deg, #fbf8f2 0%, #f4efe6 100%);
+  border: none;
+  box-shadow: var(--ca-shadow);
+  border-radius: 18px;
+}
+.cd-root.cd-day .cd-sheet::before { display: none; }  /* 去掉顶部金带，改用更含蓄的顶部浅光 */
+.cd-root.cd-day .cd-sheet::after {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: rgba(255,255,255,0.7);
+}
+.cd-root.cd-day .cd-sheet { position: relative; }
+
+/* ── 标题栏：奶油浅底 + 极淡分隔，去掉生硬金线 ── */
+.cd-root.cd-day .cd-header {
+  background: rgba(255,255,255,0.55);
+  border-bottom: 1px solid var(--ca-line);
+}
+.cd-root.cd-day .cd-header-title { color: #4a4438; font-weight: 650; letter-spacing: 0.08em; }
+
+/* ── 内容区：奶油底，留白更多 ── */
+.cd-root.cd-day .cd-body,
+.cd-root.cd-day .cd-settings-panel {
+  background: rgba(247,243,236,0.4);
+}
+
+/* ── 工具栏：透明浅底 + 底部分隔，tab 无边框透明 ── */
+.cd-root.cd-day .cd-toolbar {
+  background: transparent;
+  border-bottom: 1px solid var(--ca-line);
+  padding: 10px 12px;
+}
+.cd-root .cd-tb-btn {
+  border-radius: 10px;
+  padding: 6px 13px;
+  border: none !important;
+  color: #8c8577;
+  font-weight: 550;
+  transition: background 0.16s ease, color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
+}
+.cd-root.cd-day .cd-tb-btn:not(.cd-tb-active):not(.cd-tb-danger):hover {
+  background: var(--ca-accent-soft);
+  color: #6a5f4c;
+  border: none !important;
+  box-shadow: none;
+  transform: none;
+}
+.cd-root .cd-tb-active {
+  background: var(--ca-accent) !important;
+  color: #fff !important;
+  box-shadow: 0 3px 10px rgba(193,147,109,0.3);
+  font-weight: 600;
+}
+
+/* ── 按钮：杏仁低饱和 + 弥散投影，hover 提亮浮起 ── */
+.cd-root .cd-btn-primary,
+.cd-root .cd-btn-secondary,
+.cd-root .cd-btn-danger {
+  border-radius: 11px;
+  border: none;
+  font-weight: 600;
+  transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+.cd-root.cd-day .cd-btn-primary {
+  background: var(--ca-accent);
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(193,147,109,0.28);
+}
+.cd-root.cd-day .cd-btn-primary:hover {
+  background: #cda27a;
+  box-shadow: 0 6px 16px rgba(193,147,109,0.35);
+  transform: translateY(-1px);
+}
+.cd-root.cd-day .cd-btn-secondary {
+  background: #ffffff;
+  color: #6a5f4c;
+  border: 1px solid rgba(150,132,108,0.2);
+  box-shadow: 0 2px 6px rgba(150,120,90,0.06);
+}
+.cd-root.cd-day .cd-btn-secondary:hover {
+  background: #faf6ef;
+  border-color: rgba(193,147,109,0.35);
+  box-shadow: 0 4px 12px rgba(150,120,90,0.10);
+  transform: translateY(-1px);
+}
+.cd-root.cd-day .cd-btn-danger { background: #cf7b67; color: #fff; }
+.cd-root .cd-btn-primary:active,
+.cd-root .cd-btn-secondary:active,
+.cd-root .cd-btn-danger:active { transform: scale(0.97); }
+
+/* ── 输入框/下拉：纯白卡槽 + 淡分隔，聚焦杏仁光晕 ── */
+.cd-root.cd-day .cd-input,
+.cd-root.cd-day .cd-select {
+  background: #ffffff;
+  border: 1px solid rgba(150,132,108,0.22);
+  color: #4a4438;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(150,120,90,0.05) inset;
+}
+.cd-root.cd-day .cd-input:focus,
+.cd-root.cd-day .cd-select:focus {
+  border-color: rgba(193,147,109,0.5);
+  box-shadow: 0 0 0 3px rgba(193,147,109,0.14);
+}
+
+/* ── 卡片（角色卡/折叠面板/概览/日记条目）：纯白 + 弥散暖影 + 留白 ── */
+.cd-root.cd-day .cd-diary-card,
+.cd-root.cd-day .cd-focus-panel,
+.cd-root.cd-day .cd-custom-panel,
+.cd-root.cd-day .cd-location-wrap,
+.cd-root.cd-day .cd-tl-card,
+.cd-root.cd-day .cd-browse-overview-item,
+.cd-root.cd-day .cd-entry,
+.cd-root.cd-day .cd-statusbar {
+  background: #ffffff;
+  border: 1px solid rgba(150,132,108,0.10);
+  border-radius: 14px;
+  box-shadow: 0 2px 8px rgba(150,120,90,0.05);
+}
+.cd-root.cd-day .cd-diary-card { box-shadow: var(--ca-shadow); }
+
+/* 角色卡 hover：轻盈浮起 + 弥散暖影扩大（不贴边、不旋转） */
+.cd-root .cd-diary-card:not([open]):hover {
+  transform: translateY(-4px) scale(1.01);
+  box-shadow: var(--ca-shadow-hover);
+  border-color: rgba(193,147,109,0.25);
+}
+.cd-root .cd-diary-card:not([open]) .cd-card-summary {
+  background: transparent;
+  padding: 18px 16px;
+}
+.cd-root.cd-day .cd-diary-card:not([open]) .cd-card-name { color: #4a4438; }
+.cd-root.cd-day .cd-diary-card:not([open]) .cd-card-meta { color: #9a9284; }
+
+/* 折叠面板头：淡杏仁底，克制的可展开提示 */
+.cd-root.cd-day .cd-focus-head,
+.cd-root.cd-day .cd-custom-head,
+.cd-root.cd-day .cd-location-summary {
+  color: #6a5f4c;
+  background: rgba(247,243,236,0.4);
+}
+.cd-root.cd-day .cd-focus-head i { color: var(--ca-accent); }
+
+/* ── 设置行：留白分栏，无底纹更干净 ── */
+.cd-root.cd-day .cd-set-row { border-radius: 9px; padding: 6px 6px; }
+.cd-root.cd-day .cd-set-row:hover { background: rgba(247,243,236,0.8); }
+
+/* ── 夜间：深灰莫兰迪（蓝灰底 + 暖文字 + 杏仁点缀） ── */
+.cd-root.cd-night .cd-sheet {
+  background: linear-gradient(180deg, #26262f 0%, #1f1f28 100%);
+  border: 1px solid rgba(255,255,255,0.06);
+  box-shadow: 0 16px 44px rgba(0,0,0,0.5);
+}
+.cd-root.cd-night .cd-header {
+  background: rgba(255,255,255,0.03);
+  border-bottom-color: rgba(255,255,255,0.07);
+}
+.cd-root.cd-night .cd-header-title { color: #d8d2c6; }
+.cd-root.cd-night .cd-toolbar { border-bottom-color: rgba(255,255,255,0.07); }
+.cd-root.cd-night .cd-tb-btn { color: #a49c8e; }
+.cd-root.cd-night .cd-tb-btn:not(.cd-tb-active):not(.cd-tb-danger):hover { background: rgba(255,255,255,0.05); color: #d8d2c6; }
+.cd-root.cd-night .cd-tb-active { background: #b98b6a !important; }
+.cd-root.cd-night .cd-diary-card,
+.cd-root.cd-night .cd-focus-panel,
+.cd-root.cd-night .cd-custom-panel,
+.cd-root.cd-night .cd-location-wrap,
+.cd-root.cd-night .cd-tl-card,
+.cd-root.cd-night .cd-entry {
+  background: #2a2a35;
+  border-color: rgba(255,255,255,0.07);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+}
+.cd-root.cd-night .cd-diary-card:not([open]) .cd-card-name { color: #e0dacd; }
+.cd-root.cd-night .cd-diary-card:not([open]) .cd-card-meta { color: #9b9385; }
+.cd-root.cd-night .cd-input,
+.cd-root.cd-night .cd-select {
+  background: #2f2f3a;
+  border-color: rgba(255,255,255,0.12);
+  color: #d8d2c6;
+}
+.cd-root.cd-night .cd-btn-secondary { background: #2f2f3a; color: #d8d2c6; border-color: rgba(255,255,255,0.14); }
+.cd-root .cd-select option { background: #2f2f3a; color: #d8d2c6; }
+
+/* ══════════════════════════════════════════════════════════════
+   ★ 暖金手账 · 杂志导览（最终权威主题 v3）
+   核心：顶栏融入面板成「杂志横幅」 + 工具栏变成「分段胶囊」
+   · 顶栏不再是一根白条，而是融入奶油底、只存标题+金色细线
+   · 工具栏做成通长胶囊槽，激活 tab 是白色药丸浮起
+   · 图标收敛为细线，无边框，hover 淡金
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── 面板：整体奶油纸感 + 顶部杂志横幅渐变 ── */
+.cd-root.cd-day .cd-sheet {
+  background: linear-gradient(180deg, #faf6ef 0%, #f4efe6 38%, #f7f3ec 100%);
+  border: 1px solid rgba(190,172,140,0.16);
+  border-radius: 20px;
+  box-shadow:
+    0 1px 2px rgba(120,100,70,0.04),
+    0 12px 34px rgba(150,120,90,0.12),
+    0 30px 70px rgba(150,120,90,0.10);
+}
+
+/* ── 标题栏：彻底融入面板，做成杂志顶端横幅 ── */
+.cd-root.cd-day .cd-header {
+  background: transparent;
+  border-bottom: none;
+  padding: 20px 22px 14px;
+  cursor: grab;
+}
+/* 标题：大而精致，带装饰性细金线（杂志刊头） */
+.cd-root.cd-day .cd-header-title {
+  position: relative;
+  font-size: calc(1.0rem * var(--cd-fs, 1));
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #4a3f32;
+  text-transform: uppercase;
+  padding-bottom: 8px;
+}
+.cd-root.cd-day .cd-header-title::after {
+  content: '';
+  position: absolute; left: 0; right: 40px; bottom: 0; height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #c9a87c 0%, #e2d3b6 40%, transparent 100%);
+}
+/* 顶部图标：透明圆点，hover 淡金底 */
+.cd-root.cd-day .cd-header-btn {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  color: #a99a82;
+  background: transparent;
+  border: 1px solid transparent;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.cd-root.cd-day .cd-header-btn:hover {
+  color: #7a6a52;
+  background: #fffdf9;
+  box-shadow: 0 2px 8px rgba(150,120,90,0.10);
+}
+.cd-root.cd-day .cd-header-btn.cd-close:hover {
+  color: #c1755f;
+  background: #fdf1ec;
+}
+
+/* ── 工具栏：整条通长「分段胶囊」槽 ── */
+.cd-root.cd-day .cd-toolbar {
+  position: relative;
+  background: rgba(230,219,197,0.35);
+  border: 1px solid rgba(190,172,140,0.14);
+  border-radius: 999px;
+  margin: 0 14px 12px;
+  padding: 4px;
+  display: flex;
+  gap: 2px;
+  box-shadow:
+    inset 0 1px 3px rgba(180,160,130,0.12),
+    0 1px 1px rgba(255,255,255,0.6);
+}
+/* tab：透明药丸内在胶囊槽内；激活 = 白色浮起药丸 + 杏仁文字 */
+.cd-root.cd-day .cd-tb-btn {
+  flex: 1;
+  border: none !important;
+  border-radius: 999px;
+  padding: 7px 6px;
+  color: #a79982;
+  font-weight: 600;
+  font-size: calc(0.72rem * var(--cd-fs,1));
+  box-shadow: none;
+  transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, transform 0.12s;
+}
+.cd-root.cd-day .cd-tb-btn:not(.cd-tb-active):hover { color: #6a5f4c; background: rgba(255,255,255,0.35); }
+.cd-root.cd-day .cd-tb-active {
+  background: #ffffff !important;
+  color: #b0852f !important;
+  box-shadow: 0 2px 6px rgba(150,120,90,0.18), 0 0 0 1px rgba(190,172,140,0.12) !important;
+  font-weight: 700;
+}
+.cd-root.cd-day .cd-tb-btn i { opacity: 0.75; }
+
+/* 更多按钮（胶囊槽内的右侧锚点） */
+.cd-root.cd-day .cd-tb-btn.cd-tb-more { color: #a79982; }
+
+/* ── 内容区：奶油底下沉，留白舒适 ── */
+.cd-root.cd-day .cd-body,
+.cd-root.cd-day .cd-settings-panel {
+  background: transparent;
+  padding: 12px 16px 18px;
+}
+
+/* ── 夜间：墨蓝莫兰迪 + 深色胶囊槽 ── */
+.cd-root.cd-night .cd-sheet {
+  background: linear-gradient(180deg, #2a2a35 0%, #23232e 100%);
+  border-color: rgba(255,255,255,0.07);
+}
+.cd-root.cd-night .cd-header { background: transparent; border-bottom: none; }
+.cd-root.cd-night .cd-header-title { color: #e0d8c8; }
+.cd-root.cd-night .cd-header-title::after { background: linear-gradient(90deg, #b98b6a 0%, #8a7d6a 60%, transparent 100%); }
+.cd-root.cd-night .cd-header-btn { color: #a49c8e; }
+.cd-root.cd-night .cd-header-btn:hover { color: #e8e0d0; background: rgba(255,255,255,0.06); }
+.cd-root.cd-night .cd-toolbar {
+  background: rgba(0,0,0,0.28);
+  border-color: rgba(255,255,255,0.08);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.4);
+}
+.cd-root.cd-night .cd-tb-btn { color: #a49c8e; }
+.cd-root.cd-night .cd-tb-btn:not(.cd-tb-active):hover { color: #ddd5c6; background: rgba(255,255,255,0.06); }
+.cd-root.cd-night .cd-tb-active {
+  background: #3a3a47 !important;
+  color: #e0c99a !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ★ 终极间距压缩补丁 v3.7（针对实际加载路径 #cd-modal-root）
+   说明：插件根节点是 `<div id="cd-modal-root" class="cd-root cd-day">`，
+   由 JS 注入在 <html> 末端（不在 body 内），故用 id 级选择器确保命中。
+   目标：
+   ① 工具栏(日记栏) ↔ 重点角色栏 间距压到极小（日间/夜间统一）
+   ② 内容与面板边缘（左右/上下内边距）收敛
+   ══════════════════════════════════════════════════════════════ */
+
+/* ① 工具栏：日间/夜间一律贴紧、取消悬浮胶囊与底部空隙 */
+#cd-modal-root .cd-toolbar {
+  margin: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;         /* 消掉胶囊槽底部空隙 */
+  padding: 4px 10px 3px !important;    /* 顶部 4 贴 header，底部 3 贴内容 */
+  border-bottom: none !important;      /* 去掉分隔线产生的空隙感 */
+  border-radius: 0 !important;         /* 取消独立胶囊悬浮 */
+  border-left: none !important;
+  border-right: none !important;
+  background: transparent !important;  /* 去底色，上下自然衔接 */
+}
+
+/* ② 内容区：顶部贴紧工具条，四向边缘收敛 */
+#cd-modal-root #cd-body {
+  padding: 3px 8px 10px !important;    /* 顶部 3px；左右 8px 收敛边缘 */
+}
+#cd-modal-root .cd-settings-panel {
+  padding: 3px 8px 10px !important;
+}
+
+/* ③ 重点角色面板：顶部贴齐内容区顶边（日间/夜间一致） */
+#cd-modal-root .cd-focus-panel {
+  margin-top: 0 !important;
+  margin-bottom: 6px !important;
+}
+
+/* ④ 日间 header 收敛：压掉杂志横幅顶部大留白 */
+#cd-modal-root.cd-day .cd-header {
+  padding: 10px 12px 8px !important;
+}
+#cd-modal-root.cd-day .cd-header-title {
+  padding-bottom: 3px !important;
+}
+
+/* ⑤ 重点角色卡片区：白净 + 贴紧（维持高级白，非浓金） */
+#cd-modal-root .cd-focus-panel {
+  background: #ffffff !important;
+  border: 1px solid rgba(150,132,108,0.12) !important;
+  border-radius: 10px !important;
+}
+#cd-modal-root .cd-focus-panel[open] {
+  background: #ffffff !important;
+  border: 1px solid rgba(150,132,108,0.12) !important;
+  border-radius: 10px !important;
+  margin: 0 0 6px !important;
+}
+#cd-modal-root .cd-focus-head {
+  background: transparent !important;
+  padding: 6px 10px !important;
+  color: #5a504a !important;
+}
+#cd-modal-root .cd-focus-card {
+  background: #ffffff !important;
+  border: 1px solid rgba(150,132,108,0.18) !important;
+  color: #4a4438 !important;
+}
+
+/* ⑥ 兜底：任意 .cd-root 前缀（防个别宿主根名不同） */
+.cd-root .cd-toolbar {
+  margin: 0 !important;
+  margin-bottom: 0 !important;
+  padding-top: 4px !important;
+  padding-bottom: 3px !important;
+  border-radius: 0 !important;
+}
+.cd-root #cd-body {
+  padding-top: 3px !important;
+  padding-left: 8px !important;
+  padding-right: 8px !important;
+}
+.cd-root .cd-focus-panel {
+  margin-top: 0 !important;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ★ v3.8：胶囊配色加深 + 适度呼吸（适配日间/夜间主题）
+   说明：用户认可紧凑，但觉得「太紧 + 太素」。本补丁在紧凑基础上：
+   ① 给工具栏一个适配主题的暖色胶囊底（日间适度暖棕、夜间墨蓝）
+   ② 收放外间距做「适度呼吸」，避免元素完全贴死
+   ③ 激活 tab 用 白/深色浮起 + 深金文字，观感高级
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── 日间：工具栏胶囊底色更深一点 + 全圆胶囊角 ── */
+#cd-modal-root.cd-day .cd-toolbar {
+  background: rgba(230,220,200,0.32) !important;
+  border: 1px solid rgba(188,170,140,0.16) !important;
+  border-radius: 999px !important;
+  margin: 6px 12px 8px !important;
+  padding: 4px 6px !important;
+  border-bottom: 1px solid rgba(188,170,140,0.16) !important;
+}
+#cd-modal-root.cd-day .cd-tb-btn {
+  color: #8a7a63 !important;
+  border-radius: 999px !important;
+}
+#cd-modal-root.cd-day .cd-tb-btn:not(.cd-tb-active):hover {
+  background: rgba(255,253,248,0.6) !important;
+  color: #57493a !important;
+}
+#cd-modal-root.cd-day .cd-tb-active {
+  background: #ffffff !important;
+  color: #9a6f2e !important;
+  box-shadow: 0 2px 9px rgba(150,120,90,0.20), 0 0 0 1px rgba(190,172,140,0.16) !important;
+  border-radius: 999px !important;
+  font-weight: 700;
+}
+/* 日间：内容区适度呼吸（不贴死），边缘略收敛但留观感 */
+#cd-modal-root.cd-day #cd-body {
+  padding: 6px 12px 14px !important;
+}
+#cd-modal-root.cd-day .cd-focus-panel {
+  margin-top: 0 !important;
+  margin-bottom: 8px !important;
+}
+#cd-modal-root.cd-day .cd-header {
+  padding: 12px 14px 10px !important;
+}
+
+/* ── 夜间：胶囊墨蓝槽 + 全圆胶囊角，贴合夜间主题 ── */
+#cd-modal-root.cd-night .cd-toolbar {
+  background: rgba(70,70,90,0.34) !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  border-radius: 999px !important;
+  margin: 6px 12px 8px !important;
+  padding: 4px 6px !important;
+  border-bottom: 1px solid rgba(255,255,255,0.08) !important;
+}
+#cd-modal-root.cd-night .cd-tb-btn { color: #c8bfae !important; border-radius: 999px !important; }
+#cd-modal-root.cd-night .cd-tb-btn:not(.cd-tb-active):hover {
+  background: rgba(255,255,255,0.06) !important;
+  color: #e8e0d0 !important;
+}
+#cd-modal-root.cd-night .cd-tb-active {
+  background: #4a4a62 !important;
+  color: #e0c99a !important;
+  box-shadow: 0 2px 9px rgba(0,0,0,0.32) !important;
+  border-radius: 999px !important;
+  font-weight: 700;
+}
+#cd-modal-root.cd-night #cd-body { padding: 6px 12px 14px !important; }
+#cd-modal-root.cd-night .cd-focus-panel { margin-top: 0 !important; margin-bottom: 8px !important; }

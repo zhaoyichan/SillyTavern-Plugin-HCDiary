@@ -4901,6 +4901,9 @@ function cdShowEntryEditor(name, idx, entry, data) {
   overlay.on('click', function (e) { if (e.target === this) close(); });
 
   overlay.find('.cd-editor-save').on('click', async function () {
+    const btn = $(this);
+    if (btn.data('cd-saving')) return;   // 防重复点击
+    btn.data('cd-saving', true);
     const updated = {
       ...entry,
       date: overlay.find('.cd-editor-date').val().trim(),
@@ -4910,17 +4913,67 @@ function cdShowEntryEditor(name, idx, entry, data) {
       secret: overlay.find('.cd-editor-secret').val().trim(),
       key_events: overlay.find('.cd-editor-events').val().split(/[,，、]/).map(s => s.trim()).filter(Boolean),
     };
-    const curData = await cdGetData();
-    if (curData.diaries[name]?.[idx]) {
-      curData.diaries[name][idx] = updated;
-      await cdSaveData(curData);
-      await cdRefreshInjection();
-      toastr.success('日记已更新');
-      close();
-      // 刷新浏览视图
-      if (cdViewMode === 'browse') await cdRenderBrowse();
-    } else {
-      toastr.error('保存失败：数据已变化');
+    try {
+      const curData = await cdGetData();
+      // ★ 修复「保存不了」：改用 message_id 稳定定位，避免 idx(数组下标)
+      //   因数据顺序/长度变化而失效，从而误走「保存失败：数据已变化」。
+      let targetIdx = idx;
+      if (entry && entry.message_id != null && Array.isArray(curData.diaries[name])) {
+        const found = curData.diaries[name].findIndex(function (x) { return x && x.message_id === entry.message_id; });
+        if (found !== -1) targetIdx = found;
+      }
+      if (curData.diaries[name]?.[targetIdx] !== undefined) {
+        curData.diaries[name][targetIdx] = updated;
+        await cdSaveData(curData);
+        await cdRefreshInjection();
+        toastr.success('日记已更新');
+        close();
+        // ★ 优化「编辑卡顿」：保存后优先局部更新该卡片对应 DOM，
+        //   避免整页 cdRenderBrowse() 全量重渲所有日记导致的卡顿。
+        if (cdViewMode === 'browse' && entry && entry.message_id != null) {
+          const safeName = String(name).replace(/"/g, '\\"');
+          const floorVal = entry.message_id;
+          const $card = $('#cd-content').find('.cd-entry[data-name="' + safeName + '"][data-floor="' + floorVal + '"]').first();
+          if ($card.length) {
+            // 正文 / 心声 / 关键事件
+            $card.find('.cd-entry-text').html(escapeHtml(updated.entry || ''));
+            if (updated.secret) $card.find('.cd-entry-secret').html(escapeHtml(updated.secret));
+            else $card.find('.cd-entry-secret').remove();
+            const $ev = $card.find('.cd-entry-events');
+            if (updated.key_events && updated.key_events.length) {
+              const evHtml = escapeHtml(updated.key_events.join(' · '));
+              if ($ev.length) $ev.html(evHtml);
+              else $card.find('.cd-entry-text').after('<div class="cd-entry-events">' + evHtml + '</div>');
+            } else { $ev.remove(); }
+            // 概要行的 日期 / 心情 / 态度
+            const $sum = $card.find('.cd-entry-summary');
+            const $date = $sum.find('.cd-entry-date');
+            if ($date.length) $date.text(updated.date || ('第' + (updated.turn != null ? updated.turn : '') + '楼'));
+            const $mood = $sum.find('.cd-entry-mood');
+            if (updated.mood) {
+              const moodHtml = cdMoodEmoji(updated.mood) + ' ' + escapeHtml(updated.mood);
+              if ($mood.length) $mood.html(moodHtml);
+              else $card.find('.cd-entry-date').after('<span class="cd-entry-mood">' + moodHtml + '</span>');
+            } else { $mood.remove(); }
+            const $att = $sum.find('.cd-entry-att');
+            if (updated.attitude_to_user) {
+              const attHtml = '对用户: ' + escapeHtml(updated.attitude_to_user);
+              if ($att.length) $att.html(attHtml);
+              else $sum.append('<span class="cd-entry-att">' + attHtml + '</span>');
+            } else { $att.remove(); }
+          } else {
+            // 找不到对应卡片才兜底整页刷新
+            await cdRenderBrowse();
+          }
+        }
+      } else {
+        toastr.error('保存失败：数据已变化，请关闭弹窗后重试');
+      }
+    } catch (e) {
+      toastr.error('保存失败：' + (e && e.message || e));
+      cdWarn('编辑日记保存失败', e);
+    } finally {
+      btn.data('cd-saving', false);
     }
   });
 }
@@ -8150,11 +8203,21 @@ async function cdOpenTableEditor() {
     else if(t.id==='ed-save') edSave();
   });
 }
-
 async function cdRenderTable() {
   try {
     const s = cdGetSettings();
     const data = await cdGetData();
+    // ★ 夜间主题感知：表格区有大量日间米色内联样式，夜间需整体切换深色底 + 浅色文字
+    const _root = document.getElementById(MODAL_ID);
+    const _night = !!( _root && _root.classList.contains('cd-night') );
+    const T = _night
+      ? { bg:'rgba(255,255,255,0.045)', bd:'rgba(255,255,255,0.13)', line:'rgba(255,255,255,0.10)',
+          lab:'#d8cbb8', txt:'#e2d8c6', hint:'#b6a98d', sub:'rgba(216,208,190,0.72)',
+          inputBg:'rgba(255,255,255,0.05)', inputTxt:'#e2d8c6' }
+      : { bg:'#f7f1e3', bd:'#e3d5b8', line:'#d8c9a8',
+          lab:'#7a5c34', txt:'#3c2f1f', hint:'#b08d57', sub:'#8b7355',
+          inputBg:'#fdfaf3', inputTxt:'#3c2f1f' };
+
     // 打开界面时迁移旧英文子字段 key → 中文 key
     try {
       const rec0 = Array.isArray(data.liveTableData) && data.liveTableData[0] ? data.liveTableData[0] : null;
@@ -8182,10 +8245,10 @@ async function cdRenderTable() {
 
     let html = `<div style="padding:2px 0;">
       <h3 class="cd-write-title" style="font-size: calc(0.85rem * var(--cd-fs,1));"><i class="fa-regular fa-table"></i> 填表（LIWE 情报表）</h3>
-      <p style="font-size: calc(0.62rem * var(--cd-fs,1));color:#8b7355;opacity:0.7;margin:0 0 10px;">正文 AI 每层在回复末尾输出 <b style="font-size:inherit;">&lt;liwe&gt;</b> 标签，插件自动采集收录。上区覆盖、下区追加。</p>
+      <p style="font-size: calc(0.62rem * var(--cd-fs,1));color:${T.sub};opacity:0.7;margin:0 0 10px;">正文 AI 每层在回复末尾输出 <b style="font-size:inherit;">&lt;liwe&gt;</b> 标签，插件自动采集收录。上区覆盖、下区追加。</p>
 
       <!-- 功能开关 -->
-      <div style="background:#f7f1e3;border:1px solid #e3d5b8;border-radius:8px;padding:8px 10px;margin-bottom:10px;" class="cd-set-section">
+      <div style="background:${T.bg};border:1px solid ${T.bd};border-radius:8px;padding:8px 10px;margin-bottom:10px;" class="cd-set-section">
         <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px;">
           <label style="font-size: calc(0.7rem * var(--cd-fs,1));font-weight:600;">是否开始填表</label>
           <label class="cd-switch" style="margin:0;">
@@ -8193,7 +8256,7 @@ async function cdRenderTable() {
             <span class="cd-slider"></span>
           </label>
         </div>
-        <div style="font-size: calc(0.66rem * var(--cd-fs,1));font-weight:600;color:#7a5c34;margin:2px 0 4px;">填表触发方式（自动 / 批量 二选一）</div>
+        <div style="font-size: calc(0.66rem * var(--cd-fs,1));font-weight:600;color:${T.lab};margin:2px 0 4px;">填表触发方式（自动 / 批量 二选一）</div>
         <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-bottom:6px;">
           <label style="font-size: calc(0.68rem * var(--cd-fs,1));cursor:pointer;">
             <input type="radio" name="cd-lt-mode" value="auto" ${(s.liveTableMode||'auto')==='auto'?'checked':''}> 自动填表（正文末尾生成）
@@ -8223,43 +8286,43 @@ async function cdRenderTable() {
         <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-bottom:6px;">
           <label style="font-size: calc(0.68rem * var(--cd-fs,1));">表格快照保留上限</label>
           <input type="number" id="cd-lt-snaplimit" value="${(s.liveSnapshotLimit === undefined) ? 15 : s.liveSnapshotLimit}" min="1" max="200" style="width:60px;font-size: calc(0.68rem * var(--cd-fs,1));">
-          <span style="font-size: calc(0.55rem * var(--cd-fs,1));color:#8b7355;opacity:0.6;">表格每次变化自动存快照，最多保留此份数（删除多余快照可回退）</span>
+          <span style="font-size: calc(0.55rem * var(--cd-fs,1));color:${T.sub};opacity:0.6;">表格每次变化自动存快照，最多保留此份数（删除多余快照可回退）</span>
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px;">
           <button class="cd-btn-primary" id="cd-lt-save" style="font-size: calc(0.68rem * var(--cd-fs,1));">保存设置</button>
         </div>
-        <div style="margin-top:8px;border-top:1px dashed #d8c9a8;padding-top:6px;">
-          <label style="font-size: calc(0.68rem * var(--cd-fs,1));font-weight:700;color:#7a5c34;">发送给AI的填表提示词（可自由编辑）</label>
-          <textarea id="cd-lt-prompt" rows="9" spellcheck="false" style="width:100%;box-sizing:border-box;margin-top:4px;padding:6px;font-size: calc(0.6rem * var(--cd-fs,1));background:#fdfaf3;border:1px solid #e3d5b8;border-radius:6px;color:#3c2f1f;resize:vertical;line-height:1.5;">${escV(s.liveTablePrompt || '')}</textarea>
+        <div style="margin-top:8px;border-top:1px dashed ${T.line};padding-top:6px;">
+          <label style="font-size: calc(0.68rem * var(--cd-fs,1));font-weight:700;color:${T.lab};">发送给AI的填表提示词（可自由编辑）</label>
+          <textarea id="cd-lt-prompt" rows="9" spellcheck="false" style="width:100%;box-sizing:border-box;margin-top:4px;padding:6px;font-size: calc(0.6rem * var(--cd-fs,1));background:${T.inputBg};border:1px solid ${T.bd};border-radius:6px;color:${T.inputTxt};resize:vertical;line-height:1.5;">${escV(s.liveTablePrompt || '')}</textarea>
           <div style="margin-top:4px;"><button class="cd-btn-primary" id="cd-lt-resetprompt" style="font-size: calc(0.62rem * var(--cd-fs,1));padding:3px 10px;min-width:auto;">恢复默认提示词</button>
-          <span style="font-size: calc(0.55rem * var(--cd-fs,1));color:#8b7355;">（点击后填入带 &lt;details&gt; 折叠的默认版本，再点「保存设置」生效）</span></div>
-          <p style="font-size: calc(0.55rem * var(--cd-fs,1));color:#8b7355;margin:4px 0 0;line-height:1.5;">本功能为采集式填表：AI 必须严格按提示词，在回复末尾用一个 &lt;details&gt;&lt;summary&gt;情报表&lt;/summary&gt; 折叠块包裹 &lt;liwe&gt; 标签，插件才能识别并写入表格。请保留提示词中的 &lt;liwe&gt; 标签及其内容格式；字段名改动后，插件需按相同字段名采集。修改后点「保存设置」生效。</p>
-          <div style="margin-top:6px;border-top:1px dashed #d8c9a8;padding-top:6px;">
-            <label style="font-size: calc(0.66rem * var(--cd-fs,1));font-weight:700;color:#7a5c34;">» 采集字段配置（可自定义增删改，用、或,分隔）</label>
+          <span style="font-size: calc(0.55rem * var(--cd-fs,1));color:${T.sub};">（点击后填入带 &lt;details&gt; 折叠的默认版本，再点「保存设置」生效）</span></div>
+          <p style="font-size: calc(0.55rem * var(--cd-fs,1));color:${T.sub};margin:4px 0 0;line-height:1.5;">本功能为采集式填表：AI 必须严格按提示词，在回复末尾用一个 &lt;details&gt;&lt;summary&gt;情报表&lt;/summary&gt; 折叠块包裹 &lt;liwe&gt; 标签，插件才能识别并写入表格。请保留提示词中的 &lt;liwe&gt; 标签及其内容格式；字段名改动后，插件需按相同字段名采集。修改后点「保存设置」生效。</p>
+          <div style="margin-top:6px;border-top:1px dashed ${T.line};padding-top:6px;">
+            <label style="font-size: calc(0.66rem * var(--cd-fs,1));font-weight:700;color:${T.lab};">» 采集字段配置（可自定义增删改，用、或,分隔）</label>
             <div style="margin-top:4px;">
-              <label style="font-size: calc(0.6rem * var(--cd-fs,1));color:#6b5a48;">状态表子字段（每个角色行里的项）</label>
-              <input id="cd-lt-chfields" value="${escV((s.liveCharFields || []).join('、'))}" style="width:100%;box-sizing:border-box;padding:4px 6px;font-size: calc(0.6rem * var(--cd-fs,1));background:#fdfaf3;border:1px solid #e3d5b8;border-radius:6px;color:#3c2f1f;">
+              <label style="font-size: calc(0.6rem * var(--cd-fs,1));color:${T.sub};">状态表子字段（每个角色行里的项）</label>
+              <input id="cd-lt-chfields" value="${escV((s.liveCharFields || []).join('、'))}" style="width:100%;box-sizing:border-box;padding:4px 6px;font-size: calc(0.6rem * var(--cd-fs,1));background:${T.inputBg};border:1px solid ${T.bd};border-radius:6px;color:${T.inputTxt};">
             </div>
             <div style="margin-top:4px;">
-              <label style="font-size: calc(0.6rem * var(--cd-fs,1));color:#6b5a48;">履历字段（{{user}}的追加记录类）</label>
-              <input id="cd-lt-lowfields" value="${escV((s.liveLowerFields || []).join('、'))}" style="width:100%;box-sizing:border-box;padding:4px 6px;font-size: calc(0.6rem * var(--cd-fs,1));background:#fdfaf3;border:1px solid #e3d5b8;border-radius:6px;color:#3c2f1f;">
+              <label style="font-size: calc(0.6rem * var(--cd-fs,1));color:${T.sub};">履历字段（{{user}}的追加记录类）</label>
+              <input id="cd-lt-lowfields" value="${escV((s.liveLowerFields || []).join('、'))}" style="width:100%;box-sizing:border-box;padding:4px 6px;font-size: calc(0.6rem * var(--cd-fs,1));background:${T.inputBg};border:1px solid ${T.bd};border-radius:6px;color:${T.inputTxt};">
             </div>
-            <p style="font-size: calc(0.53rem * var(--cd-fs,1));color:#8b7355;margin:3px 0 0;line-height:1.5;">提示词里的角色子字段、履历字段需与这里的配置保持一致，AI 才会按这些字段输出、插件才能正确采集。字段之间用、或,分隔；字段名本身请勿包含 、 , ， 等分隔符字符，否则会被切分。修改后点「保存设置」生效。</p>
+            <p style="font-size: calc(0.53rem * var(--cd-fs,1));color:${T.sub};margin:3px 0 0;line-height:1.5;">提示词里的角色子字段、履历字段需与这里的配置保持一致，AI 才会按这些字段输出、插件才能正确采集。字段之间用、或,分隔；字段名本身请勿包含 、 , ， 等分隔符字符，否则会被切分。修改后点「保存设置」生效。</p>
           </div>
         </div>
       </div>
 
-      <div style="background:#f7f1e3;border:1px solid #e3d5b8;border-radius:8px;padding:8px 10px;margin-bottom:10px;">
+      <div style="background:${T.bg};border:1px solid ${T.bd};border-radius:8px;padding:8px 10px;margin-bottom:10px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <label style="font-size: calc(0.75rem * var(--cd-fs,1));font-weight:700;"><i class="fa-regular fa-file-lines"></i> 表值（当前聊天）</label>
           <button class="cd-btn-primary" id="cd-lt-refresh" style="font-size: calc(0.68rem * var(--cd-fs,1));">刷新</button>
           <button type="button" class="cd-btn-primary" id="cd-lt-edit" title="编辑表格数据" style="font-size: calc(0.68rem * var(--cd-fs,1));padding:3px 10px;min-width:auto;"><i class="fa-regular fa-pen-to-square"></i> 编辑</button>
         </div>
-        <div style="border-top:1px dashed #d8c9a8;padding-top:6px;">
+        <div style="border-top:1px dashed ${T.line};padding-top:6px;">
 `;
 
     if (!defs.length) {
-      html += `<p style="font-size: calc(0.65rem * var(--cd-fs,1));color:#b08d57;margin:6px 0;">尚未配置任何情报表，请编辑全局设置。当前默认建有一张「角色情报表」。</p>`;
+      html += `<p style="font-size: calc(0.65rem * var(--cd-fs,1));color:${T.hint};margin:6px 0;">尚未配置任何情报表，请编辑全局设置。当前默认建有一张「角色情报表」。</p>`;
     } else {
       defs.forEach((def) => {
         // 每张表：现在结构为 location + chars(按角色) + lower(主角履历)
@@ -8268,12 +8331,12 @@ async function cdRenderTable() {
         const chars = (rec.chars && typeof rec.chars === 'object') ? rec.chars : {};
         const lower = (rec.lower && typeof rec.lower === 'object') ? rec.lower : {};
         html += `<div style="margin:6px 0 10px;">
-          <div style="font-size: calc(0.72rem * var(--cd-fs,1));font-weight:700;color:#7a5c34;margin-bottom:4px;">◎ ${escV(def.name || '未命名表')}</div>
-          <div style="font-size: calc(0.62rem * var(--cd-fs,1));color:#b08d57;margin-bottom:2px;">── 状态表（按角色，覆盖）──</div>`;
+          <div style="font-size: calc(0.72rem * var(--cd-fs,1));font-weight:700;color:${T.lab};margin-bottom:4px;">◎ ${escV(def.name || '未命名表')}</div>
+          <div style="font-size: calc(0.62rem * var(--cd-fs,1));color:${T.hint};margin-bottom:2px;">── 状态表（按角色，覆盖）──</div>`;
         // 地点
         html += `<div style="display:flex;align-items:flex-start;gap:6px;font-size: calc(0.68rem * var(--cd-fs,1));padding:1px 0;">
-          <b style="flex:0 0 78px;font-size:inherit;color:#7a5c34;">地点</b>
-          <span style="flex:1;word-break:break-word;color:#3c2f1f;">${escV(loc) || '<span style="color:#c8bba0;">（空）</span>'}</span>
+          <b style="flex:0 0 78px;font-size:inherit;color:${T.lab};">地点</b>
+          <span style="flex:1;word-break:break-word;color:${T.txt};">${escV(loc) || '<span style="color:' + T.sub + ';">（空）</span>'}</span>
         </div>`;
         // 角色行
         if (Object.keys(chars).length) {
@@ -8282,21 +8345,21 @@ async function cdRenderTable() {
             const cf = Array.isArray(s.liveCharFields) && s.liveCharFields.length ? s.liveCharFields : ['状态', '衣着', '对用户好感', '备注'];
             const line = cf.map((f) => ch[f] && String(ch[f]).trim()).filter(Boolean).join(' | ') || '—';
             html += `<div style="display:flex;align-items:flex-start;gap:6px;font-size: calc(0.68rem * var(--cd-fs,1));padding:1px 0;">
-              <b style="flex:0 0 78px;font-size:inherit;color:#7a5c34;">${escV(name)}</b>
-              <span style="flex:1;white-space:pre-wrap;word-break:break-word;color:#3c2f1f;">${escV(line)}</span>
+              <b style="flex:0 0 78px;font-size:inherit;color:${T.lab};">${escV(name)}</b>
+              <span style="flex:1;white-space:pre-wrap;word-break:break-word;color:${T.txt};">${escV(line)}</span>
             </div>`;
           });
         } else {
-          html += `<div style="font-size: calc(0.62rem * var(--cd-fs,1));color:#c8bba0;padding:1px 0;">（尚无角色，对话后自动生成）</div>`;
+          html += `<div style="font-size: calc(0.62rem * var(--cd-fs,1));color:${T.sub};padding:1px 0;">（尚无角色，对话后自动生成）</div>`;
         }
-        html += `<div style="font-size: calc(0.62rem * var(--cd-fs,1));color:#b08d57;margin-bottom:2px;">── 主角履历（追加）──</div>`;
+        html += `<div style="font-size: calc(0.62rem * var(--cd-fs,1));color:${T.hint};margin-bottom:2px;">── 主角履历（追加）──</div>`;
         // 主角履历（字段按配置）
         const lf = Array.isArray(s.liveLowerFields) && s.liveLowerFields.length ? s.liveLowerFields : ['经历事情', '持有物品', '任务'];
         lf.forEach((k) => {
           const v = lower[k] || '';
           html += `<div style="display:flex;align-items:flex-start;gap:6px;font-size: calc(0.68rem * var(--cd-fs,1));padding:1px 0;">
-            <b style="flex:0 0 78px;font-size:inherit;color:#7a5c34;">${escV(k)}</b>
-            <span style="flex:1;white-space:pre-wrap;word-break:break-word;color:#3c2f1f;">${escV(v) ? escV(v).split('\n').map((l)=>'▸ '+l).join('<br>') : '<span style="color:#c8bba0;">（空）</span>'}</span>
+            <b style="flex:0 0 78px;font-size:inherit;color:${T.lab};">${escV(k)}</b>
+            <span style="flex:1;white-space:pre-wrap;word-break:break-word;color:${T.txt};">${escV(v) ? escV(v).split('\n').map((l)=>'▸ '+l).join('<br>') : '<span style="color:' + T.sub + ';">（空）</span>'}</span>
           </div>`;
         });
         html += `</div>`;
