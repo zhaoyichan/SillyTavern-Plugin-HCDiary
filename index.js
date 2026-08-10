@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.6.0';
+const PLUGIN_VERSION = '2.6.1';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -3957,18 +3957,6 @@ function cdInjectModal() {
 
           <!-- 更多（低频 / 工具 / 信息收纳） -->
           <button class="cd-tb-btn cd-tb-more" id="cd-tb-more" title="更多工具"><i class="fa-regular fa-ellipsis"></i> 更多</button>
-          <div class="cd-more-menu" id="cd-more-menu" style="display:none;">
-            <div class="cd-more-group-label">工具</div>
-            <button class="cd-more-item" data-mode="floors"><i class="fa-regular fa-layer-group"></i> 楼层补写</button>
-            <button class="cd-more-item" data-mode="manage"><i class="fa-regular fa-database"></i> 数据管理</button>
-            <button class="cd-more-item" data-mode="export"><i class="fa-regular fa-download"></i> 导出 / 迁移</button>
-            <button class="cd-more-item" data-mode="vector"><i class="fa-regular fa-brain"></i> 向量</button>
-            <div class="cd-more-group-label">信息</div>
-            <button class="cd-more-item" data-mode="log"><i class="fa-regular fa-clipboard-list"></i> 日志</button>
-            <button class="cd-more-item" data-mode="changelog"><i class="fa-regular fa-tag"></i> 更新记录</button>
-            <button class="cd-more-item" data-mode="help"><i class="fa-regular fa-circle-question"></i> 说明帮助</button>
-            <button class="cd-more-item" data-mode="egg"><i class="fa-regular fa-gem"></i> 娱乐彩蛋</button>
-          </div>
         </div>
 
         <div class="cd-body cd-scroll" id="cd-body">
@@ -3976,6 +3964,66 @@ function cdInjectModal() {
         </div>
 
         <div class="cd-settings-panel cd-scroll" id="cd-settings-panel" style="display:none;"></div>
+
+      <!-- ★ 更多 → 工具中心（圆形覆盖层） ★ -->
+      <div class="cd-more-reveal" id="cd-more-reveal">
+        <div class="cd-more-reveal-head">
+          <div class="cd-more-back" id="cd-more-back" title="返回">‹</div>
+          <div class="cd-more-title">工具中心</div>
+          <div class="cd-more-rule"></div>
+        </div>
+        <div class="cd-more-scroll">
+          <div class="cd-more-label"><span class="ln"></span><span class="tx">工具</span><span class="ln r"></span></div>
+          <div class="cd-more-card" data-mode="floors">
+            <div class="cd-more-tgl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div>
+            <span class="cd-more-li"><i class="fa-regular fa-layer-group"></i></span>
+            <div class="cd-more-tx"><div class="cd-more-t1">楼层补写</div><div class="cd-more-t2">补写历史楼层 · 勾选批量补写</div></div>
+            <div class="cd-more-desc">浏览/补写历史楼层，勾选未记录楼层批量补写、支持手动区间补写与剧情档案压缩融合。</div>
+          </div>
+          <div class="cd-more-card" data-mode="manage">
+            <div class="cd-more-tgl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div>
+            <span class="cd-more-li"><i class="fa-regular fa-database"></i></span>
+            <div class="cd-more-tx"><div class="cd-more-t1">数据管理</div><div class="cd-more-t2">备份 · 恢复 · 清理</div></div>
+            <div class="cd-more-desc">备份/恢复/清理本局日记数据，可导出 JSON 防丢失，管理快照与历史备份。</div>
+          </div>
+          <div class="cd-more-card" data-mode="export">
+            <div class="cd-more-tgl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div>
+            <span class="cd-more-li"><i class="fa-regular fa-download"></i></span>
+            <div class="cd-more-tx"><div class="cd-more-t1">导出 / 迁移</div><div class="cd-more-t2">JSON · Markdown · 自传</div></div>
+            <div class="cd-more-desc">导出聊天+回忆为 JSON/Markdown，换设备一键恢复，支持角色自传导出。</div>
+          </div>
+          <div class="cd-more-card" data-mode="vector">
+            <div class="cd-more-tgl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div>
+            <span class="cd-more-li"><i class="fa-regular fa-brain"></i></span>
+            <div class="cd-more-tx"><div class="cd-more-t1">向量检索</div><div class="cd-more-t2">记忆库检索 · Rerank</div></div>
+            <div class="cd-more-desc">记忆库向量检索 + Rerank 重排序配置，精准召回相关历史。</div>
+          </div>
+          <div class="cd-more-label"><span class="ln"></span><span class="tx">信息</span><span class="ln r"></span></div>
+          <div class="cd-more-card" data-mode="log">
+            <div class="cd-more-tgl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div>
+            <span class="cd-more-li"><i class="fa-regular fa-clipboard-list"></i></span>
+            <div class="cd-more-tx"><div class="cd-more-t1">日志</div><div class="cd-more-t2">运行记录 · 诊断 · 统计</div></div>
+            <div class="cd-more-desc">运行记录/诊断/token 与费用统计。</div>
+          </div>
+          <div class="cd-more-card" data-mode="changelog">
+            <div class="cd-more-tgl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div>
+            <span class="cd-more-li"><i class="fa-regular fa-tag"></i></span>
+            <div class="cd-more-tx"><div class="cd-more-t1">更新记录</div><div class="cd-more-t2">版本历史</div></div>
+            <div class="cd-more-desc">版本历史与更新内容说明。</div>
+          </div>
+          <div class="cd-more-card" data-mode="help">
+            <div class="cd-more-tgl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div>
+            <span class="cd-more-li"><i class="fa-regular fa-circle-question"></i></span>
+            <div class="cd-more-tx"><div class="cd-more-t1">说明帮助</div><div class="cd-more-t2">使用指南</div></div>
+            <div class="cd-more-desc">功能使用指南与常见问题。</div>
+          </div>
+          <div class="cd-more-card" data-mode="egg">
+            <div class="cd-more-tgl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div>
+            <span class="cd-more-li"><i class="fa-regular fa-gem"></i></span>
+            <div class="cd-more-tx"><div class="cd-more-t1">娱乐彩蛋</div><div class="cd-more-t2">隐藏玩法</div></div>
+            <div class="cd-more-desc">隐藏玩法与趣味功能。</div>
+          </div>
+        </div>
       </div>
     </div>`;
   document.documentElement.insertAdjacentHTML('beforeend', html);
@@ -4022,38 +4070,27 @@ function cdInjectModal() {
 $('#cd-tb-vector').on('click',   () => cdSwitchView('vector'));
   $('#cd-tb-manage').on('click',  () => cdSwitchView('manage'));
 
-  // ★ 更多菜单：点击「更多」开/关下拉菜单（用 fixed 定位，避免被 cd-sheet 的 overflow:hidden 裁切）
+  // ★ 更多 → 工具中心：点击「更多」用圆形覆盖层展开工具中心卡片页
   $('#cd-tb-more').on('click', function (e) {
     e.stopPropagation();
-    const menu = $('#cd-more-menu');
-    const show = menu.is(':hidden');
-    if (show) {
-      // 依据按钮位置，把菜单用 fixed 定位到按钮下方
-      const rect = this.getBoundingClientRect();
-      menu.css('display', 'block');
-      menu.css('position', 'fixed');
-      menu.css('top', (rect.bottom + 6) + 'px');
-      // 左对齐或右对齐：按钮靠右时右对齐
-      const menuW = menu.outerWidth() || 190;
-      const viewportW = window.innerWidth || document.documentElement.clientWidth;
-      const left = (rect.right + menuW > viewportW - 8) ? (rect.right - menuW) : rect.left;
-      menu.css('left', Math.max(8, left) + 'px');
-      menu.css('right', 'auto');
-    } else {
-      menu.css('display', 'none');
-    }
+    cdMoreOpen();
   });
-  // ★ 更多菜单项：点击切换到对应视图并收起菜单
-  $('#cd-content, #cd-more-menu').on('click', '.cd-more-item', function () {
+  // 返回
+  $('#cd-more-back').on('click', function (e) { e.stopPropagation(); cdMoreClose(); });
+  // 卡片主体：跳转对应界面并收回
+  $('#cd-more-reveal').on('click', '.cd-more-card', function (e) {
     const mode = $(this).data('mode');
-    $('#cd-more-menu').css('display', 'none');
     if (mode) cdSwitchView(mode);
+    cdMoreClose();
   });
-  // 点击菜单外任意处收起「更多」菜单
-  $(document).on('click.cdmore', function (e) {
-    if ($('#cd-more-menu').is(':visible') && !$(e.target).closest('#cd-more-menu, #cd-tb-more').length) {
-      $('#cd-more-menu').css('display', 'none');
-    }
+  // 卡片左侧 ∨：仅展开简介，不跳转
+  $('#cd-more-reveal').on('click', '.cd-more-tgl', function (e) {
+    e.stopPropagation();
+    $(this).closest('.cd-more-card').toggleClass('cd-more-open');
+  });
+  // 点覆盖层空白处收回
+  $('#cd-more-reveal').on('click', function (e) {
+    if (e.target === this || $(e.target).hasClass('cd-more-scroll') || $(e.target).hasClass('cd-more-label')) cdMoreClose();
   });
   cdLog('[cdInjectModal] 模态面板注入完成, Modal根元素存在:', !!document.getElementById(MODAL_ID));
 }
@@ -7452,6 +7489,16 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
+    version: 'v2.6.1',
+    date: '2026-08-11',
+    items: [
+      '「更多」改版：点更多由圆形涟漪式覆盖铺满，进入全新「工具中心」卡片页',
+      '工具中心：奶油燕麦淡色卡片 + 右侧无箭头，左侧 ∨ 点开单卡简介（不跳转），点卡片主体直接跳转对应功能界面',
+      '修复锚点偏移后自动总结不触发：进度基线以真实已写 lastFloor 为准，写日记失败不再吞掉待处理楼层',
+      '日志页新增「模拟自动总结」测试按钮，可手动触发一次并查看运行诊断',
+    ],
+  },
+  {
     version: 'v2.6.0',
     date: '2026-08-10',
     items: [
@@ -7749,7 +7796,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.6.0 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.6.1 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
@@ -9013,4 +9060,42 @@ function escapeHtml(s) {
 
 function escapeAttr(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '"').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+
+/* ★ 更多 → 工具中心：圆形覆盖展开/收回 */
+function cdMoreOpen() {
+  var rv = document.getElementById('cd-more-reveal');
+  var btn = document.getElementById('cd-tb-more');
+  var root = document.getElementById('cd-modal-root');
+  if (!rv || !btn || !root) return;
+  var rr = root.getBoundingClientRect();
+  var br = btn.getBoundingClientRect();
+  // 圆心 = 更多按钮中心（相对 root）
+  var cx = br.left + br.width/2 - rr.left;
+  var cy = br.top + br.height/2 - rr.top;
+  var r = Math.hypot(Math.max(cx, rr.width - cx), Math.max(cy, rr.height - cy));
+  rv.style.transition = 'none';
+  rv.style.clipPath = 'circle(0px at ' + cx + 'px ' + cy + 'px)';
+  rv.classList.add('cd-more-on');
+  rv.style.visibility = 'visible';
+  void rv.offsetWidth;
+  rv.style.transition = 'clip-path .9s cubic-bezier(.45,0,.25,1)';
+  rv.style.clipPath = 'circle(' + r + 'px at ' + cx + 'px ' + cy + 'px)';
+}
+function cdMoreClose() {
+  var rv = document.getElementById('cd-more-reveal');
+  var btn = document.getElementById('cd-tb-more');
+  var root = document.getElementById('cd-modal-root');
+  if (!rv) return;
+  rv.classList.remove('cd-more-on');
+  if (btn && root) {
+    var rr = root.getBoundingClientRect();
+    var br = btn.getBoundingClientRect();
+    var cx = br.left + br.width/2 - rr.left;
+    var cy = br.top + br.height/2 - rr.top;
+    rv.style.transition = 'clip-path .7s cubic-bezier(.6,0,.8,.3)';
+    rv.style.clipPath = 'circle(0px at ' + cx + 'px ' + cy + 'px)';
+    setTimeout(function () { rv.style.visibility = 'hidden'; }, 700);
+  }
 }
