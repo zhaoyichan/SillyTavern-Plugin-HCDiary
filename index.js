@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.5.2';
+const PLUGIN_VERSION = '2.6.0';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -19,13 +19,16 @@ const WB_SUFFIX = '-日记记忆';
 const DEFAULT_SETTINGS = {
   enabled         : true,          // 自动写日记总开关
   interval        : 5,            // 每 N 个 AI 楼层触发一次（默认5楼）
+  memoryOffset    : 2,            // 记忆锚点偏移：自动写记忆时跳过末尾 N 条（默认2），避免把正在重roll/被替换的末尾对话写进记忆；0=不偏移
   cameoThreshold  : 3,            // 路人出场 N 次后正式为其创建日记
   selectiveMemory : false,        // 选择性记忆(白名单)：开启后只记忆「重点角色」，其余角色一律不记录（false=按原机制自动记忆）
+  diaryBlacklist  : [],           // 角色日记黑名单：名字(完全相等)一律不为其写日记/存记忆
   maxWindowFloors : 40,           // 单次回看最多楼数
   temperature     : 0.7,          // 写日记 API 温度
   mainCardIsGM    : true,         // 主卡是 GM 叙述者，不为它写日记（默认开启）
   source          : 'tavern',     // 'tavern' | 'openai' | 'claude' | 'gemini'
   fabShow         : true,         // 是否显示悬浮按钮
+  dotNotify       : true,         // 未读小红点通知：有新日记时在悬浮球右上角显示小红点
   themeMode       : 'day',       // 'auto' | 'day' | 'night'
   fontScale       : 1,            // 界面字号缩放 0.8~1.4（1=标准）
   autoSummary     : true,         // 自动总结开关（独立于手动写日记）
@@ -412,10 +415,13 @@ async function cdBuildDiaryPrompt(windowFloors, data, s) {
     const al = (data.aliases[name] || []);
     return al.length ? `${name}(别名: ${al.join('、')})` : name;
   });
+  // ★ 每角色注入多条最近历史（默认 vectorTopK 条），避免只注入每个角色最新一条
+  const memLimit = Math.max(1, parseInt(s.vectorTopK, 10) || 5);
   const memory = Object.entries(data.diaries).map(([name, list]) => {
-    const last = list[list.length - 1];
-    if (!last) return '';
-    return `【${name}】上次(${last.date || '第' + last.turn + '楼'}): ${last.entry}\n  心情:${last.mood} 对用户态度:${last.attitude_to_user}`;
+    if (!Array.isArray(list) || !list.length) return '';
+    return list.slice(-memLimit).map(function (e) {
+      return `【${name}】${e.date ? '第' + e.date : '第' + e.turn + '楼'}: ${(e.entry || '').trim()}`;
+    }).join('\n');
   }).filter(Boolean).join('\n');
   // ★ 楼层文本经过标签过滤
   const tags = s.filterTags || [];
@@ -428,7 +434,7 @@ async function cdBuildDiaryPrompt(windowFloors, data, s) {
       if (Array.isArray(data.diaryVectors) && data.diaryVectors.length > 0) {
         const topK = s.vectorTopK || 5;
         const threshold = s.vectorThreshold || 0.6;
-        let results = cdSearchVectors(scene, data.diaryVectors, topK, threshold);
+        let results = await cdSearchVectors(scene, data.diaryVectors, topK, threshold);
         // ★ rerank 重排序（角色日记链路）
         results = await cdRerankResults(scene, results, s, 'diary');
         if (results.length) {
@@ -464,7 +470,7 @@ async function cdBuildDiaryPrompt(windowFloors, data, s) {
   }
   const usr = [
     known.length ? `已知角色名单: ${known.join('; ')}` : '已知角色名单: (暂无)',
-    diaryMemory ? `各角色已有记忆(最新日记):\n${diaryMemory}` : '各角色已有记忆: (暂无)',
+    diaryMemory ? `各角色已有记忆(最近历史):\n${diaryMemory}` : '各角色已有记忆: (暂无)',
     `本次剧情片段:\n${scene}`,
     // ★ 重点角色：用户手动指定的角色必须详写，避免被遗漏/脱离设定
     (Array.isArray(data.focusRoles) && data.focusRoles.length)
@@ -487,10 +493,13 @@ function cdBuildCombinedPrompt(windowFloors, data, s) {
     const al = (data.aliases[name] || []);
     return al.length ? `${name}(别名: ${al.join('、')})` : name;
   });
+  // ★ 每角色注入多条最近历史（默认 vectorTopK 条），避免只注入每个角色最新一条
+  const memLimit = Math.max(1, parseInt(s.vectorTopK, 10) || 5);
   const memory = Object.entries(data.diaries).map(([name, list]) => {
-    const last = list[list.length - 1];
-    if (!last) return '';
-    return `【${name}】上次(${last.date || '第' + last.turn + '楼'}): ${last.entry}\n  心情:${last.mood} 对用户态度:${last.attitude_to_user}`;
+    if (!Array.isArray(list) || !list.length) return '';
+    return list.slice(-memLimit).map(function (e) {
+      return `【${name}】${e.date ? '第' + e.date : '第' + e.turn + '楼'}: ${(e.entry || '').trim()}`;
+    }).join('\n');
   }).filter(Boolean).join('\n');
   const scene = windowFloors.map(m => `[#${m.message_id} ${m.name}] ${m.mes}`).join('\n\n');
   const existing = data.archive || emptyData().archive;
@@ -562,7 +571,7 @@ function cdBuildCombinedPrompt(windowFloors, data, s) {
   
   const usr = [
     known.length ? `已知角色名单: ${known.join('; ')}` : '已知角色名单: (暂无)',
-    memory ? `各角色已有记忆(最新日记):\n${memory}` : '各角色已有记忆: (暂无)',
+    memory ? `各角色已有记忆(最近历史):\n${memory}` : '各角色已有记忆: (暂无)',
     `本次剧情片段:\n${scene}`,
   ].join('\n\n');
   
@@ -613,6 +622,10 @@ const ARCHIVE_SYSTEM = [
   '',
   '未解决事项：',
   '（列出未解决事项，每条以【时间标记】开头记录该事项产生的时间）',
+  '',
+  '最后，单独输出以下两个覆盖式总结字段（用来更新整体概览，不是追列事件）：',
+  '剧情总览：用一段80-120字、语言精炼的连贯文字，概述当前整体剧情发展到哪一步、主要局势与各线关系，覆盖式（只描述当前阶段的最新综合情况，勿加编号）。',
+  '章回标题：第X回：XXXX（4-8字，文雅含蓄、具古风章回韵味，如旧时小说回目，含蓄点题且有对仗或意境，覆盖式）。',
 ].join('\n');
 
 async function cdBuildArchivePrompt(windowFloors, data, _s) {
@@ -643,7 +656,7 @@ async function cdBuildArchivePrompt(windowFloors, data, _s) {
       const threshold = _s.vectorThreshold || 0.6;
       // 用当前楼层文本做检索
       const sceneText = windowFloors.map(m => `${m.name}: ${cdFilterTags(m.mes, tags)}`).join('\n');
-      let results = cdSearchVectors(sceneText, vectors, topK, threshold);
+      let results = await cdSearchVectors(sceneText, vectors, topK, threshold);
       // ★ rerank 重排序（剧情档案链路）
       results = await cdRerankResults(sceneText, results, _s, 'story');
       const retrievedText = results.length > 0
@@ -735,7 +748,7 @@ function parseArchiveJson(text, customDefs) {
   const raw = String(text || '').trim();
   const defs = Array.isArray(customDefs) ? customDefs : [];
   // 全部字段标签：内置四个 + 每个自定义项的 label
-  const builtin = ['主线', '支线', '重要状态变化', '未解决事项'];
+  const builtin = ['主线', '支线', '重要状态变化', '未解决事项', '剧情总览', '章回标题'];
   const customLabels = defs.map(d => d && d.label ? d.label : '').filter(Boolean);
   // 按长度降序排列，避免「主角状态」被「状态」抢先截断
   const allLabels = builtin.concat(customLabels).sort((a, b) => b.length - a.length);
@@ -773,7 +786,9 @@ function parseArchiveJson(text, customDefs) {
     const body = parts[d.label];
     custom[d.key] = body ? parseItemsText(body) : [];
   }
-  return { mainline, sideline, states, unresolved, items: [], custom };
+  const title = (parts['章回标题'] || '').split('\n').filter(Boolean)[0] || '';
+  const lead  = (parts['剧情总览'] || '').split('\n').filter(Boolean).join('\n').trim();
+  return { mainline, sideline, states, unresolved, items: [], custom, title, lead };
 }
 
 function cdBuildRelationPrompt(windowFloors, data, _s) {
@@ -1044,10 +1059,10 @@ async function cdVectorizeDiary(data) {
  * @param {number} threshold - 相似度阈值
  * @returns {Array} 排序后的结果 [{ text, category, score }]
  */
-function cdSearchVectors(queryText, vectors, topK = 5, threshold = 0.6) {
+async function cdSearchVectors(queryText, vectors, topK = 5, threshold = 0.6) {
   if (!queryText || !Array.isArray(vectors) || vectors.length === 0) return [];
   
-  // 简单关键词匹配降级（当没有向量时）
+  // 简单关键词匹配降级（当没有任何向量时）
   if (!vectors[0]?.vector) {
     const q = queryText.toLowerCase();
     const keywords = q.split(/\s+/).filter(w => w.length > 1);
@@ -1062,13 +1077,24 @@ function cdSearchVectors(queryText, vectors, topK = 5, threshold = 0.6) {
       .slice(0, topK);
   }
   
-  // 有向量时做余弦相似度
-  // 先把查询文本本身向量化（这里不阻塞，因为没有通用嵌入）
-  // 注意：这里查询文本来自当前楼层，我们没有提前向量化它
-  // 所以这个方法暂时不做实时嵌入，而是用关键词匹配做降级
-  // 后续可以在 cdBuildArchivePrompt 中传参优化
+  // ★ 有真实向量：先对查询文本做嵌入，再与候选向量做余弦相似度（召回多条，而非只取最新）
+  const qVec = await cdGetEmbedding(String(queryText || '').slice(0, 3000)).catch(() => null);
+  if (Array.isArray(qVec) && qVec.length) {
+    const dim = (vectors[0].vector || []).length;
+    if (dim > 0 && qVec.length === dim) {
+      return vectors
+        .map(v => {
+          const vec = v.vector;
+          if (!Array.isArray(vec) || vec.length !== dim) return { ...v, score: 0 };
+          return { ...v, score: cdCosineSimilarity(qVec, vec) };
+        })
+        .filter(v => v.score >= (threshold || 0))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, topK);
+    }
+  }
   
-  // 简单关键词匹配
+  // ★ 查询嵌入失败或维度不匹配 → 降级为关键词匹配
   const q = queryText.toLowerCase();
   const keywords = q.split(/\s+/).filter(w => w.length > 1);
   return vectors
@@ -1530,6 +1556,12 @@ function mergeDiaries(data, npcs, windowFloors, s) {
       if ((al || []).includes(name) || m === name) { mainName = m; break; }
     }
 
+    // ★ 角色日记黑名单：黑名单内名字（完全相等匹配）一律不为其写日记/存记忆（优先级最高，重点角色也不例外）
+    const _bl = Array.isArray(s && s.diaryBlacklist) ? s.diaryBlacklist.map(String).map(function(x){ return (x||'').trim(); }).filter(Boolean) : [];
+    if (_bl.length && (_bl.indexOf(mainName) >= 0 || _bl.indexOf(name) >= 0)) {
+      cdLog('mergeDiaries: 黑名单角色，跳过', {角色: name, 主名: mainName});
+      continue;
+    }
     // ★ 重点角色强制保留：手动指定的重点角色（含别名匹配）即使被 AI 标为路人，也强制转正并写日记
     const _isFocus = Array.isArray(data.focusRoles) && data.focusRoles.some(function (f) {
       if (!f || !f.name) return false;
@@ -1822,7 +1854,7 @@ async function cdBuildDiaryInjectionText() {
           .map(function (m) { return (m && m.mes) ? m.mes : ''; }).join('\n');
         const topK = s.vectorTopK || 5;
         const threshold = s.vectorThreshold || 0.6;
-        let results = cdSearchVectors(recent || '当前剧情', data.archiveVectors, topK, threshold);
+        let results = await cdSearchVectors(recent || '当前剧情', data.archiveVectors, topK, threshold);
         // ★ rerank 重排序（剧情档案注入链路）
         results = await cdRerankResults(recent || '当前剧情', results, s, 'story');
         const vecTxt = results.length > 0 ? results.map(function (r) { return r.text; }).join('\n') : '（未检索到相关历史事件）';
@@ -2742,6 +2774,7 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
         if (npcs.length) {
           data = mergeDiaries(data, npcs, windowFloors, s);
           if (typeof cdPushBackup === 'function') { cdPushBackup(data, '写日记'); _cdLastDiaryTotal = cdDiaryTotal(data); }
+          if (typeof cdUpdateUnreadDot === 'function') cdUpdateUnreadDot();
           diaryOk = true;
           cdAddLog('info', '日记解析成功', {角色数: npcs.length, 角色: npcs.map(n => n.name)});
         } else {
@@ -2812,6 +2845,9 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
           }
           archiveOk = true;
           cdAddLog('info', '剧情档案追加成功');
+          // ★ 覆盖式：章回标题 + 剧情总览（每次用最新覆盖旧值，非追加）
+          if (arc.title) data._chapterTitle = String(arc.title).trim();
+          if (arc.lead)  data._chapterLead  = String(arc.lead).trim();
         } else {
           cdAddLog('warn', '剧情档案解析为空（AI未返回有效内容）', {返回预览: archiveRes.value.text.slice(0, 200)});
         }
@@ -2828,30 +2864,6 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
       await cdSaveData(data);
       if (diaryOk) await cdSyncWorldbook(data);
       
-      // ★ 剧情档案有更新时，尝试生成章回标题（独立轻量API调用，失败不影响主流程）
-      if (archiveOk) {
-        try {
-          const arc = data.archive || {};
-          const latestText = [arc.mainline, arc.sideline, arc.states, arc.unresolved].filter(Boolean).slice(-1)[0] || '';
-          if (latestText.length > 20) {
-            const titleMsgs = [
-              { role: 'system', content: '你是一个章回体标题生成器。根据剧情摘要，生成一个4-8字的标题。格式严格为：第X回：XXXX' },
-              { role: 'user', content: `剧情摘要：${latestText.slice(0, 300)}\n\n生成标题：` },
-            ];
-            const titleRes = await cdWithTimeout(cdApiComplete(titleMsgs, s), 120000, '章回标题');
-            const match = titleRes?.text?.match(/第\d+回[：:]\S{4,10}/);
-            if (match) {
-              data._chapterTitle = match[0];
-              data._chapterUpdated = Date.now();
-              await cdSaveData(data);
-              cdAddLog('info', '章回标题生成', {标题: match[0]});
-            }
-          }
-        } catch (e) {
-          cdLog('章回标题生成失败（不影响主流程）:', e.message);
-        }
-      }
-
       // ★ 从剧情档案中提取剧情卡牌 —— 已停用（不再生成新卡牌、不再匹配正则），保留旧数据
       /*
       if (archiveOk && data.archive) {
@@ -3076,6 +3088,7 @@ async function cdOnMessageReceived() {
   }
   
   const interval = s.interval || 5;
+  const offset = Math.max(0, parseInt(s.memoryOffset, 10) || 0);   // 记忆锚点偏移(-N)：跳过后端 N 条
   
   // 只统计 baseline 之后的 AI 楼层
   const aiFloors = [];
@@ -3090,21 +3103,25 @@ async function cdOnMessageReceived() {
     }
   }
   
-  cdLog('自动触发检查: chat.length', currentLen, '基线', baseline, '新增AI', aiFloors.length, '间隔', interval);
-  
-  if (aiFloors.length >= interval) {
-    cdLog('自动触发: 新增AI', aiFloors.length, '>=', interval);
-    
-    let windowFloors = aiFloors;
-    if (windowFloors.length > (s.maxWindowFloors || 40))
-      windowFloors = windowFloors.slice(-(s.maxWindowFloors || 40));
-    
-    // 更新基线的 chat.length（不是 message_id）
-    data._baselineChatLength = currentLen;
-    await cdSaveData(data);
-    
-    await cdRunDiary({ manual: false, silent: true, extraFloors: windowFloors });
+  cdLog('自动触发检查: chat.length', currentLen, '基线', baseline, '新增AI', aiFloors.length, '间隔', interval, '锚点偏移', offset);
+  // ★ 记忆锚点偏移：自动写记忆时跳过最近 offset 条（默认2），避免把正在重roll/被替换的末尾对话写进记忆。
+  //   同时保留整批边界：不足一个完整批次则尾数积压，攒到下一批边界再写。offset=0 表示不偏移。
+  const usable = Math.max(0, aiFloors.length - offset);   // 去掉末尾未稳定的 offset 条
+  const fullBatches = Math.floor(usable / interval);
+  if (fullBatches < 1) {
+    cdLog('自动触发(锚点偏移): 可稳定AI', usable, '(总量', aiFloors.length, '-偏移', offset, ')不足以凑满一个整批', interval, '，积压等待');
+    return;  // 不足一整批，尾数积压不触发
   }
+  const takeCount = fullBatches * interval;
+  let windowFloors = aiFloors.slice(0, takeCount);
+  if (windowFloors.length > (s.maxWindowFloors || 40))
+    windowFloors = windowFloors.slice(-(s.maxWindowFloors || 40));
+  // 护栏：重roll/楼层变短时，被替换的末尾楼层不写入本次
+  const lastProcessed = windowFloors[windowFloors.length - 1].message_id;
+  data._baselineChatLength = lastProcessed + 1;
+  await cdSaveData(data);
+  cdAddLog('info', '自动触发(锚点偏移)', {本批AI楼层: windowFloors.length, 起点: windowFloors[0].message_id, 终点: lastProcessed, 偏移: offset, 积压尾数: aiFloors.length - takeCount});
+  await cdRunDiary({ manual: false, silent: true, extraFloors: windowFloors });
 }
 
 
@@ -3722,8 +3739,57 @@ function cdRestoreModalPos() {
   } catch(_) {}
 }
 
+/** 更新未读红点：dotNotify 开启且自上次查看后新增了日记则显示小红点 */
+async function cdUpdateUnreadDot() {
+  try {
+    const _fab = document.getElementById(FAB_ID);
+    if (!_fab) return;
+    const _dot = _fab.querySelector('.cd-reddot');
+    if (!_dot) return;
+    const _s = cdGetSettings();
+    if (_s.dotNotify === false) { _dot.classList.remove('show'); return; }
+    const _d = await cdGetData();
+    const _total = cdDiaryTotal(_d);
+    const _seen = (typeof _d._lastSeenDiaryCount === 'number') ? _d._lastSeenDiaryCount : _total;
+    if (_total > _seen) { _dot.classList.add('show'); }
+    else { _dot.classList.remove('show'); }
+  } catch (e) {}
+}
+/** 标记已读：打开面板后把当前日记数记为基线并隐藏红点 */
+async function cdMarkDiaryRead() {
+  try {
+    const _fab = document.getElementById(FAB_ID);
+    const _dot = _fab ? _fab.querySelector('.cd-reddot') : null;
+    if (_dot) _dot.classList.remove('show');
+    const _d = await cdGetData();
+    const _total = cdDiaryTotal(_d);
+    if ((typeof _d._lastSeenDiaryCount !== 'number') || _total !== _d._lastSeenDiaryCount) {
+      _d._lastSeenDiaryCount = _total;
+      await cdSaveData(_d);
+    }
+  } catch (e) {}
+}
+
 function cdInjectFab() {
   cdLog('[cdInjectFab] 开始注入FAB...');
+  // ★ FAB 视觉：C组 · 几何切割圆形 + 书本 + 呼吸金环（动态注入样式，避免污染全局限定在 FAB 下）
+  if (!document.getElementById('cd-fab-style')) {
+    const _st = document.createElement('style');
+    _st.id = 'cd-fab-style';
+    _st.textContent =
+      '#cd-fab .cd-fab-btn.cd-geo{width:40px;height:40px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;position:relative;border:1.5px solid #c9a87c;background:linear-gradient(135deg,#f5eeda 50%,#d9cfb8 50%);box-shadow:0 3px 12px rgba(150,120,80,.18);transform:translateZ(0);transition:transform .25s, box-shadow .25s;}' +
+      '#cd-fab .cd-fab-btn.cd-geo::after{content:"";position:absolute;inset:-2px;border-radius:50%;border:1.5px solid rgba(201,168,124,.8);animation:cdFabBreath 2.6s ease-in-out infinite;pointer-events:none;}' +
+      '@keyframes cdFabBreath{0%,100%{opacity:.2;transform:scale(.98);}50%{opacity:.95;transform:scale(1.04);}}' +
+      '#cd-fab .cd-fab-btn.cd-geo:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(214,185,140,.55);}' +
+      '#cd-fab .cd-fab-btn.cd-geo.cd-night{border-color:#d8b67f;}' +
+      '#cd-fab .cd-fab-btn.cd-geo.cd-night::after{border-color:rgba(216,182,127,.85);}' +
+      '#cd-fab .cd-fab-btn.cd-geo svg{width:18px;height:18px;display:block;position:relative;z-index:2;filter:drop-shadow(0 1px 1px rgba(255,255,255,.6));}' +
+      '#cd-fab .cd-reddot{position:absolute;top:-2px;right:-2px;width:10px;height:10px;border-radius:50%;background:rgba(224,85,67,.62);box-shadow:0 0 0 2px rgba(255,255,255,.85),0 0 6px 1px rgba(224,85,67,.35);z-index:3;display:none;}' +
+      '#cd-fab .cd-fab-btn.cd-night .cd-reddot{box-shadow:0 0 0 2px rgba(30,31,48,.7),0 0 6px 1px rgba(224,85,67,.3);}' +
+      '#cd-fab .cd-reddot.show{display:block;}';
+    (document.head || document.documentElement).appendChild(_st);
+  }
+
   let savedPos = null;
   try { savedPos = JSON.parse(localStorage.getItem('cd-fab-pos') || 'null'); } catch (_) {}
   const mobile = isMobile();
@@ -3742,12 +3808,13 @@ function cdInjectFab() {
   }
   
   const html = `<div id="${FAB_ID}" style="position:fixed;z-index:2000000;${posStyle}${fabShow ? '' : 'display:none'}">
-    <button class="cd-fab-btn cd-${theme}" title="LIWE · RAG 记忆引擎"
-      style="width:44px;height:44px;border-radius:50%;background:#c9a87c;color:#fffef9;border:1.5px solid rgba(255,255,255,0.4);display:flex;align-items:center;justify-content:center;font-size: calc(1.05rem * var(--cd-fs, 1));cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.5);transform:translateZ(0);">
-      <i class="fa-regular fa-book"></i>
+    <button class="cd-fab-btn cd-${theme} cd-geo" title="LIWE · RAG 记忆引擎" style="display:flex;align-items:center;justify-content:center;transform:translateZ(0);">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#8a6a3a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4a1 1 0 0 0-1-1H6.5A2.5 2.5 0 0 0 4 5.5v14z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg>
+      <span id="cd-reddot" class="cd-reddot"></span>
     </button>
   </div>`;
   document.documentElement.insertAdjacentHTML('beforeend', html);
+  setTimeout(function () { cdUpdateUnreadDot(); }, 200);
   const injectedEl = document.getElementById(FAB_ID);
   cdLog('[cdInjectFab] FAB已注入, DOM存在:', !!injectedEl, 'display:', injectedEl?.style?.display);
 
@@ -3970,6 +4037,7 @@ $('#cd-tb-vector').on('click',   () => cdSwitchView('vector'));
 async function cdOpenPanel() {
   cdLog('[Panel] 打开面板');
   cdPanelOpen = true;
+  cdMarkDiaryRead();
   const modal = document.getElementById(MODAL_ID);
   if (!modal) {
     cdLog('[Panel] 面板根元素不存在! 注入可能失败');
@@ -4591,9 +4659,11 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
   // ★ 选择性记忆(白名单)当前状态：开启时这里就是「唯一记忆名单」
   const _sMemo = (typeof cdGetSettings === 'function') ? (cdGetSettings().selectiveMemory === true) : false;
   const _sMemoBadge = _sMemo ? '<span class="cd-focus-badge" style="display:inline-block;margin-left:6px;padding:0 6px;border-radius:8px;background:#b3402a;color:#fff;font-size:calc(0.55rem * var(--cd-fs,1));">白名单记忆·仅此列表</span>' : '';
+  const _sBlack = (Array.isArray(cdGetSettings().diaryBlacklist)) ? cdGetSettings().diaryBlacklist.map(String).filter(Boolean) : [];
+  const _sBlackBadge = _sBlack.length ? '<span class="cd-focus-badge" style="display:inline-block;margin-left:6px;padding:0 6px;border-radius:8px;background:#4a5a6b;color:#fff;font-size:calc(0.55rem * var(--cd-fs,1));">黑名单·'+_sBlack.length+'</span>' : '';
   const focusRolesHtml = (!filterText && !filterChar) ? `
     <details class="cd-focus-panel" ${(_focus.length || _sMemo) ? 'open' : ''}>
-      <summary class="cd-focus-head"><i class="fa-regular fa-bullseye"></i> 重点角色 <span class="cd-focus-count">${_focus.length}</span><span class="cd-focus-desc">手动指定，写日记/总结时重点围绕这些角色</span>${_sMemoBadge}</summary>
+      <summary class="cd-focus-head"><i class="fa-regular fa-bullseye"></i> 角色筛选 · 记忆名单 <span class="cd-focus-count">${_focus.length}</span><span class="cd-focus-desc">白名单 / 黑名单 / 重点角色</span>${_sMemoBadge}${_sBlackBadge}</summary>
       <div class="cd-focus-body">
         ${_sMemo ? `<p class="cd-focus-memo-hint" style="margin:0 0 8px;padding:6px 8px;border-radius:6px;background:#fdeee9;color:#8a2f1f;font-size:calc(0.6rem * var(--cd-fs,1));"><i class="fa-regular fa-shield-halved"></i> 已开启「选择性记忆」：插件将<b>只</b>为下面这些角色写日记/存记忆，其他角色一律不会记录。</p>` : ''}
         <div class="cd-focus-wbrow">
@@ -4603,11 +4673,19 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
             <span class="cd-slider"></span>
           </label>
         </div>
+        <div class="cd-focus-wbrow">
+          <span class="cd-focus-wblabel"><i class="fa-regular fa-shield-halved"></i> 选择性记忆（只记重点角色）</span>
+          <label class="cd-switch cd-focus-wbswitch">
+            <input type="checkbox" id="cd-focus-selective" ${cdGetSettings().selectiveMemory ? 'checked' : ''}>
+            <span class="cd-slider"></span>
+          </label>
+        </div>
         <div class="cd-focus-add">
           <input type="text" id="cd-focus-input" class="cd-input" placeholder="角色名" style="flex:1.2;min-width:90px;">
           <input type="text" id="cd-focus-note" class="cd-input" placeholder="备注（可选：人设/当前目标）" style="flex:2;min-width:110px;">
           <button class="cd-btn-primary cd-focus-add-btn" id="cd-focus-add" style="padding:3px 10px;">添加</button>
         </div>
+
         ${_focus.length ? `<div class="cd-focus-list">
           ${_focus.map(function (f, fi) {
             return `<div class="cd-focus-card">
@@ -4617,6 +4695,10 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
             </div>`;
           }).join('')}
         </div>` : '<p class="cd-focus-empty">还没有重点角色。添加一个你想重点描写的角色，插件会始终为它写详尽的日记。</p>'}
+        <div class="cd-focus-blrow" style="display:flex;flex-direction:column;gap:3px;margin-top:2px;">
+          <span class="cd-focus-wblabel"><i class="fa-regular fa-ban"></i> 角色日记黑名单 <span style="opacity:0.5;font-weight:normal;">（完全相等，每行一个）</span></span>
+          <textarea id="cd-focus-blacklist" rows="2" placeholder="例如：你自己的角色名" style="width:100%;box-sizing:border-box;font-size:calc(0.6rem*var(--cd-fs,1));padding:4px 6px;border:1px solid rgba(180,150,120,0.2);border-radius:6px;background:transparent;color:#4a3a2a;">${(Array.isArray(cdGetSettings().diaryBlacklist) ? cdGetSettings().diaryBlacklist : []).join('\n')}</textarea>
+        </div>
       </div>
     </details>` : '';
 
@@ -4742,6 +4824,19 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
     const on = $(this).is(':checked');
     cdSaveSettings({ worldbookLink: on });
     if (typeof toastr !== 'undefined') toastr.success(on ? '世界书联动：已开启' : '世界书联动：已关闭');
+  });
+  // ★ 折叠条：选择性记忆快捷开关（实时保存 + 刷新徽章）
+  $('#cd-content').off('change', '#cd-focus-selective').on('change', '#cd-focus-selective', function () {
+    const on = $(this).is(':checked');
+    cdSaveSettings({ selectiveMemory: on });
+    if (typeof toastr !== 'undefined') toastr.success(on ? '选择性记忆：已开启，只记下面的重点角色' : '选择性记忆：已关闭');
+    // 刷新当前概览页以更新徽章与提示
+    if (typeof cdRenderBrowse === 'function') { try { cdRenderBrowse(); } catch (e) {} }
+  });
+  // ★ 折叠条：角色日记黑名单输入（实时保存）
+  $('#cd-content').off('input', '#cd-focus-blacklist').on('input', '#cd-focus-blacklist', function () {
+    const arr = String($(this).val() || '').split(/[\r\n]+/).map(function (x) { return (x || '').trim(); }).filter(Boolean);
+    cdSaveSettings({ diaryBlacklist: arr });
   });
   // ★ 重点角色：移除
   $('#cd-content').off('click', '.cd-focus-del').on('click', '.cd-focus-del', async function () {
@@ -5523,6 +5618,63 @@ async function cdRenderArchive() {
       if (typeof toastr !== 'undefined') toastr.error('批量删除失败: ' + (er && er.message));
     }
   });
+
+  // ★ 剧情界面 v6 界面处理：淡雅章回 + 剧情总览(覆盖式) + 分类折叠 + 时间轴竖线(无菱形)
+  (function () {
+    if (!document.getElementById('cd-archive-v6-style')) {
+      var st = document.createElement('style'); st.id = 'cd-archive-v6-style';
+      st.textContent =
+        '#cd-content .cd-arc-v6-chapter{font-size:20px;font-weight:600;letter-spacing:2px;color:#7c5f38;margin:2px 0 4px;}' +
+        '#cd-modal-root.cd-night #cd-content .cd-arc-v6-chapter{color:#d8c6a0;}' +
+        '#cd-content .cd-arc-v6-roll{font-size:10px;letter-spacing:4px;opacity:.5;margin-bottom:2px;}' +
+        '#cd-content .cd-arc-v6-lead{border:0.5px solid rgba(190,160,110,.16);border-radius:16px;background:rgba(255,255,255,.5);padding:13px 18px;font-size:11.5px;line-height:1.9;opacity:.6;margin:4px 0 14px;}' +
+        '#cd-modal-root.cd-night #cd-content .cd-arc-v6-lead{background:rgba(255,255,255,.035);border-color:rgba(255,255,255,.07);}' +
+        '#cd-content .cd-arc-v6-group{border-radius:16px;margin-bottom:12px;background:rgba(255,255,255,.5);border:0.5px solid rgba(190,160,110,.16);overflow:hidden;}' +
+        '#cd-modal-root.cd-night #cd-content .cd-arc-v6-group{background:rgba(255,255,255,.035);border-color:rgba(255,255,255,.07);}' +
+        '#cd-content .cd-arc-v6-group>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:9px;padding:12px 16px;font-size:13.5px;font-weight:600;letter-spacing:1px;}' +
+        '#cd-content .cd-arc-v6-group>summary::-webkit-details-marker{display:none;}' +
+        '#cd-content .cd-arc-v6-group>summary:hover{background:rgba(190,160,110,.06);}' +
+        '#cd-content .cd-arc-v6-group .cd-arc-v6-arrow{margin-left:auto;font-size:11px;opacity:.4;transition:transform .2s;}' +
+        '#cd-content .cd-arc-v6-group[open]>summary .cd-arc-v6-arrow{transform:rotate(180deg);}' +
+        '#cd-content .cd-arc-v6-group .cd-arc-v6-body{padding:2px 16px 14px;}';
+      (document.head || document.documentElement).appendChild(st);
+    }
+    var content = $('#cd-content');
+    if (!content.length) return;
+    var hasData = content.find('.cd-tl-group').length > 0;
+    if (!hasData) return;
+    var _ch = (typeof data !== 'undefined' && data._chapterTitle) ? String(data._chapterTitle).trim() : '';
+    var lead = (typeof data !== 'undefined' && data._chapterLead) ? escapeHtml(data._chapterLead) : '';
+    var _ri = _ch.search(/回[：:]/);
+    var _chRoll = '', _chTtl = _ch;
+    if (_ri > 0) { _chRoll = _ch.slice(0, _ri+2); _chTtl = _ch.slice(_ri+2).trim().replace(/^[：:]/, ''); }
+    // 标题样式（两行：回数 + 正文）
+    var _st2 = document.getElementById('cd-archive-v6-style');
+    if (_st2) { try {
+      _st2.textContent += '#cd-content .cd-arc-v6-chapter{font-size:20px;font-weight:700;letter-spacing:1px;color:#7c5f38;line-height:1.45;margin:2px 0 6px;}' + '#cd-modal-root.cd-night #cd-content .cd-arc-v6-chapter{color:#d8c6a0;}' + '#cd-content .cd-arc-v6-chapter .cd-arc-v6-ro{font-size:12.5px;font-weight:700;color:#c49a5f;letter-spacing:2px;display:block;margin-bottom:2px;}' + '#cd-modal-root.cd-night #cd-content .cd-arc-v6-chapter .cd-arc-v6-ro{color:#c8a86e;}' + '#cd-content .cd-arc-v6-group .cd-arc-v6-body{overflow:hidden;max-height:0;opacity:0;transition:max-height .4s cubic-bezier(0.34,1.56,0.64,1),opacity .3s ease;}' + '#cd-content .cd-arc-v6-group[open] .cd-arc-v6-body{max-height:10000px;opacity:1;}' + '#cd-content .cd-arc-v6-body .cd-tl-dot{opacity:.32;position:relative;display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;flex-shrink:0;vertical-align:baseline;}' + '#cd-content .cd-arc-v6-body .cd-tl-item{align-items:center;}' + '#cd-content .cd-arc-v6-body .cd-tl-date{line-height:1;margin-right:2px;}'; } catch(e){} }
+    var top = '<div class="cd-arc-v6-top" style="margin-bottom:14px;">';
+    if (_chRoll) top += '<div class="cd-arc-v6-chapter"><span class="cd-arc-v6-ro">◇ ' + escapeHtml(_chRoll) + '</span><div>' + escapeHtml(_chTtl || '') + '</div></div>';
+    else top += '<div class="cd-arc-v6-chapter">' + (_ch ? escapeHtml(_ch) : '剧情档案') + '</div>';
+    if (lead) top += '<div class="cd-arc-v6-lead">' + lead + '</div>';
+    top += '</div>';
+    content.prepend(top);
+    // 隐藏地点统计（折叠条）
+    content.find('.cd-location-wrap').hide();
+    // 移除原有的独立章回标题，避免与顶部重复
+    content.find('.cd-chapter-title').remove();
+    content.find('.cd-tl-group').each(function () {
+      var g = $(this);
+      if (g.is('details') && g.hasClass('cd-arc-v6-group')) return;
+      var h4 = g.find('h4');
+      try { var col = h4.css('color') || ''; } catch (e) { var col = ''; }
+      var arrow = '<span class="cd-arc-v6-arrow"><i class="fa-solid fa-chevron-down"></i></span>';
+      var det = $('<details class="cd-arc-v6-group" open></details>');
+      det.append($('<summary style="color:' + (col||'inherit') + '"></summary>').html(h4.html() + arrow));
+      det.append($('<div class="cd-arc-v6-body"></div>').append(g.children(':not(h4)')));
+      g.replaceWith(det);
+    });
+    content.find('.cd-tl-tabs').remove();
+  })();
 
 }
 
@@ -6670,271 +6822,146 @@ function cdRenderExport() {
 async function cdRenderSettings() {
   const s = cdGetSettings();
   const panel = $('#cd-settings-panel');
+  // ★ 设置面板卡片样式 + 预计算变量
+  (function () {
+    if (document.getElementById('cds-ui-style')) return;
+    var st = document.createElement('style'); st.id = 'cds-ui-style';
+    st.textContent =
+      '#cd-settings-panel .cds-card{background:rgba(255,255,255,.55);border:0.5px solid rgba(190,160,110,.15);border-radius:14px;padding:12px 15px;margin:0 0 10px;box-shadow:0 2px 8px rgba(120,90,50,.05);}' +
+      '#cd-modal-root.cd-night #cd-settings-panel .cds-card{background:rgba(255,255,255,.035);border-color:rgba(255,255,255,.07);}' +
+      '#cd-settings-panel .cds-ghead{display:flex;align-items:center;gap:8px;margin-bottom:9px;}' +
+      '#cd-settings-panel .cds-gico{width:26px;height:26px;border-radius:9px;background:rgba(201,168,124,.18);color:#8a6a3a;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;}' +
+      '#cd-modal-root.cd-night #cd-settings-panel .cds-gico{color:#e8c77a;}' +
+      '#cd-settings-panel .cds-gtitle{font-size:13.5px;font-weight:700;opacity:.88;}' +
+      '#cd-settings-panel .cds-gsub{font-size:10.5px;opacity:.5;margin-left:4px;font-weight:normal;}' +
+      '#cd-settings-panel .cds-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:5px 0;}' +
+      '#cd-settings-panel .cds-lab{font-size:12.5px;opacity:.85;display:flex;align-items:center;gap:5px;flex:1 1 auto;}' +
+      '#cd-settings-panel .cds-ctrl{display:flex;align-items:center;gap:6px;flex-shrink:0;}' +
+      '#cd-settings-panel .cds-hint{font-size:10px;opacity:.55;font-weight:normal;white-space:nowrap;}' +
+      '#cd-settings-panel .cds-val{font-size:12px;color:#8a6a3a;min-width:34px;text-align:center;}' +
+      '#cd-settings-panel .cds-card .cd-input{width:58px;text-align:center;border-radius:9px;flex:0 0 auto;}' +
+      '#cd-settings-panel .cds-card .cd-switch{flex:0 0 auto;}' +
+      '#cd-settings-panel .cds-collapse summary{cursor:pointer;font-size:11.5px;opacity:.75;color:#8a6a3a;list-style:none;padding:5px 0;}' +
+      '#cd-modal-root.cd-night #cd-settings-panel .cds-collapse summary{color:#d8b67f;}' +
+      '#cd-settings-panel .cds-action{display:flex;justify-content:flex-end;padding-top:6px;}' +
+      '#cd-settings-panel .cds-tog{background:rgba(255,255,255,.35);border:1px solid rgba(190,160,110,.35);color:inherit;border-radius:10px;padding:5px 12px;font-size:12px;cursor:pointer;opacity:.65;transition:opacity .2s,background .2s,color .2s;}' +
+      '#cd-modal-root.cd-night #cd-settings-panel .cds-tog{background:rgba(255,255,255,.06);}' +
+      '#cd-settings-panel .cds-tog:hover{opacity:.9;}';
+    (document.head || document.documentElement).appendChild(st);
+  })();
+  var _selGold = 'style="background:linear-gradient(135deg,#d8c39a,#c9a87c);color:#fff;border-color:#c9a87c;font-weight:600"';
+  var _srcT = (!s.source || s.source === 'tavern' || !s.endpoints?.[s.source]?.url) ? _selGold : '';
+  var _srcO = (s.source === 'openai' && s.endpoints?.openai?.url) ? _selGold : '';
+  var _srcC = (s.source === 'claude' && s.endpoints?.claude?.url) ? _selGold : '';
+  var _srcG = (s.source === 'gemini' && s.endpoints?.gemini?.url) ? _selGold : '';
+  var _apiShow = ((!s.source || s.source === 'tavern') && !(s.endpoints?.openai?.url || s.endpoints?.claude?.url || s.endpoints?.gemini?.url)) ? 'none' : 'block';
+  var apiUrl = s.endpoints?.openai?.url || s.endpoints?.claude?.url || s.endpoints?.gemini?.url || '';
+  var apiKey = s.endpoints?.openai?.key || s.endpoints?.claude?.key || s.endpoints?.gemini?.key || '';
+  var apiModel = s.endpoints?.openai?.model || s.endpoints?.claude?.model || s.endpoints?.gemini?.model || '';
+  var fontScalePct = Math.round((s.fontScale || 1) * 100);
+  var _injOn = ((s.injectPosition || 'after') === 'after') ? 'selected' : '';
+  var _injChat = ((s.injectPosition || 'after') === 'chat') ? 'selected' : '';
+  var _injBefore = ((s.injectPosition || 'after') === 'before') ? 'selected' : '';
+  var _role0 = ((s.injectRole || 0) === 0) ? 'selected' : '';
+  var _role1 = ((s.injectRole || 0) === 1) ? 'selected' : '';
+  var _role2 = ((s.injectRole || 0) === 2) ? 'selected' : '';
+  var _filterRows = (Array.isArray(s.filterTags) ? s.filterTags : []).map(function (pair, idx) {
+    return '<div class="cds-row" data-idx="' + idx + '">' +
+      '<input type="text" class="cd-input" value="' + escapeAttr(pair.start || '') + '" placeholder="上标签" style="flex:1;text-align:left;min-width:50px;">' +
+      '<span class="cds-hint">→</span>' +
+      '<input type="text" class="cd-input" value="' + escapeAttr(pair.end || '') + '" placeholder="下标签" style="flex:1;text-align:left;min-width:50px;">' +
+      '<button class="cd-btn-danger" style="padding:2px 8px;min-width:auto;">×</button></div>';
+  }).join('');
+
   // API 是否已配置（用于引导提示）
   const _hasApi = !!((s.endpoints && (s.endpoints.openai?.url || s.endpoints.claude?.url || s.endpoints.gemini?.url)) || !s.source || s.source === 'tavern');
   panel.html(`
-    <!-- ★ 快速开始引导条：让新手第一时间知道要做什么 -->
-    <div class="cd-setup-banner">
-      <div class="cd-setup-banner-title"><i class="fa-regular fa-wand-magic-sparkles"></i> 快速开始</div>
-      <div class="cd-setup-banner-body">
-        <div class="cd-setup-step ${s.enabled === false ? '' : 'cd-setup-done'}">
-          <span class="cd-setup-dot">①</span>
-          <span>打开主开关「${s.enabled === false ? '（待开启）' : '已启用 ✓'}」</span>
+<h2 class="cd-settings-h2"><i class="fa-regular fa-gear"></i> 设置</h2>
+
+    <div class="cds-card">
+      <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-power-off"></i></span><span><span class="cds-gtitle">基本 · 总控</span><span class="cds-gsub">插件总开关与悬浮球</span></span></div>
+      <div class="cds-row"><span class="cds-lab">界面字号</span><span class="cds-ctrl"><input type="range" id="cd-font-scale-range" min="80" max="200" step="5" value="${fontScalePct}" style="width:110px;accent-color:#c9a87c;"><span id="cd-font-scale-val" class="cds-val">${fontScalePct}%</span></span></div>
+      <div class="cds-row"><span class="cds-lab">主开关</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-enabled" ${s.enabled ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+      <div class="cds-row"><span class="cds-lab">快捷入口（悬浮球）</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-fab" ${s.fabShow !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+      <div class="cds-row"><span class="cds-lab">小红点通知 <span class="cds-hint">新写日记时悬浮球显示</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-dotnotify" ${s.dotNotify !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+      <div class="cds-row"><span class="cds-lab">新手引导</span><span class="cds-ctrl"><button class="cd-btn-secondary" id="cd-btn-reset-onboarding" style="padding:3px 12px;font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;">重新显示</button></span></div>
+    </div>
+
+    <div class="cds-card">
+      <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-sliders"></i></span><span><span class="cds-gtitle">运行参数</span><span class="cds-gsub">自动处理的频率与稳定性</span></span></div>
+      <div class="cds-row"><span class="cds-lab">处理频率 <span class="cds-hint">每 N 条 AI 消息</span></span><span class="cds-ctrl"><input type="number" id="cd-s-interval" value="${s.interval}" min="1" max="100" class="cd-input"></span></div>
+      <div class="cds-row"><span class="cds-lab">记忆锚点偏移 <span class="cds-hint">跳过末尾 N 条</span></span><span class="cds-ctrl"><input type="number" id="cd-s-offset" value="${s.memoryOffset === undefined ? 2 : s.memoryOffset}" min="0" max="20" class="cd-input" style="width:52px;"></span></div>
+      <div class="cds-row"><span class="cds-lab">临时角色转正 <span class="cds-hint">出场 N 次</span></span><span class="cds-ctrl"><input type="number" id="cd-s-cameo" value="${s.cameoThreshold}" min="1" max="50" class="cd-input"></span></div>
+      <div class="cds-row"><span class="cds-lab">生成温度</span><span class="cds-ctrl"><input type="number" id="cd-s-temp" value="${s.temperature}" step="0.1" min="0" max="2" class="cd-input"></span></div>
+      <div class="cds-row"><span class="cds-lab">自动重试 <span class="cds-hint">失败重试</span></span><span class="cds-ctrl"><input type="number" id="cd-s-retry" value="${s.retryTimes !== undefined ? s.retryTimes : 3}" min="0" max="10" class="cd-input" style="width:46px;"><span class="cds-hint">次</span><input type="number" id="cd-s-retrydelay" value="${s.retryDelay !== undefined ? s.retryDelay : 2}" min="0" max="30" step="1" class="cd-input" style="width:46px;"><span class="cds-hint">秒</span></span></div>
+    </div>
+
+    <div class="cds-card">
+      <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-feather"></i></span><span><span class="cds-gtitle">生成内容</span><span class="cds-gsub">AI 会自动产出哪些</span></span></div>
+      <div class="cds-row"><span class="cds-lab"><i class="fa-regular fa-book"></i> 角色日记</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-diary" ${s.enableDiary !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+      <div class="cds-row"><span class="cds-lab"><i class="fa-regular fa-diagram-project"></i> 人物关系</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-relation" ${s.enableRelation !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+      <div class="cds-row"><span class="cds-lab"><i class="fa-regular fa-timeline"></i> 剧情档案</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-archive" ${s.enableArchive !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+      <div class="cds-row"><span class="cds-lab"><i class="fa-regular fa-book-bookmark"></i> 世界书联动</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-worldbook" ${s.worldbookLink !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+    </div>
+
+    <div class="cds-card">
+      <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-arrow-up-right-dots"></i></span><span><span class="cds-gtitle">注入 AI 上下文</span><span class="cds-gsub">发送给模型的内容</span></span></div>
+      <div class="cds-row"><span class="cds-lab">角色日记</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-inject-diary" ${s.injectDiary !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+      <div class="cds-row"><span class="cds-lab">人物关系</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-inject-relation" ${s.injectRelation !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+      <div class="cds-row"><span class="cds-lab">剧情档案</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-inject-archive" ${s.injectArchive !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+      <details class="cds-collapse"><summary>注入策略（位置 / 角色 / 深度）</summary>
+        <div>
+          <div class="cds-row"><span class="cds-lab">注入位置</span><span class="cds-ctrl"><select id="cd-s-injpos" class="cd-input" style="width:auto;min-width:120px;text-align:left;"><option value="after" ${_injOn} >对话末尾</option><option value="chat" ${_injChat}>系统提示词后</option><option value="before" ${_injBefore}>开头</option></select></span></div>
+          <div class="cds-row"><span class="cds-lab">消息角色</span><span class="cds-ctrl"><select id="cd-s-injrole" class="cd-input" style="width:auto;min-width:120px;text-align:left;"><option value="0" ${_role0}>系统</option><option value="1" ${_role1}>用户</option><option value="2" ${_role2}>助手</option></select></span></div>
+          <div class="cds-row"><span class="cds-lab">层内深度</span><span class="cds-ctrl"><input type="number" id="cd-s-injdepth" value="${s.injectDepth || 1}" min="0" max="999" step="1" class="cd-input" style="width:52px;"></span></div>
         </div>
-        <div class="cd-setup-step ${_hasApi ? 'cd-setup-done' : ''}">
-          <span class="cd-setup-dot">②</span>
-          <span>选择 API 来源（下方「API 来源」）</span>
+      </details>
+    </div>
+
+    <div class="cds-card">
+      <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-gear"></i></span><span><span class="cds-gtitle">高级</span><span class="cds-gsub">内容过滤 / 自动整理 / API</span></span></div>
+
+      <details class="cds-collapse" open><summary><i class="fa-regular fa-filter"></i> 内容过滤</summary>
+        <div>
+          <div id="cd-filter-tags-container">${_filterRows}</div>
+          <button class="cd-btn-secondary" id="cd-filter-add" style="margin-top:4px;font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;">+ 添加一组</button>
         </div>
-        <div class="cd-setup-step">
-          <span class="cd-setup-dot">③</span>
-          <span>回到酒馆正常聊天，AI 回复后自动生成</span>
+      </details>
+
+      <details class="cds-collapse"><summary><i class="fa-regular fa-eye-slash"></i> 自动隐藏楼层</summary>
+        <div>
+          <div class="cds-row"><span class="cds-lab">总结后自动隐藏旧楼层</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-autohide" ${s.autoHideEnabled ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+          <div class="cds-row"><span class="cds-lab">保留最新 AI 楼层数</span><span class="cds-ctrl"><input type="number" id="cd-s-autohide-keep" value="${s.autoHideKeep || 5}" min="1" max="100" class="cd-input"></span></div>
+          <button class="cd-btn-secondary" id="cd-btn-show-all-floors" style="font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;"><i class="fa-regular fa-eye"></i> 恢复所有隐藏楼层</button>
         </div>
-        <div class="cd-setup-features">
-          <div class="cd-setup-feature cd-on"><i class="fa-regular fa-check"></i> 日记 / 剧情档案：默认开启</div>
-          <div class="cd-setup-feature cd-off"><i class="fa-regular fa-minus"></i> 人物关系 / 情报表：默认关闭，可在下方开启</div>
-          <div class="cd-setup-feature cd-on"><i class="fa-regular fa-check"></i> 自动压缩：可开启（档案过长时自动整合）</div>
+      </details>
+
+      <details class="cds-collapse"><summary><i class="fa-regular fa-compress"></i> 自动压缩剧情档案</summary>
+        <div>
+          <div class="cds-row"><span class="cds-lab">超阈值时自动压缩</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-autocompress" ${s.autoCompress ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+          <div class="cds-row"><span class="cds-lab">触发阈值（条）</span><span class="cds-ctrl"><input type="number" id="cd-s-autocompress-threshold" value="${s.autoCompressThreshold || 30}" min="5" max="200" class="cd-input"></span></div>
         </div>
-      </div>
-      ${!s.enabled ? '<div class="cd-setup-warn"><i class="fa-regular fa-triangle-exclamation"></i> 主开关当前为关闭，插件不会自动工作。请打开主开关。</div>' : ''}
-    </div>
+      </details>
 
-    <h2 class="cd-settings-h2" style="margin-top:12px;"><i class="fa-regular fa-gear"></i> 偏好</h2>
-
-    <h3 class="cd-settings-sub">外观</h3>
-    <div class="cd-set-row">
-      <label>界面字号</label>
-      <input type="range" id="cd-font-scale-range" min="80" max="200" step="5" value="${Math.round((s.fontScale || 1) * 100)}" style="flex:1;accent-color:#c9a87c;">
-      <span id="cd-font-scale-val" style="font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;min-width:32px;text-align:center;">${Math.round((s.fontScale || 1) * 100)}%</span>
-    </div>
-    <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;margin:2px 0 0;text-align:right;">拖动滑块实时调整面板字号</p>
-
-    <div class="cd-set-row">
-      <label>主开关</label>
-      <label class="cd-switch">
-        <input type="checkbox" id="cd-s-enabled" ${s.enabled ? 'checked' : ''}>
-        <span class="cd-slider"></span>
-      </label>
-    </div>
-
-    <div class="cd-set-row">
-      <label><i class="fa-regular fa-rotate-left"></i> 新手引导（已"跳过"后想再看时可重新开启）</label>
-      <button class="cd-btn-secondary" id="cd-btn-reset-onboarding" style="font-size: calc(0.6rem * var(--cd-fs, 1));padding:3px 10px;min-width:auto;">重新显示新手引导</button>
-    </div>
-
-    <div class="cd-set-row">
-      <label>处理频率 (每 N 条AI消息执行一次)</label>
-      <input type="number" id="cd-s-interval" value="${s.interval}" min="1" max="100" class="cd-input">
-      <span class="cd-hint">设为 5 表示每 5 条消息处理一次</span>
-    </div>
-
-    <div class="cd-set-row">
-      <label>临时角色转正 (出场 N 次后转为正式角色)</label>
-      <input type="number" id="cd-s-cameo" value="${s.cameoThreshold}" min="1" max="50" class="cd-input">
-    </div>
-
-    <div class="cd-set-row">
-      <label>选择性记忆 <span class="cd-hint" style="display:inline;">（只记你手动指定的重点角色）</span></label>
-      <label class="cd-switch">
-        <input type="checkbox" id="cd-s-selective" ${s.selectiveMemory ? 'checked' : ''}>
-        <span class="cd-slider"></span>
-      </label>
-    </div>
-    <p class="cd-set-hint" style="margin:2px 0 8px;font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;opacity:0.6;">关闭=按原机制自动记忆所有登场角色；开启=仅记忆你在「重点角色」里指定的角色，其余角色一律不记。</p>
-
-    <div class="cd-set-row">
-      <label>生成温度</label>
-      <input type="number" id="cd-s-temp" value="${s.temperature}" step="0.1" min="0" max="2" class="cd-input">
-    </div>
-    <div class="cd-set-row">
-      <label>LLM 报错/超时自动重试次数 (0=不重试)</label>
-      <input type="number" id="cd-s-retry" value="${s.retryTimes !== undefined ? s.retryTimes : 3}" min="0" max="10" class="cd-input">
-    </div>
-    <div class="cd-set-row">
-      <label>每次重试间隔 (秒)</label>
-      <input type="number" id="cd-s-retrydelay" value="${s.retryDelay !== undefined ? s.retryDelay : 2}" min="0" max="30" step="1" class="cd-input">
-    </div>
-    <details class="cd-settings-collapse">
-      <summary class="cd-settings-collapse-summary">注入策略（高级：位置 / 角色 / 深度）</summary>
-      <div class="cd-settings-collapse-body">
-        <div class="cd-set-row">
-          <label>注入位置</label>
-          <select id="cd-s-injpos" class="cd-input" style="width:auto;min-width:150px;">
-            <option value="after" ${(s.injectPosition || 'after') === 'after' ? 'selected' : ''}>对话末尾（贴近生成）</option>
-            <option value="chat" ${(s.injectPosition || 'after') === 'chat' ? 'selected' : ''}>系统提示词后</option>
-            <option value="before" ${(s.injectPosition || 'after') === 'before' ? 'selected' : ''}>开头（最前）</option>
-          </select>
+      <details class="cds-collapse"><summary><i class="fa-regular fa-server"></i> API 来源</summary>
+        <div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px;">
+            <button class="cds-tog cd-s-src-btn" data-source="tavern" ${_srcT}>当前酒馆</button>
+            <button class="cds-tog cd-s-src-btn" data-source="openai" ${_srcO}>OpenAI</button>
+            <button class="cds-tog cd-s-src-btn" data-source="claude" ${_srcC}>Claude</button>
+            <button class="cds-tog cd-s-src-btn" data-source="gemini" ${_srcG}>Gemini</button>
+          </div>
+          <div id="cd-custom-api" style="display:${_apiShow};">
+            <div class="cds-row"><span class="cds-lab">接口地址</span><span class="cds-ctrl"><input type="text" id="cd-s-url" value="${apiUrl}" class="cd-input" placeholder="https://api..." style="width:auto;min-width:180px;text-align:left;"></span></div>
+            <div class="cds-row"><span class="cds-lab">密钥</span><span class="cds-ctrl"><input type="password" id="cd-s-key" value="${apiKey}" class="cd-input" placeholder="sk-..." style="width:auto;min-width:180px;text-align:left;"></span></div>
+            <div class="cds-row"><span class="cds-lab">模型</span><span class="cds-ctrl"><input type="text" id="cd-s-model" value="${apiModel}" class="cd-input" list="cd-models" placeholder="模型名" style="width:auto;min-width:180px;text-align:left;"><datalist id="cd-models"></datalist></span></div>
+            <button class="cd-btn-secondary" id="cd-btn-fetch-models" style="font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;">获取可用模型</button>
+          </div>
         </div>
-        <div class="cd-set-row">
-          <label>消息角色</label>
-          <select id="cd-s-injrole" class="cd-input" style="width:auto;min-width:150px;">
-            <option value="0" ${(s.injectRole || 0) === 0 ? 'selected' : ''}>系统 (system)</option>
-            <option value="1" ${(s.injectRole || 0) === 1 ? 'selected' : ''}>用户 (user)</option>
-            <option value="2" ${(s.injectRole || 0) === 2 ? 'selected' : ''}>助手 (assistant)</option>
-          </select>
-        </div>
-        <div class="cd-set-row">
-          <label>层内深度</label>
-          <input type="number" id="cd-s-injdepth" value="${(s.injectDepth === undefined) ? 1 : s.injectDepth}" min="0" max="999" step="1" class="cd-input" style="width:80px;">
-        </div>
-      </div>
-    </details>
-
-    <div class="cd-set-row">
-      <label>快捷入口</label>
-      <label class="cd-switch">
-        <input type="checkbox" id="cd-s-fab" ${s.fabShow !== false ? 'checked' : ''}>
-        <span class="cd-slider"></span>
-      </label>
+      </details>
     </div>
 
-    <h3 class="cd-settings-sub">生成内容</h3>
-
-    <div class="cd-set-row">
-      <label><i class="fa-regular fa-book"></i> 角色日记</label>
-      <label class="cd-switch">
-        <input type="checkbox" id="cd-s-diary" ${s.enableDiary !== false ? 'checked' : ''}>
-        <span class="cd-slider"></span>
-      </label>
-    </div>
-
-    <div class="cd-set-row">
-      <label><i class="fa-regular fa-diagram-project"></i> 人物关系</label>
-      <label class="cd-switch">
-        <input type="checkbox" id="cd-s-relation" ${s.enableRelation !== false ? 'checked' : ''}>
-        <span class="cd-slider"></span>
-      </label>
-    </div>
-
-    <div class="cd-set-row">
-      <label><i class="fa-regular fa-timeline"></i> 剧情档案</label>
-      <label class="cd-switch">
-        <input type="checkbox" id="cd-s-archive" ${s.enableArchive !== false ? 'checked' : ''}>
-        <span class="cd-slider"></span>
-      </label>
-    </div>
-
-    <div class="cd-set-row">
-      <label><i class="fa-regular fa-book-bookmark"></i> 世界书联动 <span style="font-weight:normal;font-size:calc(0.55rem * var(--cd-fs, 1));opacity:0.6;">（写日记/总结时参考重点角色的世界书设定）</span></label>
-      <label class="cd-switch">
-        <input type="checkbox" id="cd-s-worldbook" ${s.worldbookLink !== false ? 'checked' : ''}>
-        <span class="cd-slider"></span>
-      </label>
-    </div>
-
-    <h3 class="cd-settings-sub">注入AI上下文（发送给AI的内容）</h3>
-
-    <div class="cd-set-row">
-      <label><i class="fa-regular fa-book"></i> 注入角色日记</label>
-      <label class="cd-switch">
-        <input type="checkbox" id="cd-s-inject-diary" ${s.injectDiary !== false ? 'checked' : ''}>
-        <span class="cd-slider"></span>
-      </label>
-    </div>
-
-    <div class="cd-set-row">
-      <label><i class="fa-regular fa-diagram-project"></i> 注入人物关系</label>
-      <label class="cd-switch">
-        <input type="checkbox" id="cd-s-inject-relation" ${s.injectRelation !== false ? 'checked' : ''}>
-        <span class="cd-slider"></span>
-      </label>
-    </div>
-
-    <div class="cd-set-row">
-      <label><i class="fa-regular fa-timeline"></i> 注入剧情档案</label>
-      <label class="cd-switch">
-        <input type="checkbox" id="cd-s-inject-archive" ${s.injectArchive !== false ? 'checked' : ''}>
-        <span class="cd-slider"></span>
-      </label>
-    </div>
-
-    <details class="cd-settings-collapse cd-settings-advanced">
-      <summary class="cd-settings-collapse-summary advanced-summary">更多高级设置（内容过滤 / 自动隐藏 / 自动压缩）</summary>
-      <div class="cd-settings-collapse-body">
-    <h3 class="cd-settings-sub">内容过滤（标签内的内容不发送给AI总结）</h3>
-
-    <div id="cd-filter-tags-container">
-      ${(Array.isArray(s.filterTags) ? s.filterTags : []).map((pair, idx) => `
-        <div class="cd-set-row cd-filter-tag-row" data-idx="${idx}">
-          <input type="text" class="cd-input cd-filter-start" value="${escapeAttr(pair.start || '')}" placeholder="上标签" style="flex:1;min-width:60px;">
-          <span style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;flex-shrink:0;">→</span>
-          <input type="text" class="cd-input cd-filter-end" value="${escapeAttr(pair.end || '')}" placeholder="下标签" style="flex:1;min-width:60px;">
-          <button class="cd-btn-danger cd-filter-del" style="padding:2px 6px;font-size: calc(0.6rem * var(--cd-fs, 1));min-width:auto;">×</button>
-        </div>
-      `).join('')}
-    </div>
-    <button class="cd-btn-secondary" id="cd-filter-add" style="margin-top:4px;font-size: calc(0.65rem * var(--cd-fs, 1));">+ 添加一组标签</button>
-    <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;margin:4px 0 0;line-height:1.4;">
-      被上标签和下标签包裹的内容将从发送给AI的楼层文本中移除，不会被总结进日记/关系/剧情档案。
-      例如：上标签 <code>&lt;user_thought&gt;</code> 下标签 <code>&lt;/user_thought&gt;</code> 会过滤小剧场内容。
-      留空全部删光则不进行任何过滤。
-    </p>
-
-    <h3 class="cd-settings-sub">自动隐藏楼层</h3>
-
-    <div class="cd-set-row">
-      <label><i class="fa-regular fa-eye-slash"></i> 总结后自动隐藏旧楼层</label>
-      <label class="cd-switch">
-        <input type="checkbox" id="cd-s-autohide" ${s.autoHideEnabled ? 'checked' : ''}>
-        <span class="cd-slider"></span>
-      </label>
-    </div>
-
-    <div class="cd-set-row">
-      <label>保留最新 AI 楼层数</label>
-      <input type="number" id="cd-s-autohide-keep" value="${s.autoHideKeep || 5}" min="1" max="100" class="cd-input">
-      <span class="cd-hint">总结后只保留最新 N 条 AI 楼层可见</span>
-    </div>
-
-    <div class="cd-set-row">
-      <label></label>
-      <button class="cd-btn-secondary" id="cd-btn-show-all-floors" style="font-size: calc(0.65rem * var(--cd-fs, 1));"><i class="fa-regular fa-eye"></i> 恢复所有隐藏楼层</button>
-    </div>
-
-    <h3 class="cd-settings-sub">自动压缩剧情档案</h3>
-
-    <div class="cd-set-row">
-      <label><i class="fa-regular fa-compress"></i> 条目数超过阈值时自动压缩融合</label>
-      <label class="cd-switch">
-        <input type="checkbox" id="cd-s-autocompress" ${s.autoCompress ? 'checked' : ''}>
-        <span class="cd-slider"></span>
-      </label>
-    </div>
-
-    <div class="cd-set-row">
-      <label>触发阈值（条）</label>
-      <input type="number" id="cd-s-autocompress-threshold" value="${s.autoCompressThreshold || 30}" min="5" max="200" class="cd-input">
-      <span class="cd-hint">累计 ${s.autoCompressThreshold || 30} 条【时间标记】事件时触发压缩</span>
-    </div>
-      </div>
-    </details>
-
-    <h3 class="cd-settings-sub">API 来源</h3>
-
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
-      <button class="cd-s-src-btn cd-btn-secondary" data-source="tavern" style="font-size: calc(0.62rem * var(--cd-fs, 1));padding:4px 10px;${(!s.source || s.source === 'tavern' || !s.endpoints?.[s.source]?.url) ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">当前酒馆</button>
-      <button class="cd-s-src-btn cd-btn-secondary" data-source="openai" style="font-size: calc(0.62rem * var(--cd-fs, 1));padding:4px 10px;${s.source === 'openai' && s.endpoints?.openai?.url ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">OpenAI</button>
-      <button class="cd-s-src-btn cd-btn-secondary" data-source="claude" style="font-size: calc(0.62rem * var(--cd-fs, 1));padding:4px 10px;${s.source === 'claude' && s.endpoints?.claude?.url ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">Claude</button>
-      <button class="cd-s-src-btn cd-btn-secondary" data-source="gemini" style="font-size: calc(0.62rem * var(--cd-fs, 1));padding:4px 10px;${s.source === 'gemini' && s.endpoints?.gemini?.url ? 'background:#c9a87c;color:#fff;border-color:#c9a87c;' : ''}">Gemini</button>
-    </div>
-
-    <div id="cd-custom-api" style="display:${(!s.source || s.source === 'tavern') && !(s.endpoints?.openai?.url || s.endpoints?.claude?.url || s.endpoints?.gemini?.url) ? 'none' : 'block'};">
-      <div class="cd-set-row">
-        <label>接口地址</label>
-        <input type="text" id="cd-s-url" value="${s.endpoints?.openai?.url || s.endpoints?.claude?.url || s.endpoints?.gemini?.url || ''}" class="cd-input" placeholder="https://api...">
-      </div>
-      <div class="cd-set-row">
-        <label>密钥</label>
-        <input type="password" id="cd-s-key" value="${s.endpoints?.openai?.key || s.endpoints?.claude?.key || s.endpoints?.gemini?.key || ''}" class="cd-input" placeholder="sk-...">
-      </div>
-      <div class="cd-set-row">
-        <label>模型</label>
-        <input type="text" id="cd-s-model" value="${s.endpoints?.openai?.model || s.endpoints?.claude?.model || s.endpoints?.gemini?.model || ''}" class="cd-input" list="cd-models" placeholder="模型名">
-        <datalist id="cd-models"></datalist>
-      </div>
-      <button class="cd-btn-secondary" id="cd-btn-fetch-models">获取可用模型</button>
-    </div>
-
-    <button class="cd-btn-primary" id="cd-btn-save-settings">应用</button>
+    <div class="cds-action"><button class="cd-btn-primary" id="cd-btn-save-settings">应用设置</button></div>
   `);
 
   // 记录当前编辑来源（初始取已配置的非tavern来源，否则为酒馆）
@@ -7074,8 +7101,8 @@ async function cdRenderSettings() {
     cdSaveSettings({
       enabled: $('#cd-s-enabled').is(':checked'),
       interval: parseInt($('#cd-s-interval').val(), 10) || 5,
+      memoryOffset: Math.max(0, parseInt($('#cd-s-offset').val(), 10) || 2),
       cameoThreshold: parseInt($('#cd-s-cameo').val(), 10) || 3,
-      selectiveMemory: $('#cd-s-selective').is(':checked'),
       temperature: parseFloat($('#cd-s-temp').val()) || 0.7,
       retryTimes: Math.max(0, parseInt($('#cd-s-retry').val(), 10) || 0),
       retryDelay: Math.max(0, parseFloat($('#cd-s-retrydelay').val()) || 0),
@@ -7083,6 +7110,7 @@ async function cdRenderSettings() {
       injectRole: parseInt($('#cd-s-injrole').val(), 10) || 0,
       injectDepth: Math.max(0, parseInt($('#cd-s-injdepth').val(), 10) || 1),
       fabShow: $('#cd-s-fab').is(':checked'),
+      dotNotify: $('#cd-s-dotnotify').is(':checked'),
       enableDiary: $('#cd-s-diary').is(':checked'),
       enableRelation: $('#cd-s-relation').is(':checked'),
       enableArchive: $('#cd-s-archive').is(':checked'),
@@ -7400,6 +7428,19 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
+    version: 'v2.6.0',
+    date: '2026-08-10',
+    items: [
+      '新增「剧情总览」：写剧情档案时由AI生成当前整体局势的一段概述（覆盖式，存 _chapterLead），剧情界面顶部随章回标题展示',
+      '章回标题改进：改为覆盖式、随剧情档案一起生成；提示词换为古风章回回目风格，剧情界面以「第X回：/标题」两行展示',
+      '剧情界面重构：主线/支线/状态/未解决分组折叠（默认展开+弹性动画）、淡雅章回、简洁行式时间线、隐藏地点统计',
+      '悬浮球改版：几何切割对切、合上的书本图标、呼吸金环、未读小红点通知（可设置开关），尺寸调整为40px',
+      '设置面板卡片化重构：5张功能卡（总控/运行参数/生成内容/注入/高级）+ 切换式按钮（未选淡、激活深金）',
+      '修复向量检索：查询文本先做真实嵌入再余弦相似度召回多条，注入每角色多条最近历史而非只取最新一条',
+      '新增角色日记黑名单（完全相等匹配）、记忆锚点偏移（可自定义，避开重roll末尾轮次）',
+    ],
+  },
+  {
     version: 'v2.5.2',
     date: '2026-08-09',
     items: [
@@ -7684,7 +7725,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.5.2 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.6.0 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
@@ -8859,14 +8900,14 @@ async function cdRenderVector() {
   });
   
   // 测试检索
-  $('#cd-vec-test').off('click').on('click', function () {
+  $('#cd-vec-test').off('click').on('click', async function () {
     if (vectors.length === 0) {
       $('#cd-vec-test-result').html('<p style="opacity:0.5;">向量库为空，无法测试。</p>');
       return;
     }
     const sample = vectors[Math.floor(Math.random() * vectors.length)];
     const topK = parseInt($('#cd-vec-topk').val()) || 5;
-    const results = cdSearchVectors(sample.text, vectors, topK);
+    const results = await cdSearchVectors(sample.text, vectors, topK);
     const resultHtml = `
       <div style="margin-top:6px;padding:6px;background:rgba(180,150,120,0.05);border-radius:6px;">
         <div style="font-weight:500;margin-bottom:4px;">🔍 检索测试</div>
@@ -8913,7 +8954,7 @@ async function cdRenderVector() {
   });
 
   // 日记测试检索
-  $('#cd-vec-diary-test').off('click').on('click', function () {
+  $('#cd-vec-diary-test').off('click').on('click', async function () {
     if (diaryVectors.length === 0) {
       window.cdDiaryTestResult = null;
       toastr.info('日记向量库为空，无法测试');
@@ -8921,7 +8962,7 @@ async function cdRenderVector() {
     }
     const sample = diaryVectors[Math.floor(Math.random() * diaryVectors.length)];
     const topK = parseInt($('#cd-vec-topk').val()) || 5;
-    const results = cdSearchVectors(sample.text, diaryVectors, topK);
+    const results = await cdSearchVectors(sample.text, diaryVectors, topK);
     const resultHtml = `
       <div style="margin-top:6px;padding:6px;background:rgba(180,150,120,0.05);border-radius:6px;">
         <div style="font-weight:500;margin-bottom:4px;">📓 日记检索测试</div>
