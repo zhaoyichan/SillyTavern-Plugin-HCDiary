@@ -2337,6 +2337,7 @@ function cdRenderLog() {
   const testBtnHtml = `<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
     <button class="cd-btn-secondary" id="cd-btn-test-api" style="flex:1;min-width:90px;"><i class="fa-regular fa-flask"></i> 三路API调试</button>
     <button class="cd-btn-secondary" id="cd-btn-test-trigger" style="flex:1;min-width:90px;"><i class="fa-regular fa-clock"></i> 检查自动触发</button>
+    <button class="cd-btn-primary" id="cd-btn-test-summary" style="flex:1;min-width:90px;"><i class="fa-regular fa-wand-magic-sparkles"></i> 模拟自动总结</button>
     <button class="cd-btn-secondary" id="cd-btn-test-inject" style="flex:1;min-width:90px;"><i class="fa-regular fa-magnifying-glass"></i> 测试注入</button>
     <button class="cd-btn-secondary" id="cd-btn-test-custom" style="flex:1;min-width:90px;"><i class="fa-regular fa-layer-group"></i> 追踪项诊断</button>
     <button class="cd-btn-secondary" id="cd-btn-test-worldbook" style="flex:1;min-width:90px;"><i class="fa-regular fa-book-bookmark"></i> 测试世界书</button>
@@ -2394,6 +2395,15 @@ function cdRenderLog() {
   // ★ 测试按钮事件绑定
   $('#cd-btn-test-api').off('click').on('click', cdTestDiary);
   $('#cd-btn-test-trigger').off('click').on('click', cdCheckAutoTrigger);
+  $('#cd-btn-test-summary').off('click').on('click', async function () {
+    toastr.info('已手动模拟一次自动总结检查，结果请查看下方日志');
+    cdAddLog('info', '[手动模拟] 开始模拟自动总结检查…');
+    try { await cdOnMessageReceived(); } catch (e) {
+      cdAddLog('error', '[手动模拟] 自动总结流程异常: ' + (e && e.message) + ' | ' + (e && e.stack ? e.stack.slice(0, 200) : ''));
+    }
+    cdAddLog('info', '[手动模拟] 检查结束，若上方没有"即将调用cdRunDiary"则说明本次未达触发条件');
+    cdRenderLog();
+  });
   $('#cd-btn-test-inject').off('click').on('click', cdTestInjection);
   $('#cd-btn-test-custom').off('click').on('click', cdTestCustomFields);
   $('#cd-btn-test-worldbook').off('click').on('click', cdTestWorldbook);
@@ -3067,32 +3077,33 @@ async function cdOnMessageReceived() {
   const s = cdGetSettings();
   if (!s.enabled) return;
   if (s.autoSummary === false) return;
-  
+
   const chat = _cdGetChat();
   const currentLen = chat.length;
   if (currentLen < 1) return;
-  
+
   const data = await cdGetData();
-  let baseline = data._baselineChatLength ?? -1;
-  
-  // 如果 baseline > currentLen，说明发生了分片加载（chat 变短了），重置基线为当前长度
-  if (baseline > currentLen) {
-    cdLog('自动触发: 检测到分片加载，重置基线', {旧基线: baseline, 新基线: currentLen});
-    baseline = currentLen;
-    data._baselineChatLength = currentLen;
-    // ★ 也重置 lastFloor，避免楼层管理器显示错误
-    if (data.lastFloor > currentLen - 1) {
-      data.lastFloor = currentLen - 1;
-    }
+
+  // ★ 修复根因：待处理起点以「真实已成功写日记的进度 lastFloor」为准，
+  //   不再用会被提前推进的 _baselineChatLength（旧逻辑在调用写日记前就预推基线，
+  //   一旦写日记失败/空结果，基线虚高吞掉了待处理楼层，导致“新增AI”恒为1、永不凑满整批）。
+  let baseline = (typeof data.lastFloor === 'number' && data.lastFloor >= -1) ? data.lastFloor : -1;
+
+  // 分片/重roll保护：chat 变短时，把进度回退到当前 chat 末尾，避免越界
+  if (baseline > currentLen - 1) {
+    cdLog('自动触发: chat变短，进度回退', {旧进度: baseline, 当前: currentLen});
+    baseline = currentLen - 1;
+    data.lastFloor = baseline;
+    data._baselineChatLength = Math.min(data._baselineChatLength ?? -1, currentLen);
     await cdSaveData(data);
   }
-  
+
   const interval = s.interval || 5;
-  const offset = Math.max(0, parseInt(s.memoryOffset, 10) || 0);   // 记忆锚点偏移(-N)：跳过后端 N 条
-  
-  // 只统计 baseline 之后的 AI 楼层
+  const offset = Math.max(0, parseInt(s.memoryOffset, 10) || 0);   // 记忆锚点偏移：跳过末尾 N 条
+
+  // 只统计 真实已处理楼层 之后的 AI 楼层
   const aiFloors = [];
-  for (let i = Math.max(0, baseline); i < currentLen; i++) {
+  for (let i = Math.max(0, baseline + 1); i < currentLen; i++) {
     const m = chat[i];
     if (m && !m.is_user && !m.is_system) {
       aiFloors.push({
@@ -3102,25 +3113,38 @@ async function cdOnMessageReceived() {
       });
     }
   }
-  
-  cdLog('自动触发检查: chat.length', currentLen, '基线', baseline, '新增AI', aiFloors.length, '间隔', interval, '锚点偏移', offset);
-  // ★ 记忆锚点偏移：自动写记忆时跳过最近 offset 条（默认2），避免把正在重roll/被替换的末尾对话写进记忆。
-  //   同时保留整批边界：不足一个完整批次则尾数积压，攒到下一批边界再写。offset=0 表示不偏移。
-  const usable = Math.max(0, aiFloors.length - offset);   // 去掉末尾未稳定的 offset 条
-  const fullBatches = Math.floor(usable / interval);
-  if (fullBatches < 1) {
-    cdLog('自动触发(锚点偏移): 可稳定AI', usable, '(总量', aiFloors.length, '-偏移', offset, ')不足以凑满一个整批', interval, '，积压等待');
-    return;  // 不足一整批，尾数积压不触发
+
+  // ★ 锚点偏移：本轮不立刻写入最新 offset 条（留给下一轮待其稳定），
+  //   但触发判定用完整新增量，避免「单轮新增 < offset」时永久不触发。
+  const totalNew = aiFloors.length;
+  const safeCount = Math.max(0, totalNew - offset);
+  let takeCount = Math.floor(safeCount / interval) * interval;
+  if (takeCount < interval) {
+    // 防死锁：稳定区不足一整批但完整新增已够整批时，强制推进最早一整批（早已稳定）
+    if (totalNew >= interval) {
+      takeCount = interval;
+    } else {
+      // ★ 扫描 chat 结构，定位“AI楼层在哪、为何新增不足”
+      try {
+        const _scan = [];
+        for (let _i = 0; _i < currentLen; _i++) {
+          const _m = chat[_i];
+          _scan.push({ i: _i, user: !!(_m && _m.is_user), sys: !!(_m && _m.is_system), ai: !!(_m && !_m.is_user && !_m.is_system), name: (_m && _m.name) || '', type: (_m && (_m.role || (_m.is_user ? 'user' : _m.is_system ? 'system' : 'AI'))) });
+        }
+        const _aiIdx = _scan.filter(x => x.ai).map(x => x.i);
+        cdAddLog('info', '[chat结构扫描] 全部AI下标=' + JSON.stringify(_aiIdx), {共: currentLen, lastFloor: baseline, AI总数: _aiIdx.length, lastFloor之后的AI: _aiIdx.filter(i => i > baseline)});
+      } catch (_e) {}
+      cdAddLog('info', '自动总结', {未触发原因:'新增AI不足一整批', 新增AI: totalNew, 间隔: interval, 锚点偏移: offset, 基线: baseline, 聊天数: currentLen});
+      return;
+    }
   }
-  const takeCount = fullBatches * interval;
+
   let windowFloors = aiFloors.slice(0, takeCount);
   if (windowFloors.length > (s.maxWindowFloors || 40))
     windowFloors = windowFloors.slice(-(s.maxWindowFloors || 40));
-  // 护栏：重roll/楼层变短时，被替换的末尾楼层不写入本次
+
   const lastProcessed = windowFloors[windowFloors.length - 1].message_id;
-  data._baselineChatLength = lastProcessed + 1;
-  await cdSaveData(data);
-  cdAddLog('info', '自动触发(锚点偏移)', {本批AI楼层: windowFloors.length, 起点: windowFloors[0].message_id, 终点: lastProcessed, 偏移: offset, 积压尾数: aiFloors.length - takeCount});
+  cdAddLog('info', '自动触发(锚点偏移)', {本批AI楼层: windowFloors.length, 起点: windowFloors[0].message_id, 终点: lastProcessed, 偏移: offset, 新增AI: totalNew, 基线: baseline});
   await cdRunDiary({ manual: false, silent: true, extraFloors: windowFloors });
 }
 
