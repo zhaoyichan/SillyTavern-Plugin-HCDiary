@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.6.1';
+const PLUGIN_VERSION = '2.6.2';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -39,6 +39,9 @@ const DEFAULT_SETTINGS = {
   injectRelation  : false,        // 注入人物关系到AI上下文（跟随关系生成默认关）
   injectArchive   : true,         // 注入剧情档案到AI上下文
   worldbookLink   : true,         // 世界书联动：写日记/总结时注入重点角色的世界书设定
+  diaryCharFilter : false,       // 按登场人物注入近期日记（正则捕获剧情中出现的角色，只推这些角色的近期日记，替代全量/向量）
+  diaryCharLimit  : 3,           // 按登场人物时，每个角色的近期日记篇数
+  diaryCharWindow : 16,          // 登场判定窗口：取最近 N 条消息判定“本次登场角色”
   filterTags      : [             // 内容过滤标签对（不发送给AI总结）
     { start: '<user_thought>', end: '</user_thought>' },
     { start: '', end: '' },
@@ -427,8 +430,27 @@ async function cdBuildDiaryPrompt(windowFloors, data, s) {
   const tags = s.filterTags || [];
   const scene = windowFloors.map(m => `[#${m.message_id} ${m.name}] ${cdFilterTags(m.mes, tags)}`).join('\n\n');
 
-  // ★ 向量化模式：检索相关历史日记（覆盖全量记忆下拉）
+  // ★ 按登场人物捕获（方案B）：正则从剧情捕获登场角色，只推这些角色的近期日记（替代全量注入）
   let diaryMemory = memory;
+  if (s.diaryCharFilter) {
+    try {
+      const capt = cdCaptureCast(scene, data);
+      if (capt && capt.length) {
+        const limit = Math.max(1, parseInt(s.diaryCharLimit,10)||3);
+        const lines = [];
+        capt.forEach(function(role){
+          const list = (data.diaries && Array.isArray(data.diaries[role])) ? data.diaries[role] : [];
+          if (!list.length) return;
+          list.slice(-limit).forEach(function(e){
+            lines.push(`【${role}】${e.date ? '第'+e.date : '第'+(e.turn!=null?e.turn:'?')+'楼'}: ${(e.entry||'').trim()}`);
+          });
+        });
+        if (lines.length) diaryMemory = '登场角色近期日记（按登场人物抽取）：\n' + lines.join('\n');
+        else diaryMemory = memory;
+      }
+    } catch (e) { if (typeof cdWarn==='function') cdWarn('按登场人物捕获失败', e); diaryMemory = memory; }
+  }
+  // ★ 向量化模式：检索相关历史日记（覆盖全量记忆下拉）
   if (s.diaryMode === 'vector') {
     try {
       if (Array.isArray(data.diaryVectors) && data.diaryVectors.length > 0) {
@@ -1809,18 +1831,40 @@ async function cdBuildDiaryInjectionText() {
     // [填表调试] 确认函数被调用
     console.log('[CD填表debug] cdBuildDiaryInjectionText 被调用, diaries=', diaryNames.length, ', archive=', !!data.archive, ', injectDiary=', s.injectDiary, ', liveTableEnabled=', s.liveTableEnabled, ', liveTableInject=', s.liveTableInject);
     
-    // ====== 角色日记（受 injectDiary 控制）======
+    // ====== 角色日记（受 injectDiary 控制；开启 diaryCharFilter 时只注入"登场角色"）======
     if (s.injectDiary !== false && diaryNames.length) {
       const diaryLines = [];
-      for (const [name, list] of Object.entries(data.diaries)) {
-        if (!list.length) continue;
-        const last = list[list.length - 1];
-        if (!last) continue;
-        const dateStr = last.date ? last.date : '第' + last.turn + '楼';
-        const moodStr = last.mood ? `（心情：${last.mood}）` : '';
-        const attitudeStr = last.attitude_to_user ? `对用户态度：${last.attitude_to_user}` : '';
-        const extras = [moodStr, attitudeStr].filter(Boolean).join('，');
-        diaryLines.push(`- ${name}（${dateStr}${extras ? ' ' + extras : ''}）：${last.entry}`);
+      // ★ 按登场人物过滤：从当前聊天捕获登场角色，只注入这些角色的日记（项链模式，避免全量）
+      let namesToInject = diaryNames;
+      if (s.diaryCharFilter) {
+        try {
+          const chat2 = (typeof _cdGetChat === 'function') ? _cdGetChat() : [];
+          // ★ 只取「最近楼层窗口」判定登场角色（避免整个聊天把所有角色都算登场）
+          const _win = (chat2 && chat2.length) ? chat2.slice(-(Math.max(2, parseInt(s.diaryCharWindow,10)||16))) : (chat2 || []);
+          const sceneTxt = _win
+            .map(m => (m && (m.mes || m.message)) ? (m.name || '') + ': ' + (m.mes || m.message) : '')
+            .join('\n');
+          const capt = cdCaptureCast(sceneTxt, data);
+          if (capt && capt.length) namesToInject = capt;
+          // ★ 运行时诊断：真实注入时到底捕获了谁、窗口多大
+          cdAddLog && cdAddLog('info', '[注入·登场捕获]', { 启用: !!s.diaryCharFilter, 窗口条数: _win.length, 捕获到: capt||[], 将注入: namesToInject||[], scene预览: sceneTxt.slice(0,300) });
+        } catch (e) { if (typeof cdWarn === 'function') cdWarn('登场捕获失败，退回全量注入', e); }
+      }
+      const charLimit = Math.max(1, parseInt(s.diaryCharLimit, 10) || 1);
+      for (const name of namesToInject) {
+        const list = data.diaries[name];
+        if (!Array.isArray(list) || !list.length) continue;
+        // 取近期 charLimit 篇；对齐"项链"尽量多给
+        const slice = list.slice(-charLimit);
+        slice.forEach((last, i) => {
+          if (!last) return;
+          const tag = slice.length > 1 ? ('[' + (i + 1) + '/' + slice.length + '] ') : '';
+          const dateStr = last.date ? last.date : (last.turn != null ? '第' + last.turn + '楼' : '');
+          const moodStr = last.mood ? `（心情：${last.mood}）` : '';
+          const attitudeStr = last.attitude_to_user ? `对用户态度：${last.attitude_to_user}` : '';
+          const extras = [moodStr, attitudeStr].filter(Boolean).join('，');
+          diaryLines.push(`- ${name}${tag}（${dateStr}${extras ? ' ' + extras : ''}）：${last.entry}`);
+        });
       }
       if (diaryLines.length) {
         blocks.push('[角色日记]');
@@ -2120,16 +2164,24 @@ function cdCustomSaveFields() {
     let autoIdx = 1;
     const usedKeys = {};
     for (const line of lines) {
-      const m = line.match(/^(.+?)[：:]\s*(.*)$/);
-      const label = (m ? m[1] : line).trim();
+      // ★ 解析行尾 [覆盖]/[追加] 标记
+      let _mode = 'append';
+      let _line = line;
+      const _mm = _line.match(/\[覆盖\]\s*$/i) || _line.match(/\[overwrite\]\s*$/i);
+      if (_mm) { _mode = 'overwrite'; _line = _line.replace(/\[覆盖\]|\[overwrite\]\s*$/i, '').trim(); }
+      else if (_line.match(/\[追加\]\s*$/i) || _line.match(/\[append\]\s*$/i)) { _mode = 'append'; _line = _line.replace(/\[追加\]|\[append\]\s*$/i, '').trim(); }
+      const m = _line.match(/^(.+?)[：:]\s*(.*)$/);
+      const label = (m ? m[1] : _line).trim();
       const desc = (m ? m[2] : '').trim();
       if (!label) continue;
       const existing = oldCustom.find(f => f && f.label === label);
       let key = existing && existing.key ? existing.key : null;
       if (!key) { do { key = 'custom_' + autoIdx++; } while (usedKeys[key]); }
       usedKeys[key] = true;
-      customFields.push({ key, label, desc });
+      customFields.push({ key, label, desc, mode: _mode });
     }
+    // ★ 日志：记录每个追踪项的类型（覆盖/追加）
+    cdAddLog('info', '[追踪项] 已保存类型', { 数量: customFields.length, 列表: customFields.map(f => f.label + '=' + (f.mode||'append')) });
     cdSaveSettings({ customFields });
     cdAddLog('info', '[追踪项] 已写入 settings', { 数量: customFields.length, 字段: customFields.map(f => f.label) });
     if (customFields.length) {
@@ -2338,6 +2390,7 @@ function cdRenderLog() {
     <button class="cd-btn-secondary" id="cd-btn-test-api" style="flex:1;min-width:90px;"><i class="fa-regular fa-flask"></i> 三路API调试</button>
     <button class="cd-btn-secondary" id="cd-btn-test-trigger" style="flex:1;min-width:90px;"><i class="fa-regular fa-clock"></i> 检查自动触发</button>
     <button class="cd-btn-primary" id="cd-btn-test-summary" style="flex:1;min-width:90px;"><i class="fa-regular fa-wand-magic-sparkles"></i> 模拟自动总结</button>
+    <button class="cd-btn-secondary" id="cd-btn-test-cast" style="flex:1;min-width:90px;"><i class="fa-regular fa-people-group"></i> 登场人物诊断</button>
     <button class="cd-btn-secondary" id="cd-btn-test-inject" style="flex:1;min-width:90px;"><i class="fa-regular fa-magnifying-glass"></i> 测试注入</button>
     <button class="cd-btn-secondary" id="cd-btn-test-custom" style="flex:1;min-width:90px;"><i class="fa-regular fa-layer-group"></i> 追踪项诊断</button>
     <button class="cd-btn-secondary" id="cd-btn-test-worldbook" style="flex:1;min-width:90px;"><i class="fa-regular fa-book-bookmark"></i> 测试世界书</button>
@@ -2395,6 +2448,7 @@ function cdRenderLog() {
   // ★ 测试按钮事件绑定
   $('#cd-btn-test-api').off('click').on('click', cdTestDiary);
   $('#cd-btn-test-trigger').off('click').on('click', cdCheckAutoTrigger);
+  $('#cd-btn-test-cast').off('click').on('click', cdDiagCast);
   $('#cd-btn-test-summary').off('click').on('click', async function () {
     toastr.info('已手动模拟一次自动总结检查，结果请查看下方日志');
     cdAddLog('info', '[手动模拟] 开始模拟自动总结检查…');
@@ -2842,12 +2896,18 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
           if (arc.sideline)   data.archive.sideline   = _appendIfNew(data.archive.sideline,   arc.sideline);
           if (arc.states)     data.archive.states     = _appendIfNew(data.archive.states,     arc.states);
           if (arc.unresolved) data.archive.unresolved = _appendIfNew(data.archive.unresolved, arc.unresolved);
-          // 自定义追踪项（追加式数组）
+          // 自定义追踪项（默认追加式数组；开启 overwrite 的项每轮只保留最新）
           if (arc.custom && Object.keys(arc.custom).length) {
             if (!data.archive.custom || typeof data.archive.custom !== 'object') data.archive.custom = {};
+            // 取每个追踪项的 mode（覆盖/追加），按 label 匹配 config
+            const _cf = Array.isArray(s.customFields) ? s.customFields : [];
             for (const key of Object.keys(arc.custom)) {
               const list = arc.custom[key] || [];
               if (!Array.isArray(data.archive.custom[key])) data.archive.custom[key] = [];
+              // 依据 label 找到该 key 的 mode
+              const _def = _cf.find(function(f){ return f.key === key; });
+              const _mode = (_def && _def.mode === 'overwrite') ? 'overwrite' : 'append';
+              if (_mode === 'overwrite') data.archive.custom[key] = [];   // 覆盖：清空旧历史
               for (const it of list) {
                 if (it && it.desc) data.archive.custom[key].push({ time: it.time || '', desc: it.desc });
               }
@@ -4042,6 +4102,8 @@ function cdInjectModal() {
     if (!root) return;
     const isNight = root.classList.contains('cd-night');
     const newTheme = isNight ? 'day' : 'night';
+    // 全屏圆形扩散进入（内容区显示切换后的主题）
+    cdCircleReveal(this, document.getElementById('cd-body'), true);
     root.classList.remove('cd-day', 'cd-night');
     root.classList.add('cd-' + newTheme);
     // 更新 FAB 主题
@@ -4053,10 +4115,10 @@ function cdInjectModal() {
     $(this).html(`<i class="fa-regular ${newTheme === 'night' ? 'fa-sun' : 'fa-moon'}"></i>`);
     toastr.info(`已切换为${newTheme === 'night' ? '夜间' : '日间'}模式`);
   });
-  $('#cd-btn-settings').on('click', cdToggleSettings);
-  $('#cd-tb-browse').on('click', () => cdSwitchView('browse'));
-  $('#cd-tb-graph').on('click',  () => cdSwitchView('graph'));
-  $('#cd-tb-archive').on('click', () => cdSwitchView('archive'));
+  $('#cd-btn-settings').on('click', function(){ $('#cd-body').hide(); cdRenderSettings(); var sp=document.getElementById('cd-settings-panel'); $('#cd-settings-panel').show(); cdCircleReveal(this, sp, true); });
+  $('#cd-tb-browse').on('click', function(){ cdSwitchView('browse', this); });
+  $('#cd-tb-graph').on('click', function(){ cdSwitchView('graph', this); });
+  $('#cd-tb-archive').on('click', function(){ cdSwitchView('archive', this); });
   $('#cd-tb-floors').on('click', () => cdSwitchView('floors'));
   $('#cd-tb-backfill').on('click', () => cdSwitchView('backfill'));
   $('#cd-tb-clear').on('click',  () => cdSwitchView('clear'));
@@ -4066,7 +4128,7 @@ function cdInjectModal() {
   $('#cd-tb-log').on('click',    () => cdSwitchView('log'));
   $('#cd-tb-changelog').on('click', () => cdSwitchView('changelog'));
   $('#cd-tb-help').on('click',     () => cdSwitchView('help'));
-  $('#cd-tb-table').on('click',   () => cdSwitchView('table'));
+  $('#cd-tb-table').on('click', function(){ cdSwitchView('table', this); });
 $('#cd-tb-vector').on('click',   () => cdSwitchView('vector'));
   $('#cd-tb-manage').on('click',  () => cdSwitchView('manage'));
 
@@ -4137,22 +4199,24 @@ async function cdRefreshPanelContent() {
   cdApplyFontScale();
 }
 
-async function cdSwitchView(mode) {
+async function cdSwitchView(mode, el) {
   cdViewMode = mode;
-  // 更新工具栏按钮状态：主 tab 才有对应 data-mode 的高亮；菜单里的视图不点亮主 tab
   $(`#${MODAL_ID} .cd-tb-btn`).removeClass('cd-tb-active');
   $(`#${MODAL_ID} .cd-tb-btn[data-mode="${mode}"]`).addClass('cd-tb-active');
-  // 若切到「更多」菜单里的视图，收起下拉菜单
   const menuEl = document.getElementById('cd-more-menu');
   if (menuEl) menuEl.style.display = 'none';
-  // 隐藏设置面板
   $('#cd-settings-panel').hide();
   $('#cd-body').show();
-  // ★ 顶部加载进度条反馈（重视图渲染时避免"卡住没反应"的错觉）
   const bar = cdTopbarProgress('show');
+  // ★ 剧情视图：内容多、渲染慢，不播圆形动画（直接渲染）；其它 tab 保留圆扩散
+  const isArchive = (mode === 'archive');
   await cdRefreshPanelContent();
-  if (bar) setTimeout(function () { cdTopbarProgress('hide'); }, 150);
+  if (bar) setTimeout(function () { cdTopbarProgress('hide'); }, 80);
+  if (el && !isArchive) {
+    setTimeout(function(){ cdCircleReveal(el); }, 20);
+  }
 }
+
 
 /** 顶部加载进度条（show / hide）。轻量反馈，不参与逻辑。 */
 function cdTopbarProgress(action) {
@@ -4187,12 +4251,12 @@ function cdToggleFullscreen() {
 function cdToggleSettings() {
   const panel = $('#cd-settings-panel');
   if (panel.is(':visible')) {
-    panel.slideUp(200);
-    $('#cd-body').slideDown(200);
+    panel.hide();
+    $('#cd-body').show();
   } else {
-    $('#cd-body').slideUp(200);
+    $('#cd-body').hide();
     cdRenderSettings();
-    panel.slideDown(200);
+    panel.show();
   }
 }
 
@@ -5237,7 +5301,7 @@ async function cdRenderArchive() {
   const empty = !arc.mainline && !arc.sideline && !arc.states && !arc.unresolved && !hasCustom;
   
   // ★ 用户自定义追踪项（字段管理入口，默认折叠；数据已平铺到时间线主体）
-  const editText = customFields.map(f => f.label + (f.desc ? '：' + f.desc : '')).join('\n');
+  const editText = customFields.map(f => f.label + (f.desc ? '：' + f.desc : '') + (f.mode === 'overwrite' ? ' [覆盖]' : '')).join('\n');
   const editBlock = `
     <div class="cd-custom-edit">
       <div style="font-size: calc(0.6rem * var(--cd-fs, 1));font-weight:600;color:#7a5c34;margin-bottom:4px;"><i class="fa-regular fa-sliders"></i> 字段管理 <span style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;font-weight:normal;">（每行一项「显示名：给AI的描述」，保存后生效）</span></div>
@@ -5248,7 +5312,10 @@ async function cdRenderArchive() {
         写一个追踪项占一行，格式：<b>显示名：给AI的描述</b><br>
         例：<span style="color:#a855f7;">主角状态：主角当前的情绪、处境、身体状况</span><br>
         例：<span style="color:#a855f7;">女巫好感：女巫对主角的好感变化</span><br>
-        「显示名」会作为时间线的分类标题，「描述」告诉 AI 具体要追踪什么。描述可留空（只写显示名）。填写后点「保存追踪项」，AI 写剧情档案时就会同步输出这些内容，并按【时间标记】展示在时间线；删除某行即删除该追踪项及其记录数据。
+        「显示名」会作为时间线的分类标题，「描述」告诉 AI 具体要追踪什么。描述可留空（只写显示名）。填写后点「保存追踪项」，AI 写剧情档案时就会同步输出这些内容，并按【时间标记】展示在时间线；删除某行即删除该追踪项及其记录数据。<br>
+        行尾可加 <span style="color:#a855f7;">[覆盖]</span> 或 <span style="color:#a855f7;">[追加]</span>（默认追加）：<br>
+        · <span style="color:#a855f7;">[追加]</span>＝每次累积新条目，历史保留（适合事件记录）<br>
+        · <span style="color:#a855f7;">[覆盖]</span>＝每次只保留最新一条（适合状态/好感，只显示当前值）
       </p>
     </div>`;
   const customHtml = customFields.length > 0 || true ? `
@@ -5344,7 +5411,7 @@ async function cdRenderArchive() {
   for (const f of customFields) {
     const color = shuffledColors[(customFields.indexOf(f)) % shuffledColors.length];
     const list = Array.isArray(customMap[f.key]) ? customMap[f.key] : [];
-    categoryConfig.push({ label: f.label, icon: 'fa-bookmark', color, items: list.filter(it => it && it.desc).map(it => ({ time: it.time || '', content: it.desc || '', category: f.label, icon: 'fa-bookmark' })) });
+    categoryConfig.push({ label: f.label, icon: 'fa-bookmark', color, mode: (f.mode || 'append'), items: list.filter(it => it && it.desc).map(it => ({ time: it.time || '', content: it.desc || '', category: f.label, icon: 'fa-bookmark' })) });
   }
   
   const hasAnyItems = categoryConfig.some(c => c.items.length > 0);
@@ -5394,8 +5461,9 @@ async function cdRenderArchive() {
       if (!cat.items.length) continue;
       
       html += `<div class="cd-tl-group" data-group="${escapeAttr(cat.label)}" style="margin-bottom:12px;">
-        <h4 style="font-size: calc(0.75rem * var(--cd-fs, 1));font-weight:600;color:${cat.color};margin:0 0 6px;display:flex;align-items:center;gap:4px;">
+        <h4 style="font-size: calc(0.75rem * var(--cd-fs, 1));font-weight:600;color:${cat.color};margin:0 0 6px;display:flex;align-items:center;gap:6px;">
           <i class="fa-regular ${cat.icon}"></i> ${cat.label}
+          ${cat.mode === 'overwrite' ? '<span style="font-size: calc(0.52rem*var(--cd-fs,1));font-weight:500;color:#b0a48f;border:1px solid #d5cdb8;border-radius:999px;padding:0 6px;line-height:16px;margi-left:2px;">覆盖</span>' : ''}
         </h4>
         <div class="cd-timeline">`;
       
@@ -5431,7 +5499,7 @@ async function cdRenderArchive() {
     const customFallback = customFields.map(f => {
       const arr = Array.isArray(customMap[f.key]) ? customMap[f.key] : [];
       if (!arr.length) return null;
-      return { label: f.label, text: arr.map(it => it.time ? `【${it.time}】${it.desc}` : it.desc).join('\n') };
+      return { label: f.label, mode: (f.mode||'append'), text: arr.map(it => it.time ? `【${it.time}】${it.desc}` : it.desc).join('\n') };
     }).filter(Boolean);
     const fallbackHtml = !empty ? `
       <div class="cd-timeline">
@@ -5446,7 +5514,7 @@ async function cdRenderArchive() {
             <div class="cd-tl-dot" style="background:${categoryColors[section.label] || '#f97316'};border-color:${(categoryColors[section.label] || '#f97316')}22;"></div>
             <div class="cd-tl-card">
               <div class="cd-tl-head">
-                <span class="cd-tl-cat" style="color:${categoryColors[section.label] || '#f97316'}"><i class="fa-regular ${categoryIcons[section.label] || 'fa-bookmark'}"></i> ${section.label}</span>
+                <span class="cd-tl-cat" style="color:${categoryColors[section.label] || '#f97316'}"><i class="fa-regular ${categoryIcons[section.label] || 'fa-bookmark'}"></i> ${section.label}${section.mode === 'overwrite' ? ' <span style="font-size:0.52rem;opacity:.55;border:1px solid;border-radius:999px;padding:0 5px;">覆盖</span>' : ''}</span>
               </div>
               <div class="cd-tl-text">${escapeHtml(section.text).replace(/\n/g, '<br>')}</div>
             </div>
@@ -6794,12 +6862,16 @@ function cdRenderExport() {
             if (it && it.desc) current.archive.items.push({ time: it.time || '', desc: it.desc });
           }
         }
-        // 合并自定义追踪项（追加）
+        // 合并自定义追踪项（覆盖项以导入为准替换）
         if (iarc.custom && typeof iarc.custom === 'object') {
           if (!current.archive.custom || typeof current.archive.custom !== 'object') current.archive.custom = {};
+          const _cf2 = (function(){ try { var _cs=cdGetSettings(); return Array.isArray(_cs.customFields)?_cs.customFields:[]; }catch(e){ return []; } })();
           for (const key of Object.keys(iarc.custom)) {
             const list = Array.isArray(iarc.custom[key]) ? iarc.custom[key] : [];
             if (!Array.isArray(current.archive.custom[key])) current.archive.custom[key] = [];
+            const _def2 = _cf2.find(function(f){ return f.key === key; });
+            const _mode2 = (_def2 && _def2.mode === 'overwrite') ? 'overwrite' : 'append';
+            if (_mode2 === 'overwrite') current.archive.custom[key] = [];
             for (const it of list) {
               if (it && it.desc) current.archive.custom[key].push({ time: it.time || '', desc: it.desc });
             }
@@ -6968,6 +7040,14 @@ async function cdRenderSettings() {
     <div class="cds-card">
       <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-arrow-up-right-dots"></i></span><span><span class="cds-gtitle">注入 AI 上下文</span><span class="cds-gsub">发送给模型的内容</span></span></div>
       <div class="cds-row"><span class="cds-lab">角色日记</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-inject-diary" ${s.injectDiary !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+      <details class="cds-collapse"><summary>角色日记记忆（按登场人物抽取）</summary>
+        <div>
+          <div class="cds-row"><span class="cds-lab">按登场人物注入</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-diarycharfilter" ${s.diaryCharFilter ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+          <div class="cds-row"><span class="cds-lab">每人近期篇数</span><span class="cds-ctrl"><input type="number" id="cd-s-diarycharlimit" value="${s.diaryCharLimit || 3}" min="1" max="10" step="1" class="cd-input" style="width:52px;"></span></div>
+          <div class="cds-row"><span class="cds-lab">登场判定窗口</span><span class="cds-ctrl"><input type="number" id="cd-s-diarycharwindow" value="${s.diaryCharWindow || 16}" min="2" max="60" step="1" class="cd-input" style="width:52px;"></span></div>
+          <div class="cds-row" style="opacity:.65;"><span class="cds-lab" style="font-size: calc(0.6rem * var(--cd-fs, 1));">开启后：从当前剧情捕获登场角色，只推送这些角色的近期日记（不注入所有角色的全量最新篇）</span><span class="cds-ctrl"></span></div>
+        </div>
+      </details>
       <div class="cds-row"><span class="cds-lab">人物关系</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-inject-relation" ${s.injectRelation !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
       <div class="cds-row"><span class="cds-lab">剧情档案</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-inject-archive" ${s.injectArchive !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
       <details class="cds-collapse"><summary>注入策略（位置 / 角色 / 深度）</summary>
@@ -7177,6 +7257,9 @@ async function cdRenderSettings() {
       enableArchive: $('#cd-s-archive').is(':checked'),
       worldbookLink: $('#cd-s-worldbook').is(':checked'),
       injectDiary: $('#cd-s-inject-diary').is(':checked'),
+      diaryCharFilter: $('#cd-s-diarycharfilter').is(':checked'),
+      diaryCharLimit: Math.max(1, parseInt($('#cd-s-diarycharlimit').val(), 10) || 3),
+      diaryCharWindow: Math.max(2, parseInt($('#cd-s-diarycharwindow').val(), 10) || 16),
       injectRelation: $('#cd-s-inject-relation').is(':checked'),
       injectArchive: $('#cd-s-inject-archive').is(':checked'),
       autoHideEnabled: $('#cd-s-autohide').is(':checked'),
@@ -7489,6 +7572,15 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
+    version: 'v2.6.2',
+    date: '2026-08-11',
+    items: [
+      '「更多」工具中心项：登场人物诊断/登场人物注入完善，日志页新增登场人物诊断按钮',
+      '自定义追踪项支持「覆盖/追加」模式：字段管理每行可加 [覆盖] 或 [追加]，管理面板/时间线/日志/弹窗均有状态提示',
+      '切换 tab：只有「剧情」不播放圆形扩散动画（内容较多渲染慢），日记/关系/表保留圆形扩散；设置/夜间按钮全屏圆形动画保留',
+    ],
+  },
+  {
     version: 'v2.6.1',
     date: '2026-08-11',
     items: [
@@ -7796,7 +7888,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.6.1 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.6.2 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
@@ -9097,5 +9189,99 @@ function cdMoreClose() {
     rv.style.transition = 'clip-path .7s cubic-bezier(.6,0,.8,.3)';
     rv.style.clipPath = 'circle(0px at ' + cx + 'px ' + cy + 'px)';
     setTimeout(function () { rv.style.visibility = 'hidden'; }, 700);
+  }
+}
+
+
+/* ★ 圆形扩散进入：对 #cd-body 播圆形 clip-path（从触发元素向下扩散铺满内容区）
+ * 用法: cdCircleReveal(触发元素)
+ */
+function cdCircleReveal(el, target, full, halfCb){
+  var tgt=target||document.getElementById('cd-body');
+  var btn=el||(full?document.getElementById('cd-btn-settings'):document.getElementById('cd-tb-browse'));
+  if(!tgt) return;
+  try{
+    var rr=tgt.getBoundingClientRect();
+    var br=btn.getBoundingClientRect();
+    var cx, cy, R;
+    if(full){
+      cx=Math.max(1, (br.left+br.width/2)-rr.left);
+      cy=Math.max(1, (br.top+br.height/2)-rr.top);
+      R=Math.hypot(Math.max(cx,rr.width-cx),Math.max(cy,rr.height-cy))*1.08;
+    } else {
+      cx=(br.left+br.width/2)-rr.left;
+      cy=0;
+      R=Math.hypot(Math.max(cx,rr.width-cx), rr.height)*1.08;
+    }
+    tgt.style.transition='none';
+    tgt.style.clipPath='circle(12px at '+cx+'px '+cy+'px)';
+    void tgt.offsetWidth;
+    tgt.style.transition='clip-path .9s cubic-bezier(.45,0,.25,1)';
+    tgt.style.clipPath='circle('+R+'px at '+cx+'px '+cy+'px)';
+    // ★ 动画中段回调解发（供 archive 等慢视图“先动画、动画中填充内容”）
+    if (typeof halfCb==='function') { setTimeout(function(){ try{ halfCb(); }catch(_e){} }, 340); }
+    setTimeout(function(){
+      tgt.style.transition='none';
+      tgt.style.clipPath='';
+    },950);
+  }catch(e){ if(typeof cdWarn==='function') cdWarn('circle reveal err',e); }
+}
+
+
+
+/* ★ 按登场人物捕获：从剧情文本中匹配已有角色(主名+别名)，返回登场角色名列表
+ */
+function cdCaptureCast(sceneText, data){
+  data = data || null;
+  var cast=[];
+  if(!data || !data.diaries || Object.keys(data.diaries).length===0) return cast;
+  var seen={};
+  var roles=Object.keys(data.diaries);
+  roles.forEach(function(name){
+    // 名字主体不参与（用户/GM等）——直接匹配主名与别名
+    var pats=[name].concat((data.aliases && data.aliases[name])||[]);
+    var hit = pats.some(function(p){
+      if(!p || p.length<2) return false;
+      var re=null;
+      try{ re=new RegExp('(?<![\u4e00-\u9fa5a-zA-Z])'+p.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?![a-zA-Z0-9])','i'); }catch(e){ return false; }
+      return re.test(sceneText||'');
+    });
+    if(hit && !seen[name]){ seen[name]=1; cast.push(name); }
+  });
+  return cast;
+}
+
+
+/* ★ 登场人物捕获诊断：验证「按登场人物注入」是否生效、正则是否命中 */
+async function cdDiagCast(){
+  try{
+    const s = cdGetSettings();
+    const data = await cdGetData();
+    const chat = (typeof _cdGetChat === 'function') ? _cdGetChat() : [];
+    const win = Math.max(2, parseInt(s.diaryCharWindow,10)||16);
+    const winArr = (chat && chat.length) ? chat.slice(-win) : (chat||[]);
+    const sceneTxt = winArr.map(function(m){ return ((m&&m.name)||'')+': '+((m&&(m.mes||m.message))||''); }).join('\n');
+    const roles = Object.keys((data&&data.diaries)||{});
+    const cast = cdCaptureCast ? cdCaptureCast(sceneTxt, data) : [];
+    const aliases = (data && data.aliases) || {};
+    // 逐条：登场 / 未登场，点名
+    cdAddLog('info','[登场诊断] 配置',{ 是否开启: !!s.diaryCharFilter, 窗口条数: winArr.length, 每人篇数: s.diaryCharLimit||3, 注入日记: s.injectDiary!==false });
+    cdAddLog('info','[登场诊断] 已有角色数 '+roles.length);
+    cdAddLog('info','[登场诊断] 捕获到(共'+cast.length+'人): '+(cast.length?cast.join('、'):'（无）'));
+    roles.forEach(function(name){
+      var pats=[name].concat(aliases[name]||[]);
+      var hit=pats.some(function(p){ return p&&p.length>=2 && sceneTxt.indexOf(p)>=0; });
+      if(!hit){
+        cdAddLog('info','[登场诊断] 未登场(不注入): '+name);
+      } else {
+        cdAddLog('info','[登场诊断] 已登场(将注入): '+name);
+      }
+    });
+    cdAddLog('info','[登场诊断] scene(最近'+win+'条): '+sceneTxt.slice(0,200));
+    toastr.success('登场诊断完成('+cast.length+'人登场)');
+    try{ cdRenderLog(); }catch(e){}
+  }catch(e){
+    cdAddLog('error','[登场诊断] 异常: '+(e&&e.message?e.message:e));
+    toastr.error('诊断失败，看日志');
   }
 }
