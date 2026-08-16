@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.6.2';
+const PLUGIN_VERSION = '2.7.0';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -50,7 +50,9 @@ const DEFAULT_SETTINGS = {
   autoHideEnabled : false,        // 自动隐藏已总结楼层
   autoHideKeep    : 5,            // 保留最新 N 条 AI 楼层可见
   autoCompress    : false,        // 自动压缩剧情档案
-  autoCompressThreshold : 30,    // 累计多少条事件触发压缩
+  autoCompressMode : 'count',    // 自动压缩触发模式: 'count'(按条数阈值,默认) | 'size'(按累计字数)
+  autoCompressThreshold : 30,    // 累计多少条事件触发压缩（count 模式）
+  autoCompressSize : 2000,       // 累计多少字触发压缩（size 模式，含自定义追踪项）
   customFields : [],             // 用户自定义剧情追踪项定义 [{ key, label, desc }]
   archiveMode   : 'append',   // 'append' | 'vector' 剧情档案模式
   diaryMode     : 'append',   // 'append' | 'vector' 角色日记模式
@@ -631,19 +633,22 @@ const ARCHIVE_SYSTEM = [
   '3. 不要擅自补日期、时间、动机、立场或因果。原文没有，就保持没有。',
   '',
   '输出目标与格式：',
-  '请严格按以下五个字段输出纯文本，每个字段一段文字，不编号不列表：',
+  '请严格按以下字段输出纯文本，每个字段一段文字，不编号不列表。',
+  '注意：字段标签必须原样输出为"主线：""支线：""重要状态变化：""未解决事项："，不要加任何前缀。',
+  '其中「主线」「支线」是追加式（只补新内容），「重要状态变化」「未解决事项」是覆盖式（输出当前最新全貌）。',
   '',
-  '主线：',
+  '主线（追加式，只输出本次新增楼层的新进展，带时间标记，不要重复已有内容）：',
   '（每条事件以【时间标记】开头，多个事件用换行分隔）',
   '',
-  '支线：',
+  '支线（追加式，只输出本次新增的支线进展，带时间标记）：',
   '（每条事件以【时间标记】开头）',
   '',
-  '重要状态变化：',
-  '（每条状态变化以【时间标记】开头）',
+  '重要状态变化（覆盖式，输出"当前仍然有效"的角色状态汇总，而非累积历史）：',
+  '（已被后续剧情推翻/缓解的旧状态不要重复列出；没有当前有效状态则输出"无"。）',
+  '（输出两段：先「主角：」行，再各角色行。主角用固定词"主角"作行首，格式：主角：身体…；资源…；处境…；任务…【时间】。其他每个角色一行「角色名：状态」，如「方见春：身体痊愈，衣着白裙，持有玉佩，对主角好感 60【时间】"。每个角色必须涵盖：①身体状况/伤病 ②当前衣着 ③持有/获得的物品 ④对主角(用户)的好感度与态度。只写本次剧情里出现变化或当前仍有效的；已有且未变化的可简写。每行末尾以【时间标记】标注该状态最近一次变化时间。）',
   '',
-  '未解决事项：',
-  '（列出未解决事项，每条以【时间标记】开头记录该事项产生的时间）',
+  '未解决事项（覆盖式，只列出"尚未解决"的事项与长期伏笔，已解决的不要列出）：',
+  '（包含：长期伏笔、未揭晓的谜团、未兑现的承诺、跨楼层的悬而未决线索。每条以【时间标记】标注该事项产生的时间；已解决/已放弃/不再相关的不要列出。）',
   '',
   '最后，单独输出以下两个覆盖式总结字段（用来更新整体概览，不是追列事件）：',
   '剧情总览：用一段80-120字、语言精炼的连贯文字，概述当前整体剧情发展到哪一步、主要局势与各线关系，覆盖式（只描述当前阶段的最新综合情况，勿加编号）。',
@@ -879,6 +884,202 @@ function cdCountArchiveEntries(archive) {
     }
   }
   return count;
+}
+
+/* ============================== 自动压缩 ============================== */
+
+/** 统计剧情档案总字数（四文本字段 + 自定义追踪项 desc），供 size 模式使用 */
+function cdArchiveSize(archive) {
+  if (!archive) return 0;
+  let size = 0;
+  const texts = [archive.mainline, archive.sideline, archive.states, archive.unresolved].filter(Boolean);
+  for (const t of texts) size += String(t).length;
+  if (archive.custom && typeof archive.custom === 'object') {
+    for (const key of Object.keys(archive.custom)) {
+      const arr = Array.isArray(archive.custom[key]) ? archive.custom[key] : [];
+      for (const it of arr) {
+        if (it && it.desc) size += String(it.desc).length;
+      }
+    }
+  }
+  return size;
+}
+
+/**
+ * 判断是否应自动压缩
+ * mode 'count'：条目数达到 threshold 且较上次压缩新增达到 threshold/2 时触发
+ * mode 'size' ：累计新增字数达到 autoCompressSize 时触发（压缩后重置 lastCompressSize）
+ */
+function cdAutoCompressShouldTrigger(data, s) {
+  if (!data || !data.archive) return false;
+  const mode = s.autoCompressMode || 'count';
+  if (mode === 'size') {
+    const size = cdArchiveSize(data.archive);
+    const sizeTh = Math.max(200, s.autoCompressSize || 2000);
+    const lastSize = data._lastCompressSize || 0;
+    const inc = size - lastSize;
+    if (inc >= sizeTh) {
+      cdAddLog('info', `自动压缩[字数]触发: 当前 ${size} 字, 上次 ${lastSize} 字, 新增 ${inc} 字, 阈值 ${sizeTh}`);
+      return true;
+    }
+    return false;
+  }
+  // count 模式（默认）
+  const entryCount = cdCountArchiveEntries(data.archive);
+  const threshold = Math.max(5, s.autoCompressThreshold || 30);
+  const lastCount = data._lastCompressEntryCount || 0;
+  if (entryCount >= threshold && (entryCount - lastCount) >= Math.floor(threshold / 2)) {
+    cdAddLog('info', `自动压缩[条数]触发: 当前 ${entryCount} 条事件, 阈值 ${threshold}`);
+    return true;
+  }
+  return false;
+}
+
+/** 从压缩结果文本中，按标题分段解析回填 archive 四个字段 */
+function cdParseCompressedBlocks(text, labels) {
+  const out = {};
+  const heads = Object.keys(labels);
+  // 用最长的标题优先匹配，避免「主线」被「重要状态变化」里的字误吞
+  const sorted = heads.slice().sort((a, b) => labels[b].length - labels[a].length);
+  const clean = String(text || '').trim();
+  // 找到所有标题出现位置
+  const positions = [];
+  const reGlobal = /【([^】]*)】/g;
+  let m;
+  while ((m = reGlobal.exec(clean)) !== null) {
+    const label = m[1].trim();
+    const key = heads.find(k => labels[k] === label);
+    if (key !== undefined) {
+      positions.push({ key, label, idx: m.index });
+    }
+  }
+  if (!positions.length) {
+    // 无标题结构：全部归主线保底
+    out.mainline = clean;
+    return out;
+  }
+  for (let i = 0; i < positions.length; i++) {
+    const cur = positions[i];
+    const start = cur.idx;
+    const end = (i + 1 < positions.length) ? positions[i + 1].idx : clean.length;
+    let seg = clean.slice(start, end);
+    // 只去掉本段开头的标题行（【标题】），不触碰段内容里的其它符号
+    seg = seg.replace(/^\s*【[^】]*】\s*/, '');
+    seg = seg.trim();
+    out[cur.key] = seg;
+  }
+  // 纯标题无内容的情况兜底：若某字段解析为空但文本里确实出现了该标题，尝试把标题后的全部剩余归给它
+  const last = positions[positions.length - 1];
+  const tail = clean.slice(last.idx).replace(/^\s*【[^】]*】\s*/, '').trim();
+  if (tail && !out[last.key]) out[last.key] = tail;
+  return out;
+}
+
+/**
+ * 压缩融合剧情档案（单次 API 调用，压缩四个文本字段 + 自定义追踪项折叠）
+ * @param {object} data      完整 data 对象（会被就地修改）
+ * @param {object} s         设置
+ * @param {boolean} isAuto   是否由自动触发调用（true=触发后记录基线；手动 false=不记基线）
+ */
+async function cdCompressArchive(data, s, isAuto) {
+  if (!data || !data.archive) return;
+  const archive = data.archive;
+  const fields = ['mainline', 'sideline', 'states', 'unresolved'];
+  const labels = { mainline: '主线', sideline: '支线', states: '重要状态变化', unresolved: '未解决事项' };
+
+  // 组装要压缩的内容块
+  const blocks = [];
+  for (const f of fields) {
+    const c = archive[f];
+    if (c && String(c).trim()) blocks.push(`【${labels[f]}】\n${String(c).trim()}`);
+  }
+
+  // 自定义追踪项文本也并入（作为第五块，交给 AI 一并凝练）
+  const customTexts = [];
+  const customFields = Array.isArray(s.customFields) ? s.customFields.filter(x => x && x.key && x.label) : [];
+  if (archive.custom && typeof archive.custom === 'object') {
+    for (const key of Object.keys(archive.custom)) {
+      const def = customFields.find(x => x.key === key);
+      const lbl = (def && def.label) || key;
+      const arr = Array.isArray(archive.custom[key]) ? archive.custom[key] : [];
+      if (arr.length) {
+        const joined = arr.map(it => (it.time ? `${it.time}：` : '') + (it.desc || '')).join('；');
+        if (joined) customTexts.push(`【${lbl}】\n${joined}`);
+      }
+    }
+  }
+  if (customTexts.length) blocks.push(...customTexts);
+
+  const joinText = blocks.join('\n\n');
+  if (!joinText) { cdLog('cdCompressArchive: 无内容可压缩'); return; }
+
+  const COMPRESS_PROMPT = `你是一个剧情档案整理员。把下面按【标题】分段的剧情总结压缩融合成一版更紧凑但仍然完整可续写的版本。保留所有关键事实、时间标记、地点、关系变化、物品流转。不要丢失信息。
+【绝对不可丢失的内容】：
+- 长期伏笔、未揭晓的谜团、未兑现的承诺、跨楼层的线索 —— 必须原样保留，宁可保留原文也不许删除。
+- 关键人物的长期动机、秘密、执念 —— 必须保留。
+- 主角的核心目标、身份设定 —— 必须保留。
+- 跨越多个时间段的因果链（谁导致了什么、埋下了什么）—— 必须保留。
+请严格按以下分段输出，每段以【标题】开头，标题保持原样，不得改动标题文字：
+- 【主线】…
+- 【支线】…
+- 【重要状态变化】…
+- 【未解决事项】…
+- 其余自定义追踪项：按原标题原样输出【标题】段落。
+无内容的分段可省略。只输出压缩后的文本，不要任何解释。`;
+
+  const res = await cdWithTimeout(cdApiComplete([
+    { role: 'system', content: COMPRESS_PROMPT },
+    { role: 'user', content: joinText },
+  ], s), 180000, '自动压缩');
+
+  if (res && res.text && res.text.trim()) {
+    const out = cdParseCompressedBlocks(res.text, labels);
+    for (const f of fields) {
+      if (out[f] && typeof out[f] === 'string' && out[f].length) {
+        cdAddLog('info', `自动压缩 ${labels[f]}: ${String(archive[f] || '').length}→${out[f].length} 字`);
+        archive[f] = out[f];
+      }
+    }
+    // 自定义追踪项：若 AI 按自定义标题输出了合并版，尝试回填（简化为：保留原值 + 折叠超额旧条目）
+  }
+
+  // ★ 自定义剧情追踪项：超上限的旧条目折叠进主线后裁剪（两种模式均保持）
+  {
+    const cpCustomFields = Array.isArray(s.customFields) ? s.customFields.filter(f => f && f.key && f.label) : [];
+    const cpCustomMap = archive.custom && typeof archive.custom === 'object' ? archive.custom : {};
+    const MAX_CUSTOM = Math.max(20, s.autoCompressThreshold ? s.autoCompressThreshold * 2 : 60);
+    for (const def of cpCustomFields) {
+      const arr = Array.isArray(cpCustomMap[def.key]) ? cpCustomMap[def.key] : [];
+      if (arr.length <= MAX_CUSTOM) continue;
+      const excess = arr.slice(0, arr.length - MAX_CUSTOM);
+      const kept = arr.slice(arr.length - MAX_CUSTOM);
+      if (!excess.length) continue;
+      const t0 = excess[0].time || '';
+      const t1 = excess[excess.length - 1].time || '';
+      const range = (t0 && t1 && t0 !== t1) ? `${t0}～${t1}` : (t0 || t1);
+      const foldedTime = range ? `早期${def.label}(${range})` : `早期${def.label}`;
+      const foldedDesc = excess.map(it => it.time ? `${it.time}：${it.desc}` : it.desc).join('；');
+      if (foldedDesc) {
+        const oldMain = archive.mainline || '';
+        const append = `\n【${foldedTime}】${foldedDesc}`;
+        if (oldMain.length + append.length < 8000 || !oldMain) {
+          archive.mainline = oldMain ? oldMain.trimEnd() + append : append.trim();
+        }
+      }
+      cpCustomMap[def.key] = kept;
+      cdAddLog('info', `自动压缩自定义追踪项【${def.label}】: ${arr.length}→${kept.length} 条（旧条目已折叠进主线）`);
+    }
+  }
+
+  // 记录基线（供下次判断增量）
+  if (isAuto) {
+    const mode = s.autoCompressMode || 'count';
+    if (mode === 'size') {
+      data._lastCompressSize = cdArchiveSize(archive);
+    } else {
+      data._lastCompressEntryCount = cdCountArchiveEntries(archive);
+    }
+  }
 }
 
 /* ============================== 向量化工具 ============================== */
@@ -1828,8 +2029,6 @@ async function cdBuildDiaryInjectionText() {
     const diaryNames = Object.keys(data.diaries || {});
     
     const blocks = [];
-    // [填表调试] 确认函数被调用
-    console.log('[CD填表debug] cdBuildDiaryInjectionText 被调用, diaries=', diaryNames.length, ', archive=', !!data.archive, ', injectDiary=', s.injectDiary, ', liveTableEnabled=', s.liveTableEnabled, ', liveTableInject=', s.liveTableInject);
     
     // ====== 角色日记（受 injectDiary 控制；开启 diaryCharFilter 时只注入"登场角色"）======
     if (s.injectDiary !== false && diaryNames.length) {
@@ -2394,6 +2593,7 @@ function cdRenderLog() {
     <button class="cd-btn-secondary" id="cd-btn-test-inject" style="flex:1;min-width:90px;"><i class="fa-regular fa-magnifying-glass"></i> 测试注入</button>
     <button class="cd-btn-secondary" id="cd-btn-test-custom" style="flex:1;min-width:90px;"><i class="fa-regular fa-layer-group"></i> 追踪项诊断</button>
     <button class="cd-btn-secondary" id="cd-btn-test-worldbook" style="flex:1;min-width:90px;"><i class="fa-regular fa-book-bookmark"></i> 测试世界书</button>
+    <button class="cd-btn-secondary" id="cd-btn-test-hide" style="flex:1;min-width:90px;"><i class="fa-regular fa-eye-slash"></i> 楼层隐藏诊断</button>
   </div>`;
 
   if (!logs.length) {
@@ -2461,6 +2661,7 @@ function cdRenderLog() {
   $('#cd-btn-test-inject').off('click').on('click', cdTestInjection);
   $('#cd-btn-test-custom').off('click').on('click', cdTestCustomFields);
   $('#cd-btn-test-worldbook').off('click').on('click', cdTestWorldbook);
+  $('#cd-btn-test-hide').off('click').on('click', cdDiagHideFloors);
   $('#cd-btn-clear-log')?.off('click').on('click', () => { cdClearLogs(); cdRenderLog(); });
   // ★ 导出日志
   $('#cd-btn-export-log')?.off('click').on('click', function () {
@@ -2643,12 +2844,14 @@ async function cdHideOldFloors(keepCount) {
   const chat = ctx.chat;
   if (!chat.length) return;
 
-  // 从后往前找 keepCount 条 AI 楼层（非 user、非 system）
+  // 从后往前找「可见的」 keepCount 条 AI 楼层（非 user、非 is_hidden、非 is_system）
   let found = 0;
   let visibleStart = chat.length;
   for (let i = chat.length - 1; i >= 0; i--) {
     const m = chat[i];
-    if (m && !m.is_user && !m.is_system) {
+    // 可见即：不是用户消息、不是 system 通知、未被隐藏
+    const visible = m && !m.is_user && !m.is_system && !m.is_hidden && !m.hidden;
+    if (visible) {
       found++;
       if (found >= keepCount) {
         visibleStart = i;
@@ -2656,28 +2859,245 @@ async function cdHideOldFloors(keepCount) {
       }
     }
   }
-  // 如果 AI 楼层总数不足 keepCount，不隐藏
+  // 如果可见 AI 楼层总数不足 keepCount，不隐藏
   if (found < keepCount) return;
 
-  // 标记 visibleStart 之前的非用户消息为 system（隐藏）
+  // 标记 visibleStart 之前的非用户消息为 is_hidden（数据层面持久化标记）
   const toHide = [];
   for (let i = 0; i < visibleStart; i++) {
     const m = chat[i];
-    if (m && !m.is_user && m.is_system !== true) {
-      m.is_system = true;
+    if (m && !m.is_user && !m.is_hidden) {
+      m.is_hidden = true;
       toHide.push(i);
     }
   }
 
   if (toHide.length === 0) return;
 
-  // 更新 DOM
-  const selector = toHide.map(id => `.mes[mesid="${id}"]`).join(',');
-  if (selector) {
-    $(selector).attr('is_system', 'true');
+  // ★ 方案A：ST Tauri 移动版无"隐藏楼层"渲染能力，改用直接对已渲染 DOM 做视觉隐藏
+  //   - 数据层：is_hidden=true 标记并落盘（刷新后仍可再次 hide 补隐藏）
+  //   - 视觉层：用 jQuery 直接 .hide() 对应的 .mes[mesid=N] 元素
+  let domHidden = 0;
+  try {
+    for (const idx of toHide) {
+      const $el = $('.mes[mesid="' + idx + '"]');
+      if ($el.length) {
+        $el.hide();
+        domHidden++;
+      }
+    }
+  } catch (e) {
+    cdLog('cdHideOldFloors: DOM hide 异常', e ? e.message : e);
   }
 
-  cdLog('cdHideOldFloors: 隐藏了', toHide.length, '条楼层，保留最新', keepCount, '条');
+  // 落盘（保证 is_hidden 标记持久化）
+  let savedFlag = '未尝试';
+  try {
+    if (typeof ctx.saveChat === 'function') { try { await ctx.saveChat(); savedFlag = 'ok'; } catch (e) { savedFlag = 'saveFail:' + (e && e.message); } }
+    else if (typeof ctx.saveChatConditional === 'function') { try { await ctx.saveChatConditional(); savedFlag = 'ok_conditional'; } catch (e) { savedFlag = 'condFail:' + (e && e.message); } }
+    else savedFlag = '无saveChat';
+  } catch (e) {
+    savedFlag = 'saveErr:' + (e && e.message);
+  }
+
+  cdAddLog('info', '[隐藏] 完成', { 隐藏条数: toHide.length, DOM已隐藏: domHidden, 落盘: savedFlag, 保留最新: keepCount });
+  cdLog('cdHideOldFloors: 隐藏了', toHide.length, '条楼层，DOM隐藏', domHidden, '条，保留最新', keepCount, '条');
+}
+
+/** ★ 补隐藏：渲染后把已标记 is_hidden 的楼层在 DOM 上再次 .hide()（用于切换聊天/刷新后补齐视觉隐藏） */
+function cdReapplyHiddenFloors() {
+  try {
+    const ctx = SillyTavern.getContext();
+    if (!ctx || !Array.isArray(ctx.chat)) return;
+    let n = 0;
+    for (let i = 0; i < ctx.chat.length; i++) {
+      const m = ctx.chat[i];
+      if (m && m.is_hidden === true && !m.is_user) {
+        const $el = $('.mes[mesid="' + i + '"]');
+        if ($el.length && $el.css('display') !== 'none') { $el.hide(); n++; }
+      }
+    }
+    if (n > 0) { cdAddLog('info', '[隐藏] 补隐藏', { DOM补隐藏条数: n }); cdLog('cdReapplyHiddenFloors: 补隐藏', n, '条'); }
+  } catch (e) {
+    cdLog('cdReapplyHiddenFloors: 异常', e ? e.message : e);
+  }
+}
+
+/** 统计 chat 数组里 is_system / is_user / 普通 的分布，用于诊断 */
+function cdHideCountStats(chat) {
+  if (!Array.isArray(chat)) return { err: 'not array' };
+  let sys = 0, user = 0, normal = 0;
+  for (const m of chat) {
+    if (!m) continue;
+    if (m.is_user) user++;
+    else if (m.is_system) sys++;
+    else normal++;
+  }
+  return { 总消息: chat.length, system: sys, user: user, 普通AI: normal };
+}
+
+/**
+ * ★ 楼层隐藏诊断按钮：收集全部与隐藏相关的环境信息，供日志分析
+ */
+async function cdDiagHideFloors() {
+  cdAddLog('info', '========== 楼层隐藏诊断开始 ==========');
+  const s = cdGetSettings();
+  cdAddLog('info', '[隐藏诊断] 设置', { autoHideEnabled: s.autoHideEnabled, autoHideKeep: s.autoHideKeep, 版本: typeof PLUGIN_VERSION !== 'undefined' ? PLUGIN_VERSION : '?' });
+
+  // 0. 探测 ST 版本与全局标识
+  try {
+    const verProbe = {
+      ST_VERSION: (typeof ST_VERSION !== 'undefined') ? ST_VERSION : 'undefined',
+      SillyTavern_version: (typeof SillyTavern !== 'undefined' && SillyTavern.version !== undefined) ? SillyTavern.version : 'undefined',
+      window_STversion: (typeof window !== 'undefined' && window.ST_VERSION !== undefined) ? window.ST_VERSION : 'undefined',
+      userAgent: (typeof navigator !== 'undefined') ? (navigator.userAgent || '').slice(0, 120) : 'undefined',
+      has_isTauri: (typeof window !== 'undefined' && typeof window.__TAURI__ !== 'undefined') || (typeof window !== 'undefined' && typeof window.isTauri !== 'undefined'),
+    };
+    cdAddLog('info', '[隐藏诊断] ST版本与运行环境', verProbe);
+  } catch (e) {
+    cdAddLog('warn', '[隐藏诊断] 版本探测异常', { err: e && e.message });
+  }
+
+  // 1. 探测 ST 上下文可用的隐藏相关 API
+  try {
+    const ctx = SillyTavern.getContext();
+    // 完整 keys 分片打印（避免截断）：先打印全部 key 名
+    const allKeys = ctx ? Object.keys(ctx) : [];
+    cdAddLog('info', '[隐藏诊断] ctx全部key名(共' + allKeys.length + '个)', allKeys.map(k => String(k)));
+    const ctxKeys = allKeys.filter(k => /hide|message|chat|emit|save|render|reload|display|view|show/i.test(k));
+    cdAddLog('info', '[隐藏诊断] ctx相关API', { keys: ctxKeys, hasCtx: !!ctx, hasReloadCurrentChat: !!(ctx && typeof ctx.reloadCurrentChat === 'function'), hasDeleteMessage: !!(ctx && typeof ctx.deleteMessage === 'function'), hasAddOneMessage: !!(ctx && typeof ctx.addOneMessage === 'function') });
+
+    // 探测隐藏相关方法
+    const probe = {
+      ctx_hideMessage: typeof (ctx && ctx.hideMessage) === 'function',
+      ctx_hideAction: typeof (ctx && ctx.hideAction) === 'function',
+      window_hideMessage: typeof hideMessage === 'function',
+      window_hideChatMessage: typeof hideChatMessage === 'function',
+      window_hideMessages: typeof hideMessages === 'function',
+      global_hideMessage: typeof window !== 'undefined' ? typeof window.hideMessage === 'function' : false,
+    };
+    cdAddLog('info', '[隐藏诊断] 隐藏相关函数探测', probe);
+
+    // 探测 ST 事件源
+    let hasEventSource = false, hasEventTypes = false;
+    try {
+      const ctx2 = SillyTavern.getContext();
+      hasEventSource = !!(ctx2 && ctx2.eventSource);
+      hasEventTypes = !!(ctx2 && ctx2.event_types);
+      if (ctx2 && ctx2.event_types) {
+        cdAddLog('info', '[隐藏诊断] event_types关键值', {
+          MESSAGE_RENDERED: ctx2.event_types.MESSAGE_RENDERED,
+          MESSAGE_UPDATED: ctx2.event_types.MESSAGE_UPDATED,
+          MESSAGE_DELETED: ctx2.event_types.MESSAGE_DELETED,
+          CHAT_CHANGED: ctx2.event_types.CHAT_CHANGED,
+          MESSAGE_SENT: ctx2.event_types.MESSAGE_SENT,
+        });
+      }
+      cdAddLog('info', '[隐藏诊断] 事件源', { hasEventSource, hasEventTypes, hasEmit: !!(ctx2 && typeof ctx2.emit === 'function') });
+    } catch (e) {
+      cdAddLog('warn', '[隐藏诊断] 探测事件源异常', { err: e && e.message });
+    }
+  } catch (e) {
+    cdAddLog('warn', '[隐藏诊断] 探测ctx异常', { err: e && e.message, stack: e && e.stack ? String(e.stack).slice(0, 300) : '' });
+  }
+
+  // 2. 遍历 chat 分析每条消息的字段（重点看 隐藏是靠哪个字段）
+  try {
+    const ctx = SillyTavern.getContext();
+    const chat = ctx && Array.isArray(ctx.chat) ? ctx.chat : [];
+    const rows = chat.map((m, i) => {
+      if (!m) return null;
+      return {
+        i,
+        is_user: !!m.is_user,
+        is_system: !!m.is_system,
+        is_hidden: !!m.is_hidden,
+        hidden: !!m.hidden,
+        is_name_invisible: !!m.is_name_invisible,
+        name: m.name || '',
+        mes长度: (m.mes || '').length,
+        mes前10: String(m.mes || '').slice(0, 10),
+        switchTo: m.switchTo ?? null,
+      };
+    }).filter(Boolean);
+    // 滚动(默认给最近18条 + 全部总计)
+    cdAddLog('info', '[隐藏诊断] chat消息全字段', { 总条数: rows.length, 明细: rows });
+  } catch (e) {
+    cdAddLog('warn', '[隐藏诊断] 遍历chat异常', { err: e && e.message });
+  }
+
+  // 3. 探测 DOM 中消息元素的实际隐藏机制
+  try {
+    const total = $('.mes').length;
+    const hiddenBySys = $('.mes[is_system="true"]').length;
+    const sample = $('.mes').first();
+    const sampleHtml = sample.length ? String(sample.attr('class')) : '无.mes';
+    // ★ 采集 .mes 所有的 dom 属性名（找 mesid / data-* 等定位标识）
+    let sampleAttrs = {};
+    if (sample.length) {
+      const el = sample[0];
+      for (let i = 0; i < el.attributes.length; i++) {
+        const a = el.attributes[i];
+        sampleAttrs[a.name] = String(a.value).slice(0, 60);
+      }
+    }
+    const mesAttr = sample.length ? { attrs: sampleAttrs, style: sample.attr('style'), class: sample.attr('class') } : null;
+
+    // ★ 关键实验：找出 chat 里哪些消息在 DOM 中「缺失」（渲染时被过滤的规则）
+    const ctx = SillyTavern.getContext();
+    const chat = (ctx && Array.isArray(ctx.chat)) ? ctx.chat : [];
+    const domMesIds = [];
+    $('.mes').each(function () {
+      const id = $(this).attr('mesid') || $(this).attr('data-mesid') || $(this).attr('data-message-id') || '';
+      domMesIds.push(id);
+    });
+    // 反推：chat 里哪几类消息没被渲染成 .mes
+    const chatFlags = chat.map((m, i) => {
+      if (!m) return null;
+      return { i, is_user: !!m.is_user, is_system: !!m.is_system, is_hidden: !!m.is_hidden, hidden: !!m.hidden, mesLen: (m.mes || '').length, hasMes: !!m.mes };
+    }).filter(Boolean);
+    // mes 为空的（系统/隐藏消息往往 mes 空）
+    const emptyMes = chatFlags.filter(f => !f.hasMes || f.mesLen === 0).map(f => f.i);
+    cdAddLog('info', '[隐藏诊断] DOM消息元素(深)', {
+      '.mes数量': total,
+      '带is_system属性的': hiddenBySys,
+      首元素属性: mesAttr,
+      sampleClass: sampleHtml,
+      '采集到的mesid属性值前20': domMesIds.slice(0, 20),
+      chat总条数: chat.length,
+      'chat中mes为空的楼层下标': emptyMes,
+      'chat中is_hidden等于true的下标': chatFlags.filter(f => f.is_hidden).map(f => f.i),
+      'chat中is_system等于true的下标前30': chatFlags.filter(f => f.is_system).map(f => f.i).slice(0, 30),
+    });
+  } catch (e) {
+    cdAddLog('warn', '[隐藏诊断] DOM探测异常', { err: e && e.message });
+  }
+
+  // 4. 实际触发一次隐藏，观察 cdHideOldFloors 的执行与结果
+  try {
+    cdAddLog('info', '[隐藏诊断] 即将手动触发 cdHideOldFloors');
+    await cdHideOldFloors(s.autoHideKeep || 5);
+    cdAddLog('info', '[隐藏诊断] cdHideOldFloors 调用返回');
+  } catch (e) {
+    cdAddLog('error', '[隐藏诊断] cdHideOldFloors 调用异常', { err: e && e.message, stack: e && e.stack ? String(e.stack).slice(0, 400) : '' });
+  }
+
+  // 5. 触发后再次检查 DOM，观察消息元素是否真的被隐藏
+  try {
+    await new Promise(r => setTimeout(r, 500));
+    const after = $('.mes');
+    const afterTotal = after.length;
+    const afterHidden = $('.mes[is_system="true"],.mes[data-is-system="true"]').length;
+    // 检查每个 .mes 的 display 状态
+    const visibleCount = after.filter(function () { return $(this).css('display') !== 'none'; }).length;
+    cdAddLog('info', '[隐藏诊断] 触发后DOM复查', { '.mes数量': afterTotal, '带system标记': afterHidden, 'display非none(可见)数': visibleCount });
+  } catch (e) {
+    cdAddLog('warn', '[隐藏诊断] 触发后DOM复查异常', { err: e && e.message });
+  }
+
+  cdAddLog('info', '========== 楼层隐藏诊断结束 ==========');
+  if (typeof cdRenderLog === 'function') cdRenderLog();
+  if (typeof toastr !== 'undefined') toastr.info('隐藏诊断完成，请导出日志查看详情');
 }
 
 /**
@@ -2687,15 +3107,22 @@ function cdShowAllFloors() {
   const ctx = SillyTavern.getContext();
   if (!ctx || !Array.isArray(ctx.chat)) return;
   let count = 0;
-  for (const m of ctx.chat) {
-    if (m && m.is_system === true && !m.is_user) {
+  for (let i = 0; i < ctx.chat.length; i++) {
+    const m = ctx.chat[i];
+    if (m && m.is_hidden === true && !m.is_user) {
       // 只恢复被插件隐藏的 AI 楼层（保留真正的 system 消息）
-      m.is_system = false;
+      m.is_hidden = false;
       count++;
     }
   }
-  // 更新 DOM
-  $('.mes[is_system="true"]').attr('is_system', 'false');
+  // ★ 方案A：DOM 层面 .show() 恢复视觉显示
+  try {
+    $('.mes[mesid]').show();
+  } catch (e) {}
+  // 落盘
+  try {
+    if (typeof ctx.saveChat === 'function') { try { ctx.saveChat(); } catch (e) {} }
+  } catch (e) {}
   cdLog('cdShowAllFloors: 恢复了', count, '条隐藏的楼层');
 }
 
@@ -2892,10 +3319,73 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
             if (String(cur).trimEnd().endsWith(_key)) return cur;
             return String(cur).trimEnd() + '\n\n' + _key;
           };
+          // ★ 覆盖式合并（防丢版 B）：以新值覆盖旧值，但保留旧值中 AI 漏掉的条目
+          //   - 新值为空/"无" → 保留旧值（防止 AI 漏输出导致清空）
+          //   - 新值非空 → 以新值为准，但逐条检查旧值（按【时间标记】切），若某条旧摘要正文不被新值包含则补回
+          const _overwriteKeepMissed = (oldv, nxt) => {
+            const _n = String(nxt || '').trim();
+            if (!_n || _n === '无' || _n === '无变化' || _n === '暂无') return oldv; // 空输出→保留旧
+            if (!oldv) return _n;
+            const _nNorm = _n.replace(/\s+/g, '');
+            // 旧值按【时间标记】切条
+            const _oldItems = String(oldv).split(/(?=【)/).map(s => s.trim()).filter(Boolean);
+            const _missed = [];
+            for (const it of _oldItems) {
+              // 去掉时间标记与空白后的正文，作为匹配关键
+              const _body = it.replace(/^【[^】]*】\s*/, '').replace(/\s+/g, '');
+              if (!_body) continue;
+              if (_body.length < 4) continue;
+              // 若新值不含该正文（取前 8 字做模糊判断），视为漏掉，补回
+              const _head = _body.slice(0, 8);
+              if (_head && _nNorm.indexOf(_head) < 0) {
+                _missed.push(it);
+              }
+            }
+            if (!_missed.length) return _n;
+            return _n + '\n' + _missed.join('\n');
+          };
+          // ★ 角色状态按角色粒度合并：解决「某角色本次未出场→其好感/状态被覆盖丢失」
+          //   状态行格式「角色名：状态【时间】」
+          //   新值里出现的角色用新状态覆盖其旧状态；新值里没出现的角色，保留其旧状态
+          const _mergeStatesByRole = (oldv, nxt) => {
+            const _n = String(nxt || '').trim();
+            if (!_n || _n === '无' || _n === '无变化' || _n === '暂无') return oldv; // 空→保留旧，避免清空
+            // 解析新值 → { 角色名小写: 该角色行 }，保持出现顺序
+            const nxtLines = _n.split('\n').map(s => s.trim()).filter(Boolean);
+            const nxtByRole = {};
+            const nxtRoleOrder = [];
+            for (const line of nxtLines) {
+              if (line === '无' || line === '无变化' || line === '暂无') continue;
+              const cm = line.match(/^([^：:]{1,24})[：:]/);
+              const role = cm ? cm[1].trim() : '';
+              if (!role) continue; // 无角色名（如"无人有变化"）跳过，不追加
+              const rl = role.toLowerCase();
+              if (!(rl in nxtByRole)) nxtRoleOrder.push(rl);
+              nxtByRole[rl] = line; // 覆盖：同角色只保留最新行
+            }
+            // 解析旧值：旧角色行若不在新值里，保留
+            const oldLines = String(oldv || '').split('\n').map(s => s.trim()).filter(Boolean);
+            const keptOld = [];
+            for (const line of oldLines) {
+              if (!line) continue;
+              const cm = line.match(/^([^：:]{1,24})[：:]/);
+              if (!cm) { keptOld.push(line); continue; }
+              const rl = cm[1].trim().toLowerCase();
+              if (rl in nxtByRole) continue; // 该角色已在新值里 → 用新的，跳过旧的
+              keptOld.push(line); // 角色不在本次新值 → 保留其旧状态
+            }
+            // 组装：新值角色（按顺序） + 保留的旧角色
+            const out = [];
+            for (const rl of nxtRoleOrder) out.push(nxtByRole[rl]);
+            out.push(...keptOld);
+            const _final = out.filter(Boolean).join('\n');
+            cdAddLog('info', '[状态合并] 按角色增量合并', { 新值角色数: nxtRoleOrder.length, 保留旧角色数: keptOld.length, 最终行数: _final.split('\n').filter(Boolean).length });
+            return _final || oldv;
+          };
           if (arc.mainline)   data.archive.mainline   = _appendIfNew(data.archive.mainline,   arc.mainline);
           if (arc.sideline)   data.archive.sideline   = _appendIfNew(data.archive.sideline,   arc.sideline);
-          if (arc.states)     data.archive.states     = _appendIfNew(data.archive.states,     arc.states);
-          if (arc.unresolved) data.archive.unresolved = _appendIfNew(data.archive.unresolved, arc.unresolved);
+          if (arc.states !== undefined)     data.archive.states     = _mergeStatesByRole((data.archive && data.archive.states) || '', arc.states);
+          if (arc.unresolved !== undefined) data.archive.unresolved = _overwriteKeepMissed((data.archive && data.archive.unresolved) || '', arc.unresolved);
           // 自定义追踪项（默认追加式数组；开启 overwrite 的项每轮只保留最新）
           if (arc.custom && Object.keys(arc.custom).length) {
             if (!data.archive.custom || typeof data.archive.custom !== 'object') data.archive.custom = {};
@@ -2955,8 +3445,8 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
       }
       */
 
-      // ★ 自动隐藏已总结的旧楼层
-      if (diaryOk && s.autoHideEnabled) {
+      // ★ 自动隐藏已总结的旧楼层（统一入口，任意一路成功即触发）
+      if (s.autoHideEnabled) {
         try {
           await cdHideOldFloors(s.autoHideKeep || 5);
           cdAddLog('info', `自动隐藏完成，保留最新 ${s.autoHideKeep || 5} 条AI楼层`);
@@ -2990,86 +3480,13 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
         }
       }
 
-      // ★ 自动隐藏旧楼层
-      if (s.autoHideEnabled) {
-        try {
-          const chat = _cdGetChat();
-          const keep = Math.max(1, s.autoHideKeep || 5);
-          const hideBefore = Math.max(0, chat.length - keep);
-          let hiddenCount = 0;
-          for (let i = 0; i < hideBefore; i++) {
-            if (chat[i] && !chat[i].is_system) {
-              chat[i].is_system = true;
-              hiddenCount++;
-            }
-          }
-          if (hiddenCount > 0) {
-            cdAddLog('info', `自动隐藏 ${hiddenCount} 条旧楼层（保留最新 ${keep} 条）`);
-            // 触发 ST 重新渲染
-            const ctx = SillyTavern.getContext();
-            if (ctx?.emit) ctx.emit('chat_updated', {});
-          }
-        } catch (e) {
-          cdWarn('自动隐藏楼层失败', e);
-        }
-      }
-
-      // ★ 自动压缩剧情档案（archiveOk 且条目数超过阈值时触发）
+      // ★ 自动压缩剧情档案（count=条数阈值 / size=累计字数，含自定义追踪项）
       if (archiveOk && s.autoCompress && data.archive) {
         try {
-          const entryCount = cdCountArchiveEntries(data.archive);
-          const threshold = Math.max(5, s.autoCompressThreshold || 30);
-          const lastCount = data._lastCompressEntryCount || 0;
-          if (entryCount >= threshold && (entryCount - lastCount) >= Math.floor(threshold / 2)) {
-            cdAddLog('info', `自动压缩触发: 当前 ${entryCount} 条事件, 阈值 ${threshold}`);
-            toastr.info('剧情档案条目数已达阈值，正在自动压缩融合...');
-            // 复用现有的压缩逻辑，只压缩四个文本字段
-            const fields = ['mainline', 'sideline', 'states', 'unresolved'];
-            const labels = { mainline: '主线', sideline: '支线', states: '重要状态变化', unresolved: '未解决事项' };
-            const COMPRESS_PROMPT = '你是一个剧情档案整理员。把下面的剧情总结压缩融合成一版更紧凑但仍然完整可续写的版本。保留所有关键事实、时间标记、地点、关系变化、物品流转。不要丢失信息。输出纯文本。';
-            for (const field of fields) {
-              const content = data.archive[field];
-              if (!content || content.length < 100) continue;
-              const msgs = [
-                { role: 'system', content: COMPRESS_PROMPT },
-                { role: 'user', content: `请压缩以下${labels[field]}：\n\n${content}` },
-              ];
-              const res = await cdWithTimeout(cdApiComplete(msgs, s), 120000, '自动压缩');
-              if (res?.text?.trim()) {
-                let compressed = res.text.trim();
-                compressed = compressed.replace(new RegExp(`^${labels[field]}[：:]\\s*`), '');
-                data.archive[field] = compressed;
-                cdAddLog('info', `自动压缩 ${labels[field]}: ${content.length}→${compressed.length} 字`);
-              }
-            }
-            // ★ 自动压缩自定义剧情追踪项：同样限制条数上限，超出的旧条目折叠进主线后裁剪
-            {
-              const cpCustomFields = Array.isArray(s.customFields) ? s.customFields.filter(f => f && f.key && f.label) : [];
-              const cpCustomMap = (data.archive.custom && typeof data.archive.custom === 'object') ? data.archive.custom : {};
-              const MAX_CUSTOM = Math.max(20, s.autoCompressThreshold ? s.autoCompressThreshold * 2 : 60);
-              for (const def of cpCustomFields) {
-                const arr = Array.isArray(cpCustomMap[def.key]) ? cpCustomMap[def.key] : [];
-                if (arr.length <= MAX_CUSTOM) continue;
-                const excess = arr.slice(0, arr.length - MAX_CUSTOM);
-                const kept = arr.slice(arr.length - MAX_CUSTOM);
-                if (!excess.length) continue;
-                const t0 = excess[0].time || '';
-                const t1 = excess[excess.length - 1].time || '';
-                const range = (t0 && t1 && t0 !== t1) ? `${t0}～${t1}` : (t0 || t1);
-                const foldedTime = range ? `早期${def.label}(${range})` : `早期${def.label}`;
-                const foldedDesc = excess.map(it => it.time ? `${it.time}：${it.desc}` : it.desc).join('；');
-                if (foldedDesc) {
-                  const oldMain = data.archive.mainline || '';
-                  const append = `\n【${foldedTime}】${foldedDesc}`;
-                  if (oldMain.length + append.length < 8000 || !oldMain) {
-                    data.archive.mainline = oldMain ? oldMain.trimEnd() + append : append.trim();
-                  }
-                }
-                cpCustomMap[def.key] = kept;
-                cdAddLog('info', `自动压缩自定义追踪项【${def.label}】: ${arr.length}→${kept.length} 条（旧条目已折叠进主线）`);
-              }
-            }
-            data._lastCompressEntryCount = entryCount;
+          if (cdAutoCompressShouldTrigger(data, s)) {
+            cdAddLog('info', '自动压缩触发');
+            toastr.info('剧情档案已达压缩条件，正在自动压缩融合...');
+            await cdCompressArchive(data, s, true);
             await cdSaveData(data);
             cdAddLog('info', '自动压缩完成');
             toastr.success('剧情档案自动压缩完成');
@@ -3623,6 +4040,8 @@ async function _cdDoInit() {
         if (cdPanelOpen) cdRefreshPanelContent();
         // 聊天切换时刷新注入
         cdRegisterInjection();
+        // ★ 补隐藏：切换聊天后把已标记 is_hidden 的楼层在 DOM 上重新 hide
+        setTimeout(() => { try { cdReapplyHiddenFloors(); } catch (e) {} }, 300);
       };
       es.on(et.CHAT_CHANGED, _cdListeners.chat);
       cdLog('[init] ST事件注册完成');
@@ -3639,6 +4058,9 @@ async function _cdDoInit() {
   } catch (e) { console.error('[CD] 注册ST事件失败', e); if (typeof toastr !== 'undefined') toastr.error('[角色日记] ST事件注册失败: ' + e.message); }
   
   cdLog('=== 角色日记初始化完成 ===');
+  
+  // ★ 初始化后补隐藏：刷新页面后，把已标记 is_hidden 的楼层在 DOM 上重新 hide（方案A视觉隐藏持久化）
+  setTimeout(() => { try { cdReapplyHiddenFloors(); } catch (e) {} }, 800);
   
   // ★ 延迟检查更新（不阻塞初始化）
   setTimeout(() => cdCheckForUpdates(), 5000);
@@ -4012,7 +4434,7 @@ function cdInjectModal() {
           <!-- 核心功能区（高频主 tab）：日记 / 剧情 / 关系 / 表 -->
           <button class="cd-tb-btn cd-tb-active" id="cd-tb-browse" data-mode="browse"><i class="fa-regular fa-list"></i> 日记</button>
           <button class="cd-tb-btn" id="cd-tb-archive" data-mode="archive"><i class="fa-regular fa-timeline"></i> 剧情</button>
-          <button class="cd-tb-btn" id="cd-tb-graph" data-mode="graph"><i class="fa-regular fa-diagram-project"></i> 关系</button>
+          <button class="cd-tb-btn" id="cd-tb-graph" data-mode="graph"><i class="fa-regular fa-address-book"></i> 状态</button>
           <button class="cd-tb-btn" id="cd-tb-table" data-mode="table"><i class="fa-regular fa-table"></i> 表</button>
 
           <!-- 更多（低频 / 工具 / 信息收纳） -->
@@ -5241,52 +5663,210 @@ function cdMoodBorderColor(mood) {
   return '';
 }
 
-/** 关系网谱（力导向图 + 文本列表） */
+/** 关系网谱 → 【角色状态界面】：主角卡 + 动态地图B + 角色条例列表 */
 async function cdRenderGraph() {
-  const data = await cdGetData();
-  const nodes = Object.keys(data.diaries);
-  if (!nodes.length) {
-    $('#cd-content').html(`<div class="cd-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg><p>暂无关系数据</p></div>`);
-    return;
+  // ★ 动态注入状态界面样式（保证随代码同步，不依赖独立 style 文件）
+  if (!document.getElementById('cd-st-ui-style')) {
+    var st = document.createElement('style'); st.id = 'cd-st-ui-style';
+    st.textContent = [
+      '.cd-st-prob{background:#8a6a3b;color:#fff;border-radius:8px;padding:11px 13px;margin-bottom:10px}',
+      '.cd-st-pb-title{font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:7px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.18);margin-bottom:8px}',
+      '.cd-st-pb-grid{display:flex;flex-direction:column;gap:6px}',
+      '.cd-st-pb-item{display:flex;gap:8px;font-size:10.5px;line-height:1.5}',
+      '.cd-st-pb-item .k{color:#ffd9a0;font-weight:700;width:30px;flex-shrink:0}',
+      '.cd-st-pb-item .v{color:#fff;flex:1}',
+      '.cd-st-pb-empty{font-size:10px;opacity:.6}',
+      '.cd-st-map{border:1px solid #dcc9a4;border-radius:8px;background:#faf6ec;margin-bottom:10px;padding:9px 11px}',
+      '.cd-st-map-title{font-size:11px;font-weight:700;color:#6b4a1b;display:flex;align-items:center;gap:6px;margin-bottom:6px}',
+      '.cd-st-map-body{width:100%}',
+      '.cd-st-map-note{display:flex;justify-content:space-between;align-items:center;margin-top:4px;font-size:9px;color:#8b7355}',
+      '.cd-st-section-title{font-size:11px;font-weight:700;color:#9a7a45;letter-spacing:.5px;display:flex;align-items:center;gap:5px;margin:4px 0 7px}',
+      '.cd-st-role{border:1px solid #e6dcc6;border-radius:7px;padding:9px 11px;background:#fff;margin-bottom:7px}',
+      '.cd-st-role-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}',
+      '.cd-st-role-name{font-size:12px;font-weight:700;color:#4a3a2a}',
+      '.cd-st-role-right{display:flex;align-items:center;gap:6px}',
+      '.cd-st-favpill{font-size:9.5px;font-weight:700;border-radius:999px;padding:2px 8px}',
+      '.cd-st-fav-high{color:#1f6b3d;background:#e6f3ea}',
+      '.cd-st-fav-mid{color:#8a6a1b;background:#f4eeda}',
+      '.cd-st-fav-low{color:#a63a3a;background:#f8e2e2}',
+      '.cd-st-present{font-size:8.5px;font-weight:700;padding:1px 6px;border-radius:3px}',
+      '.cd-st-present.on{color:#2e7d4f;background:#e6f3ea}',
+      '.cd-st-present.off{color:#888;background:#efefef}',
+      '.cd-st-role-fields{display:flex;flex-direction:column;gap:4px}',
+      '.cd-st-field{display:flex;font-size:10.5px;line-height:1.45;color:#6b5a48}',
+      '.cd-st-field .k{width:40px;flex-shrink:0;color:#9a8a72;font-weight:600}',
+      '.cd-st-field .v{flex:1;color:#4a3a2a}',
+    ].join('\n');
+    document.head.appendChild(st);
   }
-  
-  // 力导向图
-  const forceGraphHtml = cdRenderForceGraph(data);
-  
-  // 文本列表
-  const rels = data.relations || {};
-  let listHtml = '<div class="cd-graph-text">';
-  let hasAny = false;
-  for (const from of nodes) {
-    const targets = rels[from] || {};
-    const entries = Object.entries(targets);
-    if (!entries.length) continue;
-    hasAny = true;
-    listHtml += `<div class="cd-graph-node"><strong class="cd-graph-from">${escapeHtml(from)}</strong>`;
-    for (const [to, r] of entries) {
-      const a = r.attitude || 'neutral';
-      const icon = a === 'positive' ? '<i class="fa-regular fa-face-smile" style="color:#5a9;"></i>' : a === 'negative' ? '<i class="fa-regular fa-face-angry" style="color:#c55;"></i>' : '<i class="fa-regular fa-face-meh" style="color:#a98;"></i>';
-      listHtml += `<div class="cd-graph-rel">
-        ${icon} → <span class="cd-graph-to">${escapeHtml(to)}</span>
-        <span class="cd-graph-type">${escapeHtml(r.type || '关系')}</span>
-        ${r.note ? `<span class="cd-graph-note">${escapeHtml(r.note)}</span>` : ''}
-      </div>`;
-    }
-    listHtml += '</div>';
-  }
-  if (!hasAny) listHtml += '<div class="cd-empty"><p>暂无关系数据，写日记时间步会同时更新关系</p></div>';
-  listHtml += '</div>';
 
-  $('#cd-content').html(`
-    <div class="cd-force-section">
-      <h3 class="cd-write-title"><i class="fa-regular fa-diagram-project"></i> 关系力图 <span style="font-size: calc(0.6rem * var(--cd-fs, 1));opacity:0.4;font-weight:normal;">弹簧算法自动布局</span></h3>
-      ${forceGraphHtml}
-    </div>
-    <div class="cd-write-divider"></div>
-    <div class="cd-force-section">
-      <h3 class="cd-write-title"><i class="fa-regular fa-list"></i> 关系列表</h3>
-      ${listHtml}
-    </div>`);
+  const data = await cdGetData();
+  const arc = data.archive || emptyData().archive;
+  const statesText = arc.states || '';
+
+  // ===== 主角名（取 ST 用户实际名，无则"主角"）=====
+  let protName = '主角';
+  try {
+    const ctx = SillyTavern.getContext();
+    const n1 = ctx && ctx.name1;
+    if (n1 && String(n1).trim()) protName = String(n1).trim();
+  } catch (e) {}
+
+  // ===== 解析状态文本 → 主角 + 角色 =====
+  const prot = { 身体: '', 资源: '', 处境: '', 任务: '' };
+  const roles = []; // { name, text, fav }
+  let protFound = false;
+
+  if (statesText && String(statesText).trim()) {
+    const lines = String(statesText).split('\n').map(s => s.trim()).filter(Boolean);
+    for (const line of lines) {
+      const cm = line.match(/^([^：:]{1,24})[：:]\s*(.*)/);
+      if (!cm) continue;
+      const name = cm[1].trim();
+      const body = cm[2] || '';
+      if (name === '主角' || name === '用户' || name === 'player' || (protName !== '主角' && name === protName)) {
+        // 主角：解析 身体/资源/处境/任务（用分号或中文逗号切）
+        protFound = true;
+        const segs = body.split(/[；;]/).map(s => s.trim()).filter(Boolean);
+        for (const seg of segs) {
+          const kv = seg.match(/^(身体|资源|处境|任务|状况|状态)[：:]\s*(.*)/);
+          if (kv) { prot[kv[1] === '状况' || kv[1] === '状态' ? '身体' : kv[1]] = kv[2]; }
+          else if (prot['身体']) { prot['身体'] += '；' + seg; }
+          else { prot['身体'] = seg; }
+        }
+      } else {
+        // 角色：提取好感数值
+        let fav = null;
+        const fm = body.match(/好感[^\d]{0,4}(\d{1,3})/);
+        if (fm) fav = parseInt(fm[1], 10);
+        roles.push({ name, text: body.replace(/\(\d+\)|\s*【[^】]*】\s*$/g, '').trim(), fav });
+      }
+    }
+  }
+
+  // ===== 打散 角色「身体/衣着/物品/好感/其他」成 友好/外貌/其他 三行 =====
+  const fieldRows = (roleText) => {
+    const item = { 物品: '', 外貌: '', 其他: '' };
+    const segs = String(roleText || '').split(/[，、；;]/).map(s => s.trim()).filter(Boolean);
+    const itemWords = ['持有', '物品', '随身', '手中'];
+    const lookWords = ['衣着', '外貌', '穿着', '打扮', '穿的'];
+    const favWords = ['好感', '态度', '对我的', '对主角'];
+    const rest = [];
+    for (const seg of segs) {
+      const cleanSeg = seg.replace(/^\s*【[^】]*】\s*/, '').replace(/好感.*/, '').trim();
+      if (!cleanSeg) continue;
+      if (itemWords.some(w => seg.includes(w)) && seg.includes('：')) { item['物品'] = seg.split(/[：:]/).slice(1).join('：'); }
+      else if (lookWords.some(w => seg.includes(w)) && seg.includes('：')) { item['外貌'] = seg.split(/[：:]/).slice(1).join('：'); }
+      else if (favWords.some(w => seg.includes(w))) { /* 好感单独标 */ }
+      else { rest.push(cleanSeg); }
+    }
+    return { 物品: item['物品'], 外貌: item['外貌'], 其他: rest.join('，') };
+  };
+
+  // ===== 好感颜色分档 =====
+  const favPill = (fav) => {
+    if (fav === null || fav === undefined) return '<span class="cd-st-favpill" style="color:#8a7355;background:#f1eadb;">好感 ?</span>';
+    let cls, icon;
+    if (fav >= 70) { cls = 'cd-st-fav-high'; icon = '❤'; }
+    else if (fav >= 40) { cls = 'cd-st-fav-mid'; icon = '♡'; }
+    else { cls = 'cd-st-fav-low'; icon = '♡'; }
+    return `<span class="cd-st-favpill ${cls}">${icon} 好感 ${fav}</span>`;
+  };
+
+  // ===== 地点统计（用于地图 B：环形散点）=====
+  const locationPattern = /(森林|酒馆|城墙|房间|大厅|街道|村庄|塔|城堡|洞穴|神殿|祭坛|港口|船|桥|山|谷|河|湖|海|沙漠|废墟|密室|花园|庭院|监狱|地牢|王座|广场|市场|军营|训练场|教堂|墓地|悬崖|宫殿|仓库|厨房|浴室|阳台|屋顶|地下室|走廊|门口|井|泉|亭|阁|寺|观|庙|洞|坑|池|塘|溪|瀑布|平原|草原|沼泽|岛|半岛|海峡|湾)/g;
+  const locSet = [];
+  const locCounts = {};
+  const allText = [arc.mainline, arc.sideline, arc.states, arc.unresolved].filter(Boolean).join('\n');
+  let lm;
+  const seen = {};
+  while ((lm = locationPattern.exec(allText)) !== null) {
+    const loc = lm[1];
+    locCounts[loc] = (locCounts[loc] || 0) + 1;
+    if (!seen[loc]) { seen[loc] = true; locSet.push(loc); }
+  }
+  const locs = locSet.slice(0, 10); // 最多展示 10 个地点
+
+  // ===== 动态地图 B：环形散点 =====
+  let mapHtml = '';
+  if (locs.length) {
+    const cx = 180, cy = 120;
+    const n = locs.length;
+    // 半径随数量增大
+    const R = 52 + Math.min(n, 14) * 3.2;
+    const parts = [];
+    for (let i = 0; i < n; i++) {
+      const ang = -Math.PI / 2 + (i / Math.max(n, 1)) * 2 * Math.PI;
+      const x = cx + R * Math.cos(ang);
+      const y = cy + R * Math.sin(ang);
+      parts.push({ x, y, name: locs[i], isCur: i === locs.length - 1 });
+    }
+    // 连接线（按索引顺序）
+    let path = '';
+    for (let i = 0; i < parts.length - 1; i++) {
+      path += (i === 0 ? 'M' : 'L') + parts[i].x.toFixed(1) + ' ' + parts[i].y.toFixed(1) + ' ';
+    }
+    path += 'L' + parts[parts.length - 1].x.toFixed(1) + ' ' + parts[parts.length - 1].y.toFixed(1);
+    const nodeHtml = parts.map((p, i) => {
+      const sl = `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4" fill="${p.isCur ? '#8a6a3b' : '#a3804d'}"/>`;
+      const lbl = `<text x="${(p.x - 15).toFixed(1)}" y="${(p.y - 8).toFixed(1)}" font-size="${p.isCur ? 9.5 : 8.5}" font-weight="${p.isCur ? 700 : 600}" fill="${p.isCur ? '#8a6a3b' : '#4a3a2a'}" font-family="-apple-system,'Segoe UI',sans-serif">${escapeHtml(p.name)}</text>`;
+      return sl + lbl;
+    }).join('');
+    mapHtml = `
+      <div class="cd-st-map">
+        <div class="cd-st-map-title"><i class="fa-regular fa-map"></i> 旅程地图 <span style="font-size: calc(0.55rem*var(--cd-fs,1));opacity:.5;font-weight:400;">动态散点自动布局</span></div>
+        <div class="cd-st-map-body">
+          <svg viewBox="0 0 360 240" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block;">
+            <g stroke="#eadfc9" stroke-width="1" fill="none">
+              <circle cx="${cx}" cy="${cy}" r="${R}"/>
+              <path d="M0 ${cy} H360 M${cx} 0 V240"/>
+            </g>
+            <g stroke="#8a6a3b" stroke-width="1.3" fill="none" opacity=".55"><path d="${path}"/></g>
+            <g fill="#a3804d" font-family="-apple-system,'Segoe UI',sans-serif" text-anchor="middle">${nodeHtml}</g>
+          </svg>
+          <div class="cd-st-map-note"><span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#8a6a3b" stroke-width="2"><path d="M12 21s-7-5.2-7-11a7 7 0 0 1 14 0c0 5.8-7 11-7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg> 当前位置 · ${escapeHtml(locs[locs.length-1])}</span><span>已踏足 ${locs.length} 处</span></div>
+        </div>
+      </div>`;
+  }
+
+  // ===== 主角状态卡 HTML =====
+  const protHas = prot['身体'] || prot['资源'] || prot['处境'] || prot['任务'];
+  const protCard = `
+    <div class="cd-st-prob">
+      <div class="cd-st-pb-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v3m0 10v3m8-9h-3M7 9H4m13.5-2.5-2-2m-11 11 2 2M17.5 13.5l-2-2m-11-5 2 2M22 9c0 5-10 8-10 8S2 14 2 9a3.5 3.5 0 0 1 6-2.6A3.5 3.5 0 0 1 22 9Z"/></svg>
+        ${escapeHtml(protName)}
+        <span style="font-size:calc(0.55rem*var(--cd-fs,1));opacity:.6;font-weight:400;">主角状态</span>
+      </div>
+      <div class="cd-st-pb-grid">
+        ${['身体','资源','处境','任务'].map(k => prot[k] ? `<div class="cd-st-pb-item"><span class="k">${k}</span><span class="v">${escapeHtml(prot[k])}</span></div>` : '').join('')}
+        ${protHas ? '' : '<div class="cd-st-pb-empty">（暂无主角状态，写日记时 AI 会记录）</div>'}
+      </div>
+    </div>`;
+
+  // ===== 角色条例列表 HTML =====
+  const roleHtml = roles.length ? roles.map((r, idx) => {
+    const fr = fieldRows(r.text);
+    return `
+      <div class="cd-st-role">
+        <div class="cd-st-role-head">
+          <span class="cd-st-role-name">${escapeHtml(r.name)}</span>
+          <span class="cd-st-role-right">${favPill(r.fav)}<span class="cd-st-present ${idx === roles.length-1 ? 'on' : 'off'}">${idx === roles.length-1 ? '在场' : '未出场'}</span></span>
+        </div>
+        <div class="cd-st-role-fields">
+          ${fr['物品'] ? `<div class="cd-st-field"><span class="k">物品</span><span class="v">${escapeHtml(fr['物品'])}</span></div>` : ''}
+          ${fr['外貌'] ? `<div class="cd-st-field"><span class="k">外貌</span><span class="v">${escapeHtml(fr['外貌'])}</span></div>` : ''}
+          ${fr['其他'] ? `<div class="cd-st-field"><span class="k">其他</span><span class="v">${escapeHtml(fr['其他'])}</span></div>` : ''}
+        </div>
+      </div>`;
+  }).join('') : '<div class="cd-empty"><p>暂无角色状态</p><p class="cd-empty-sub">写日记时 AI 会记录各角色的状态与好感</p></div>';
+
+  $('#cd-content').html(
+    protCard +
+    mapHtml +
+    `<div class="cd-st-section-title"><i class="fa-regular fa-people-group"></i> 角色状态</div>` +
+    roleHtml
+  );
 }
 
 /** 🕐 剧情时间线（基于剧情档案，按时间标记排序） */
@@ -5961,7 +6541,7 @@ async function cdRenderFloors() {
       cdRunDiary({ manual: true, silent: false, extraFloors: selected });
     });
 
-    // 压缩融合剧情档案
+    // 压缩融合剧情档案（手动强制压缩，不做阈值判断）
     $('#cd-do-compress').off('click').on('click', async function () {
       if (cdBusy) { cdBusyToast(); return; }
       const curData = await cdGetData();
@@ -5972,30 +6552,7 @@ async function cdRenderFloors() {
       cdBusy = true; cdBusyLabel = '压缩融合剧情档案'; cdBusyAt = Date.now();
       try {
         toastr.info('正在压缩融合剧情档案...');
-        cdAddLog('info', '开始压缩融合剧情档案');
-        const fields = ['mainline','sideline','states','unresolved'];
-        const labels = { mainline:'主线', sideline:'支线', states:'重要状态变化', unresolved:'未解决事项' };
-        for (const field of fields) {
-          const content = arc2[field];
-          if (!content || content.length < 100) continue;
-          cdAddLog('api_req', `压缩请求: ${labels[field]} (${content.length}字)`);
-          const msgs = [
-            { role: 'system', content: COMPRESS_PROMPT },
-            { role: 'user', content: `以下是需要压缩融合的剧情总结（${labels[field]}）：
-
-${content}
-
-请输出压缩融合后的版本。` },
-          ];
-          const res = await cdWithTimeout(cdApiComplete(msgs, s), 120000, '功能请求');
-          if (res && res.text && res.text.trim()) {
-            let compressed = res.text.trim();
-            const labelRe = new RegExp(`^${labels[field]}[：:]\s*`);
-            compressed = compressed.replace(labelRe, '');
-            arc2[field] = compressed;
-            cdAddLog('api_res', `压缩完成: ${labels[field]} (${compressed.length}字)`, {压缩前: content.length, 压缩后: compressed.length});
-          }
-        }
+        await cdCompressArchive(curData, cdGetSettings(), false);
         await cdSaveData(curData);
         await cdRefreshInjection();
         toastr.success('剧情档案压缩融合完成');
@@ -6999,11 +7556,11 @@ async function cdRenderSettings() {
   var _role1 = ((s.injectRole || 0) === 1) ? 'selected' : '';
   var _role2 = ((s.injectRole || 0) === 2) ? 'selected' : '';
   var _filterRows = (Array.isArray(s.filterTags) ? s.filterTags : []).map(function (pair, idx) {
-    return '<div class="cds-row" data-idx="' + idx + '">' +
-      '<input type="text" class="cd-input" value="' + escapeAttr(pair.start || '') + '" placeholder="上标签" style="flex:1;text-align:left;min-width:50px;">' +
+    return '<div class="cd-set-row cd-filter-tag-row" data-idx="' + idx + '">' +
+      '<input type="text" class="cd-input cd-filter-start" value="' + escapeAttr(pair.start || '') + '" placeholder="上标签" style="flex:1;text-align:left;min-width:50px;">' +
       '<span class="cds-hint">→</span>' +
-      '<input type="text" class="cd-input" value="' + escapeAttr(pair.end || '') + '" placeholder="下标签" style="flex:1;text-align:left;min-width:50px;">' +
-      '<button class="cd-btn-danger" style="padding:2px 8px;min-width:auto;">×</button></div>';
+      '<input type="text" class="cd-input cd-filter-end" value="' + escapeAttr(pair.end || '') + '" placeholder="下标签" style="flex:1;text-align:left;min-width:50px;">' +
+      '<button class="cd-btn-danger cd-filter-del" style="padding:2px 8px;min-width:auto;">×</button></div>';
   }).join('');
 
   // API 是否已配置（用于引导提示）
@@ -7080,7 +7637,13 @@ async function cdRenderSettings() {
       <details class="cds-collapse"><summary><i class="fa-regular fa-compress"></i> 自动压缩剧情档案</summary>
         <div>
           <div class="cds-row"><span class="cds-lab">超阈值时自动压缩</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-autocompress" ${s.autoCompress ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
-          <div class="cds-row"><span class="cds-lab">触发阈值（条）</span><span class="cds-ctrl"><input type="number" id="cd-s-autocompress-threshold" value="${s.autoCompressThreshold || 30}" min="5" max="200" class="cd-input"></span></div>
+          <div class="cds-row"><span class="cds-lab">触发方式</span><span class="cds-ctrl">
+            <label style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;"><input type="radio" name="cd-s-autocompressmode" value="count" ${s.autoCompressMode !== 'size' ? 'checked' : ''}> 按条数</label>
+            <label style="display:inline-flex;align-items:center;gap:4px;"><input type="radio" name="cd-s-autocompressmode" value="size" ${s.autoCompressMode === 'size' ? 'checked' : ''}> 按字数</label>
+          </span></div>
+          <div class="cds-row" id="cd-s-autocompress-countrow" style="${s.autoCompressMode === 'size' ? 'display:none;' : ''}"><span class="cds-lab">触发阈值（条）</span><span class="cds-ctrl"><input type="number" id="cd-s-autocompress-threshold" value="${s.autoCompressThreshold || 30}" min="5" max="200" class="cd-input"></span></div>
+          <div class="cds-row" id="cd-s-autocompress-sizerow" style="${s.autoCompressMode === 'size' ? '' : 'display:none;'}"><span class="cds-lab">累计字数阈值（字）</span><span class="cds-ctrl"><input type="number" id="cd-s-autocompress-size" value="${s.autoCompressSize || 2000}" min="200" max="20000" step="100" class="cd-input"></span></div>
+          <div class="cds-hint" style="margin-top:4px;font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;opacity:0.7;">按条数：累计 ${s.autoCompressThreshold || 30} 条事件触发合并｜按字数：累计新增 ${s.autoCompressSize || 2000} 字触发压缩（含自定义追踪项，压缩后重置计数）</div>
         </div>
       </details>
 
@@ -7175,6 +7738,13 @@ async function cdRenderSettings() {
       $(this).css('background', '#cdb69b').css('color', '#fff');
     });
     toastr.success(`获取到 ${models.length} 个模型`);
+  });
+
+  // ★ 自动压缩触发方式切换：联动显隐条数/字数输入行
+  $('input[name="cd-s-autocompressmode"]').off('change').on('change', function () {
+    const mode = $(this).val();
+    $('#cd-s-autocompress-countrow').toggle(mode !== 'size');
+    $('#cd-s-autocompress-sizerow').toggle(mode === 'size');
   });
 
   // ★ 添加一组过滤标签
@@ -7272,7 +7842,9 @@ async function cdRenderSettings() {
         };
       }).get(),
       autoCompress: $('#cd-s-autocompress').is(':checked'),
+      autoCompressMode: $('input[name="cd-s-autocompressmode"]:checked').val() || 'count',
       autoCompressThreshold: parseInt($('#cd-s-autocompress-threshold').val(), 10) || 30,
+      autoCompressSize: parseInt($('#cd-s-autocompress-size').val(), 10) || 2000,
       source: src,
       endpoints,
     });
@@ -7571,6 +8143,19 @@ async function cdRenderEgg() {
 
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
+  {
+    version: 'v2.7.0',
+    date: '2026-08-16',
+    items: [
+      '剧情档案「状态/未解决」支持区分追加式与覆盖式：主线/支线追加，状态/未解决按角色增量覆盖且防漏记（未出场角色保留旧状态）',
+      '角色状态界面：工具栏「关系」改为「状态」，顶部主角状态卡(身体/资源/处境/任务) + 动态旅程地图 + 角色条例列表(好感分档/物品/外貌/其他/在场标记)',
+      '动态旅程地图：从剧情正则提取地点，环形散点自动布局 + 按访问顺序连线 + 当前位置高亮',
+      '自动压缩剧情档案：支持按条数阈值或按累计字数触发，压缩时保护伏笔/动机/核心目标不丢失',
+      '内容过滤修复：渲染与保存 class 统一，修复直接保存导致过滤标签被清空的问题',
+      '自动隐藏楼层改为视觉隐藏：直接对 DOM .mes 做 hide + is_hidden 标记保留（适配 Tauri 移动版无隐藏 API）',
+      '压缩/替换多路调用合并为单次，降低 Token 消耗',
+    ],
+  },
   {
     version: 'v2.6.2',
     date: '2026-08-11',
@@ -7888,7 +8473,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.6.2 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.7.0 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
