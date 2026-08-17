@@ -2,7 +2,7 @@
   "display_name": "LIWE · RAG 记忆引擎",
   "name": "character-diary",
   "id": "character-diary",
-  "version": "2.7.0",
+  "version": "2.7.1",
   "description": "自动为剧情中的每个角色撰写第一人称日记、生成剧情档案与重点角色引导。新增「选择性记忆」(白名单)：可只记录你手动指定的重点角色，避免无关角色记忆堆积。UI 重构、新手引导与跳过、单条日记重新生成/删除、时间线批量管理、世界书联动、向量检索 + Rerank、全量迁移。",
   "type": "extension",
   "js": "index.js",

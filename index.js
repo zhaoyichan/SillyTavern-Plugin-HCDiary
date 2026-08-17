@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.7.0';
+const PLUGIN_VERSION = '2.7.1';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -229,7 +229,16 @@ async function callTavern(messages, _s) {
       if (result) return result;
     } catch (e) { cdWarn('generateQuietPrompt 失败', e); }
   }
-  
+
+  // 方式2.5: sendGenerationRequest（ST 新版标准静默生成，Tauri 版可用性高）
+  if (ctx && typeof ctx.sendGenerationRequest === 'function') {
+    try {
+      const quiet_prompt = ordered.map(m => m.content).join('\n\n');
+      const result = await ctx.sendGenerationRequest({ quiet_prompt, execute_senders: false });
+      if (result) return result;
+    } catch (e) { cdWarn('sendGenerationRequest 失败', e); }
+  }
+
   // 方式3: generate (fallback)
   if (typeof generate === 'function') {
     return await generate({
@@ -247,24 +256,51 @@ async function callTavern(messages, _s) {
 }
 
 async function callOpenAI(messages, ep, s) {
-  const base = ep.url.replace(/\/+$/, '');
-  const res = await fetch(`${base}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ep.key}` },
-    body: JSON.stringify({ model: ep.model, messages, temperature: s.temperature, max_tokens: 8192, stream: false }),
-  });
-  if (!res.ok) throw new Error(`OpenAI ${res.status}: ${await textOr(res)}`);
-  const j = await res.json();
-  // 把 token 用量记录到全局，供 cdApiComplete 返回
-  if (j.usage) {
-    // 通用 token 统计
-    const usage = { prompt: j.usage.prompt_tokens || 0, completion: j.usage.completion_tokens || 0, total: j.usage.total_tokens || 0 };
-    // DeepSeek 缓存统计（prompt_tokens_details / prompt_cache_*）
-    usage.cacheHit = j.usage.prompt_cache_hit_tokens || j.usage.prompt_tokens_details?.cached_tokens || 0;
-    usage.cacheMiss = j.usage.prompt_cache_miss_tokens || j.usage.prompt_tokens_details?.uncached_tokens || 0;
-    _cdLastTokenUsage = usage;
+  const base = String(ep.url || '').replace(/\/+$/, '');
+  if (!base) throw new Error('OpenAI 未配置接口地址');
+  // ★ 智能降级（方案 A，v2.6.3）：opencode.ai 等网关服务端不返回 CORS 头，
+  //   浏览器/Tauri WebView 前端 fetch 直连会抛 "Failed to fetch"（TypeError: Failed to fetch）。
+  //   此时自动降级到酒馆通道（generateRaw / generateQuietPrompt）——酒馆走服务端代理，
+  //   无 CORS 限制；且酒馆主连接通常即同一网关，语义等价。
+  try {
+    const res = await fetch(`${base}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ep.key}` },
+      body: JSON.stringify({ model: ep.model, messages, temperature: s.temperature, max_tokens: 8192, stream: false }),
+    });
+    if (!res.ok) {
+      // 4xx/5xx 是接口或密钥问题，不降级（避免掩盖真实错误）
+      throw new Error(`OpenAI ${res.status}: ${await textOr(res)}`);
+    }
+    const j = await res.json();
+    // 把 token 用量记录到全局，供 cdApiComplete 返回
+    if (j.usage) {
+      // 通用 token 统计
+      const usage = { prompt: j.usage.prompt_tokens || 0, completion: j.usage.completion_tokens || 0, total: j.usage.total_tokens || 0 };
+      // DeepSeek 缓存统计（prompt_tokens_details / prompt_cache_*）
+      usage.cacheHit = j.usage.prompt_cache_hit_tokens || j.usage.prompt_tokens_details?.cached_tokens || 0;
+      usage.cacheMiss = j.usage.prompt_cache_miss_tokens || j.usage.prompt_tokens_details?.uncached_tokens || 0;
+      _cdLastTokenUsage = usage;
+    }
+    return j.choices?.[0]?.message?.content ?? '';
+  } catch (e) {
+    // 仅对「网络/CORS 类失败」（Failed to fetch、TypeError、Level 2 CORS）降级；
+    // 对明确的 4xx/5xx 业务错误不降级
+    const msg = String(e && e.message || e);
+    const isNetFail = /failed to fetch|networkerror|typeerror|load failed|not allowed to request|cors|connection/i.test(msg);
+    if (isNetFail) {
+      cdWarn('OpenAI 直连失败(多为 CORS)，降级到酒馆通道: ' + msg);
+      if (typeof cdAddLog === 'function') cdAddLog('warn', '[API] OpenAI 直连失败，自动降级到酒馆通道', { err: msg });
+      // 明确告知 ML：尝试走酒馆连接（generateRaw / generateQuietPrompt）
+      try {
+        const text = await callTavern(messages, s);
+        if (text) return text;
+      } catch (e2) {
+        cdWarn('降级到酒馆通道也失败: ' + (e2 && e2.message));
+      }
+    }
+    throw e; // 其他错误原样抛出
   }
-  return j.choices?.[0]?.message?.content ?? '';
 }
 
 /**
@@ -385,26 +421,66 @@ async function callGemini(messages, ep, s) {
 
 /** 拉取模型列表 (非酒馆接口时使用) */
 async function cdFetchModels(source, ep) {
-  const base = ep.url.replace(/\/+$/, '');
+  // ★ 兼容 URL 带/不带 /v1 的多种端点组合（部分网关 /models 只在 /v1 下暴露）
+  const rawBase = String(ep.url || '').replace(/\/+$/, '');
+  const bases = [rawBase];
   try {
-    if (source === 'openai') {
-      const r = await fetch(`${base}/models`, { headers: { Authorization: `Bearer ${ep.key}` } });
-      const j = await r.json();
-      return (j.data || []).map(m => m.id);
+    const hasV1 = /\/v1$/.test(rawBase);
+    const altBase = hasV1 ? rawBase.replace(/\/v1$/, '') : rawBase + '/v1';
+    if (altBase && altBase !== rawBase) bases.push(altBase);
+  } catch (e) {}
+  const tryFetch = async (url, o) => {
+    const r = await fetch(url, o);
+    return await r.json();
+  };
+  const lastErr = [];
+  for (const base of bases) {
+    if (!base) continue;
+    try {
+      if (source === 'openai') {
+        const j = await tryFetch(`${base}/models`, { headers: { Authorization: `Bearer ${ep.key}` } });
+        const arr = (j.data || []).map(m => m && m.id).filter(Boolean);
+        if (arr.length) return arr;
+        lastErr.push(`${base}/models: 返回空 data`);
+      }
+      if (source === 'claude') {
+        const j = await tryFetch(`${base}/models`, { headers: { 'x-api-key': ep.key, 'anthropic-version': '2023-06-01' } });
+        const arr = (j.data || []).map(m => m && m.id).filter(Boolean);
+        if (arr.length) return arr;
+        lastErr.push(`${base}/models: 返回空 data`);
+      }
+      if (source === 'gemini') {
+        const j = await tryFetch(`${base}/models?key=${encodeURIComponent(ep.key)}`);
+        const arr = (j.models || []).map(m => (m.name || '').replace(/^models\//, '')).filter(Boolean);
+        if (arr.length) return arr;
+        lastErr.push(`${base}/models: 返回空 models`);
+      }
+    } catch (e) {
+      lastErr.push(`${base} 请求失败: ${e.message}`);
     }
-    if (source === 'claude') {
-      const r = await fetch(`${base}/models`, { headers: { 'x-api-key': ep.key, 'anthropic-version': '2023-06-01' } });
-      const j = await r.json();
-      return (j.data || []).map(m => m.id);
-    }
-    if (source === 'gemini') {
-      const r = await fetch(`${base}/models?key=${encodeURIComponent(ep.key)}`);
-      const j = await r.json();
-      return (j.models || []).map(m => (m.name || '').replace(/^models\//, ''));
-    }
-  } catch (e) {
-    toastr.error('[角色日记] 拉取模型列表失败: ' + e.message);
   }
+  // ★ 直连失败降级（方案 A）：从酒馆已加载的 OpenAI 设置读取模型列表
+  //   opencode.ai 等网关无 CORS 头，前端 fetch 必失败；但酒馆已通过服务端拉取并缓存了模型，
+  //   尝试从 ST 全局 oai_settings.available_models / models 读取兜底。
+  try {
+    const oai = (typeof oai_settings !== 'undefined') ? oai_settings : (SillyTavern && SillyTavern.getContext() && SillyTavern.getContext().extensionSettings ? null : null);
+    let fromTavern = [];
+    if (oai) {
+      const cand = [oai.available_models, oai.models, oai.custom_models, (oai.available_models && oai.available_models[oai.chat_completion_source])];
+      for (const c of cand) {
+        if (Array.isArray(c) && c.length) {
+          fromTavern = c.map(m => (typeof m === 'string' ? m : (m && (m.id || m.name)))).filter(Boolean);
+          if (fromTavern.length) break;
+        }
+      }
+    }
+    if (fromTavern.length) {
+      cdWarn('直连拉模型失败(多为 CORS)，已从酒馆已加载设置读取模型列表');
+      if (typeof cdAddLog === 'function') cdAddLog('warn', '[API] 拉模型直连失败，降级读取酒馆模型列表', { count: fromTavern.length });
+      return fromTavern;
+    }
+  } catch (e) {}
+  toastr.warning('[角色日记] 拉取模型列表失败（若你的接口网关不支持跨域CORS，请改用上方「当前酒馆」来源，或手动填写模型名）: ' + (lastErr.join(' | ') || '未知错误'));
   return [];
 }
 
@@ -646,6 +722,20 @@ const ARCHIVE_SYSTEM = [
   '重要状态变化（覆盖式，输出"当前仍然有效"的角色状态汇总，而非累积历史）：',
   '（已被后续剧情推翻/缓解的旧状态不要重复列出；没有当前有效状态则输出"无"。）',
   '（输出两段：先「主角：」行，再各角色行。主角用固定词"主角"作行首，格式：主角：身体…；资源…；处境…；任务…【时间】。其他每个角色一行「角色名：状态」，如「方见春：身体痊愈，衣着白裙，持有玉佩，对主角好感 60【时间】"。每个角色必须涵盖：①身体状况/伤病 ②当前衣着 ③持有/获得的物品 ④对主角(用户)的好感度与态度。只写本次剧情里出现变化或当前仍有效的；已有且未变化的可简写。每行末尾以【时间标记】标注该状态最近一次变化时间。）',
+  '',
+  '当前位置规则（地图/行程准确性关键，必须严格遵守）：',
+  '1. 在「主角」行的「处境」中，必须明确写出主角【当前所在地点】，使用偏正结构名词短语（如"处身于雪原边缘的酒馆""身处灯火通明的王城大厅"），并确保该地点是此次剧情里【实际移动/停留】的位置。',
+  '2. 位置只在角色【真正移动了】时才变化；描述、回忆、比喻、幻觉、梦境、传闻中出现的场景（如"像森林一样黑暗的走廊""他梦见大海"）【不得】作为实际地点。',
+  '3. 一旦主角离开某地，后续状态中不要再出现该地（除非重新到达）；不同光源/氛围的剧情场景（白天/黑夜/室内/室外）地点名相同可合并，但【场景本质不同、地理上不相邻的地点不得混为一处】。',
+  '4. 若本次剧情主角位置有变化，必须在「处境」中写明"从【旧地点】移至【新地点】"或"抵达【新地点】"；位置未变时保持原地点描述。',
+  '',
+  '',
+  '好感度数值铁律（必须严格遵守）：',
+  '1. 好感度代表角色对主角的真切情感积累，必须谨慎、克制、真实地变化，绝不可因一次普通互动就大幅上涨。',
+  '2. 【单次增幅上限】：在已有好感度的基础上，本次剧情最多只能【+2】。只有极其重大、经长期铺垫的情感转折（如生死相救、多年执念得偿）才允许 +2，一般互动只允许 +1 或不变。',
+  '3. 【下降无下限】：反感、失望、怀疑、愤怒、悲伤等负面事件可以让好感大幅下降，单次可下降任意数值（如 -10、-30），不受 +2 限制。角色的好感更容易被伤害、更难被讨好。',
+  '4. 若本次剧情中角色好感没有明显变化，必须原样保留原数值，不要擅自上调或编造上涨。',
+  '5. 输出格式：好感度必须以数字单独写出（如"对主角好感 62"），禁止用"好感大幅提升""好感上升"等模糊表述代替具体数字；必须与已有数值连续衔接，不能凭空跳到不合理的数值。',
   '',
   '未解决事项（覆盖式，只列出"尚未解决"的事项与长期伏笔，已解决的不要列出）：',
   '（包含：长期伏笔、未揭晓的谜团、未兑现的承诺、跨楼层的悬而未决线索。每条以【时间标记】标注该事项产生的时间；已解决/已放弃/不再相关的不要列出。）',
@@ -2839,6 +2929,14 @@ async function cdCheckAutoTrigger() {
  * 参考隐藏助手思路：将旧楼层的 is_system 设为 true，ST 会自动隐藏
  */
 async function cdHideOldFloors(keepCount) {
+  // ★ 注入隐藏兜底样式（display:none !important 防止被 ST 重渲染/内联样式覆盖）
+  try {
+    if (!document.getElementById('cd-hidden-floor-style')) {
+      const st = document.createElement('style'); st.id = 'cd-hidden-floor-style';
+      st.textContent = '.mes.cd-hidden-floor,.mes[data-cd-hidden="1"]{display:none !important;visibility:hidden !important;height:0 !important;min-height:0 !important;padding:0 !important;margin:0 !important;overflow:hidden !important;border:none !important;}';
+      (document.head || document.documentElement).appendChild(st);
+    }
+  } catch (e) {}
   const ctx = SillyTavern.getContext();
   if (!ctx || !Array.isArray(ctx.chat)) return;
   const chat = ctx.chat;
@@ -2876,15 +2974,60 @@ async function cdHideOldFloors(keepCount) {
 
   // ★ 方案A：ST Tauri 移动版无"隐藏楼层"渲染能力，改用直接对已渲染 DOM 做视觉隐藏
   //   - 数据层：is_hidden=true 标记并落盘（刷新后仍可再次 hide 补隐藏）
-  //   - 视觉层：用 jQuery 直接 .hide() 对应的 .mes[mesid=N] 元素
+  //   - 视觉层：jQuery 隐藏对应 .mes 元素
+  // ★ 修复（v2.6.3）：Tauri 版 .mes 的 mesid 与 chat 下标存在偏移（诊断：DOM mesid 从 7 开始，
+  //   chat 下标从 0 开始，且首元素 mesid 为空串），不能用 mesid=下标 精确匹配。
+  //   改为「按 DOM 顺序与 chat 可见序列对齐」：遍历 .mes，用其 mesid 在 chat 中反查同一条消息，
+  //   命中 toHide 集合（按 chats 下标）即隐藏；同时用 CSS 类 + display 双保险。
   let domHidden = 0;
   try {
-    for (const idx of toHide) {
-      const $el = $('.mes[mesid="' + idx + '"]');
-      if ($el.length) {
+    const hideIdxSet = {};
+    toHide.forEach((i) => { hideIdxSet[i] = true; });
+    // 辅助：判断某 .mes 元素对应的 chat 下标
+    const resolveMesIdx = ($el) => {
+      const mid = String($el.attr('mesid') || $el.attr('data-mesid') || '').trim();
+      if (mid !== '' && /^\d+$/.test(mid)) return parseInt(mid, 10);
+      return -1;
+    };
+    const $allMes = $('.mes');
+    // 用「在可见消息序列中的序号」对齐兜底：DOM 里 .mes 顺序与 chat 中「被渲染的消息」顺序一致，
+    // 收集 chat 中被渲染的可见消息下标列表，再按 DOM 顺序一一对应
+    const renderedIdx = [];
+    for (let i = 0; i < chat.length; i++) {
+      const m = chat[i];
+      // 仅统计会被 ST 渲染的 .mes（用户/普通AI/系统都渲染，但隐藏后不出现）
+      if (m) renderedIdx.push(i);
+    }
+    let pos = 0;
+    $allMes.each(function () {
+      const $el = $(this);
+      let idx = resolveMesIdx($el);
+      if (idx < 0) { idx = renderedIdx[pos] !== undefined ? renderedIdx[pos] : -1; }
+      pos++;
+      if (idx >= 0 && hideIdxSet[idx]) {
+        $el.addClass('cd-hidden-floor').attr('data-cd-hidden', '1');
         $el.hide();
         domHidden++;
       }
+    });
+    // 兜底：mesid 失败时按 chat 内容指纹精确匹配（防偏移导致漏隐藏）
+    if (domHidden < toHide.length) {
+      $allMes.each(function () {
+        const $el = $(this);
+        if ($el.hasClass('cd-hidden-floor')) return;
+        const txt = String($el.find('.mes_text').first().text() || $el.text() || '').trim().slice(0, 80);
+        if (!txt) return;
+        for (const idx of toHide) {
+          const m = chat[idx];
+          if (!m || !m.mes) continue;
+          if (String(m.mes).slice(0, 80) === txt) {
+            $el.addClass('cd-hidden-floor').attr('data-cd-hidden', '1');
+            $el.hide();
+            domHidden++;
+            break;
+          }
+        }
+      });
     }
   } catch (e) {
     cdLog('cdHideOldFloors: DOM hide 异常', e ? e.message : e);
@@ -2910,12 +3053,53 @@ function cdReapplyHiddenFloors() {
     const ctx = SillyTavern.getContext();
     if (!ctx || !Array.isArray(ctx.chat)) return;
     let n = 0;
-    for (let i = 0; i < ctx.chat.length; i++) {
-      const m = ctx.chat[i];
-      if (m && m.is_hidden === true && !m.is_user) {
-        const $el = $('.mes[mesid="' + i + '"]');
-        if ($el.length && $el.css('display') !== 'none') { $el.hide(); n++; }
+    const chat = ctx.chat;
+    const hideIdxSet = {};
+    for (let i = 0; i < chat.length; i++) {
+      const m = chat[i];
+      if (m && m.is_hidden === true && !m.is_user) hideIdxSet[i] = true;
+    }
+    if (Object.keys(hideIdxSet).length === 0) return;
+    // 与 cdHideOldFloors 相同的对齐逻辑：mesid + DOM 顺序 + 内容指纹三重匹配
+    const $allMes = $('.mes');
+    const resolveMesIdx = ($el) => {
+      const mid = String($el.attr('mesid') || $el.attr('data-mesid') || '').trim();
+      if (mid !== '' && /^\d+$/.test(mid)) return parseInt(mid, 10);
+      return -1;
+    };
+    const renderedIdx = [];
+    for (let i = 0; i < chat.length; i++) { if (chat[i]) renderedIdx.push(i); }
+    let pos = 0;
+    $allMes.each(function () {
+      const $el = $(this);
+      if ($el.css('display') === 'none') return;
+      let idx = resolveMesIdx($el);
+      if (idx < 0) { idx = renderedIdx[pos] !== undefined ? renderedIdx[pos] : -1; }
+      if (idx >= 0 && hideIdxSet[idx]) {
+        $el.addClass('cd-hidden-floor').attr('data-cd-hidden', '1');
+        $el.hide();
+        n++;
       }
+      pos++;
+    });
+    // 内容指纹兜底
+    if (Object.keys(hideIdxSet).length > n) {
+      $allMes.each(function () {
+        const $el = $(this);
+        if ($el.css('display') === 'none' || $el.hasClass('cd-hidden-floor')) return;
+        const txt = String($el.find('.mes_text').first().text() || $el.text() || '').trim().slice(0, 80);
+        if (!txt) return;
+        for (const idx of Object.keys(hideIdxSet)) {
+          const m = chat[parseInt(idx, 10)];
+          if (!m || !m.mes) continue;
+          if (String(m.mes).slice(0, 80) === txt) {
+            $el.addClass('cd-hidden-floor').attr('data-cd-hidden', '1');
+            $el.hide();
+            n++;
+            break;
+          }
+        }
+      });
     }
     if (n > 0) { cdAddLog('info', '[隐藏] 补隐藏', { DOM补隐藏条数: n }); cdLog('cdReapplyHiddenFloors: 补隐藏', n, '条'); }
   } catch (e) {
@@ -3115,9 +3299,10 @@ function cdShowAllFloors() {
       count++;
     }
   }
-  // ★ 方案A：DOM 层面 .show() 恢复视觉显示
+  // ★ 方案A：DOM 层面恢复视觉显示（移除隐藏类/属性 + show）
   try {
-    $('.mes[mesid]').show();
+    $('.mes.cd-hidden-floor').removeClass('cd-hidden-floor').attr('data-cd-hidden', null);
+    $('.mes').show();
   } catch (e) {}
   // 落盘
   try {
@@ -3378,7 +3563,41 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
             const out = [];
             for (const rl of nxtRoleOrder) out.push(nxtByRole[rl]);
             out.push(...keptOld);
-            const _final = out.filter(Boolean).join('\n');
+            let _final = out.filter(Boolean).join('\n');
+            // ★ 好感数值钳制（防 AI 单次暴涨）：单次上升最多 +2，下降不限
+            //   旧值 = 每个角色原有的好感数字；新值行 = 本次 AI 输出的好感数字。
+            //   对「新值 > 旧值 + 2」的，把新值改写成 旧值+2（保留原值文本其余部分）。
+            try {
+              const clampLine = (line, oldVal) => {
+                const m2 = line.match(/好感[^\d]{0,4}(\d{1,3})/);
+                if (m2 && oldVal !== null && oldVal !== undefined) {
+                  const newVal = parseInt(m2[1], 10);
+                  if (newVal > oldVal + 2) {
+                    const capped = oldVal + 2;
+                    const replaced = line.replace(/好感[^\d]{0,4}\d{1,3}/, (mm) => mm.replace(/\d{1,3}/, String(capped)));
+                    cdAddLog('info', '[状态合并] 好感钳制', { 角色: line.slice(0, 10), 旧值: oldVal, AI输出: newVal, 钳制为: capped });
+                    return replaced;
+                  }
+                }
+                return line;
+              };
+              // 建立 角色→旧好感 映射（从旧值 states 解析）
+              const oldFavByRole = {};
+              const oldLinesArr = String(oldv || '').split('\n').map(s => s.trim()).filter(Boolean);
+              for (const ol of oldLinesArr) {
+                const olm = ol.match(/^([^：:]{1,24})[：:]/);
+                if (!olm) continue;
+                const olf = ol.match(/好感[^\d]{0,4}(\d{1,3})/);
+                if (olf) oldFavByRole[olm[1].trim().toLowerCase()] = parseInt(olf[1], 10);
+              }
+              _final = _final.split('\n').map((line) => {
+                const lm2 = line.match(/^([^：:]{1,24})[：:]/);
+                if (!lm2) return line;
+                const rlKey = lm2[1].trim().toLowerCase();
+                const oldVal = rlKey in oldFavByRole ? oldFavByRole[rlKey] : null;
+                return oldVal !== null ? clampLine(line, oldVal) : line;
+              }).join('\n');
+            } catch (e) { cdLog('好感钳制异常（不影响主流程）:', e && e.message); }
             cdAddLog('info', '[状态合并] 按角色增量合并', { 新值角色数: nxtRoleOrder.length, 保留旧角色数: keptOld.length, 最终行数: _final.split('\n').filter(Boolean).length });
             return _final || oldv;
           };
@@ -4018,6 +4237,8 @@ async function _cdDoInit() {
         }
         // 填表采集（独立的短延迟，避免与写日记竞争）
         setTimeout(() => { if (cdCollectLiveTable) cdCollectLiveTable(); }, 150);
+        // ★ 新消息渲染后补隐藏（ST 重建 DOM 会把已隐藏楼层重新显示，这里重新 hide）
+        setTimeout(() => { try { if (typeof cdReapplyHiddenFloors === 'function') cdReapplyHiddenFloors(); } catch (e) {} }, 250);
       };
       // 同时监听两个事件，保证能触发
       if (et.MESSAGE_RECEIVED) {
@@ -5763,29 +5984,90 @@ async function cdRenderGraph() {
     return { 物品: item['物品'], 外貌: item['外貌'], 其他: rest.join('，') };
   };
 
-  // ===== 好感颜色分档 =====
+  // ===== 好感颜色分档（SVG 图标，纯色扁平） =====
   const favPill = (fav) => {
     if (fav === null || fav === undefined) return '<span class="cd-st-favpill" style="color:#8a7355;background:#f1eadb;">好感 ?</span>';
-    let cls, icon;
-    if (fav >= 70) { cls = 'cd-st-fav-high'; icon = '❤'; }
-    else if (fav >= 40) { cls = 'cd-st-fav-mid'; icon = '♡'; }
-    else { cls = 'cd-st-fav-low'; icon = '♡'; }
-    return `<span class="cd-st-favpill ${cls}">${icon} 好感 ${fav}</span>`;
+    let cls;
+    let iconSvg = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;flex-shrink:0;"><path d="M19 14c1.5-1.5 3-3.2 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.8 0-3 .5-4.5 2-1.5-1.5-2.7-2-4.5-2A5.5 5.5 0 0 0 2 8.5C2 10.8 3.5 12.5 5 14l7 7Z"/></svg>';
+    if (fav >= 70) { cls = 'cd-st-fav-high'; iconSvg = '<svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;flex-shrink:0;"><path d="M19 14c1.5-1.5 3-3.2 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.8 0-3 .5-4.5 2-1.5-1.5-2.7-2-4.5-2A5.5 5.5 0 0 0 2 8.5C2 10.8 3.5 12.5 5 14l7 7Z"/></svg>'; }
+    else if (fav >= 40) { cls = 'cd-st-fav-mid'; }
+    else { cls = 'cd-st-fav-low'; }
+    return `<span class="cd-st-favpill ${cls}">${iconSvg} 好感 ${fav}</span>`;
   };
 
   // ===== 地点统计（用于地图 B：环形散点）=====
-  const locationPattern = /(森林|酒馆|城墙|房间|大厅|街道|村庄|塔|城堡|洞穴|神殿|祭坛|港口|船|桥|山|谷|河|湖|海|沙漠|废墟|密室|花园|庭院|监狱|地牢|王座|广场|市场|军营|训练场|教堂|墓地|悬崖|宫殿|仓库|厨房|浴室|阳台|屋顶|地下室|走廊|门口|井|泉|亭|阁|寺|观|庙|洞|坑|池|塘|溪|瀑布|平原|草原|沼泽|岛|半岛|海峡|湾)/g;
-  const locSet = [];
-  const locCounts = {};
-  const allText = [arc.mainline, arc.sideline, arc.states, arc.unresolved].filter(Boolean).join('\n');
-  let lm;
-  const seen = {};
-  while ((lm = locationPattern.exec(allText)) !== null) {
-    const loc = lm[1];
-    locCounts[loc] = (locCounts[loc] || 0) + 1;
-    if (!seen[loc]) { seen[loc] = true; locSet.push(loc); }
+  // ★ 精确模式：以「填表采集的当前位置(liveTableData[0].location)」为锚点，
+  //   从位置快照(liveTableSnapshots)提取真实踏足过的地点轨迹；仅当填表未开/无数据时，
+  //   才降级到剧情档案里「位移动词语境」中的地点（排除比喻/记忆/背景叙述）。
+  let _curLoc = (Array.isArray(data.liveTableData) && data.liveTableData[0] && data.liveTableData[0].location) || '';
+  // ★ 补充：从剧情档案「主角处境」提取当前位置（填表未开时的锚点；仅取最近一次出现的位置）
+  if (!_curLoc) {
+    try {
+      const stText = (arc && arc.states) || '';
+      const protLine = stText.split('\n').map(s => s.trim()).find(l => /^主角[：:]/.test(l) || /^我[：:]/.test(l));
+      if (protLine) {
+        const segs = String(protLine).split(/[；;]/);
+        for (let si = segs.length - 1; si >= 0; si--) {
+          const seg = segs[si];
+          const m = seg.match(/处境[：:]\s*([^；;]+)/);
+          if (m) {
+            const locPhrase = m[1].trim();
+            // 提取短语中的地点名词（去掉修饰词/方位词，取核心地点词）
+            const locWord = (() => {
+              // 正向匹配第一个出现的已知地点词尾（不用 \u 转义的长正则，避免转义破坏）
+              const locTerms = ['训练场', '地下室', '客栈', '驿站', '酒馆', '城墙', '大厅', '街道', '村庄', '城堡', '洞穴', '神殿', '祭坛', '港口', '渡口', '森林', '草原', '平原', '沙漠', '废墟', '密室', '花园', '庭院', '监狱', '地牢', '广场', '集市', '教堂', '墓地', '悬崖', '宫殿', '仓库', '厨房', '浴室', '阳台', '屋顶', '走廊', '门口', '瀑布', '沼泽', '王座厅', '海湾', '海峡', '半岛', '池塘', '溪流', '山峰', '山谷', '河流', '湖泊', '海洋', '城门', '镇', '村', '寨', '塔', '堡', '洞', '山', '河', '湖', '海', '岛', '林', '井', '泉', '池', '塘', '溪', '桥', '寺', '庙', '观', '阁', '亭', '楼', '宫', '殿'];
+              const phrase = String(locPhrase || '');
+              for (const t of locTerms) {
+                const idx = phrase.indexOf(t);
+                if (idx !== -1) {
+                  // 取地点词结尾往前最多 6 字作为地点名（含形容词/方位修饰）
+                  const start = Math.max(0, idx - 6);
+                  const name = phrase.slice(start, idx + t.length);
+                  // 过滤明显的非地点语境（比喻/心理/感叹）
+                  if (/像|如同|仿佛|梦|回忆|记忆|听说|传闻/.test(phrase.slice(0, idx))) continue;
+                  return name;
+                }
+              }
+              return null;
+            })();
+            if (locWord) { _curLoc = locWord; break; }
+            // 兜底：取整段作为地点描述
+            else if (locPhrase.length >= 2 && locPhrase.length <= 12) { _curLoc = locPhrase; break; }
+          }
+        }
+      }
+    } catch (e) {}
   }
-  const locs = locSet.slice(0, 10); // 最多展示 10 个地点
+  const locSet = [];
+  const seen = {};
+  const addLoc = (name) => {
+    const l = String(name || '').trim();
+    if (!l || l === '未知' || l === '未知地点' || l === '无' || l.length > 14) return;
+    const k = l.toLowerCase();
+    if (!seen[k]) { seen[k] = true; locSet.push(l); }
+  };
+  // ① 位置历史快照（按时间顺序，去重保留）
+  try {
+    const snaps = Array.isArray(data.liveTableSnapshots) ? data.liveTableSnapshots : [];
+    for (const snap of snaps) {
+      const loc = snap && snap.table && snap.table.location;
+      if (loc) addLoc(loc);
+    }
+  } catch (e) {}
+  // ② 当前地点（必须在列表中，最末位 = 当前位置）
+  if (_curLoc) addLoc(_curLoc);
+  // ③ 降级兜底：剧情档案中的「位移动词语境」地点（前往/来到/到达/进入/离开/抵达/返回/穿过/走进/回到/赶往/撤到）
+  if (locSet.length === 0) {
+    const movePattern = /(?:前往|来到|到达|进入|抵达|返回|穿过|走进|回到|赶往|撤到|逃到|搬进|进驻|路过|途经|离开|出了|进了|朝着|赶往|落脚|驻扎|停驻|躲在|藏在)[^\s，。；：、]{0,12}?(森林|酒馆|城墙|房间|大厅|街道|村庄|塔楼|城堡|洞穴|神殿|祭坛|港口|渡口|桥|山|谷|河|湖|海|沙漠|废墟|密室|花园|庭院|监狱|地牢|王座厅|广场|市场|军营|训练场|教堂|墓地|悬崖|宫殿|仓库|厨房|浴室|阳台|屋顶|地下室|走廊|门口|井|泉|亭|阁|寺|庙|洞|坑|池塘|溪流|瀑布|平原|草原|沼泽|岛|半岛|海峡|海湾|城|镇|客栈|驿站)/g;
+    const allText = [arc.mainline, arc.sideline, arc.states, arc.unresolved].filter(Boolean).join('\n');
+    let lm;
+    while ((lm = movePattern.exec(allText)) !== null) {
+      const loc = lm[1] || lm[2];
+      if (loc) addLoc(loc);
+    }
+    if (_curLoc) addLoc(_curLoc); // 当前位置兜底
+  }
+  const locs = locSet.slice(-10); // 最多展示最近 10 个地点
 
   // ===== 动态地图 B：环形散点 =====
   let mapHtml = '';
@@ -5795,11 +6077,12 @@ async function cdRenderGraph() {
     // 半径随数量增大
     const R = 52 + Math.min(n, 14) * 3.2;
     const parts = [];
+    const curKey = String(_curLoc || '').trim().toLowerCase() || String(locs[locs.length - 1] || '').trim().toLowerCase();
     for (let i = 0; i < n; i++) {
       const ang = -Math.PI / 2 + (i / Math.max(n, 1)) * 2 * Math.PI;
       const x = cx + R * Math.cos(ang);
       const y = cy + R * Math.sin(ang);
-      parts.push({ x, y, name: locs[i], isCur: i === locs.length - 1 });
+      parts.push({ x, y, name: locs[i], isCur: String(locs[i] || '').trim().toLowerCase() === curKey });
     }
     // 连接线（按索引顺序）
     let path = '';
@@ -5824,7 +6107,7 @@ async function cdRenderGraph() {
             <g stroke="#8a6a3b" stroke-width="1.3" fill="none" opacity=".55"><path d="${path}"/></g>
             <g fill="#a3804d" font-family="-apple-system,'Segoe UI',sans-serif" text-anchor="middle">${nodeHtml}</g>
           </svg>
-          <div class="cd-st-map-note"><span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#8a6a3b" stroke-width="2"><path d="M12 21s-7-5.2-7-11a7 7 0 0 1 14 0c0 5.8-7 11-7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg> 当前位置 · ${escapeHtml(locs[locs.length-1])}</span><span>已踏足 ${locs.length} 处</span></div>
+          <div class="cd-st-map-note"><span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#8a6a3b" stroke-width="2"><path d="M12 21s-7-5.2-7-11a7 7 0 0 1 14 0c0 5.8-7 11-7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg> 当前位置 · ${escapeHtml(_curLoc || locs[locs.length-1] || '未知')}</span><span>已踏足 ${locs.length} 处</span></div>
         </div>
       </div>`;
   }
@@ -7705,12 +7988,17 @@ async function cdRenderSettings() {
   $('#cd-btn-fetch-models').on('click', async function () {
     // 优先用当前点选来源；否则按输入框地址推断（兼容首次配置未保存的情况）
     let src = window._cdEditSource;
+    const _urlVal = ($('#cd-s-url').val() || '').trim();
     if (!src || src === 'tavern') {
-      const urlVal = ($('#cd-s-url').val() || '').toLowerCase();
-      src = (urlVal.includes('anthropic') ? 'claude' :
-             urlVal.includes('googleapis') || urlVal.includes('generativelanguage') ? 'gemini' : 'openai');
+      // ★ 已填 URL 时，即使没点来源按钮也按地址推断真实来源（解决「填了地址却提示无需拉取」）
+      const urlLower = _urlVal.toLowerCase();
+      src = (urlLower.includes('anthropic') ? 'claude' :
+             urlLower.includes('googleapis') || urlLower.includes('generativelanguage') ? 'gemini' :
+             urlLower ? 'openai' : 'tavern');
+      if (src !== 'tavern') window._cdEditSource = src;
     }
-    if (src === 'tavern') { toastr.info('当前为酒馆内置接口，无需拉取模型'); return; }
+    if (src === 'tavern') { toastr.info('当前为酒馆内置接口，请先在上方点选 API 来源并填写地址'); return; }
+    if (!_urlVal) { toastr.warning('请先填写接口地址'); return; }
     const ep = { url: $('#cd-s-url').val(), key: $('#cd-s-key').val(), model: $('#cd-s-model').val() };
     const models = await cdFetchModels(src, ep);
     if (!models.length) {
@@ -8144,20 +8432,18 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
-    version: 'v2.7.0',
-    date: '2026-08-16',
+    version: 'v2.7.1',
+    date: '2026-08-17',
     items: [
-      '剧情档案「状态/未解决」支持区分追加式与覆盖式：主线/支线追加，状态/未解决按角色增量覆盖且防漏记（未出场角色保留旧状态）',
-      '角色状态界面：工具栏「关系」改为「状态」，顶部主角状态卡(身体/资源/处境/任务) + 动态旅程地图 + 角色条例列表(好感分档/物品/外貌/其他/在场标记)',
-      '动态旅程地图：从剧情正则提取地点，环形散点自动布局 + 按访问顺序连线 + 当前位置高亮',
-      '自动压缩剧情档案：支持按条数阈值或按累计字数触发，压缩时保护伏笔/动机/核心目标不丢失',
-      '内容过滤修复：渲染与保存 class 统一，修复直接保存导致过滤标签被清空的问题',
-      '自动隐藏楼层改为视觉隐藏：直接对 DOM .mes 做 hide + is_hidden 标记保留（适配 Tauri 移动版无隐藏 API）',
-      '压缩/替换多路调用合并为单次，降低 Token 消耗',
+      '【好感度】提示词新增「好感度数值铁律」：单次好感最多 +2、下降不限，更难上涨、更易下降；合并层新增好感钳制保险，防止 AI 单次暴涨',
+      '【地图】旅程地图改用「当前位置 + 位置快照轨迹」精确模式（填表 location 为主，主角处境提取为补充），并新增「当前位置规则」提示词：只记录真正移动/停留的地点，排除比喻/回忆/梦境；当前位置高亮修正',
+      '【状态界面】好感值图标由 emoji（❤/♡）改为纯色 SVG 矢量图标，符合扁平极简风格',
+      '【API】「获取可用模型」修复：填了地址但未点来源按钮时自动按地址推断；cdFetchModels 兼容 URL 带/不带 /v1 多端点；直连失败自动降级到酒馆通道（generateRaw/generateQuietPrompt/sendGenerationRequest），并尝试从酒馆已加载设置读取模型列表（方案 A：绕过 opencode.ai 等无 CORS 网关的前端跨域限制）',
+      '【隐藏楼层】修复 Tauri 版隐藏失效：改为 mesid + DOM 顺序 + 内容指纹三重匹配，新增 .cd-hidden-floor 兜底样式（display:none !important 防重渲染覆盖），恢复/补隐藏同步更新',
     ],
   },
   {
-    version: 'v2.6.2',
+    version: 'v2.6.3',
     date: '2026-08-11',
     items: [
       '「更多」工具中心项：登场人物诊断/登场人物注入完善，日志页新增登场人物诊断按钮',
@@ -8473,7 +8759,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.7.0 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.7.1 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
