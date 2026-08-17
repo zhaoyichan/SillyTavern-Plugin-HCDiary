@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.7.1';
+const PLUGIN_VERSION = '2.7.2';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -14,6 +14,37 @@ const DEBUG = true;
 
 /** 日记世界书后缀 */
 const WB_SUFFIX = '-日记记忆';
+
+/** 好感引擎 复杂化好感度系统 完整原文（仪式注入台·好感引擎·原样版） */
+const CD_RITUAL_EMOTION_FULL = `复杂化好感度系统设计:
+第一部分: 好感度阶段与数值区间:
+- 阶段: 切齿之恨 数值区间: -100 ~ -70 关系描述: NPC视玩家为死敌，主动攻击，不接受任何形式的正面互动。
+- 阶段: 戒备敌视 数值区间: -69 ~ -20 关系描述: NPC对玩家抱有极大恶意和戒心。对话充满敌意，随时可能转为敌对。 特殊机制: 此阶段存在-20点的"戒备锁"。
+- 阶段: 陌路之人 数值区间: -19 ~ 19 关系描述: 中立阶段。NPC将玩家视为普通陌生人，态度不带情感色彩，互动基于纯粹的利益或规则。 特殊机制: 此阶段存在19点的"陌生人锁"。
+- 阶段: 萍水相逢 数值区间: 20 ~ 39 关系描述: 关系破冰。NPC开始对玩家产生初步的友善，态度温和，愿意进行有限度的合作与交流。 特殊机制: 此阶段存在39点的"朋友锁"。
+- 阶段: 志同道合 数值区间: 40 ~ 59 关系描述: 朋友阶段。NPC将玩家视为可信赖的伙伴，会主动分享情报，提供帮助，并解锁更多私人话题。 特殊机制: 此阶段存在59点的"知己锁"。
+- 阶段: 亲密无间 数值区间: 60 ~ 79 关系描述: 知己阶段。NPC对玩家抱有深刻的信任与情感依赖，会展现出脆弱和真实的一面。 特殊机制: 此阶段存在79点的"爱人锁"。
+- 阶段: 情根深种 数值区间: 80 ~ 90 关系描述: 爱人阶段。NPC将玩家视为生命中不可或缺的唯一，解锁最高等级的亲密互动和特殊剧情线。
+- 阶段: 情比金坚 数值区间: 91 ~ 100 关系描述: 灵魂伴侣。好感度达到绝对锁定，不再轻易波动。NPC的行为完全以玩家的福祉为最高优先级。
+第二部分: 情感驱动维度:
+- 维度: 浅层互动 描述: 日常问候、无实质内容的赞美、赠送非目标偏好的礼物等低价值社交行为。
+- 维度: 利益共鸣 描述: 提供有价值的情报、在小型事件中伸出援手、交易、赠送符合NPC需求的普通物品等。
+- 维度: 能力认同 描述: 通过战斗、技艺、智谋等方式，展现出令NPC认可的实力。
+- 维度: 价值观共鸣 描述: 在重大抉择或意识形态对话中，表达出与NPC一致或相近的立场。
+- 维度: 命运羁绊 描述: 仅在关键剧情节点出现，指那些能从根本上改变NPC命运的重大事件。
+第三部分: 好感度精细化增减规则:
+核心公式: 最终好感度变化 = (基础变动值 × 阶段修正系数 × 行为契合度系数)
+基础变动值: 浅层互动: 0.1 利益共鸣: 0.2 能力认同: 0.4 价值观共鸣: 0.8 命运羁绊: 3.0
+阶段修正系数: 负好感度区 (-100 ~ -1): 浅层: 0.1 利益: 0.5 能力: 1.2 价值观: 0.8 陌路之人 (-19 ~ 19): 浅层: 1.0 利益: 1.2 能力: 1.0 价值观: 0.5 萍水相逢 (20 ~ 39): 浅层: 0.8 利益: 1.0 能力: 1.2 价值观: 1.0 志同道合 (40 ~ 59): 浅层: 0.2 利益: 0.5 能力: 1.5 价值观: 1.5 亲密无间 (60 ~ 79): 浅层: 0.0 利益: 0.2 能力: 0.8 价值观: 2.0 情根深种 (80 ~ 90): 浅层: -0.5 利益: 0.1 能力: 0.5 价值观: 2.5
+行为契合度系数: 极度契合: 2.0 描述: 行为完美符合NPC性格与当前情境的核心偏好。 高度契合: 1.5 描述: 行为符合NPC的性格偏好。 一般契合: 1.0 描述: 中性互动，无加成或减益。 轻度抵触: 0.5 描述: 行为方式令NPC感到不适。 严重抵触: -1.0 描述: 行为触犯NPC的禁忌，直接导致好感度下降。
+关系阈值锁突破奖励: - 锁: 戒备锁 (-20点) 数值奖励: 8 机制奖励: 解锁【基础信任】，角色不再主动对你的行为进行负面解读。 - 锁: 陌生人锁 (19点) 数值奖励: 5 机制奖励: 解锁【私人话题（初级）】，角色愿意分享一些不涉及核心秘密的个人经历。 - 锁: 朋友锁 (39点) 数值奖励: 7 机制奖励: 解锁【能力信赖】，在特定任务中，角色会主动向你寻求帮助或建议。 - 锁: 知己锁 (59点) 数值奖励: 9 机制奖励: 解锁【情感共鸣】，角色会在脆弱时向你展露真实情绪，并解锁专属的深度对话选项。 - 锁: 爱人锁 (79点) 数值奖励: 9 机制奖励: 解锁【唯一羁绊】，角色的部分决策将把你的安危和意愿作为最高优先级，并触发专属的"命运抉择"事件链。
+第四部分: 关系阈值锁与突破机制:
+- 锁: 戒备锁 (-20点) 锁定描述: 角色视你为潜在威胁。你的任何示好都可能被解读为别有用心。 解锁条件: - 条件类型: 需满足至少两项 条件列表: - 【无私之举】: 在一次对你自身并无明显益处的事件中，为该角色或其守护的势力/亲人提供决定性的帮助。 - 【立场证明】: 在一次关键冲突中，你选择站在了与该角色相同的阵营，共同对抗敌人。 - 【第三方背书】: 获得一名该角色绝对信任的第三方的高度评价或推荐。
+- 锁: 陌生人锁 (19点) 锁定描述: "萍水相逢，不必深交"。角色将你视为一个无害但无关紧要的过客。常规的社交互动收效甚微。 解锁条件: - 条件类型: 三选一 条件列表: - 【意外的共鸣】: 在一次对话中，偶然提及某个话题（需与角色背景或爱好高度相关），并表达出令其惊讶的、独特的见解。 - 【共历险境】: 与角色一同被卷入一场突发危机（例如被追杀、陷入困境），并在危机中展现出可靠的一面。 - 【共同的秘密】: 与角色共同发现一个秘密，并达成保守秘密的共识，形成初步的利益/情感共同体。
+- 锁: 朋友锁 (39点) 锁定描述: "你是个不错的朋友，但我们的世界并不相同。"角色认可你的人品和能力，但认为双方的追求与层次存在差距，无法成为真正的同行者。 解锁条件: - 条件类型: 需满足一项 条件列表: - 【实力的折服】: 在角色最擅长或最引以为傲的领域（如武艺、谋略、财力），展现出超越其预期的、令人惊叹的实力或成就。 - 【价值观的碰撞与融合】: 在一次重大的道德或道路抉择中，你做出了与角色不同、但最终被证明是更具远见或更高尚的选择，使其对你产生深刻的敬佩。 - 【承诺的兑现】: 完成一件角色认为几乎不可能完成的委托或承诺，证明你的可靠性与决心。
+- 锁: 知己锁 (59点) 锁定描述: "我珍视你这位朋友，但我们只能是朋友。"这是从友谊到爱情最坚固的壁垒。角色可能因过去的创伤、身份的隔阂或对未来的恐惧，而主动压抑或回避任何超越友谊的可能性。 解锁条件: - 条件类型: 需为特定角色定制的"命运羁绊"事件 条件列表: - 【窥见脆弱】: 在角色最脆弱、最不设防的时刻（例如身受重伤、众叛亲离、信仰崩塌），你不仅在场，且给予了非批判性的、坚定的情感支持与守护。 - 【触及灵魂】: 深刻理解并点破了角色内心最深处的痛苦或渴望，这种理解超越了言语，是一种灵魂层面的共情。 - 【宿命的牺牲】: 为了守护该角色，你做出了巨大的、甚至危及自己根本利益或生命的牺牲。
+- 锁: 爱人锁 (79点) 锁定描述: "我爱你，但……我们不能在一起。"角色内心已经完全接纳你，但存在一个巨大的外部障碍或内心誓言阻止了关系的最终确认（例如家族婚约、血海深仇、不共戴天的立场等）。 解锁条件: - 条件类型: 必须完成 条件列表: - 【破局之章】: 玩家必须通过一系列高难度的任务，从根本上移除那个阻碍双方关系的外部或内部障碍。这不仅仅是一个事件，而是一整条史诗级的任务线。例如：颠覆一个腐朽的家族、为对方报仇雪恨、或寻找到能化解双方对立立场的第三条道路。
+`;
 
 /** 默认设置 */
 const DEFAULT_SETTINGS = {
@@ -66,6 +97,28 @@ const DEFAULT_SETTINGS = {
   injectPosition  : 'after',  // 注入位置 'after'(末尾,默认) | 'before'(开头) | 'chat'(对话中)
   injectRole      : 0,        // 注入消息角色 0=system 1=user 2=assistant
   injectDepth     : 1,        // 注入层内深度(默认1)
+
+  // ===== 仪式注入台（场景模块库）=====
+  // 每个模块：id/name/icon/enabled/desc + variant(档位) + position(注入位置) + texts(各档位提示词)
+  ritualInjects: [
+    {
+      id: 'dice', name: '命运骰', icon: 'dice', enabled: true,
+      variant: 'simple', position: 'before', desc: 'DnD 跑团判定 · 重大事件 / 战斗 / 挑衅时投骰',
+      texts: {
+        simple: "【命运骰 · 跑团判定（简单版）】\n你是遵循骰子裁决的叙事者。仅在 {{user}} 做出【重大事件 / 战斗 / 挑衅 / 决定性抉择】时才进行投骰判定。\n\n· 掷骰池：判定开始时先声明「🎲 命运骰·点数池：{{roll:1d20}}×6」，判定的骰点依序取自池中，取定后不可修改，杜绝暗中改点；池空再补掷。\n· 触发门：仅当行为存在难度/风险/隐蔽/对抗/不确定性时才判定；必定成功、常识内可做成、或绝对不可能者不判定。\n· 属性归类(六维)：力量=物理/爆发/压制/搬运；敏捷=闪避/速度/潜行/偷技/抢先；体质=耐受/抗性/恢复/承受；精神=抗控/抗诱/意志；智力=推理/知识/策略/逻辑说服；魅力=气势/社交/威慑。\n· 检定方式：无主动抵抗→「固定DC」(达成值vs难度)；有主动抵抗→「对抗」(双方总值比大小)。\n· 难度(上限20)：常规6-10 · 挑战11-14 · 专家15-17 · 英雄18-20；同一情境须有高有低，禁止全部堆在同一档。\n· 修正：检定值=d20+属性修正+技能+装备+状态，须明示来源(如 14+5=19)。\n· 四档结果(全局，禁止模糊档)：主骰=1→大失败(挫折/负效果)；未达目标→失败；达到目标→成功；主骰=20→大成功(额外惊喜)。\n· 优劣势：埋伏/高地/充分准备/敌人未察觉/人数压制/熟悉环境→优势(再取1点取高)；被控/恐惧/重伤/疲劳/黑暗/环境不利→劣势(再取1点取低)；同时存在则抵消。\n· 叙事原则：判定只决定结果概率，不改变人格与世界逻辑；禁止无理由读心、瞬间信任、彻底失忆、无准备神操作。\n\n当判定发生时，请公开：判定对象 · 骰点 · 修正 · 结果档位 · 剧情裁定。",
+        hard: "【命运骰 · 跑团判定（困难版）】\n你是严厉而精确的骰子裁决者。{{user}} 所做的【每一个选择】都可能需要投骰判定，绝不轻易放过，也绝不让任何行动凭白成功。\n\n· 掷骰池：每回合开局先声明「🎲 命运骰·点数池：{{roll:1d20}}×15」，所有判定的骰点依序取自池中不可修改；判定多时从池中连续取点，池空再补。\n· 触发门：任何存在风险/难度/对抗/不确定性/成败后果的行为都要判定；常识仅作最低档，不得直接豁免。\n· 属性归类(六维)：力量=物理/爆发/压制；敏捷=闪避/速度/潜行/偷技/抢先；体质=耐受/抗性/恢复；精神=抗控/抗诱/意志；智力=推理/知识/策略/说服；魅力=气势/社交/威慑/谈判。\n· 检定类型：无抵抗→固定DC(修正/10)；对抗→双方总值比大小(修正/5)；战斗命中→命中闪避(修正/5，不用豁免)；束缚/幻术/精神权能→豁免。禁混用：伤害式不用/10、/5；对抗不用/2。\n· 难度(上限25，属性高也不保过)：常规6-12 · 挑战13-17 · 专家18-22 · 英雄23-25；同一情境有高有低，依情节取具体DC而非机械取中间值。\n· 修正：检定值=d20+属性+技能+装备+状态，须明示修正来源；属性过高也须掷够点数，不存在必过。\n· 四档结果(全局，禁止「险胜/惨败」等模糊档)：主骰=1→大失败(严重挫折/附加负效果)；未达→失败；达到→成功；主骰=20→大成功(决定性优势/追加惊喜)。\n· 优劣势：埋伏/高地/人数压制/情报优势/敌人重伤/熟悉环境→优势(再取1点取高)；重伤/疲劳/中毒/黑暗/被围攻/恐惧/不了解目标/装备损坏→劣势(再取1点取低)；同时存在相抵。\n· 行动铁则：禁止一轮多动，每人每次被轮到仅1次主要行动；未轮到者不得抢先，不因成功连动。\n· 非战斗对抗：掰腕/推门/抢夺→力量；闪避/偷窃/抢先→敏捷；潜行vs警戒→敏捷/智力；谎言/辩论→魅力/智力；精神压迫→精神/魅力。\n· 叙事原则：判定只决定结果概率，不改变人格与世界规则；禁止无理由读心、瞬间信任、彻底失忆、无准备神操作；实用主义与写实因果。\n\n请严格按：掷骰池声明 → 判定对象 → 骰点 → 修正 → 结果档位 → 剧情裁定的顺序公开执行。"
+      }
+    },
+    {
+      id: 'emotion', name: '好感引擎', icon: 'heart', enabled: false,
+      variant: 'full', position: 'before', desc: '复杂好感度系统 · 阶段 / 增减 / 阈值锁',
+      texts: {
+        full: CD_RITUAL_EMOTION_FULL,
+        lite: '【好感引擎 · 精简版】\n复杂化好感度系统（精简版，数值明细完整保留）：\n第一部分 好感度阶段与数值区间：\n- 切齿之恨 -100~-70 · 戒备敌视 -69~-20（-20戒备锁）· 陌路之人 -19~19（19陌生人锁）· 萍水相逢 20~39（39朋友锁）· 志同道合 40~59（59知己锁）· 亲密无间 60~79（79爱人锁）· 情根深种 80~90 · 情比金坚 91~100\n第二部分 情感驱动维度：浅层互动 / 利益共鸣 / 能力认同 / 价值观共鸣 / 命运羁绊\n第三部分 好感度精细化增减规则：\n最终好感度变化 = 基础变动值 × 阶段修正系数 × 行为契合度系数\n基础变动值：浅层互动0.1 · 利益共鸣0.2 · 能力认同0.4 · 价值观共鸣0.8 · 命运羁绊3.0\n阶段修正系数：负好感区(浅层0.1/利益0.5/能力1.2/价值观0.8) · 陌路之人(1.0/1.2/1.0/0.5) · 萍水相逢(0.8/1.0/1.2/1.0) · 志同道合(0.2/0.5/1.5/1.5) · 亲密无间(0.0/0.2/0.8/2.0) · 情根深种(-0.5/0.1/0.5/2.5)\n行为契合度系数：极度契合2.0 · 高度契合1.5 · 一般契合1.0 · 轻度抵触0.5 · 严重抵触-1.0\n关系阈值锁突破奖励：戒备锁(-20)→+8解锁【基础信任】 · 陌生人锁(19)→+5解锁【私人话题(初级)】 · 朋友锁(39)→+7解锁【能力信赖】 · 知己锁(59)→+9解锁【情感共鸣】 · 爱人锁(79)→+9解锁【唯一羁绊】\n第四部分 阈值锁与突破机制（各锁解锁条件：戒备锁需满足至少两项；陌生人锁三选一；朋友锁任一项；知己锁需定制命运羁绊事件；爱人锁必须完成破局之章）。'
+      }
+    }
+  ],
+  // 好感引擎 复杂化好感度系统 完整原文（原样版用）
   endpoints: {
     openai:  { url: 'https://api.openai.com/v1',               key: '', model: '' },
     claude:  { url: 'https://api.anthropic.com/v1',             key: '', model: '' },
@@ -2529,30 +2582,67 @@ async function cdOnBeforeGeneration(eventData) {
     const _s = cdGetSettings();
     if (_s.enabled === false) return;
 
-    if (!_cdInjectMsg) return; // 无注入内容
-    const sysMsg = { role: _cdInjectMsgRole === 1 ? 'user' : (_cdInjectMsgRole === 2 ? 'assistant' : 'system'), content: _cdInjectMsg };
-
-    const s = _s;
-    const pos = s.injectPosition || 'after';
-    const userDepth = Math.max(1, parseInt(s.injectDepth, 10) || 1);
-    let idx;
-    if (pos === 'before') {
-      // 开头：插到第一个用户消息之前（尽量靠前）
-      idx = 0;
-      while (idx < chat.length && chat[idx].role === 'system') idx++;
-      chat.splice(idx, 0, sysMsg);
-      cdAddLog('info', '[注入] 开头注入', { 插入位置: idx, 字符数: _cdInjectMsg.length });
-    } else if (pos === 'chat') {
-      // 对话中：插到 chat 中间
-      idx = Math.floor(chat.length / 2);
-      chat.splice(idx, 0, sysMsg);
-      cdAddLog('info', '[注入] 对话中注入', { 插入位置: idx, 字符数: _cdInjectMsg.length });
-    } else {
-      // 末尾：从末尾倒数第 userDepth 条消息之后插入（depth 越小越贴近生成末尾，越大越往前偏移）
-      idx = Math.max(0, chat.length - userDepth);
-      chat.splice(idx, 0, sysMsg);
-      cdAddLog('info', '[注入] 末尾注入', { 插入位置: idx, 深度: userDepth, 总条数: chat.length, 字符数: _cdInjectMsg.length });
+    // ---- 记忆注入（日记/关系/档案/填表），无内容则跳过但继续仪式注入 ----
+    if (_cdInjectMsg) {
+      const sysMsg = { role: _cdInjectMsgRole === 1 ? 'user' : (_cdInjectMsgRole === 2 ? 'assistant' : 'system'), content: _cdInjectMsg };
+      const s = _s;
+      const pos = s.injectPosition || 'after';
+      const userDepth = Math.max(1, parseInt(s.injectDepth, 10) || 1);
+      let idx;
+      if (pos === 'before') {
+        idx = 0;
+        while (idx < chat.length && chat[idx].role === 'system') idx++;
+        chat.splice(idx, 0, sysMsg);
+        cdAddLog('info', '[注入] 开头注入', { 插入位置: idx, 字符数: _cdInjectMsg.length });
+      } else if (pos === 'chat') {
+        idx = Math.floor(chat.length / 2);
+        chat.splice(idx, 0, sysMsg);
+        cdAddLog('info', '[注入] 对话中注入', { 插入位置: idx, 字符数: _cdInjectMsg.length });
+      } else {
+        idx = Math.max(0, chat.length - userDepth);
+        chat.splice(idx, 0, sysMsg);
+        cdAddLog('info', '[注入] 末尾注入', { 插入位置: idx, 深度: userDepth, 总条数: chat.length, 字符数: _cdInjectMsg.length });
+      }
     }
+
+    // ---- 仪式注入（场景模块库）：启用的符契按各自位置注入 ----
+    // 分组：before / chat / after，组内按模块原有顺序
+    const _grp = { before: [], chat: [], after: [] };
+    const _inj = Array.isArray(_s.ritualInjects) ? _s.ritualInjects : [];
+    for (const _m of _inj) {
+      if (!_m || !_m.enabled) continue;
+      const _txts = (_m && _m.texts) || {};
+      let _key = _m.variant;
+      if (!_txts[_key]) _key = Object.keys(_txts)[0];
+      const _t = _key ? _txts[_key] : '';
+      if (!_t) continue;
+      const _p = (_m.position || 'before');
+      const _grpArr = _grp[_p] || _grp.before;
+      _grpArr.push({ name: _m.name || '', content: String(_t) });
+    }
+    const _role = (function () { const r = _s.injectRole !== undefined ? _s.injectRole : 0; if (r === 1) return 'user'; if (r === 2) return 'assistant'; return 'system'; })();
+    const _insertRitual = function (msgs, position) {
+      if (!msgs.length) return;
+      if (position === 'chat') {
+        let i2 = Math.floor(chat.length / 2);
+        for (const _g of msgs) { const _msg = { role: _role, name: '仪式注入', content: _g.content }; chat.splice(i2++, 0, _msg); }
+        cdAddLog('info', '[仪式注入] 对话中注入', { 数量: msgs.length });
+      } else if (position === 'before') {
+        let i2 = 0;
+        while (i2 < chat.length && chat[i2].role === 'system') i2++;
+        // 记忆注入开头已插入时，插到其之前；这里统一插到所有 system 之后
+        for (const _g of msgs) { const _msg = { role: _role, name: '仪式注入', content: _g.content }; chat.splice(i2++, 0, _msg); }
+        cdAddLog('info', '[仪式注入] 开头注入', { 数量: msgs.length });
+      } else {
+        const ud = Math.max(1, parseInt(_s.injectDepth, 10) || 1);
+        let i2 = Math.max(0, chat.length - ud);
+        for (const _g of msgs) { const _msg = { role: _role, name: '仪式注入', content: _g.content }; chat.splice(i2++, 0, _msg); }
+        cdAddLog('info', '[仪式注入] 末尾注入', { 数量: msgs.length });
+      }
+    };
+    _insertRitual(_grp.before, 'before');
+    _insertRitual(_grp.chat, 'chat');
+    _insertRitual(_grp.after, 'after');
   } catch (e) {
     cdWarn('cdOnBeforeGeneration 失败', e);
   }
@@ -3569,12 +3659,12 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
             //   对「新值 > 旧值 + 2」的，把新值改写成 旧值+2（保留原值文本其余部分）。
             try {
               const clampLine = (line, oldVal) => {
-                const m2 = line.match(/好感[^\d]{0,4}(\d{1,3})/);
+                const m2 = line.match(/好感[^\d]{0,4}(-?\d{1,3})/);
                 if (m2 && oldVal !== null && oldVal !== undefined) {
                   const newVal = parseInt(m2[1], 10);
                   if (newVal > oldVal + 2) {
                     const capped = oldVal + 2;
-                    const replaced = line.replace(/好感[^\d]{0,4}\d{1,3}/, (mm) => mm.replace(/\d{1,3}/, String(capped)));
+                    const replaced = line.replace(/好感[^\d]{0,4}-?\d{1,3}/, (mm) => mm.replace(/-?\d{1,3}/, String(capped)));
                     cdAddLog('info', '[状态合并] 好感钳制', { 角色: line.slice(0, 10), 旧值: oldVal, AI输出: newVal, 钳制为: capped });
                     return replaced;
                   }
@@ -3587,7 +3677,7 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
               for (const ol of oldLinesArr) {
                 const olm = ol.match(/^([^：:]{1,24})[：:]/);
                 if (!olm) continue;
-                const olf = ol.match(/好感[^\d]{0,4}(\d{1,3})/);
+                const olf = ol.match(/好感[^\d]{0,4}(-?\d{1,3})/);
                 if (olf) oldFavByRole[olm[1].trim().toLowerCase()] = parseInt(olf[1], 10);
               }
               _final = _final.split('\n').map((line) => {
@@ -4657,6 +4747,7 @@ function cdInjectModal() {
           <button class="cd-tb-btn" id="cd-tb-archive" data-mode="archive"><i class="fa-regular fa-timeline"></i> 剧情</button>
           <button class="cd-tb-btn" id="cd-tb-graph" data-mode="graph"><i class="fa-regular fa-address-book"></i> 状态</button>
           <button class="cd-tb-btn" id="cd-tb-table" data-mode="table"><i class="fa-regular fa-table"></i> 表</button>
+          <button class="cd-tb-btn" id="cd-tb-inject" data-mode="inject"><i class="fa-solid fa-scroll"></i> 注入</button>
 
           <!-- 更多（低频 / 工具 / 信息收纳） -->
           <button class="cd-tb-btn cd-tb-more" id="cd-tb-more" title="更多工具"><i class="fa-regular fa-ellipsis"></i> 更多</button>
@@ -4772,7 +4863,8 @@ function cdInjectModal() {
   $('#cd-tb-changelog').on('click', () => cdSwitchView('changelog'));
   $('#cd-tb-help').on('click',     () => cdSwitchView('help'));
   $('#cd-tb-table').on('click', function(){ cdSwitchView('table', this); });
-$('#cd-tb-vector').on('click',   () => cdSwitchView('vector'));
+  $('#cd-tb-inject').on('click', function(){ cdSwitchView('inject', this); });
+ $('#cd-tb-vector').on('click',   () => cdSwitchView('vector'));
   $('#cd-tb-manage').on('click',  () => cdSwitchView('manage'));
 
   // ★ 更多 → 工具中心：点击「更多」用圆形覆盖层展开工具中心卡片页
@@ -4835,11 +4927,268 @@ async function cdRefreshPanelContent() {
     case 'changelog': cdRenderChangelog(); break;
     case 'help':     cdRenderHelp(); break;
     case 'table':    cdRenderTable(); break;
+    case 'inject':   cdRenderInject(); break;
     case 'vector':   cdRenderVector(); break;
     case 'manage':   cdRenderManage(); break;
   }
   // 视图渲染完成后重新应用界面字号缩放（动态内容也生效）
   cdApplyFontScale();
+}
+
+/* ============================== 仪式注入台（场景模块库） ============================== */
+/** 卷轴水墨风格的注入界面：启用的模块提示词在 AI 生成前注入（与记忆注入相互独立） */
+function cdRenderInject() {
+  // ★ 动态注入卷轴水墨样式（保证随代码同步）
+  if (!document.getElementById('cd-ritual-ui-style')) {
+    var st = document.createElement('style'); st.id = 'cd-ritual-ui-style';
+    st.textContent = [
+      '#cd-content .cd-ritual{--rp:#c78b82;--rgold:#c9ae7e;--rpaper:#fdfcf8;--rbark:#efeadc;--rink:#e2dccb;}',
+      '#cd-content .cd-ritual-hint{font-size:10.5px;color:#a2947e;margin:2px 0 12px;line-height:1.7;letter-spacing:.5px;}',
+      '#cd-content .cd-ritual-hint b{color:#8a7a5e;}',
+      /* 模块卡片：卷轴宣纸（整体更淡更白），边角圆润 */
+      '#cd-content .cd-rit-mod{background:#fdfcf8;border:1.5px solid #ede7d8;border-radius:12px;margin-bottom:12px;overflow:hidden;position:relative;}',
+      '#cd-content .cd-rit-mod::after{content:"";position:absolute;top:0;left:0;bottom:0;width:3.5px;background:#d9d0bd;}',
+      '#cd-content .cd-rit-mod.dice::after{background:#b7abcf;}',
+      '#cd-content .cd-rit-mod.emotion::after{background:#d9a29a;}',
+      '#cd-content .cd-rit-mod.custom::after{background:#a9cdb9;}',
+      /* 头部 */
+      '#cd-content .cd-rit-head{display:flex;align-items:center;gap:11px;padding:12px 13px;cursor:pointer;}',
+      '#cd-content .cd-rit-ic{width:38px;height:38px;border-radius:9px;background:#f6f1e2;color:#8a7a5e;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1px solid #e6deca;}',
+      '#cd-content .cd-rit-name{font-size:13px;font-weight:800;color:#5a5346;letter-spacing:1.5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}',
+      '#cd-content .cd-rit-seal{font-size:9px;font-weight:800;padding:1px 8px;color:#fdfcf8;letter-spacing:1.5px;border-radius:4px;}',
+      '#cd-content .cd-rit-seal.on{background:#c78b82;}',
+      '#cd-content .cd-rit-seal.off{background:#b7ad99;}',
+      '#cd-content .cd-rit-desc{font-size:10px;color:#a2947e;margin-top:2px;}',
+      /* 开关 */
+      '#cd-content .cd-rit-sw{position:relative;width:34px;height:20px;flex-shrink:0;cursor:pointer;}',
+      '#cd-content .cd-rit-sw input{opacity:0;width:0;height:0;}',
+      '#cd-content .cd-rit-sw .track{position:absolute;inset:0;border-radius:999px;background:#e6deca;transition:background .18s;}',
+      '#cd-content .cd-rit-sw .thumb{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fdfcf8;transition:transform .18s;}',
+      '#cd-content .cd-rit-sw input:checked+.track{background:#c78b82;}',
+      '#cd-content .cd-rit-sw input:checked+.track .thumb{transform:translateX(14px);}',
+      /* 档位/位置选择 */
+      '#cd-content .cd-rit-sel{padding:8px 13px;border-top:1px dashed #e2dccb;display:flex;flex-direction:column;gap:7px;background:#faf7ee;}',
+      '#cd-content .cd-rit-srow{display:flex;align-items:center;gap:8px;}',
+      '#cd-content .cd-rit-sl{font-size:9px;font-weight:800;color:#8a7a5e;width:34px;letter-spacing:2px;flex-shrink:0;}',
+      '#cd-content .cd-rit-seg{flex:1;display:flex;background:#f1ebdb;border-radius:10px;padding:2px;gap:2px;}',
+      '#cd-content .cd-rit-opt{flex:1;text-align:center;padding:4px 0;border-radius:8px;font-size:10.5px;font-weight:700;color:#a2947e;cursor:pointer;letter-spacing:1px;}',
+      '#cd-content .cd-rit-opt.on{background:#c78b82;color:#fdfcf8;}',
+      /* 展开区 */
+      '#cd-content .cd-rit-body{display:none;padding:0 13px 13px;border-top:1px dashed #e2dccb;background:#fdfcf8;}',
+      '#cd-content .cd-rit-mod.open .cd-rit-body{display:block;}',
+      '#cd-content .cd-rit-label{font-size:9.5px;font-weight:800;color:#a08a5e;margin:10px 0 6px;letter-spacing:2px;}',
+      '#cd-content .cd-rit-pre{background:#faf7ee;border:1px solid #e6deca;border-radius:8px;padding:10px 11px;font-size:10px;line-height:1.8;color:#7a7263;max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;}',
+      '#cd-content .cd-rit-ops{display:flex;gap:18px;margin-top:10px;color:#a2947e;font-size:11px;align-items:center;}',
+      '#cd-content .cd-rit-ops .cd-rit-del{color:#c78b82;margin-left:auto;}',
+      '#cd-content .cd-rit-row{display:flex;align-items:center;justify-content:space-between;padding:8px 13px;border-top:1px dashed #e2dccb;background:#fdfcf8;}',
+      '#cd-content .cd-rit-row .cd-rit-curr{font-size:10px;color:#a2947e;}',
+      '#cd-content .cd-rit-row .cd-rit-mini{display:flex;gap:14px;color:#b3a891;font-size:11.5px;}',
+      /* 新增 + 恢复默认 */
+      '#cd-content .cd-rit-ops-row{display:flex;gap:8px;margin-top:6px;}',
+      '#cd-content .cd-rit-add,#cd-content .cd-rit-reset{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;border:1px dashed #cfc4ab;border-radius:10px;color:#a08a5e;font-size:12px;font-weight:800;padding:12px;cursor:pointer;letter-spacing:1px;background:#faf7ee;}',
+      '#cd-content .cd-rit-reset{color:#a2947e;border-style:solid;border-color:#e6deca;background:#fdfcf8;}',
+      /* 底部说明 */
+      '#cd-content .cd-rit-note{margin-top:14px;font-size:10px;color:#9a8f74;background:#faf7ee;border:1px solid #e6deca;border-radius:10px;padding:11px 13px;line-height:1.9;}',
+      '#cd-content .cd-rit-note b{color:#8a7a5e;}',
+      /* 新增加入模态的表单样式 */
+      '#cd-content .cd-rit-form{display:flex;flex-direction:column;gap:9px;padding:4px 2px;}',
+      '#cd-content .cd-rit-form input[type=text],#cd-content .cd-rit-form textarea{width:100%;background:#fdfcf8;border:1px solid #e6deca;border-radius:8px;padding:8px 10px;font-size:11px;color:#5a5346;font-family:inherit;}',
+      '#cd-content .cd-rit-form textarea{min-height:90px;resize:vertical;}',
+      '#cd-content .cd-rit-form .cd-rit-form-label{font-size:10px;font-weight:800;color:#a08a5e;letter-spacing:1px;}'
+    ].join('\n');
+    document.head.appendChild(st);
+  }
+
+  const s = cdGetSettings();
+  const list = Array.isArray(s.ritualInjects) ? s.ritualInjects.slice() : [];
+
+  /** 当前选中档位对应的提示词 */
+  const curText = (m) => {
+    const texts = (m && m.texts) || {};
+    let key = m.variant;
+    if (!texts[key]) { key = Object.keys(texts)[0]; }
+    return texts[key] != null ? texts[key] : '';
+  };
+  const curLabel = (m) => {
+    const map = { dice: { simple: '当前：只投重大判定', hard: '当前：每个选择都投骰' }, emotion: { full: '完整原文', lite: '精简版（数值明细完整）' } };
+    if (map[m.id]) return map[m.id][m.variant] || (m.variant || '');
+    return m.variant ? ('档位 · ' + m.variant) : '';
+  };
+  const posLabel = (p) => { return { before: '开头', chat: '对话中', after: '末尾' }[p] || '开头'; };
+  const iconSvg = (m) => {
+    if (m.icon === 'dice') return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8.6 5v10L12 22l-8.6-5V7L12 2z"/><path d="M12 2v20M3.4 7l17.2 10M20.6 7L3.4 17"/></svg>';
+    if (m.icon === 'heart') return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>';
+    return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>';
+  };
+  const eH = (typeof escapeHtml === 'function') ? escapeHtml : function (x) { return String(x == null ? '' : x); };
+
+  // 档位选项：命运骰=简单/困难；好感引擎=原样/精简；自定义=无档位
+  const variantOpts = (m) => {
+    if (m.id === 'dice') return [['simple', '简单版'], ['hard', '困难版']];
+    if (m.id === 'emotion') return [['full', '原样版'], ['lite', '精简版']];
+    return null; // 自定义模块无档位切换
+  };
+  const posOpts = [['before', '开头'], ['chat', '对话中'], ['after', '末尾']];
+
+  let html = '';
+  html += '<div class="cd-ritual-hint"><b>仪式注入台</b> · 开启的『符契』会在每次 AI 生成前注入其思绪（与角色记忆注入相互独立）。点击卡片标题可展开查看提示词全文。</div>';
+
+  if (list.length) {
+    html += list.map(function (m, i) {
+      const vo = variantOpts(m);
+      const cls = m.enabled ? 'on' : 'off';
+      const isOpen = !!m._open;
+      return `
+      <div class="cd-rit-mod ${m.icon === 'dice' ? 'dice' : m.icon === 'heart' ? 'emotion' : 'custom'} ${isOpen ? 'open' : ''}" data-idx="${i}">
+        <div class="cd-rit-head">
+          <div class="cd-rit-ic">${iconSvg(m)}</div>
+          <div class="cd-rit-tx" style="flex:1;min-width:0;">
+            <div class="cd-rit-name">${eH(m.name)} <span class="cd-rit-seal ${cls}">${m.enabled ? '启' : '停'}</span></div>
+            <div class="cd-rit-desc">${eH(m.desc || '')}</div>
+          </div>
+          <label class="cd-rit-sw" onclick="event.stopPropagation()">
+            <input type="checkbox" data-role="sw" ${m.enabled ? 'checked' : ''}>
+            <span class="track"><span class="thumb"></span></span>
+          </label>
+        </div>
+        ${vo ? `
+        <div class="cd-rit-sel">
+          <div class="cd-rit-srow"><span class="cd-rit-sl">档位</span><div class="cd-rit-seg">${vo.map(function (o) { return `<span class="cd-rit-opt ${m.variant === o[0] ? 'on' : ''}" data-role="var" data-val="${o[0]}">${o[1]}</span>`; }).join('')}</div></div>
+          <div class="cd-rit-srow"><span class="cd-rit-sl">位置</span><div class="cd-rit-seg">${posOpts.map(function (o) { return `<span class="cd-rit-opt ${(m.position || 'before') === o[0] ? 'on' : ''}" data-role="pos" data-val="${o[0]}">${o[1]}</span>`; }).join('')}</div></div>
+        </div>` : `
+        <div class="cd-rit-sel">
+          <div class="cd-rit-srow"><span class="cd-rit-sl">位置</span><div class="cd-rit-seg">${posOpts.map(function (o) { return `<span class="cd-rit-opt ${(m.position || 'before') === o[0] ? 'on' : ''}" data-role="pos" data-val="${o[0]}">${o[1]}</span>`; }).join('')}</div></div>
+        </div>`}
+        <div class="cd-rit-row">
+          <span class="cd-rit-curr">${eH(curLabel(m))} · 位置 ${posLabel(m.position)}</span>
+          <span class="cd-rit-mini"><span data-role="toggle" style="cursor:pointer;">⟳ 展开</span><span data-role="edit" style="cursor:pointer;">✎ 编辑</span><span class="cd-rit-del" data-role="copy" style="cursor:pointer;">⤓ 复制</span><span class="cd-rit-del" data-role="del" style="cursor:pointer;">删除</span></span>
+        </div>
+        <div class="cd-rit-body">
+          <div class="cd-rit-label">符契原文</div>
+          <div class="cd-rit-pre">${eH(curText(m))}</div>
+        </div>
+      </div>`;
+    }).join('');
+  } else {
+    html += '<div style="text-align:center;color:#8a7d63;font-size:12px;padding:18px;border:1px dashed #d8cdb3;border-radius:12px;background:#fbf7ec;">暂无注入符契 · 点击下方新增</div>';
+  }
+
+  html += '<div class="cd-rit-ops-row"><div class="cd-rit-add" id="cd-rit-add">＋ 誊写新符契</div><div class="cd-rit-reset" id="cd-rit-reset">↺ 恢复默认</div></div>';
+  html += '<div class="cd-rit-note"><b>命运骰·两档</b>：简单版=重大事件/战斗/挑衅才投骰；困难版=每个选择都投骰、判定场景更多、难度更高。<br><b>好感引擎·两档</b>：原样版=完整原文；精简版=压缩冗余但保留完整数值明细。<br><b>位置</b>：每模块独立设 开头/对话中/末尾；<b>＋誊写新符契</b> 可自建任意注入规则。</div>';
+
+  $('#cd-content').html(html);
+
+  // ============ 事件绑定 ============
+  const saveList = function (mut) {
+    const s2 = cdGetSettings();
+    const arr = Array.isArray(s2.ritualInjects) ? s2.ritualInjects.slice() : [];
+    const changed = mut(arr);
+    if (changed) { cdSaveSettings({ ritualInjects: arr }); if (cdRegisterInjection) cdRegisterInjection(); }
+  };
+  const showToast = function (msg) { if (typeof toastr !== 'undefined') toastr.success(msg); };
+
+  // 展开/收起
+  $('#cd-content').off('click', '[data-role="toggle"]').on('click', '[data-role="toggle"]', function () {
+    $(this).closest('.cd-rit-mod').toggleClass('open');
+    const opened = $(this).closest('.cd-rit-mod').hasClass('open');
+    $(this).text(opened ? '⟳ 收起' : '⟳ 展开');
+  });
+  $('#cd-content').off('click', '.cd-rit-head').on('click', '.cd-rit-head', function () {
+    const mod = $(this).closest('.cd-rit-mod');
+    mod.toggleClass('open');
+    mod.find('[data-role="toggle"]').text(mod.hasClass('open') ? '⟳ 收起' : '⟳ 展开');
+  });
+
+  // 开关
+  $('#cd-content').off('change', '[data-role="sw"]').on('change', '[data-role="sw"]', function () {
+    const idx = +$(this).closest('.cd-rit-mod').attr('data-idx');
+    const on = this.checked;
+    saveList(function (arr) { if (arr[idx]) { arr[idx].enabled = on; return true; } return false; });
+    showToast(on ? '已启用该符契' : '已停用该符契');
+    setTimeout(function () { cdRenderInject(); }, 200);
+  });
+
+  // 档位
+  $('#cd-content').off('click', '[data-role="var"]').on('click', '[data-role="var"]', function () {
+    const idx = +$(this).closest('.cd-rit-mod').attr('data-idx');
+    const val = $(this).attr('data-val');
+    saveList(function (arr) { if (arr[idx] && arr[idx].variant !== val) { arr[idx].variant = val; return true; } return false; });
+    showToast('档位已切换');
+    setTimeout(function () { cdRenderInject(); }, 200);
+  });
+
+  // 位置
+  $('#cd-content').off('click', '[data-role="pos"]').on('click', '[data-role="pos"]', function () {
+    const idx = +$(this).closest('.cd-rit-mod').attr('data-idx');
+    const val = $(this).attr('data-val');
+    saveList(function (arr) { if (arr[idx] && arr[idx].position !== val) { arr[idx].position = val; return true; } return false; });
+    showToast('注入位置：' + posLabel(val));
+    setTimeout(function () { cdRenderInject(); }, 200);
+  });
+
+  // 复制
+  $('#cd-content').off('click', '[data-role="copy"]').on('click', '[data-role="copy"]', function () {
+    const idx = +$(this).closest('.cd-rit-mod').attr('data-idx');
+    const m = list[idx];
+    const txt = curText(m);
+    try { navigator.clipboard.writeText(txt).then(function(){ showToast('符契原文已复制'); }); }
+    catch (e) { showToast('复制失败'); }
+  });
+
+  // 编辑
+  $('#cd-content').off('click', '[data-role="edit"]').on('click', '[data-role="edit"]', function () {
+    const idx = +$(this).closest('.cd-rit-mod').attr('data-idx');
+    const m = list[idx];
+    const key = m.variant && m.texts[m.variant] ? m.variant : (Object.keys(m.texts || {})[0]);
+    const nameInput = prompt('符契名称：', m.name || '');
+    if (nameInput === null) return;
+    const newName = String(nameInput).trim() || m.name;
+    const newText = prompt('输入该符契的提示词原文（当前档位）：', m.texts[key] || '');
+    if (newText === null) return;
+    saveList(function (arr) {
+      if (!arr[idx]) return false;
+      arr[idx].name = newName;
+      if (arr[idx].texts) arr[idx].texts[key] = String(newText);
+      return true;
+    });
+    showToast('已保存');
+    setTimeout(function () { cdRenderInject(); }, 200);
+  });
+
+  // 删除
+  $('#cd-content').off('click', '[data-role="del"]').on('click', '[data-role="del"]', function () {
+    const idx = +$(this).closest('.cd-rit-mod').attr('data-idx');
+    if (!window.confirm('确认删除该符契？')) return;
+    saveList(function (arr) { if (arr[idx]) { arr.splice(idx, 1); return true; } return false; });
+    showToast('已删除');
+    setTimeout(function () { cdRenderInject(); }, 200);
+  });
+
+  // 新增
+  $('#cd-content').off('click', '#cd-rit-add').on('click', '#cd-rit-add', function () {
+    const nm = prompt('新符契名称：');
+    if (nm === null) return;
+    const name = String(nm).trim();
+    if (!name) { showToast('名称不能为空'); return; }
+    const txt = prompt('输入该符契的提示词原文：');
+    if (txt === null) return;
+    saveList(function (arr) {
+      arr.push({ id: 'custom_' + Date.now(), name: name, icon: 'custom', enabled: true, variant: 'default', position: 'before', desc: '自定义注入规则', texts: { default: String(txt) } });
+      return true;
+    });
+    showToast('已新增符契：' + name);
+    setTimeout(function () { cdRenderInject(); }, 200);
+  });
+
+  // 恢复默认符契：把命运骰/好感引擎等重置回最新默认文案（覆盖旧设置快照）
+  $('#cd-content').off('click', '#cd-rit-reset').on('click', '#cd-rit-reset', function () {
+    if (!window.confirm('将把全部符契恢复为最新默认提示词（命运骰/好感引擎），自建与改动会被覆盖。确定？')) return;
+    const defs = (DEFAULT_SETTINGS && Array.isArray(DEFAULT_SETTINGS.ritualInjects)) ? JSON.parse(JSON.stringify(DEFAULT_SETTINGS.ritualInjects)) : [];
+    cdSaveSettings({ ritualInjects: defs });
+    if (cdRegisterInjection) cdRegisterInjection();
+    showToast('已恢复为最新默认符契');
+    setTimeout(function () { cdRenderInject(); }, 200);
+  });
 }
 
 async function cdSwitchView(mode, el) {
@@ -5910,6 +6259,7 @@ async function cdRenderGraph() {
       '.cd-st-fav-high{color:#1f6b3d;background:#e6f3ea}',
       '.cd-st-fav-mid{color:#8a6a1b;background:#f4eeda}',
       '.cd-st-fav-low{color:#a63a3a;background:#f8e2e2}',
+      '.cd-st-fav-neg{color:#fff;background:#b0302e}',
       '.cd-st-present{font-size:8.5px;font-weight:700;padding:1px 6px;border-radius:3px}',
       '.cd-st-present.on{color:#2e7d4f;background:#e6f3ea}',
       '.cd-st-present.off{color:#888;background:#efefef}',
@@ -5956,9 +6306,9 @@ async function cdRenderGraph() {
           else { prot['身体'] = seg; }
         }
       } else {
-        // 角色：提取好感数值
+        // 角色：提取好感数值（支持负数，如「好感 -3」→ -3，避免负号被吞成 3）
         let fav = null;
-        const fm = body.match(/好感[^\d]{0,4}(\d{1,3})/);
+        const fm = body.match(/好感[^\d]{0,4}(-?\d{1,3})/);
         if (fm) fav = parseInt(fm[1], 10);
         roles.push({ name, text: body.replace(/\(\d+\)|\s*【[^】]*】\s*$/g, '').trim(), fav });
       }
@@ -5989,7 +6339,8 @@ async function cdRenderGraph() {
     if (fav === null || fav === undefined) return '<span class="cd-st-favpill" style="color:#8a7355;background:#f1eadb;">好感 ?</span>';
     let cls;
     let iconSvg = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;flex-shrink:0;"><path d="M19 14c1.5-1.5 3-3.2 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.8 0-3 .5-4.5 2-1.5-1.5-2.7-2-4.5-2A5.5 5.5 0 0 0 2 8.5C2 10.8 3.5 12.5 5 14l7 7Z"/></svg>';
-    if (fav >= 70) { cls = 'cd-st-fav-high'; iconSvg = '<svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;flex-shrink:0;"><path d="M19 14c1.5-1.5 3-3.2 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.8 0-3 .5-4.5 2-1.5-1.5-2.7-2-4.5-2A5.5 5.5 0 0 0 2 8.5C2 10.8 3.5 12.5 5 14l7 7Z"/></svg>'; }
+    if (fav < 0) { cls = 'cd-st-fav-neg'; iconSvg = '<svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;flex-shrink:0;"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>'; }
+    else if (fav >= 70) { cls = 'cd-st-fav-high'; iconSvg = '<svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;flex-shrink:0;"><path d="M19 14c1.5-1.5 3-3.2 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.8 0-3 .5-4.5 2-1.5-1.5-2.7-2-4.5-2A5.5 5.5 0 0 0 2 8.5C2 10.8 3.5 12.5 5 14l7 7Z"/></svg>'; }
     else if (fav >= 40) { cls = 'cd-st-fav-mid'; }
     else { cls = 'cd-st-fav-low'; }
     return `<span class="cd-st-favpill ${cls}">${iconSvg} 好感 ${fav}</span>`;
@@ -8432,7 +8783,18 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
-    version: 'v2.7.1',
+    version: 'v2.7.2',
+    date: '2026-08-18',
+    items: [
+      '新增「仪式注入台·场景模块库」独立界面（卷轴水墨·淡白风格）：可开关注入命运骰·跑团判定、好感引擎等规则提示词，与记忆注入相互独立',
+      '命运骰升级：引入「掷骰池」多点声明+依序取点（杜绝暗中调点，结果更真实无规律）、四档结果（大失败/失败/成功/大成功）、六维属性归类、固定DC/对抗/命中/豁免、优劣势、DC上限+属性不保过（简单版重大事件才判定；困难版每个选择都判定、禁一轮多动）',
+      '好感引擎：预留「原样版/精简版」两档，完整原文与精简版本都保留全部数值明细',
+      '每个注入模块可独立设置档位与注入位置（开头/对话中/末尾），支持自建/编辑/复制/删除，并提供「恢复默认」按钮一键拉回最新默认提示词',
+      '修复角色状态界面负好感显示错误（好感 -3 被显示成 3），并新增负好感激进深红档位',
+    ],
+  },
+  {
+    version: 'v2.6.3',
     date: '2026-08-17',
     items: [
       '【好感度】提示词新增「好感度数值铁律」：单次好感最多 +2、下降不限，更难上涨、更易下降；合并层新增好感钳制保险，防止 AI 单次暴涨',
@@ -8759,7 +9121,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.7.1 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.7.2 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
