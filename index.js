@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.7.3';
+const PLUGIN_VERSION = '2.7.4';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -3093,8 +3093,9 @@ async function cdHideOldFloors(keepCount) {
     const renderedIdx = [];
     for (let i = 0; i < chat.length; i++) {
       const m = chat[i];
-      // 仅统计会被 ST 渲染的 .mes（用户/普通AI/系统都渲染，但隐藏后不出现）
-      if (m) renderedIdx.push(i);
+      // ★ 修复：DOM 中 .mes 只渲染「可见消息」（已隐藏/系统折叠的不渲染）。
+      // 若把 is_hidden 层模也算进去，renderedIdx 与 $allMes 出现错位，导致把可见楼层（含最新楼）误隐藏。
+      if (m && !m.is_hidden && !m.is_system) renderedIdx.push(i);
     }
     let pos = 0;
     $allMes.each(function () {
@@ -3166,19 +3167,19 @@ function cdReapplyHiddenFloors() {
       return -1;
     };
     const renderedIdx = [];
-    for (let i = 0; i < chat.length; i++) { if (chat[i]) renderedIdx.push(i); }
+    for (let i = 0; i < chat.length; i++) { const m2 = chat[i]; if (m2 && !m2.is_hidden && !m2.is_system) renderedIdx.push(i); }
     let pos = 0;
     $allMes.each(function () {
       const $el = $(this);
+      pos++; // 无条件按 DOM 元素顺序计数，避免 display:none 残留跳过导致后续错位
       if ($el.css('display') === 'none') return;
       let idx = resolveMesIdx($el);
-      if (idx < 0) { idx = renderedIdx[pos] !== undefined ? renderedIdx[pos] : -1; }
+      if (idx < 0) { idx = renderedIdx[pos-1] !== undefined ? renderedIdx[pos-1] : -1; }
       if (idx >= 0 && hideIdxSet[idx]) {
         $el.addClass('cd-hidden-floor').attr('data-cd-hidden', '1');
         $el.hide();
         n++;
       }
-      pos++;
     });
     // 内容指纹兜底
     if (Object.keys(hideIdxSet).length > n) {
@@ -8793,6 +8794,13 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
+    version: 'v2.7.4',
+    date: '2026-08-19',
+    items: [
+      '【自动隐藏楼层】修复 v2.6.3 重构后 DOM 顺序对齐错位：renderedIdx 误把已隐藏(is_hidden)/系统折叠楼层计入索引序列，与页面实际 .mes 数量不一致，导致位置系统偏移、把最新可见楼层误隐藏。现已修正为只统计可见消息并与 DOM 一一对应，补隐藏/隐藏逻辑不再误吞最新楼层',
+    ],
+  },
+  {
     version: 'v2.7.3',
     date: '2026-08-18',
     items: [
@@ -9140,7 +9148,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.7.3 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.7.4 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
