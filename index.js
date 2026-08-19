@@ -4463,6 +4463,8 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
       
       await cdRefreshInjection();
       cdAddLog('info', '日记保存完成并刷新注入');
+      // ★ 成功路径清除锁定标记：本批已成功处理，后续异常不应再回滚它
+      try { if (typeof window !== 'undefined') window.__cdLockedBatch = null; } catch (e) {}
 
       // ★ 剧情档案向量化入库（向量模式）
       if (archiveOk && s.archiveMode === 'vector') {
@@ -4534,6 +4536,25 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
       }
     }
   } catch (e) {
+    // ★ FIX-2 失败回滚：本批锁定若未最终成功（崩溃/异常），从 processedFloors 移除，重新暴露给下次重试，避免楼层永久丢失
+    try {
+      if (typeof window !== 'undefined' && window.__cdLockedBatch && Array.isArray(window.__cdLockedBatch) && window.__cdLockedBatch.length) {
+        const _data2 = await cdGetData();
+        let _removed = false;
+        if (Array.isArray(_data2.processedFloors)) {
+          for (const _mid of window.__cdLockedBatch) {
+            const _ix = _data2.processedFloors.indexOf(_mid);
+            if (_ix >= 0) { _data2.processedFloors.splice(_ix, 1); _removed = true; }
+          }
+        }
+        if (_removed) {
+          _data2.lastFloor = Math.max(-1, (_data2.lastFloor ?? -1) - 1);
+          await cdSaveData(_data2);
+          cdAddLog('info', '[FIX2] 本批失败已回滚锁定，楼层次轮可重试', {批次: window.__cdLockedBatch});
+        }
+        window.__cdLockedBatch = null;
+      }
+    } catch (e2) { cdWarn('FIX2 回滚失败', e2); }
     cdWarn('runDiary 异常', e);
     cdAddLog('error', '写日记过程异常: ' + e.message);
     if (manual && !silent) toastr.error('写日记失败: ' + e.message);
@@ -4631,6 +4652,28 @@ async function cdOnMessageReceived() {
 
   const lastProcessed = windowFloors[windowFloors.length - 1].message_id;
   cdAddLog('info', '自动触发(锚点偏移)', {本批AI楼层: windowFloors.length, 起点: windowFloors[0].message_id, 终点: lastProcessed, 偏移: offset, 新增AI: totalNew, 基线: baseline});
+  // ★ FIX-1 抓取即锁定 + FIX-3 三游标对齐：选定本批后立即写入 processedFloors 并保存，防崩溃/切走导致旧消息复发重复总结
+  try {
+    if (windowFloors && windowFloors.length && data) {
+      if (!Array.isArray(data.processedFloors)) data.processedFloors = [];
+      const _batchIds = [];
+      let _maxMid = (typeof data.lastFloor === 'number') ? data.lastFloor : -1;
+      for (const _wf of windowFloors) {
+        if (!_wf || typeof _wf.message_id !== 'number' || _wf.message_id < 0) continue;
+        _batchIds.push(_wf.message_id);
+        if (_wf.message_id > _maxMid) _maxMid = _wf.message_id;
+        if (data.processedFloors.indexOf(_wf.message_id) < 0) data.processedFloors.push(_wf.message_id);
+      }
+      if (_maxMid > (data.lastFloor ?? -1)) data.lastFloor = _maxMid;
+      const _curLen = chat.length;
+      if (_curLen > (data._lastDiaryChatLength ?? 0)) data._lastDiaryChatLength = _curLen;
+      if (_curLen > (data._baselineChatLength ?? -1)) data._baselineChatLength = _curLen;
+      if (data.processedFloors.length > 2000) data.processedFloors = data.processedFloors.slice(-2000);
+      if (typeof window !== 'undefined') window.__cdLockedBatch = _batchIds;
+      await cdSaveData(data);
+      cdAddLog('info', '[锁定] 本批已预锁定，防旧消息复发', {批次: _batchIds, lastFloor: data.lastFloor});
+    }
+  } catch (e) { cdWarn('FIX1 抓取锁定失败', e); }
   await cdRunDiary({ manual: false, silent: true, extraFloors: windowFloors });
 }
 
