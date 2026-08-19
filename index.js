@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.7.4';
+const PLUGIN_VERSION = '2.7.5';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -200,6 +200,7 @@ function emptyData() {
     promoted:{},       // { name: bool }
     relations:{},      // { from: { to: { type, attitude, note } } }
     lastFloor: -1,     // 日记引擎进度（mergeDiaries 更新），手动/自动共用
+    processedFloors: [], // [v2.7.3] 已实际被补写/总结成功的楼层 message_id 集合（解决补写中途楼层后仍显示"未记录"、以及重复总结同一批旧楼层的问题）
     _baselineChatLength: -1, // [自动触发专用] 基于 chat.length，不受分片影响
     _lastDiaryChatLength: 0, // [自动触发同步] 上次检测新增楼层的 chat.length 基线
     archive: {         // 剧情档案（增量版）
@@ -1904,9 +1905,13 @@ async function cdGetNewFloors(data) {
     }
   }
   const floors = [];
+  // ★ v2.7.3：已补写/总结成功的楼层（processedFloors）即使再次被扫到，也不再重复处理，
+  //   避免"补写中途楼层后下轮自动触发又把旧楼层当新增抓回来"导致归档重复条目。
+  const _pfSet = Array.isArray(data && data.processedFloors) ? data.processedFloors.map(Number) : [];
   for (let i = baseline; i < chat.length; i++) {
     const m = chat[i];
     if (m && !m.is_user && !m.is_system) {
+      if (_pfSet.indexOf(i) >= 0) continue; // 已处理过，跳过（防重复总结）
       floors.push({ message_id: i, name: m.name || '', mes: m.mes || '' });
     }
   }
@@ -2782,6 +2787,8 @@ function cdRenderLog() {
     <button class="cd-btn-secondary" id="cd-btn-test-custom" style="flex:1;min-width:90px;"><i class="fa-regular fa-layer-group"></i> 追踪项诊断</button>
     <button class="cd-btn-secondary" id="cd-btn-test-worldbook" style="flex:1;min-width:90px;"><i class="fa-regular fa-book-bookmark"></i> 测试世界书</button>
     <button class="cd-btn-secondary" id="cd-btn-test-hide" style="flex:1;min-width:90px;"><i class="fa-regular fa-eye-slash"></i> 楼层隐藏诊断</button>
+    <button class="cd-btn-secondary" id="cd-btn-test-progress" style="flex:1;min-width:90px;"><i class="fa-regular fa-chart-line"></i> 进度/去重诊断</button>
+    <button class="cd-btn-secondary" id="cd-btn-test-modal" style="flex:1;min-width:90px;"><i class="fa-regular fa-window-maximize"></i> 弹窗层级测试</button>
   </div>`;
 
   if (!logs.length) {
@@ -2850,6 +2857,8 @@ function cdRenderLog() {
   $('#cd-btn-test-custom').off('click').on('click', cdTestCustomFields);
   $('#cd-btn-test-worldbook').off('click').on('click', cdTestWorldbook);
   $('#cd-btn-test-hide').off('click').on('click', cdDiagHideFloors);
+  $('#cd-btn-test-progress').off('click').on('click', cdDiagProgress);
+  $('#cd-btn-test-modal').off('click').on('click', cdTestDedupeModal);
   $('#cd-btn-clear-log')?.off('click').on('click', () => { cdClearLogs(); cdRenderLog(); });
   // ★ 导出日志
   $('#cd-btn-export-log')?.off('click').on('click', function () {
@@ -3384,6 +3393,652 @@ async function cdDiagHideFloors() {
 }
 
 /**
+ * ★ 进度/去重诊断按钮：输出覆盖"楼层进度游标 + 已处理集合 + 归档重复"的完整信息，
+ *   用于定位"补写的楼层仍显示未记录""剧情档案重复条目/重复总结"的根因。
+ *   信息足够多、逐项可验证，方便主人导日志后直击问题。
+ */
+async function cdDiagProgress() {
+  cdAddLog('info', '========== 进度/去重诊断开始 ==========');
+  try {
+    const s = cdGetSettings();
+    const data = await cdGetData();
+    const chat = _cdGetChat();
+    const allAi = await cdGetAiFloors();
+
+    // 1) 进度游标全景
+    cdAddLog('info', '[进度诊断] 游标状态', {
+      版本: (typeof PLUGIN_VERSION !== 'undefined') ? PLUGIN_VERSION : '?',
+      chat总楼层: chat.length,
+      AI楼层总数: allAi.length,
+      lastFloor: data.lastFloor ?? -1,
+      _baselineChatLength: data._baselineChatLength ?? -1,
+      _lastDiaryChatLength: data._lastDiaryChatLength ?? 0,
+      processedFloors总数: Array.isArray(data.processedFloors) ? data.processedFloors.length : 0,
+    });
+
+    // 2) 已处理集合明细（是否与 lastFloor 高度重合，判断游标是否"卡住"）
+    const pf = Array.isArray(data.processedFloors) ? data.processedFloors.map(Number) : [];
+    const pfSorted = pf.slice().sort(function (a, b) { return a - b; });
+    cdAddLog('info', '[进度诊断] processedFloors明细', {
+      最小: pfSorted.length ? pfSorted[0] : '无',
+      最大: pfSorted.length ? pfSorted[pfSorted.length - 1] : '无',
+      条数: pfSorted.length,
+      前20: pfSorted.slice(0, 20),
+      后20: pfSorted.slice(-20),
+    });
+
+    // 3) 楼层视角：逐个 AI 楼层的"已记录/未记录"判定 + 是否在 processedFloors
+    const lastRecordedFloor = data.lastFloor ?? -1;
+    const pfSet = {};
+    for (const _p of pf) pfSet[_p] = true;
+    const recStat = { '已记录(≤lastFloor)': 0, '已记录(仅processed)': 0, '未记录': 0 };
+    const notRecordedIds = [];
+    for (const _ai of allAi) {
+      const byCursor = _ai.message_id <= lastRecordedFloor;
+      const byProcessed = !!pfSet[_ai.message_id];
+      if (byCursor) recStat['已记录(≤lastFloor)']++;
+      else if (byProcessed) recStat['已记录(仅processed)']++;
+      else { recStat['未记录']++; notRecordedIds.push(_ai.message_id); }
+    }
+    cdAddLog('info', '[进度诊断] 楼层记录状态', recStat);
+    cdAddLog('info', '[进度诊断] 未记录楼层id', { ids: notRecordedIds.slice(0, 100), 共: notRecordedIds.length });
+
+    // 4) 自动触发影响面：从 lastFloor 与 _lastDiaryChatLength 推算下轮会不会重复
+    const baseline = (typeof data.lastFloor === 'number' && data.lastFloor >= -1) ? data.lastFloor : -1;
+    const wouldScanAi = [];
+    for (let i = Math.max(0, baseline + 1); i < chat.length; i++) {
+      const m = chat[i];
+      if (m && !m.is_user && !m.is_system) wouldScanAi.push(i);
+    }
+    const wouldScanNew = wouldScanAi.filter(function (i) { return !pfSet[i]; });
+    cdAddLog('info', '[进度诊断] 下轮自动触发预估', {
+      '基线(lastFloor)': baseline,
+      'lastFloor之后的AI楼层数': wouldScanAi.length,
+      '其中已被processed覆盖(不会重复)': wouldScanAi.length - wouldScanNew.length,
+      '仍会被当作新增(可能重复总结)': wouldScanNew.length,
+    });
+
+    // 5) 归档重复统计（重点：剧情档案四条字段 + 自定义追踪项）
+    const arc = (data && data.archive) || {};
+    function _tlCount(text) {
+      if (!text) return { 条数: 0, 重复: 0 };
+      const lines = String(text).split('\n').map(function (x) { return x.trim(); }).filter(function (x) { return x && /^【/.test(x); });
+      const seen = {};
+      let dup = 0;
+      for (const L of lines) {
+        const sig = L.replace(/【[^】]*】/, '').replace(/\s+/g, '');
+        if (seen[sig]) dup++; else seen[sig] = 1;
+      }
+      return { 条数: lines.length, '重复(正文相同)': dup };
+    }
+    const tl = {
+      主线: _tlCount(arc.mainline),
+      支线: _tlCount(arc.sideline),
+      状态: _tlCount(arc.states),
+      未解决: _tlCount(arc.unresolved),
+    };
+    cdAddLog('info', '[进度诊断] 剧情档案条目统计(按【】行)', tl);
+
+    // 自定义追踪项：统计 time+desc 完全相同的重复
+    const customDup = {};
+    if (arc.custom && typeof arc.custom === 'object') {
+      for (const key of Object.keys(arc.custom)) {
+        const arr = Array.isArray(arc.custom[key]) ? arc.custom[key] : [];
+        const seen = {};
+        let dup = 0;
+        for (const it of arr) {
+          const sig = (it && (it.time || '')) + '|' + (it && it.desc || '').replace(/\s+/g, '');
+          if (seen[sig]) dup++; else seen[sig] = 1;
+        }
+        customDup[key] = { 总数: arr.length, '重复(time+desc相同)': dup };
+      }
+    }
+    cdAddLog('info', '[进度诊断] 自定义追踪项重复统计', customDup);
+
+    // 6) 章回/总览（覆盖式，不会累积，仅确认）
+    cdAddLog('info', '[进度诊断] 章回与总览(覆盖式)', {
+      章回标题: (data._chapterTitle || '').slice(0, 60),
+      剧情总览字数: ((data._chapterLead || '').length),
+    });
+
+    cdAddLog('info', '[进度诊断] 推论提示', {
+      提示1: '未记录楼层若已补写却仍显示未记录 → 说明该批次未写入 processedFloors(可能当时只更了档案没更日记/没走到保存段)',
+      提示2: '下轮仍会被当新增的楼层里,若含已补写过的旧楼层 → 说明 processedFloors 未覆盖,是重复总结的直接来源',
+      提示3: '归档某字段"重复(正文相同)>0" → 已存在去重前的历史重复数据,可用"一键去重清扫"处理',
+      提示4: '若 processedFloors 为空但 lastFloor 正常 → 这是旧版数据,本诊断仅提示,新逻辑写日记后会自动补齐',
+    });
+  } catch (e) {
+    cdAddLog('error', '[进度诊断] 诊断异常: ' + (e && e.message) + (e && e.stack ? (' | ' + e.stack.slice(0, 200)) : ''));
+  }
+  cdAddLog('info', '========== 进度/去重诊断结束 ==========');
+  if (typeof cdRenderLog === 'function') cdRenderLog();
+  if (typeof toastr !== 'undefined') toastr.info('进度/去重诊断完成，请查看日志详情');
+}
+
+/**
+ * ★ 一键去重清扫：就地合并当前聊天中重复的"条目"（保守且干净）。
+ * 思路（按主人建议）：档案/日记/追踪项本来就是一条一条分段的，直接逐条比对。
+ *   正文归一化（去空白 + 去【时间】标记）后完全相等的条目 → 视为同一条重复，保留首次出现，删除后续。
+ * 不做模糊/前缀/长度猜测匹配，避免误删两条真正不同但开头相似的条目。
+ * 覆盖：角色日记 diaries + 剧情档案四字段(mainline/sideline/states/unresolved) + 自定义追踪项 custom。
+ * @param {object} data 完整 data 对象（就地修改）
+ * @returns {{removed:number, diary:number, archive:number, custom:number}} 各类移除数
+ */
+function cdDedupeArchive(data) {
+  const stat = { removed: 0, diary: 0, archive: 0, custom: 0 };
+  if (!data) return stat;
+
+  // 归一化指纹：去掉空白；【时间】标记条目再去掉【】头
+  const _norm = (t) => String(t || '').replace(/\s+/g, '');
+  const _fingerprint = (line) => {
+    const s = _norm(line);
+    return s.replace(/^【[^】]*】/, ''); // 同一件事的不同时间标注不视为不同 → 去时间标记再比正文
+  };
+
+  // ── 1) 角色日记：diaries[name] 数组，按 entry 归一化完全相等去重 ──
+  if (data.diaries && typeof data.diaries === 'object') {
+    for (const name of Object.keys(data.diaries)) {
+      const arr = Array.isArray(data.diaries[name]) ? data.diaries[name] : [];
+      if (!arr.length) continue;
+      const seen = {};
+      const kept = [];
+      for (const it of arr) {
+        const fp = _fingerprint(it && it.entry);
+        if (!fp) { kept.push(it); continue; }
+        if (seen[fp]) { stat.diary++; stat.removed++; continue; } // 正文重复 → 删
+        seen[fp] = 1;
+        kept.push(it);
+      }
+      if (kept.length !== arr.length) data.diaries[name] = kept;
+    }
+  }
+
+  // ── 2) 剧情档案四字段：按"【时间】+正文"整行归一化完全相等去重 ──
+  const arc = data.archive;
+  if (arc) {
+    const _dedupeField = (text) => {
+      if (!text) return text;
+      const lines = String(text).split('\n');
+      const seen = {};
+      const out = [];
+      let touched = false;
+      for (const L of lines) {
+        const trimmed = L.trim();
+        if (!trimmed) { out.push(''); continue; } // 保留空行分隔（末尾统一清理）
+        // 只对【】条目去重；非条目行（标题/普通段落）不过滤
+        if (/^【[^】]+】/.test(trimmed)) {
+          const fp = _fingerprint(trimmed);
+          if (!fp) { out.push(trimmed); continue; }
+          if (seen[fp]) { stat.archive++; stat.removed++; touched = true; continue; }
+          seen[fp] = 1;
+          out.push(trimmed);
+        } else {
+          out.push(trimmed);
+        }
+      }
+      if (!touched) return text;
+      return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    };
+    if (arc.mainline)   arc.mainline   = _dedupeField(arc.mainline);
+    if (arc.sideline)   arc.sideline   = _dedupeField(arc.sideline);
+    if (arc.states)     arc.states     = _dedupeField(arc.states);
+    if (arc.unresolved) arc.unresolved = _dedupeField(arc.unresolved);
+  }
+
+  // ── 3) 自定义追踪项：time+desc 归一化完全相等去重 ──
+  if (arc && arc.custom && typeof arc.custom === 'object') {
+    for (const key of Object.keys(arc.custom)) {
+      const arr = Array.isArray(arc.custom[key]) ? arc.custom[key] : [];
+      if (!arr.length) continue;
+      const seen = {};
+      const kept = [];
+      for (const it of arr) {
+        const fp = _norm((it && it.time) || '') + '|' + _norm((it && it.desc) || '');
+        if (!fp || fp === '|') { kept.push(it); continue; }
+        if (seen[fp]) { stat.custom++; stat.removed++; continue; }
+        seen[fp] = 1;
+        kept.push(it);
+      }
+      if (kept.length !== arr.length) arc.custom[key] = kept;
+    }
+  }
+
+  return stat;
+}
+
+/* ============================================================
+ * ★ AI 语义去重：梳理时间线，检测"语义近似重复"的条目，
+ *   弹窗展示给用户确认后再清扫。绝不改写任何条目原文，只删。
+ * ============================================================ */
+
+// 收集全部条目为统一结构 { kind, key, time, content, raw }
+// kind: 'mainline'|'sideline'|'states'|'unresolved'|'custom'|'diary'
+// raw: 用于精确回删的唯一全量文本
+function cdCollectAllEntries(data) {
+  const list = [];
+  const arc = (data && data.archive) || {};
+  // 档案四字段：按【】行拆
+  const fields = [
+    { kind: 'mainline',   label: '主线',     text: arc.mainline },
+    { kind: 'sideline',   label: '支线',     text: arc.sideline },
+    { kind: 'states',     label: '状态',     text: arc.states },
+    { kind: 'unresolved', label: '未解决',   text: arc.unresolved },
+  ];
+  for (const f of fields) {
+    if (!f.text) continue;
+    const lines = String(f.text).split('\n');
+    for (const L of lines) {
+      const t = L.trim();
+      if (!t) continue;
+      const m = t.match(/^【([^】]+)】\s*(.*)/);
+      if (m) {
+        list.push({ kind: f.kind, label: f.label, time: m[1], content: m[2], raw: t });
+      } else {
+        // 无时间标记的散句，不作为可删条目（避免误删标题/段落）
+      }
+    }
+  }
+  // 自定义追踪项
+  if (arc.custom && typeof arc.custom === 'object') {
+    for (const key of Object.keys(arc.custom)) {
+      const arr = Array.isArray(arc.custom[key]) ? arc.custom[key] : [];
+      for (let i = 0; i < arr.length; i++) {
+        const it = arr[i];
+        if (!it || !it.desc) continue;
+        const time = it.time || '';
+        const raw = time ? `【${time}】${it.desc}` : it.desc;
+        list.push({ kind: 'custom', key: key, time: time, content: it.desc, raw: raw, _idx: i });
+      }
+    }
+  }
+  // 角色日记
+  if (data.diaries && typeof data.diaries === 'object') {
+    for (const name of Object.keys(data.diaries)) {
+      const arr = Array.isArray(data.diaries[name]) ? data.diaries[name] : [];
+      for (let i = 0; i < arr.length; i++) {
+        const it = arr[i];
+        if (!it || !it.entry) continue;
+        list.push({ kind: 'diary', name: name, time: String(it.turn ?? it.date ?? ''), content: it.entry, raw: it.entry, _idx: i, _msgId: it.message_id });
+      }
+    }
+  }
+  return list;
+}
+
+// 按 kind/raw 在 data 上精确删除该条目（不改写原文，只删整条）
+function cdRemoveEntryByRaw(data, entry) {
+  if (!entry) return false;
+  const arc = data.archive;
+  if (entry.kind === 'custom' && arc && arc.custom && Array.isArray(arc.custom[entry.key])) {
+    const arr = arc.custom[entry.key];
+    const before = arr.length;
+    arc.custom[entry.key] = arr.filter((it, i) => !(i === entry._idx && it && it.desc === entry.content));
+    return arc.custom[entry.key].length !== before;
+  }
+  if (entry.kind === 'diary' && data.diaries && Array.isArray(data.diaries[entry.name])) {
+    const arr = data.diaries[entry.name];
+    const before = arr.length;
+    data.diaries[entry.name] = arr.filter((it, i) => !(i === entry._idx && it && it.entry === entry.content));
+    return data.diaries[entry.name].length !== before;
+  }
+  // 档案四字段：整行删除（含时间标记）
+  const fieldMap = { mainline: 'mainline', sideline: 'sideline', states: 'states', unresolved: 'unresolved' };
+  const fieldName = fieldMap[entry.kind];
+  if (!fieldName || !arc) return false;
+  const raw = String(entry.raw || '').trim();
+  if (!raw) return false;
+  const lines = String(arc[fieldName] || '').split('\n');
+  const kept = lines.filter(function (L) { return L.trim() !== raw; });
+  const changed = kept.length !== lines.length;
+  if (changed) arc[fieldName] = kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return changed;
+}
+
+// 主流程：AI 检测语义近似重复 → 弹窗预览 → 确认后清扫
+async function cdAiDedupe() {
+  const s = cdGetSettings();
+  const data = await cdGetData();
+  const entries = cdCollectAllEntries(data);
+  if (!entries.length) { cdHideDedupeLoading(); if (typeof toastr !== 'undefined') toastr.info('没有可检测的条目'); return; }
+
+  const busy = (typeof cdBusy === 'boolean') ? cdBusy : false;
+  if (busy) { cdBusyToast(); return; }
+
+  cdAddLog('info', '[AI去重] 开始检测，条目总数: ' + entries.length);
+  cdShowDedupeLoading('正在让 AI 梳理时间线、检测重复条目…');
+
+  // 先做一轮本地字符级完全去重（去掉逐字重复，减轻 AI 负担）
+  try {
+    const stat = cdDedupeArchive(data);
+    if (stat.removed > 0) cdAddLog('info', '[AI去重] 本地字符去重先移除: ' + stat.removed + ' 条');
+  } catch (e) { cdAddLog('warn', '[AI去重] 本地字符去重异常: ' + (e && e.message)); }
+
+  // 重新收集（字符去重后）
+  const entries2 = cdCollectAllEntries(data);
+
+  // 打包给 AI（分块，每块 <=100 条，避免超长）
+  const BATCH = 100;
+  let removals = [];
+  const fields4 = { mainline: '主线', sideline: '支线', states: '状态', unresolved: '未解决' };
+  const totalBatches = Math.ceil((entries2.length || 1) / BATCH);
+  let aiFailed = false;
+  for (let start = 0; start < entries2.length; start += BATCH) {
+    const slice = entries2.slice(start, start + BATCH);
+    const bi = Math.floor(start / BATCH) + 1;
+    cdShowDedupeLoading('正在让 AI 梳理时间线…（批 ' + bi + '/' + totalBatches + '）');
+    const prompt = buildAiDedupePrompt(slice, fields4);
+    const messages = [
+      { role: 'system', content: '你是剧情档案时间线的整理助手。你只负责识别语义近似重复的条目，并输出 JSON，绝不修改任何条目原文。' },
+      { role: 'user', content: prompt },
+    ];
+    try {
+      const res = await cdWithTimeout(cdApiComplete(messages, s), 120000, 'AI去重');
+      const text = String(res.text || '');
+      const json = extractJson(text);
+      // 兼容三种输出：remove 序号 / removals 数组 / keep 清单
+      if (json && Array.isArray(json.remove)) {
+        for (const id of json.remove) { const e = slice[Number(id)]; if (e && removals.indexOf(e) < 0) removals.push(e); }
+      } else if (json && Array.isArray(json.removals)) {
+        for (const r of json.removals) {
+          const id = Number(r && (r.id !== undefined ? r.id : r.index));
+          const e = slice[id];
+          if (e && removals.indexOf(e) < 0) removals.push(e);
+        }
+      } else if (json && json.keep && Array.isArray(json.keep)) {
+        const keepSet = new Set(json.keep.map(Number));
+        slice.forEach(function (e, i) { if (!keepSet.has(i) && removals.indexOf(e) < 0) removals.push(e); });
+      } else {
+        aiFailed = true;
+        cdAddLog('warn', '[AI去重] 第' + bi + '批未能解析AI返回');
+      }
+      cdAddLog('info', '[AI去重] 分块完成', { 批: bi, 本块: slice.length, 累计判删: removals.length });
+    } catch (e) {
+      aiFailed = true;
+      cdAddLog('warn', '[AI去重] 第' + bi + '批调用失败: ' + (e && e.message));
+    }
+  }
+
+  cdShowDedupeLoading('正在汇总重复条目…');
+  // 去重（同一个 raw 可能被多块判删）
+  const seenRaw = {};
+  const uniqueRemovals = [];
+  for (const r of removals) {
+    const k = r.kind + '|' + r.raw;
+    if (seenRaw[k]) continue;
+    seenRaw[k] = 1;
+    uniqueRemovals.push(r);
+  }
+  cdHideDedupeLoading();
+
+  if (!uniqueRemovals.length) {
+    if (typeof toastr !== 'undefined') toastr.info(aiFailed ? 'AI 调用失败，未完成检测（详见日志）' : 'AI 未检测到语义重复条目');
+    if (typeof cdAddLog === 'function') cdAddLog('info', aiFailed ? '[AI去重] 存在失败批次，无结果' : '[AI去重] 未检测到重复条目');
+    return;
+  }
+
+  // 弹窗让用户确认（激进、直接：点确认清扫即删）
+  const confirmed = await cdShowDedupeConfirm(uniqueRemovals);
+  if (!confirmed) {
+    if (typeof toastr !== 'undefined') toastr.info('已取消去重');
+    return;
+  }
+
+  // 执行清理
+  cdShowDedupeLoading('正在清扫 ' + uniqueRemovals.length + ' 条重复条目…');
+  let removed = 0;
+  for (const e of uniqueRemovals) {
+    if (cdRemoveEntryByRaw(data, e)) removed++;
+  }
+  cdHideDedupeLoading();
+  if (removed > 0) {
+    await cdSaveData(data);
+    cdAddLog('info', '[AI去重] 完成，移除 ' + removed + ' 条语义重复条目');
+    if (typeof toastr !== 'undefined') toastr.success('AI去重完成，移除 ' + removed + ' 条重复条目');
+    await cdRenderArchive();
+  } else {
+    if (typeof toastr !== 'undefined') toastr.info('没有条目被实际删除');
+  }
+}
+
+// 构造 AI 检测提示词
+function buildAiDedupePrompt(list, fields4) {
+  const lines = list.map(function (e, i) {
+    const catLabel = (e.kind === 'diary') ? ('日记·' + (e.name || '')) : (e.kind === 'custom' ? ('追踪·' + (e.key || '')) : (fields4[e.kind] || e.kind));
+    return i + '|' + catLabel + '|' + (e.time ? '【' + e.time + '】' : '') + (e.content || '');
+  }).join('\n');
+  return [
+    '以下是从剧情档案/角色日记中提取的条目清单（每条格式：序号|类别|时间|内容）。',
+    '请识别出其中"语义近似重复"的条目——即讲述同一件事/同一楼层/同一事实，但措辞略有不同的多条。',
+    '规则：',
+    '1. 只删除真正的语义重复（同一事件的不同表述）。不同楼层/不同时间的新事件必须保留。',
+    '2. AI 只是帮你梳理时间线，绝对不要改写、合并、润色任何条目原文。',
+    '3. 输出纯 JSON，格式：{"remove": [序号1, 序号2, ...]}，列出应删除的重复条目序号（保留该组里信息最完整的一条，其余删掉）。',
+    '4. 若无可删，输出 {"remove": []}。',
+    '条目清单：',
+    lines,
+  ].join('\n');
+}
+
+// 从 AI 输出里提取第一个 JSON 对象/数组（宽松解析）
+function extractJson(text) {
+  const s = String(text || '').trim();
+  try { const o = JSON.parse(s); return o; } catch (e) {}
+  const m = s.match(/\{[\s\S]*\}/);
+  if (m) { try { return JSON.parse(m[0]); } catch (e2) {} }
+  return null;
+}
+
+// 辅助：返回应挂载弹窗的顶级容器。
+// 实测：酒馆有 #world-backstage-root(z=2147483647) 罩住整个界面。
+//   不能把弹窗挂到它内部（会被其内部层叠顺序困住/与同级插件面板排序不利），
+//   而是应挂到 body 最外层，让弹窗成为顶级兄弟、z 与 world-backstage 平齐、且 DOM 靠后 → 反而能置顶。
+function cdGetTopMountEl() {
+  return document.body;
+}
+// 弹窗统一 z-index：与酒馆最高层 #world-backstage-root(2147483647) 平齐，保证置顶
+const CD_TOP_Z = 2147483647;
+
+// 弹窗预览去重方案（返回 Promise<boolean> 是否确认）
+function cdShowDedupeConfirm(removals) {
+  return new Promise(function (resolve) {
+    // 弹窗样式沿用插件奶油燕麦风格（纯色扁平，无阴影/渐变）
+    const body = removals.slice(0, 200).map(function (e, i) {
+      const head = (e.label || e.key || e.name || '') + (e.time ? ' · ' + e.time : '');
+      return `<div style="display:flex;gap:6px;align-items:flex-start;padding:5px 0;border-bottom:0.5px solid rgba(190,160,110,.14);font-size: calc(0.6rem * var(--cd-fs, 1));">
+        <span style="flex-shrink:0;color:#c46a4a;font-weight:600;min-width:14px;">${i + 1}</span>
+        <span style="color:#7a5c34;flex-shrink:0;font-weight:600;">${escapeHtml(head)}</span>
+        <span style="color:#8b7355;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${escapeHtml(String(e.content || '').slice(0, 60))}</span>
+      </div>`;
+    }).join('');
+    const overlay = $('<div class="cd-modal-overlay-dedupe" style="position:fixed;inset:0;background:rgba(40,30,20,.4);z-index:' + CD_TOP_Z + ';display:flex;align-items:center;justify-content:center;"></div>');
+    const panel = $(`<div class="cd-modal-dedupe" style="max-width:560px;width:92%;max-height:80%;display:flex;flex-direction:column;background:#fdfaf3;border:0.5px solid #e3d5b8;border-radius:14px;overflow:hidden;"></div>`);
+    panel.html(`
+      <div style="padding:14px 16px 12px;border-bottom:0.5px solid #e8dcc8;display:flex;align-items:center;gap:8px;">
+        <i class="fa-regular fa-broom" style="color:#b08a5c;"></i>
+        <span style="font-weight:600;font-size: calc(0.8rem * var(--cd-fs, 1));color:#3c2f1f;">AI 检测到去重条目</span>
+        <span style="margin-left:auto;font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;">共 ${removals.length} 条疑似重复</span>
+      </div>
+      <div style="padding:8px 16px;overflow:auto;flex:1;">
+        ${body || '<div style="color:#8b7355;font-size:calc(0.62rem*var(--cd-fs,1));padding:10px 0;">无条目</div>'}
+        ${removals.length > 200 ? `<div style="color:#8b7355;font-size:calc(0.6rem*var(--cd-fs,1));padding:6px 0;">（仅显示前 200 条，${removals.length - 200} 条省略）</div>` : ''}
+      </div>
+      <div style="padding:12px 16px;border-top:0.5px solid #e8dcc8;display:flex;gap:8px;justify-content:flex-end;">
+        <button class="cd-btn-secondary cd-dedupe-cancel" style="padding:6px 16px;">取消</button>
+        <button class="cd-btn-primary cd-dedupe-ok" style="padding:6px 16px;"><i class="fa-regular fa-check"></i> 确认清扫 ${removals.length} 条</button>
+      </div>
+    `);
+    overlay.append(panel);
+    $(cdGetTopMountEl()).append(overlay);
+    function close(ok) {
+      overlay.remove();
+      resolve(ok);
+    }
+    overlay.find('.cd-dedupe-cancel').on('click', function () { close(false); });
+    overlay.find('.cd-dedupe-ok').on('click', function () { close(true); });
+    overlay.on('click', function (e) { if (e.target === overlay[0]) close(false); });
+  });
+}
+
+// 全局加载遮罩：AI 检测/清扫过程中显示"正在处理"反馈（纯色扁平，符合插件风格）
+let _cdDedupeLoadingEl = null;
+function cdShowDedupeLoading(msg) {
+  cdHideDedupeLoading();
+  // 动态注入 spinner 动画 keyframes（避免依赖 style.css 是否同步）
+  if (!document.getElementById('cd-dedupe-spin-style')) {
+    const st = document.createElement('style'); st.id = 'cd-dedupe-spin-style';
+    st.textContent = '@keyframes cd-spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}';
+    (document.head || document.documentElement).appendChild(st);
+  }
+  const el = $('<div class="cd-dedupe-loading" style="position:fixed;inset:0;background:rgba(40,30,20,.35);z-index:' + CD_TOP_Z + ';display:flex;align-items:center;justify-content:center;"></div>');
+  el.html(`
+    <div style="display:flex;align-items:center;gap:12px;background:#fdfaf3;border:0.5px solid #e3d5b8;border-radius:12px;padding:16px 22px;max-width:80%;">
+      <span style="width:22px;height:22px;border:2.5px solid #e3d5b8;border-top-color:#b08a5c;border-radius:50%;animation:cd-spin 0.8s linear infinite;"></span>
+      <span style="color:#3c2f1f;font-size: calc(0.72rem * var(--cd-fs, 1));font-weight:600;">${escapeHtml(msg || '正在处理…')}</span>
+    </div>
+  `);
+  $(cdGetTopMountEl()).append(el);
+  _cdDedupeLoadingEl = el;
+}
+function cdHideDedupeLoading() {
+  if (_cdDedupeLoadingEl) { _cdDedupeLoadingEl.remove(); _cdDedupeLoadingEl = null; }
+}
+
+// ★ 弹窗层级测试：弹一个与"去重确认弹窗"完全一致(z-index:2000008)的测试弹窗，
+//   并采集"插件界面 vs 弹窗"的位置/层级诊断数据，写入日志 + 直接显示在弹窗里，
+//   供自助定位：到底是谁把弹窗压在后面（无任何 AI 消耗）。
+function cdTestDedupeModal() {
+  try {
+    // ── 采集诊断数据 ──
+    const diag = [];
+
+    // 1) 弹窗自身（即 overlay）
+    (function () {
+      // 先创建一个隐藏探针测量后续 overlay 将用的样式（这里直接以 overlay 的 rect 为准）
+    })();
+
+    function rectInfo(el) {
+      if (!el) return null;
+      try {
+        const r = el.getBoundingClientRect();
+        return { left: Math.round(r.left), top: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height), zi: getComputedStyle(el).zIndex, pos: getComputedStyle(el).position };
+      } catch (e) { return null; }
+    }
+    // 祖先链中会创建 stacking context 的属性
+    function stackProps(el, maxDepth) {
+      const out = [];
+      let n = el, depth = 0;
+      while (n && n !== document.documentElement && depth < (maxDepth || 12)) {
+        const cs = getComputedStyle(n);
+        const parts = [];
+        if (cs.transform && cs.transform !== 'none') parts.push('transform:' + cs.transform.slice(0, 40));
+        if (cs.filter && cs.filter !== 'none') parts.push('filter');
+        if (cs.opacity !== '' && parseFloat(cs.opacity) < 1) parts.push('opacity:' + cs.opacity);
+        if (cs.isolation === 'isolate') parts.push('isolation:isolate');
+        if (cs.willChange && cs.willChange !== 'auto') parts.push('willChange');
+        if (parts.length || (cs.zIndex && cs.zIndex !== 'auto')) {
+          out.push({ sel: (n.id ? '#' + n.id : n.className ? '.' + String(n.className).split(' ').join('.') : n.tagName), pos: cs.position, z: cs.zIndex, stack: parts });
+        }
+        n = n.parentElement; depth++;
+      }
+      return out;
+    }
+
+    // 插件面板 #cd-modal-root
+    const root = document.getElementById('cd-modal-root');
+    diag.push({ label: '插件面板 #cd-modal-root', rect: rectInfo(root), fullscreen: root ? root.classList.contains('cd-fullscreen') : null, stackAncestors: stackProps(root, 10) });
+
+    // 扫描整个文档中 z-index >= 1000000 的元素（找谁高于弹窗）
+    const highZ = [];
+    try {
+      const all = document.querySelectorAll('*');
+      for (const el of all) {
+        const z = getComputedStyle(el).zIndex;
+        const zi = parseInt(z, 10);
+        if (!isNaN(zi) && zi >= 1000000) {
+          highZ.push({ sel: (el.id ? '#' + el.id : el.className ? '.' + String(el.className).trim().split(/\s+/).join('.') : el.tagName), z: zi, pos: getComputedStyle(el).position });
+        }
+      }
+    } catch (e) {}
+    highZ.sort((a, b) => b.z - a.z);
+    diag.push({ label: '全文档 z-index>=1000000 的元素(按z降序)', list: highZ });
+
+    // 2) 弹窗 overlay 的诊断（用后面的 overlay 计算，这里先记录设计值）
+    const myZ = CD_TOP_Z; // 与酒馆最高层 #world-backstage-root 平齐
+    diag.push({ label: '弹窗设计值', zindex: myZ });
+
+    // 打印日志（分段，避免超长截断）
+    if (typeof cdAddLog === 'function') {
+      cdAddLog('info', '[弹窗层级诊断] 开始', { 设计z: myZ });
+      for (const d of diag) {
+        try { cdAddLog('info', '[弹窗层级诊断] ' + d.label, d.list ? { 数量: d.list.length, 高Z元素: d.list.slice(0, 20) } : d.rect || d.zindex || d, ); }
+        catch (e2) { try { cdAddLog('info', '[弹窗层级诊断] ' + d.label, String(JSON.stringify(d)).slice(0, 500)); } catch (e3) {} }
+      }
+    }
+
+    // ── 渲染测试弹窗（同 AI 去重确认弹窗样式/z-index），并把诊断结果附在弹窗里 ──
+    const hiZstr = (highZ.length ? highZ.slice(0, 12).map(h => h.sel + ' z=' + h.z).join('<br>') : '（无 ≥1000000 的元素）');
+    const rootRect = root ? rectInfo(root) : null;
+
+    const overlay = $('<div class="cd-modal-overlay-dedupe" id="cd-dedupe-test-overlay" style="position:fixed;inset:0;background:rgba(40,30,20,.4);z-index:' + CD_TOP_Z + ';display:flex;align-items:center;justify-content:center;"></div>');
+    const panel = $(`<div class="cd-modal-dedupe" id="cd-dedupe-test-panel" style="max-width:560px;width:92%;max-height:86%;display:flex;flex-direction:column;background:#fdfaf3;border:0.5px solid #e3d5b8;border-radius:14px;overflow:hidden;"></div>`);
+    panel.html(`
+      <div style="padding:13px 16px 11px;border-bottom:0.5px solid #e8dcc8;display:flex;align-items:center;gap:8px;">
+        <i class="fa-regular fa-broom" style="color:#b08a5c;"></i>
+        <span style="font-weight:600;font-size: calc(0.8rem * var(--cd-fs, 1));color:#3c2f1f;">弹窗层级测试</span>
+        <span style="margin-left:auto;font-size: calc(0.62rem * var(--cd-fs, 1));color:#8b7355;">弹窗 z=${myZ}</span>
+      </div>
+      <div style="padding:12px 16px;flex:1;overflow:auto;color:#4a3a2a;font-size: calc(0.64rem * var(--cd-fs, 1));line-height:1.7;">
+        <div style="background:#f8f3ed;border:0.5px solid #e8dcc8;border-radius:8px;padding:10px 12px;margin-bottom:10px;">
+          <div style="font-weight:600;color:#7a5c34;margin-bottom:4px;">📊 层级诊断（已写入日志）</div>
+          <div class="cd-diag-mount" style="color:#a33;margin-bottom:4px;font-weight:600;">（读取挂载信息中…）</div>
+          <div style="color:#6b5a48;">· 插件面板 z-index = <b>${root ? getComputedStyle(root).zIndex : '?'}</b>${root && root.classList.contains('cd-fullscreen') ? '（全屏）' : '（小窗）'}</div>
+          <div style="color:#6b5a48;">· 插件面板位置：left=${rootRect ? rootRect.left : '?'} top=${rootRect ? rootRect.top : '?'} w=${rootRect ? rootRect.w : '?'} h=${rootRect ? rootRect.h : '?'}</div>
+          <div style="color:#6b5a48;">· 弹窗位置：left=0 top=0 w=100vw h=100vh（覆盖全屏）</div>
+          <div style="color:#6b5a48;word-break:break-word;">· 高于我的元素（z-index≥1000000）：<br>${hiZstr}</div>
+        </div>
+        <p style="margin:0 0 8px;">如果你<b>能清晰看到本面板在最前面</b>（盖住插件界面）→ 层级已正常，之后「AI 去重」确认弹窗也会一样。</p>
+        <p style="margin:0 0 8px;color:#8b7355;">如果本面板仍藏在插件后面 → 上面「高于我的元素」和日志里的「stackAncestors」会用数据帮你定位是谁盖住的。</p>
+      </div>
+      <div style="padding:11px 16px;border-top:0.5px solid #e8dcc8;display:flex;gap:8px;justify-content:flex-end;">
+        <button class="cd-btn-primary cd-test-modal-ok" style="padding:6px 16px;">关闭</button>
+      </div>
+    `);
+    overlay.append(panel);
+    $(cdGetTopMountEl()).append(overlay);
+
+    // 弹窗挂载后再测一次 rect（此时有真实坐标）
+    try {
+      const ovRect = rectInfo(overlay[0]);
+      const rootRect2 = rectInfo(root);
+      // 弹窗实际挂载父元素 + 父元素 stacking 属性（确认是否真的进了 #world-backstage-root）
+      const parent = overlay[0].parentElement;
+      const pCS = parent ? getComputedStyle(parent) : null;
+      const mountInfo = {
+        挂载父: parent ? (parent.id ? '#' + parent.id : parent.className ? '.' + String(parent.className).trim().split(/\s+/).join('.') : parent.tagName) : '?',
+        父z: pCS ? pCS.zIndex : '?',
+        父transform: pCS ? pCS.transform : '?',
+        弹窗实际z: getComputedStyle(overlay[0]).zIndex,
+      };
+      try {
+        // 在弹窗面板顶部补充真实挂载信息
+        const infoEl = panel.find('.cd-diag-mount');
+        if (infoEl.length) infoEl.html('· 弹窗实际挂载于：<b>' + mountInfo.挂载父 + '</b>（父z=' + mountInfo.父z + '，父transform=' + (mountInfo.父transform === 'none' ? '无' : '有') + '）<br>· 弹窗实际计算 z-index = <b>' + mountInfo.弹窗实际z + '</b>');
+      } catch (e) {}
+      if (typeof cdAddLog === 'function') {
+        cdAddLog('info', '[弹窗层级诊断] 实际坐标', { 弹窗: ovRect, 插件面板: rootRect2, 弹窗z: getComputedStyle(overlay[0]).zIndex, 插件z: root ? getComputedStyle(root).zIndex : '?', '挂载父': mountInfo.挂载父, '父transform': mountInfo.父transform });
+      }
+    } catch (e) {}
+
+    overlay.find('.cd-test-modal-ok').on('click', function () { overlay.remove(); });
+    overlay.on('click', function (e) { if (e.target === overlay[0]) overlay.remove(); });
+    if (typeof toastr !== 'undefined') toastr.info('弹窗层级诊断已写入日志，请导出查看');
+  } catch (e) {
+    if (typeof toastr !== 'undefined') toastr.error('弹窗测试异常: ' + (e && e.message));
+    if (typeof cdAddLog === 'function') cdAddLog('error', '[弹窗层级诊断] 异常: ' + (e && e.message));
+  }
+}
+
+/**
  * ★ 一键显示所有被隐藏的楼层
  */
 function cdShowAllFloors() {
@@ -3739,6 +4394,35 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
 
     // 保存 + 刷新注入
     if (diaryOk || relOk || archiveOk) {
+      // ★ v2.7.3 进度游标推进：只要日记/关系/档案任一成功，就把本批楼层标记为"已处理"。
+      //    - 无条件推高 lastFloor 到本批最大 message_id（与是否写了日记解耦），
+      //      根治"某轮只更了档案/关系没更日记 → mergeDiaries 不执行 → lastFloor 停摆 →
+      //      楼层仍显示未记录、下一轮自动触发又把旧楼层抓回来重复总结"的问题。
+      //    - 同时把每个 message_id 记入 processedFloors，补写"中途旧楼层"也能被准确标记为已记录，
+      //      不再依赖单一最高游标。
+      const _batchIds = [];
+      if (Array.isArray(windowFloors)) {
+        for (const _wf of windowFloors) {
+          if (_wf && typeof _wf.message_id === 'number') _batchIds.push(_wf.message_id);
+        }
+      }
+      if (_batchIds.length) {
+        if (!Array.isArray(data.processedFloors)) data.processedFloors = [];
+        let _maxMid = data.lastFloor ?? -1;
+        for (const _mid of _batchIds) {
+          if (_mid > _maxMid) _maxMid = _mid;
+          if (data.processedFloors.indexOf(_mid) < 0) data.processedFloors.push(_mid);
+        }
+        if (_maxMid > (data.lastFloor ?? -1)) data.lastFloor = _maxMid;
+        // ★ 同步推进 _lastDiaryChatLength（手动"写日记"入口 cdGetNewFloors 用此基线），
+        //   否则只勾档案/关系不写日记时，该基线停在旧值，手动补写仍会从旧基线重扫全部 → 重复总结。
+        //   这里以 chat.length 为最新基线（与 mergeDiaries 里的做法一致）。
+        const _curLen = _cdGetChat().length;
+        if (_curLen > (data._lastDiaryChatLength ?? 0)) data._lastDiaryChatLength = _curLen;
+        // 控制 processedFloors 不无限膨胀：保留最近 2000 个，避免长期对话内存/存储增长
+        if (data.processedFloors.length > 2000) data.processedFloors = data.processedFloors.slice(-2000);
+        cdAddLog('info', '[进度] 本次已处理楼层', {批次: _batchIds, lastFloor: data.lastFloor, _lastDiaryChatLength: data._lastDiaryChatLength, processedFloors总数: data.processedFloors.length});
+      }
       await cdSaveData(data);
       if (diaryOk) await cdSyncWorldbook(data);
       
@@ -3898,9 +4582,12 @@ async function cdOnMessageReceived() {
 
   // 只统计 真实已处理楼层 之后的 AI 楼层
   const aiFloors = [];
+  // ★ v2.7.3：已补写/总结成功的楼层（processedFloors）不再作为"新增"抓取，防重复总结同一批旧楼层
+  const _pfSet = Array.isArray(data && data.processedFloors) ? data.processedFloors.map(Number) : [];
   for (let i = Math.max(0, baseline + 1); i < currentLen; i++) {
     const m = chat[i];
     if (m && !m.is_user && !m.is_system) {
+      if (_pfSet.indexOf(i) >= 0) continue; // 已处理过，跳过（防重复总结）
       aiFloors.push({
         message_id: i,
         name: m.name || '',
@@ -6663,6 +7350,7 @@ async function cdRenderArchive() {
     html += `
       <div class="cd-tl-manage-bar">
         <button class="cd-btn-secondary cd-tl-manage-btn" id="cd-tl-manage-btn"><i class="fa-regular fa-check-double"></i> 批量管理</button>
+        <button class="cd-btn-secondary" id="cd-tl-dedupe-btn" title="让 AI 梳理时间线，检测语义重复条目，弹窗确认后清扫（不改写原文、可还原）"><i class="fa-regular fa-broom"></i> AI 去重</button>
         <span class="cd-tl-manage-hint">勾选要删除的时间线条目</span>
         <div class="cd-tl-manage-ops" style="display:none;">
           <span class="cd-tl-sel-count">已选 <b id="cd-tl-sel-num">0</b> 条</span>
@@ -6671,6 +7359,18 @@ async function cdRenderArchive() {
           <button class="cd-btn-secondary" id="cd-tl-cancel">取消</button>
         </div>
       </div>`;
+    // ★ AI 去重：让 AI 检测语义近似重复条目，弹窗预览后确认清扫
+    //   用委托绑定到 #cd-content（与批量管理等按钮一致），避免按钮 DOM 尚未插入时绑定失效
+    $('#cd-content').off('click', '#cd-tl-dedupe-btn').on('click', '#cd-tl-dedupe-btn', async function () {
+      if (typeof toastr !== 'undefined') toastr.info('正在让 AI 检测重复条目，请稍候…');
+      cdAddLog('info', '========== AI 去重检测开始 ==========');
+      try { await cdAiDedupe(); }
+      catch (e) {
+        cdAddLog('error', '[AI去重] 流程异常: ' + (e && e.message));
+        if (typeof toastr !== 'undefined') toastr.error('AI去重失败: ' + (e && e.message));
+      }
+      cdAddLog('info', '========== AI 去重检测结束 ==========');
+    });
     
     // ★ 剧情分组 tab：主线 / 支线 / 状态 / 未解决 点击切换，避免一屏长滚动
     const _tabs = [{ label: '全部', color: '#8b7355' }].concat(
@@ -7052,10 +7752,13 @@ async function cdRenderFloors() {
   const arc = data.archive || {};
   const hasArchive = !!(arc.mainline || arc.sideline || arc.states || arc.unresolved || (Array.isArray(arc.items) && arc.items.length) || (arc.custom && Object.values(arc.custom).some(a => Array.isArray(a) && a.length)));
 
-  // 标记已记录和未记录
+  // 标记已记录和未记录：已记录 = (message_id ≤ lastFloor 游标) 或 (message_id 在 processedFloors 集合中)
+  // ★ v2.7.3：补写中途楼层后，仅靠 lastFloor 最高游标无法标记"已处理"，必须用 processedFloors 记录具体楼层，
+  //   否则补写的楼层会一直显示"未记录"，且下一轮自动触发会重复总结同一批旧楼层（导致归档重复条目）。
+  const processedSet = Array.isArray(data.processedFloors) ? data.processedFloors.map(Number) : [];
   const floorItems = allAi.map(m => ({
     ...m,
-    recorded: m.message_id <= lastRecordedFloor,
+    recorded: m.message_id <= lastRecordedFloor || processedSet.indexOf(m.message_id) >= 0,
   })).reverse(); // 最新的在上面
   
   if (!floorItems.length) {
@@ -8794,10 +9497,12 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
-    version: 'v2.7.4',
+    version: 'v2.7.5',
     date: '2026-08-19',
     items: [
-      '【自动隐藏楼层】修复 v2.6.3 重构后 DOM 顺序对齐错位：renderedIdx 误把已隐藏(is_hidden)/系统折叠楼层计入索引序列，与页面实际 .mes 数量不一致，导致位置系统偏移、把最新可见楼层误隐藏。现已修正为只统计可见消息并与 DOM 一一对应，补隐藏/隐藏逻辑不再误吞最新楼层',
+      '【修复】自动总结进度游标停摆导致重复总结：只勾「剧情档案」(不勾日记) 时 lastFloor 从不推进，每轮自动总结从第 0 楼重扫全部历史楼层，造成主线大量语义重复条目。现将进度推进与"是否写日记"解耦——只要日记/关系/档案任一成功即推进 lastFloor 并记入 processedFloors，已处理的楼层不再重复抓取；同时同步推进 _lastDiaryChatLength，手动入口也不再重扫',
+      '【新增】AI 语义去重：剧情档案页「AI 去重」按钮，让 AI 梳理时间线、检测语义近似重复条目（同一事件/同楼层的不同措辞表述），弹窗预览确认后清扫，全程不改写条目原文，只删重复、保留各组最完整一条',
+      '【新增】弹窗层级测试按钮（日志页）：纯本地、零 AI 消耗，用于排查自绘弹窗被酒馆界面遮挡的层级问题，并采集插件面板/弹窗位置与 z-index 诊断数据写入日志',
     ],
   },
   {
@@ -9148,7 +9853,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.7.4 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.7.5 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
