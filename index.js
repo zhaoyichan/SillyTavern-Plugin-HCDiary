@@ -2595,6 +2595,10 @@ async function cdOnBeforeGeneration(eventData) {
     const _s = cdGetSettings();
     if (_s.enabled === false) return;
 
+    // ★ 加固：每次生成前重建注入缓存，保证「数据变更」与「注入内容」实时一致，
+    //   避免清除/批量删除剧情档案等操作后，旧缓存 _cdInjectMsg 仍被注入到本次生成。
+    try { await cdRefreshInjection(); } catch (e) { cdWarn('生成前重建注入缓存失败(继续用旧缓存)', e); }
+
     // ---- 记忆注入（日记/关系/档案/填表），无内容则跳过但继续仪式注入 ----
     if (_cdInjectMsg) {
       const sysMsg = { role: _cdInjectMsgRole === 1 ? 'user' : (_cdInjectMsgRole === 2 ? 'assistant' : 'system'), content: _cdInjectMsg };
@@ -7662,6 +7666,7 @@ async function cdRenderArchive() {
       });
       if (removed) {
         await cdSaveData(d);
+        await cdRefreshInjection();
         if (typeof toastr !== 'undefined') toastr.success(`已批量删除 ${removed} 条时间线内容`);
       } else {
         if (typeof toastr !== 'undefined') toastr.info('所选条目均未发生变更');
@@ -9497,15 +9502,6 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
   {
-    version: 'v2.7.5',
-    date: '2026-08-19',
-    items: [
-      '【修复】自动总结进度游标停摆导致重复总结：只勾「剧情档案」(不勾日记) 时 lastFloor 从不推进，每轮自动总结从第 0 楼重扫全部历史楼层，造成主线大量语义重复条目。现将进度推进与"是否写日记"解耦——只要日记/关系/档案任一成功即推进 lastFloor 并记入 processedFloors，已处理的楼层不再重复抓取；同时同步推进 _lastDiaryChatLength，手动入口也不再重扫',
-      '【新增】AI 语义去重：剧情档案页「AI 去重」按钮，让 AI 梳理时间线、检测语义近似重复条目（同一事件/同楼层的不同措辞表述），弹窗预览确认后清扫，全程不改写条目原文，只删重复、保留各组最完整一条',
-      '【新增】弹窗层级测试按钮（日志页）：纯本地、零 AI 消耗，用于排查自绘弹窗被酒馆界面遮挡的层级问题，并采集插件面板/弹窗位置与 z-index 诊断数据写入日志',
-    ],
-  },
-  {
     version: 'v2.7.3',
     date: '2026-08-18',
     items: [
@@ -10205,7 +10201,9 @@ async function cdRenderManage() {
     const d = await cdGetData();
     d.archive = Object.assign({}, emptyData().archive);
     d.archiveHistory = [];
+    d.archiveVectors = [];
     await cdSaveData(d);
+    await cdRefreshInjection();
     toastr.success('剧情档案已清空');
     cdRenderManage();
   });
