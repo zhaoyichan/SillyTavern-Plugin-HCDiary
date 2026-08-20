@@ -1171,11 +1171,12 @@ async function cdCompressArchive(data, s, isAuto) {
 - 关键人物的长期动机、秘密、执念 —— 必须保留。
 - 主角的核心目标、身份设定 —— 必须保留。
 - 跨越多个时间段的因果链（谁导致了什么、埋下了什么）—— 必须保留。
+- 【时间标记】必须原样保留：每条事件都要带上它原本的【时间】标记（如【第3日】【深夜】【第二章】【某月某日】等），不得删除或合并时间标记。不得把带【时间】的条目改写成无时间标记的连续叙述。
 请严格按以下分段输出，每段以【标题】开头，标题保持原样，不得改动标题文字：
-- 【主线】…
-- 【支线】…
-- 【重要状态变化】…
-- 【未解决事项】…
+- 【主线】…（每条事件仍以【时间】开头，一条一行）
+- 【支线】…（每条事件仍以【时间】开头，一条一行）
+- 【重要状态变化】…（每条事件仍以【时间】开头，一条一行）
+- 【未解决事项】…（每条事件仍以【时间】开头，一条一行）
 - 其余自定义追踪项：按原标题原样输出【标题】段落。
 无内容的分段可省略。只输出压缩后的文本，不要任何解释。`;
 
@@ -1184,15 +1185,30 @@ async function cdCompressArchive(data, s, isAuto) {
     { role: 'user', content: joinText },
   ], s), 180000, '自动压缩');
 
+  // ★ DIAG: 拦截压缩各环节真实数据，用于定位"压缩完成但档案未变"
+  cdAddLog('info', '[COMPRESS-DIAG] AI 原始返回', { hasText: !!(res && res.text), textLen: (res && res.text) ? res.text.length : -1, textHead: (res && res.text) ? String(res.text).slice(0, 200) : '' });
+
   if (res && res.text && res.text.trim()) {
     const out = cdParseCompressedBlocks(res.text, labels);
+    // ★ DIAG: 解析结果逐字段
+    cdAddLog('info', '[COMPRESS-DIAG] 解析结果 out', (function () { const o = {}; for (const f of fields) o[labels[f]] = (out[f] && String(out[f]).length) || 0; return o; })());
+    let replacedAny = false;
     for (const f of fields) {
       if (out[f] && typeof out[f] === 'string' && out[f].length) {
         cdAddLog('info', `自动压缩 ${labels[f]}: ${String(archive[f] || '').length}→${out[f].length} 字`);
         archive[f] = out[f];
+        replacedAny = true;
       }
     }
+    if (!replacedAny) {
+      // 有返回但一个字段都没解析出来：明确报错，不再假装成功
+      throw new Error('压缩失败：AI 返回了内容但未能按【主线】等标题解析，请检查返回格式（见日志 COMPRESS-DIAG）');
+    }
+    cdAddLog('info', '[COMPRESS-DIAG] 回填成功，替换了 ' + replacedAny + ' 个字段', { mainline: String(archive.mainline || '').length, sideline: String(archive.sideline || '').length, states: String(archive.states || '').length, unresolved: String(archive.unresolved || '').length });
     // 自定义追踪项：若 AI 按自定义标题输出了合并版，尝试回填（简化为：保留原值 + 折叠超额旧条目）
+  } else {
+    // 无返回文本：明确报错
+    throw new Error('压缩失败：AI 未返回内容（text 为空），请检查 AI 接口是否可用');
   }
 
   // ★ 自定义剧情追踪项：超上限的旧条目折叠进主线后裁剪（两种模式均保持）
@@ -7430,8 +7446,30 @@ async function cdRenderArchive() {
     </div>`;
     
     for (const cat of categoryConfig) {
-      if (!cat.items.length) continue;
-      
+      // 该分类对应的原始字段文本（用于「无【时间】标记」时的段落兜底展示）
+      const rawText = (cat.label === '主线' ? arc.mainline : cat.label === '支线' ? arc.sideline : (cat.label === '状态' || cat.label === '重要状态变化') ? arc.states : cat.label === '未解决' ? arc.unresolved : '');
+
+      // 无【时间】标记但有纯叙述文本 → 段落卡片兜底（保证主线/支线无论什么格式都可见）
+      if (!cat.items.length) {
+        const _rt = (rawText && String(rawText).trim()) ? String(rawText).trim() : '';
+        if (_rt) {
+          html += `<div class="cd-tl-group" data-group="${escapeAttr(cat.label)}" style="margin-bottom:12px;">
+            <h4 style="font-size: calc(0.75rem * var(--cd-fs, 1));font-weight:600;color:${cat.color};margin:0 0 6px;display:flex;align-items:center;gap:6px;">
+              <i class="fa-regular ${cat.icon}"></i> ${cat.label}
+            </h4>
+            <div class="cd-timeline">
+              <div class="cd-tl-item">
+                <div class="cd-tl-dot" style="background:${cat.color};border-color:${cat.color}22;"></div>
+                <div class="cd-tl-card">
+                  <div class="cd-tl-text">${escapeHtml(_rt).replace(/\n/g, '<br>')}</div>
+                </div>
+              </div>
+            </div>
+          </div>`;
+        }
+        continue;
+      }
+
       html += `<div class="cd-tl-group" data-group="${escapeAttr(cat.label)}" style="margin-bottom:12px;">
         <h4 style="font-size: calc(0.75rem * var(--cd-fs, 1));font-weight:600;color:${cat.color};margin:0 0 6px;display:flex;align-items:center;gap:6px;">
           <i class="fa-regular ${cat.icon}"></i> ${cat.label}
