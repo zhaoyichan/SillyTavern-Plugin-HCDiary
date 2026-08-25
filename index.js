@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.7.7';
+const PLUGIN_VERSION = '2.8.0';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -5530,6 +5530,8 @@ function cdRestoreModalPos() {
 /** 更新未读红点：dotNotify 开启且自上次查看后新增了日记则显示小红点 */
 async function cdUpdateUnreadDot() {
   try {
+    // 优先：若存在论坛艾特未读，显示艾特次数红点，不覆盖它为日记红点
+    try{ if(typeof cdForumAtUnread==='function' && cdForumAtUnread()>0){ if(typeof cdPaintAtDot==='function') cdPaintAtDot(); return; } }catch(_e){}
     const _fab = document.getElementById(FAB_ID);
     if (!_fab) return;
     const _dot = _fab.querySelector('.cd-reddot');
@@ -5574,7 +5576,8 @@ function cdInjectFab() {
       '#cd-fab .cd-fab-btn.cd-geo svg{width:18px;height:18px;display:block;position:relative;z-index:2;filter:drop-shadow(0 1px 1px rgba(255,255,255,.6));}' +
       '#cd-fab .cd-reddot{position:absolute;top:-2px;right:-2px;width:10px;height:10px;border-radius:50%;background:rgba(224,85,67,.62);box-shadow:0 0 0 2px rgba(255,255,255,.85),0 0 6px 1px rgba(224,85,67,.35);z-index:3;display:none;}' +
       '#cd-fab .cd-fab-btn.cd-night .cd-reddot{box-shadow:0 0 0 2px rgba(30,31,48,.7),0 0 6px 1px rgba(224,85,67,.3);}' +
-      '#cd-fab .cd-reddot.show{display:block;}';
+      '#cd-fab .cd-reddot.show{display:block;}' +
+      '#cd-fab .cd-reddot.at{min-width:16px;height:16px;line-height:16px;font-size:9px;text-align:center;padding:0 3px;border-radius:9px;color:#fff;font-weight:700;box-shadow:0 0 0 2px rgba(255,255,255,.85),0 0 6px 1px rgba(224,85,67,.35);}';
     (document.head || document.documentElement).appendChild(_st);
   }
 
@@ -11837,10 +11840,16 @@ const CD_FORUM_HTML = `<div id="cdForumRoot">
           <span class="cf-lbl" style="margin-left:auto;">类型</span>
         </div>
         <div class="cf-row" style="margin-bottom:2px;">
-          <span class="cf-lbl">题材：随机</span>
+          <span class="cf-lbl" id="genTypeHead" style="cursor:pointer;display:flex;align-items:center;gap:4px;color:var(--c-accent);">题材</span>
+          <span id="genTypeSel" class="cf-lbl" style="cursor:pointer;color:var(--c-accent);font-weight:700;">全部</span>
+          <span class="cf-lbl" id="genTypeArrow" style="cursor:pointer;font-size:9px;">▾</span>
           <span style="flex:1;"></span>
           <span class="cf-lbl" style="margin-left:auto;">色情</span>
           <label class="sw" id="cfEroticaWrap"><input type="checkbox" id="cfErotica"><span class="track"><span class="thumb"></span></span></label>
+        </div>
+        <div id="genTypePanel" style="display:none;padding:7px 9px;background:var(--c-sub);border-radius:8px;margin-bottom:7px;">
+          <div id="genTypeChips" style="display:flex;flex-wrap:wrap;gap:5px;"></div>
+          <div style="font-size:8.5px;color:var(--c-txt3);opacity:.8;margin-top:4px;">点击题材可多选，生成时只从勾选的题材里随机抽；不选=全部题材随机。</div>
         </div>
         <button class="cf-btn-main" id="genBtn"><svg viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>生成帖子</button>
       </div>
@@ -11850,6 +11859,19 @@ const CD_FORUM_HTML = `<div id="cdForumRoot">
         <div class="cf-sec">手动生成</div>
         <textarea id="genManualDesc" class="cf-ta" placeholder="描述想让 AI 生成什么帖，比如：让冰海战记的古德伦发一条吐槽他在冻土冻傻了的帖子…"></textarea>
         <button class="cf-btn-main" id="genManualBtn" style="margin-top:7px;"><svg viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>生成这条帖</button>
+      </div>
+
+      <!-- 结合当前聊天记录（手动 & 自动共用） -->
+      <div class="cf-block">
+        <div class="cf-sec" style="margin-top:0;">结合当前剧情</div>
+        <div class="cf-row">
+          <label class="sw" id="cfChatFeedWrap" title="生成帖子前自动读取当前聊天的最近 N 条，让帖子紧跟当下剧情（不写入世界档案）"><input type="checkbox" id="cfChatFeed"><span class="track"><span class="thumb"></span></span></label>
+          <span class="cf-lbl" id="cfChatFeedLbl" style="cursor:pointer;">结合最近</span>
+          <input class="cf-num" id="cfChatCount" type="number" min="1" max="50" value="5">
+          <span class="cf-lbl">条对话发帖</span>
+          <span class="cf-lbl" style="margin-left:auto;font-weight:400;font-size:8.5px;color:var(--c-txt3);">手动 &amp; 自动都生效</span>
+        </div>
+        <div style="font-size:8.5px;color:var(--c-txt3);opacity:.75;line-height:1.6;">开启后 AI 会参考当前最近对话来发帖，紧跟当下剧情；关闭则只按已保存世界档案生成。</div>
       </div>
 
       <!-- 回复 + 自动生成（跨世界帖）配置 -->
@@ -11862,6 +11884,11 @@ const CD_FORUM_HTML = `<div id="cdForumRoot">
           <span class="cf-lbl" style="margin-left:auto;">每</span>
           <input class="cf-num" id="cfAutoEvery" type="number" min="1" max="50" value="5">
           <span class="cf-lbl">条消息自生成</span>
+        </div>
+        <div class="cf-row" style="margin-bottom:0;">
+          <label class="sw" id="cfAutoGenWrap" title="关掉后，即使每 N 条消息也不会自动发帖（只能手动生成）"><input type="checkbox" id="cfAutoGen"><span class="track"><span class="thumb"></span></span></label>
+          <span class="cf-lbl" id="cfAutoGenLbl" style="cursor:pointer;">自动发帖</span>
+          <span class="cf-lbl" style="margin-left:auto;font-weight:400;font-size:8.5px;color:var(--c-txt3);">聊到上面条数时自动跑</span>
         </div>
       </div>
 
@@ -11880,6 +11907,15 @@ const CD_FORUM_HTML = `<div id="cdForumRoot">
     <div class="quick">
       <span class="q on" id="injectQ"><svg viewBox="0 0 24 24" style="width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>注入:开</span>
       <span class="q" id="setQ"><svg viewBox="0 0 24 24" style="width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>设置</span>
+      <span class="q" id="multiQ" title="勾选帖子批量删除"><svg viewBox="0 0 24 24" style="width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 12l2 2 4-4"/></svg>多选</span>
+    </div>
+
+    <!-- 帖子多选操作条 -->
+    <div id="cfMultiBar" style="display:none;align-items:center;gap:8px;padding:7px 11px;background:#f7f8f9;border-bottom:1px solid #e8ebec;flex-shrink:0;">
+      <button class="cf-btn-mini" id="cfMultiAll">全选</button>
+      <button class="cf-btn-mini" id="cfMultiDel" style="border-color:#e0b8ae;background:#fdf0ec;color:#c84632;">删除选中</button>
+      <span id="cfMultiCount" style="font-size:9px;color:#8b9298;margin-left:auto;"></span>
+      <button class="cf-btn-mini" id="cfMultiCancel">取消</button>
     </div>
 
     <div class="feed" id="feed">
@@ -12010,8 +12046,17 @@ const CD_FORUM_HTML = `<div id="cdForumRoot">
     <div class="pn-bar">
       <div class="pn-back" data-close="panelManage"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></div>
       <div class="pn-t">管理 · 角色与记忆 / 世界</div>
+      <span class="cf-btn-mini" id="mgMultiQ" style="margin-left:auto;padding:2px 8px;">多选</span>
     </div>
     <div class="pn-body">
+      <div id="mgMultiBar" style="display:none;align-items:center;gap:8px;padding:5px 2px 8px;flex-wrap:wrap;">
+        <button class="cf-btn-mini" id="mgMultiAllR">全选角色</button>
+        <button class="cf-btn-mini" id="mgMultiDelR" style="border-color:#e0b8ae;background:#fdf0ec;color:#c84632;">删除角色</button>
+        <button class="cf-btn-mini" id="mgMultiAllW">全选世界</button>
+        <button class="cf-btn-mini" id="mgMultiDelW" style="border-color:#e0b8ae;background:#fdf0ec;color:#c84632;">删除世界</button>
+        <span id="mgMultiCount" style="font-size:8.5px;color:#8b9298;margin-left:auto;"></span>
+        <button class="cf-btn-mini" id="mgMultiCancel">退出</button>
+      </div>
       <div class="set-h" style="display:flex;align-items:center;gap:6px;"><svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:none;stroke:#6a737a;stroke-width:1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>角色管理 <span style="font-size:8.5px;color:#9aa1a7;font-weight:400;margin-left:auto;">点角色看名片 / 记忆</span></div>
       <div class="roster" id="mgRoleList"></div>
       <div class="set-h" style="margin-top:14px;display:flex;align-items:center;gap:6px;"><svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:none;stroke:#6a737a;stroke-width:1.8"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>世界管理</div>
@@ -12084,6 +12129,8 @@ function cdForumOpen(){
   ov.style.display='flex'; ov.style.flexDirection='column';
   _cfRoot=ov.querySelector('#cdForumRoot');
   if(_cfRoot){ _cfRoot.style.width='100%'; _cfRoot.style.height='100%'; _cfRoot.style.position='relative'; }
+  // 打开论坛：清除论坛艾特未读红点（自动发帖/手动点开都一样清）
+  try{ if(typeof cdMarkForumAtRead==='function') cdMarkForumAtRead(); }catch(_e){}
   if(_cfRoot && _cfMountV2) _cfMountV2();
   else if(_cfRoot) _cfMount();
 }
@@ -12329,6 +12376,133 @@ function cdForumGetPosts(){ if(_cfPostsCache===null) cdForumGetData(); return _c
 function cdForumGetRoster(){ if(_cfRosterCache===null) cdForumGetData(); return _cfRosterCache||[]; }
 function cdForumGetTitle(){ if(_cfTitleCache===null) cdForumGetData(); return _cfTitleCache||'穿越局的打工人'; }
 
+/* ---------- 艾特主角通知横幅（可点击跳转到对应帖子） ---------- */
+function cdForumMainPlayerName(){
+  try{ var _c0=SillyTavern.getContext(); if(_c0&&_c0.name1) return String(_c0.name1); }catch(_e){}
+  return '主角';
+}
+// 判断给定名字是否撞上"主角/用户本人"（防止 AI 生成帖子/回复时冒充用户顶你的名字发言）
+function cdForumIsUserName(name){
+  if(!name) return false;
+  var n=String(name).trim(); if(!n) return false;
+  var me='';
+  try{ me=cdForumMainPlayerName(); }catch(_e){}
+  var home='';
+  try{ var _c=cdForumCfg(); if(_c&&_c.homeName) home=String(_c.homeName).trim(); }catch(_e){}
+  var names=[me, home, '用户','主角','我'].filter(Boolean);
+  for(var i=0;i<names.length;i++){ if(names[i] && n===names[i]) return true; }
+  return false;
+}
+function cdForumRandomName(){
+  var pool=['夜行人的跟班','路过的旅商','隔壁摊位的摊主','讲怪谈的说书人','街角的剑客','磨刀的老铁匠','看热闹的学徒','打更的守夜人','卖花灯的姑娘','赶路的信差','串门的说书先生','桥头的歌女'];
+  return pool[Math.floor(Math.random()*pool.length)];
+}
+// 若名字是主角/用户本人，替换成随机路人名（只在 AI 生成链使用，不影响你自己发帖）
+function cdForumMaskUserName(name){
+  return cdForumIsUserName(name) ? cdForumRandomName() : name;
+}
+// 帖子列表正文截断：列表只露前 N 字，点进去详情才看全文（避免同人等长文堆满列表）
+function cdForumExcerpt(txt, n){
+  var s=String(txt==null?'':txt);
+  n=(typeof n==='number')?n:80;
+  var plain=s.replace(/<[^>]*>/g,'');
+  if(plain.length<=n) return s;
+  return plain.slice(0,n)+'…';
+}
+// 从帖子文本里判断是否艾特了主角（匹配 @主角名 / @user / @主角 / @我）
+function cdForumTextAtMe(txt, me){
+  if(!txt) return false;
+  var t=String(txt);
+  var names = [me].concat(['user','主角','我']).filter(Boolean);
+  for(var i=0;i<names.length;i++){
+    var nm=names[i]; if(!nm) continue;
+    // @名字
+    if(new RegExp('@\\s*'+nm.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'ig').test(t)) return true;
+  }
+  // @user 占位符
+  if(/@\{?user\}?/i.test(t)) return true;
+  return false;
+}
+// 显示可点击通知横幅（酒馆全局浮动，不自动关闭，点×或点正文关闭；点击正文跳转到对应帖子）
+function cdForumShowAtBanner(who, postTitle, idx){
+  try{
+    var el=document.getElementById('cfAtBanner');
+    if(!el){
+      el=document.createElement('div');
+      el.id='cfAtBanner';
+      el.style.cssText='position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:9000000;display:none;align-items:center;gap:9px;padding:9px 14px;background:#fff7ed;border:1px solid #f2d8b3;border-radius:12px;box-shadow:0 6px 24px rgba(150,100,40,.18);font-size:11px;color:#8a5a1e;max-width:88vw;box-sizing:border-box;';
+      el.addEventListener('click',function(ev){
+        if(ev.target.closest && ev.target.closest('#cfAtClose')){ el.style.display='none'; return; }
+        var i=parseInt(el.getAttribute('data-idx'),10);
+        el.style.display='none';
+        try{
+          // 无论论坛之前开没开，都先确保论坛层可见并挂载，再跳帖
+          try{ if(typeof cdForumOpen==='function') cdForumOpen(); }catch(_e0){}
+          setTimeout(function(){ try{ if(typeof window.__cfOpenPost==='function') window.__cfOpenPost(i); }catch(_e2){} }, 500);
+        }catch(_e){}
+      });
+      var closeBtn=document.createElement('span');
+      closeBtn.id='cfAtClose';
+      closeBtn.style.cssText='flex-shrink:0;color:#b07a2e;font-size:13px;line-height:1;cursor:pointer;margin-left:2px;';
+      closeBtn.textContent='✕';
+      el.innerHTML='<svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:none;stroke:#b07a2e;stroke-width:2;flex-shrink:0"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>';
+      el.appendChild(closeBtn);
+      (document.body||document.documentElement).appendChild(el);
+    }
+    // 组装内容（主内容在前，×在最后）
+    el.setAttribute('data-idx', String(idx||0));
+    el.innerHTML='<svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:none;stroke:#b07a2e;stroke-width:2;flex-shrink:0"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg><b style="flex-shrink:0;">'+String(who||'有人')+' 艾特了你</b><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+(String(postTitle||'')||'戳我查看帖子')+'</span><span id="cfAtGo" style="flex-shrink:0;font-size:8.5px;color:#fff;background:#b07a2e;border-radius:7px;padding:2px 7px;">点我看</span><span id="cfAtClose" style="flex-shrink:0;color:#b07a2e;font-size:13px;line-height:1;cursor:pointer;margin-left:3px;">✕</span>';
+    el.style.display='flex';
+  }catch(e){ cdWarn('[论坛] 艾特全局横幅失败', e); }
+}
+
+// ---------- 悬浮球艾特红点（复用 .cd-reddot，有艾特时显示次数数字） ----------
+function cdForumAtUnread(){
+  try{ var v=parseInt(localStorage.getItem('cd-forum-at-unread')||'0',10); return isNaN(v)?0:v; }catch(e){ return 0; }
+}
+function cdForumAtAdd(n){
+  try{ localStorage.setItem('cd-forum-at-unread', String(cdForumAtUnread()+(n||1))); }catch(e){}
+  cdPaintAtDot();
+}
+function cdMarkForumAtRead(){
+  try{ localStorage.setItem('cd-forum-at-unread', '0'); }catch(e){}
+  cdPaintAtDot();
+}
+// 更新悬浮球红点：有艾特未读 → 显示次数数字；无艾特 → 回归日记红点逻辑
+function cdPaintAtDot(){
+  try{
+    var _fab=document.getElementById('cd-fab'); if(!_fab) return;
+    var _dot=_fab.querySelector('.cd-reddot'); if(!_dot) return;
+    var n=cdForumAtUnread();
+    if(n>0){
+      _dot.textContent=String(n);
+      _dot.className='cd-reddot at show';
+    } else {
+      _dot.textContent='';
+      _dot.className='cd-reddot';
+      // 恢复日记红点判断
+      try{ if(typeof cdUpdateUnreadDot==='function') cdUpdateUnreadDot(); }catch(_e){}
+    }
+  }catch(e){}
+}
+var _cfAtTimer=null;
+// 扫描新帖，若艾特主角则弹可点击通知 + 悬浮球累加红点
+function cdForumCheckAt(posts){
+  try{
+    if(!posts || !posts.length) return;
+    var me=cdForumMainPlayerName();
+    var list=cdForumGetPosts();
+    for(var k=0;k<posts.length;k++){
+      var p=posts[k]; if(!p) continue;
+      var hit = cdForumTextAtMe(p.title,me) || cdForumTextAtMe(p.text,me) || (Array.isArray(p.replies)?p.replies.some(function(r){return cdForumTextAtMe(r&&r.content,me);}):false);
+      if(hit){
+        var idx = -1; for(var i=0;i<list.length;i++){ if(list[i]===p){ idx=i; break; } }
+        if(idx>=0){ cdForumAtAdd(1); cdForumShowAtBanner(p.auth||'有人', p.title||'', idx); }
+      }
+    }
+  }catch(e){ cdWarn('[论坛] 艾特检测失败', e); }
+}
+
 /* ---------- 论坛专用 LLM 调用（复用 cdApiComplete） ---------- */
 async function cdForumApiComplete(messages){
   var s = cdGetSettings();
@@ -12389,30 +12563,50 @@ const CD_FORUM_PROMPT_POSTS = `这是一个能跨世界串门的中文互联网�
 请你以这些世界【真实存在的角色】的视角，去论坛发 {N} 条帖子。
 
 ★ 题材：这次要发的帖子题材是：【{环球TYPE}】
-（自动生成时从 剧情/他世界/新闻/情感/八卦/扯皮/吐槽 里随机抽一种；若开启色情开关，偶尔也会抽到带色情的内容。）
-- 剧情相关：紧扣本世界主线，可以爆猛料/吐槽剧情走向/喊冤/发糖/破防。
-- 他世界闲话：聊别的世界那些事（别的世界角色跑来吐槽/好奇/酸）。
-- 重大新闻：世界级大新闻/花边头条，轰动到别世界都跑来吃瓜。
-- 情感帖：写心里话/暧昧/求安慰/情感纠葛/破防瞬间，跨世界也能共鸣和吃瓜。
-- 八卦：挖料/传小道消息/猜CP/谁和谁好上了/谁出事没，越有料越好。
-- 扯皮：超有梗的吵架/抬杠/互怼/PVP，越无厘头越有趣。
-- 吐槽：日常牢骚/抱怨/毒舌/阴阳怪气，观点鲜明不怕得罪人。
-- 色情（受开关控制）：带成人向的荤段子/擦边/开车，用梗和虎狼之词，别下流粗暴，要有网感和乐子。
+ （自动生成时从 剧情/他世界/新闻/情感/八卦/扯皮/吐槽/情感纠结/嬷主角/同人/磕CP/渣男吐槽/辱追/凡尔赛/悬赏交易/求助/寻人/冷笑话/打工人/围观吐槽 里随机抽一种；若开启色情开关，偶尔也会抽到带色情的内容。每种题材的详细写作指导已按命中的题材单独注入给【{环球TYPE}】。）
+- 剧情相关：紧扣本世界主线，爆猛料/吐槽走向/喊冤/发糖/破防，可写小作文。
+- 他世界闲话：别的世界角色跑来吐槽/好奇/酸这件事。
+- 重大新闻：世界级大新闻/花边头条，轰动到别世界跑来吃瓜。
+- 情感帖：心里话/暧昧/求安慰/破防，情感浓度拉满，可长文。
+- 八卦：挖料/传小道消息/猜CP/扒关系，越有料越好。
+- 扯皮：超有梗吵架/抬杠/互怼，真刀真枪。
+- 吐槽：日常牢骚/毒舌/阴阳，骂出花骂出梗。
+- 情感纠结：求而不得/暧昧拉扯/深夜破防，剖心文学。
+- 嬷主角：把主角往娇柔好嗑方向疯狂安利，嬷味拉满。
+- 同人：二创/CP同人文/改名场面/OOC，放开写，小作文OK。
+- 磕CP：产粮站CP发糖细数互动，跟对家对线。
+- 渣男吐槽：被主角辜负者开帖控诉，痛陈前因后果。
+- 辱追：又爱又恨，边骂边护，疯批饭圈文学。
+- 凡尔赛：炫实力身家，越装越欠拆台。
+- 悬赏交易：发活/悬赏/通缉/卖货，论坛变江湖黑市。
+- 求助：难题发帖求支招，跨世界各显神通被坑被真相。
+- 寻人：找人/通缉/表白寻TA，带故事性和悬念。
+- 冷笑话：烂梗冷笑话/土味情话/谐音梗大赛。
+- 打工人：用社畜口吻给世界/组织汇报吐槽，反差喜剧。
+- 围观吐槽：路人吃瓜视角围观+吐槽主角的离谱事（发帖人是路人，绝不署名主角/你）。
 
 ★ 发帖人随机联动（务必做到）：
 - 每条帖子的发帖人，70% 概率用【世界档案里有名字的角色】（characters 里真实存在的人），30% 概率用【临时路人】（如"铁匠铺的学徒""村口大娘""看戏的""路过的大侠"这类有生活感的名字，但别用"楼主""某匿名用户"）。
 - 有名字的发帖人要体现他这个角色的口癖/性格/立场（能点开名片看到好感度和评价的那种活人感）。
 - 回帖楼里的跟帖人同样：优先用有名字角色，少量用路人，但一定要有跨世界的角色来插话。
+- 硬性红线：发帖人、跟帖人的名字【绝不能是主角本人或用户本人的名字】——你是演世界里的角色在论坛说话，不是替主角/用户本人发言。
 
 ★ 跨世界要求（核心灵魂，务必做到）：
 - 帖子可以是任何一个世界角色发的，不同帖子的发帖人来自不同世界，别都挤在第一个世界。
 - 每条帖子的【回复】除了本世界角色，必须混入【别的世界】的角色来插话/吐槽/抬杠（比如剑风世界角色看到冰海世界帖抱怨冻土，跑来阴阳'你们北欧人矫情'，或反过来）。要让论坛像是'整个世界一起热闹'，绝不是一个世界关起门聊自己。
 - 发帖人可以因好奇/蹭热度/看热闹去发'关于别的世界'的帖。
 
+★ 关系展现（依据上面世界档案里角色的好感/关系，让帖子活成"真的有人际纠葛的样子"）：
+- 若发帖人对主角（@主角名）好感很高、已是恋人/暧昧/深爱档，可在帖子里【骄傲公开】和主角的关系，语气炫耀/护犊子/发糖，像在官宣秀恩爱。
+- 若回复楼里另一个角色也对主角有好感或是恋人，可跟楼主【扯头花】互撕：争主角、酸楼主、护主角、翻旧账，像贴吧抢男人/女人的名场面，越热闹越好。
+- 被主角辜负/伤害过的角色（好感低或带积怨），可在帖子或回复里【控诉/阴阳】主角，别忍着。
+- 帖子或回复里可直接用【@主角名】点名主角（@+主角实际名字），像是真在论坛喊 TA。
+- 只有"恋人/暧昧/深爱"这种高好感才秀恩爱；普通友善别硬凹。
+
 严格按如下 JSON 数组输出，一条帖子一个对象：
 [
   {
-    "type":"story|other|news|lover|gossip|fight|moan",
+    "type":"story|other|news|lover|gossip|fight|moan|angst|mo|fan|ship|toxic|hate|show|biz|ask|find|joke|work|watch",
     "author":"发帖角色名（优先用世界档案里有名字的真实角色，含其世界）",
     "world":"发帖角色所属世界",
     "title":"帖名，抓眼球，可用网络热梗/反讽/悬念/擦边梗，像真实论坛标题",
@@ -12444,6 +12638,39 @@ const CD_FORUM_PROMPT_POSTS = `这是一个能跨世界串门的中文互联网�
 - 色情题材（若被允许）要有网感和乐子，用虎狼之词和梗，别直白下流。
 
 【说人话】满篇大白话、像真人唠嗑，就像贴吧用户随手刷帖一样自然。严禁出现"分析/数据显示/根据数据/机械/虚拟/评估/综合/鉴于/总而言之/百分之/百分比/统计/模型/参数/综上所述/乱码/格式化/CPU/逻辑/代码/程序/系统/异常/处理中/加载中"这类机器词、格式化和术语，绝对禁止输出乱码或转义符。帖子就是活人在说话、在灌水，毫无教条感，别写成百科、别写成总结报告、别写成代码。`;
+
+/* ---------- 每种题材的详细写作指导（按命中的题材注入提示词） ---------- */
+const CF_TYPE_GUIDE = {
+'s':"【剧情相关·详细指导】这是爆本世界主线的大事件帖。你要像追剧粉头爆猛料那样，把最近发生在主角和这个世界身上的大事炸出来。允许写长：把前因后果、牵动了谁、当事人什么反应、围观群众怎么起哄，全铺开写。可以爆猛料、吐槽剧情走向、喊冤喊爽、发糖庆祝、破防哭诉。玩梗可用：这剧情我不懂但大受震撼、编剧你睡得着吗、这波剧情杀我麻了、家人们谁懂啊、这瓜保熟吗。想写小作文随你：先抖小料，中间上猛料，结尾甩个大瓜收束，像一篇有血有肉的猛料解说帖。",
+'x':"【他世界闲话·详细指导】你是别的世界跑过来唠嗑/开眼界的角色，核心是跨世界视角的对比吐槽和好奇。要写得有对比感：拿自己世界和这个世界比，阴阳怪气、大开眼界、酸一句我们那边可不这样。玩梗可用：我们那旮沓可没这规矩、隔壁剑风都快打完了你们还在掰扯这个、是这样的我们那儿的龙还得排队上户口、大开眼界了属于是。想写小作文随你：先讲看到这个世界的什么怪事，越描越猎奇，再加入自己世界的对比，结尾补一句阴阳，跨世界视角拉满。",
+'n':"【重大新闻·详细指导】这是世界级大新闻/花边头条。要写得像报馆金牌记者发独家，又带论坛吃瓜的喧嚣。展开写：事件本身+时间地点+关键人物+各路人马反应+后续猜测。玩梗可用：速效救心丸都备好了、前排出售瓜子板凳、这瓜保熟吗、刚下飞船前因后果速速呈上。想写小作文随你：导语抓眼球、正文层层爆料、底下脑补分析齐飞，最后一句持续跟进留钩子。",
+'lover':"【情感帖·详细指导】这是内心剖白、暧昧拉扯、深夜emo、求安慰的情感帖，情感浓度最高。要细腻到能让人共情——把心动、犹豫、患得患失、破防全铺开，允许大段心路历程、回忆杀、自问自答。玩梗可用（反差显得更真实）：谁没有个半夜emo的时候、别问问就是栽了、感动自己第一名、恋爱脑晚期没救。想写小作文随你：把那种说不出口的喜欢、进退两难的拉扯，写到跨世界的人都想跟着破防，情感浓度拉满。也可放开玩：套第一人称直剖心、或假如文学(假如我们没结束/假如那天我留下/假如我早一点说出口)、或换到一个温柔/遗憾/青春伤痛的情境，用江南风格慢慢铺，把一段心事写成完整的心路独白，越细腻越动人。",
+'gossip':"【八卦·详细指导】狗仔路线——挖料、传小道消息、猜CP、扒谁和谁好上了、谁出事没。要像连续剧一样逐条往外抖料，越有料越好。玩梗可用：无图无真相但小道消息是真的、我有个朋友说、懂的都懂、这瓜越挖越大、蹲个续集。想写小作文随你：把线索一条条拼出来，引出大票吃瓜群众追更蹲后续，八卦得又真又上头。",
+'fight':"【扯皮·详细指导】这是超有梗的吵架/抬杠/互怼帖，要真刀真枪吵起来、越无厘头越有趣。可以翻旧账、玩梗、阴阳怪气、来回来回，立场对立像当场打起来。玩梗可用：你急了、急了急了、有被孝到、典中典、这也太双标了、互联网嘴替直呼内行。想写小作文随你：写成一篇吵架实况纪录——从谁先挑事，到中间互相背刺，再到全员下场，结尾拱火封顶，谁来都劝不住。",
+'moan':"【吐槽·详细指导】这是日常牢骚、抱怨、毒舌、阴阳帖，观点鲜明不怕得罪人。要把一个糟心事从头骂到尾，骂出花、骂出梗，让看的人都想接一句确实。玩梗可用：就这、蚌埠住了、属实给爷整不会了、你说是那就是吧、人生无常大肠包小肠。想写小作文随你：长篇吐槽檄文或连环碎碎念都行，阴阳到停不下来，越毒舌越带劲。",
+'angst':"【情感纠结·详细指导】这是比情感帖更痛、更拧巴的求而不得。要一层层剖开自己的心：我为什么放不下、他为什么不懂、我到底在怕什么。允许大段心路和自省，写出那种酸涩、抓心挠肝的纠结。玩梗可用（反差萌）：我这纯纯大冤种、恋爱脑晚期没救、心是碎的但是麻的、深夜发疯文学。想写小作文随便写：把深夜破防的拧巴写透，让跨世界的人都跟着揪心，情感浓度比普通情感帖更重、更痛。也可放开玩：套假如文学(假如我们各自退一步会不会不同)、破镜难圆(碎了还能不能补)、双向暗恋(我们都喜欢对方但谁也没说)、第一人称剖心把拧巴写得更钻心刺骨。",
+'mo':"【嬷主角·详细指导】你是妈妈粉/女友粉脑补向，要把主角往娇柔、好嗑、惹人怜爱的方向疯狂安利吹捧。可以从头发丝夸到脚趾，主角的每个表情、每个动作都嗑成糖，谁觉得不嗑就是没品。嬷味十足、肉麻上头，带浓烈饭圈妈妈粉/女友粉气息。玩梗可用：让我嬷一下、好娇、这波直接嬷住了、妈妈的好大儿、哥几个别嬷了嬷傻了。想写小作文可写得极长：一篇嬷粉长评，把所有能嗑的点淋漓尽致地捧，越夸张越有乐子，允许适当自嘲。",
+'fan':`【同人·详细指导】这是论坛里的同人创作帖（作者是某角色，在论坛发自己的同人文）。核心是套着原作那个角色/CP的名字和性格，去写各种脑洞、玩法、世界观。本题材【彻底放开，尽情发挥】！
+【篇幅硬性】帖主(楼主)发的正文【不少于1000字】，要写完整短篇、展开场景或完整脑洞设定，别敷衍缩水。
+【文笔/体裁·每次换，别老一个调子】①论坛体(像真人在论坛发脑洞求评论，有人在底下催更/点评/蹲后续)；②轻小说(节奏快脑洞大吐槽多)；③江南风格(忧郁唯美细腻、文字像江南烟雨、慢而深情)；④青春伤痛文学(校园无疾而终/遗憾/撕心裂肺)；⑤第一人称(用角色视角写我)；⑥假如文学(假如他们都爱上了你/假如那天没分开/假如当初我挽留了/假如我是TA的替身)。
+【互动情节/梗·加进去才有意思，从中挑几个组合】情侣挑战(敢不敢做三天情侣)、失忆梗(TA忘了我们的一切)、兄弟梗(我们是兄弟但我不只把你当兄弟)、不亲/不做就出不去的房间、误会梗(我们都以为对方不喜欢自己)、替身梗(我像TA但我不是替身)、虐恋/酸痛文学、分手梗(假如我说要分手)、查手机梗(趁TA睡着看TA手机发现秘密)、残疾梗(假如对方瞎了/断了腿TA会怎么对我)、契约婚姻/先婚后爱、药效发作中毒求你救、雨天共伞/雪夜背你/悬崖边上/梦境交错、身份反串(女A男O/男A女O)、病娇黑化占有欲失控、系统文(绑定任务攻略进度条)、重生/穿越回到过去弥补遗憾、平行世界交错(两个世界的你们相遇)、体型差种族差(人类×妖/龙×人/吸血鬼×人类)。
+【世界观·可换，包罗万象】武侠/校园/童话/民间故事/鬼故事/恐怖/修仙/现代都市/科幻/宫廷权谋/末世。
+【身份设定·可换，以身份差距与身份对立为看点】捉鬼师×鬼、正道×邪道、主子×仆人、花魁×打杂、神×凡、君王×囚、救世主×怪物、吸血鬼×猎物、江湖第一杀手×温良小郎中。
+【关系模式·可换】相亲相爱/相爱相杀/做恨(把彼此往死里作践但心里有爱)/强制爱(一方强势擒住另一方)/双向奔赴/双向暗恋/单箭头追妻火葬场/破镜重圆/追夫火葬场/有口难言的守护/恩怨纠葛(上一代的债下一代还)。
+【收尾角度·每次选一种】喜剧向(玩梗收尾)/虐恋向(be美学)/甜向(he发糖)/开放式(留白)/立场反转(原来TA才是那个替身)。
+【写法】套着原作角色(名字、性格、好感关系)但可放进全新世界观和身份尽情发挥；第一段抓人、中间有名场面或转折、结尾留味或留钩子；篇幅放开别吝啬字数。
+【玩梗/护身符】文首/文末可加：(同人虚构勿上升)、更新主楼追更点赞、捡到老师的粮谢谢产粮、(OOC致歉图一乐子)。`,
+'ship':"【磕CP·详细指导】这是CP党产粮安利帖，疯狂站CP、给CP发糖、细数互动细节嗑糖，跟对家CP党对线也要有来有回。要把两人相处的一帧帧抠出来嗑：一个眼神、一句暗语、一次侧身都是糖。玩梗可用：这一对我先嗑为敬、太好嗑了我不行了、给爷锁死、今日份粮我吃到了、这是糖这是刀还是糖里有刀。想写小作文可长：一篇CP安利长文或一段产粮小剧场，糖分要够，越嗑越上头，粉头式安利。也可放开玩：写一段带玩法的CP小剧场或假如文学(假如CP换去别的世界观/假如他们先婚后爱/假如他们误以为对方不喜欢自己)，可以套童话/武侠/校园等异世界观做反差萌；底下可跟对家CP党对线、有人站队、有人产糖@同好来看。糖要够、梗要烫、篇幅可放开。",
+'toxic':"【渣男吐槽·详细指导】你是被主角伤过/辜负的角色，开帖控诉渣男/渣女，痛陈前因后果，又气又心酸。要详细写到把我是怎么被你辜负的从头细数：当初的好、后来的变、现在的恨。情绪要真实动人，带着心痛和不甘。玩梗可用（委屈又自嘲）：我当初真是瞎了眼、现在想想我纯纯工具人、为爱冲锋的勇士最后输给了自己。想写小作文随便写：一篇控诉长信，把委屈、不甘、心酸写得淋漓尽致，底下有人共情、有人劝和、有人拱火。也可放开玩：写假如文学(假如我从一开始没遇见你/假如我早看清你的真面目)、一封渣男忏悔录的撕碎版、或第一人称被辜负的自白，把又爱又恨的心路写得更钻心。",
+'hate':"【辱追·详细指导】这是又爱又恨的扭曲饭圈帖。嘴最毒、骂得最狠但爱得最深，边骂边护、前后矛盾、活人大崩溃。要把又爱又恨的拧巴写透：上一句骂你了不起是吧你就作吧，下一句又忍不住护你别哭啊哭什么。语气可以撕裂、自相矛盾、破防。玩梗可用疯批文学腔。想写小作文可以是长篇疯批饭圈文学：从追到黑、从黑到护，情绪来回横跳，看的人又爽又心酸。",
+'show':"【凡尔赛·详细指导】这是炫实力/炫身家/炫地位的凡尔赛帖。语气要低调中透出十足的得意——哎呀我也不是多强，就是刚好比你强；我也没想炫，就是随手发了张图。越装越欠拆台。玩梗可用：也不是多强就是刚好比你强、低调低调其实很想被夸、这波赢麻了、凡尔赛文学十级学者、我不是针对谁在座的各位。想写小作文随你：层层铺垫地把自己的牛X秀到天际，底下自然有人阴阳拆台、捧杀、酸，喜剧效果拉满。",
+'biz':"【悬赏交易·详细指导】这是发活/悬赏/通缉/卖帖，把论坛变成江湖黑市交易市场。可以悬赏找东西、雇人干架、招队友、卖传说级道具、发布通缉令；跨世界都能接单/抬价/捣乱。玩梗可用：一口价童叟无欺、有本事来抢啊、悬赏的是条龙你掂量掂量、包吃包住还送功法、接单的私聊我谈好价。想写小作文随你：把买卖写得有模有样，之后引发抢单、抬价、黑吃黑、跨世界蹭热闹，越混乱越有趣。",
+'ask':"【求助·详细指导】这是难题求助帖。角色遇到麻烦发帖求救，底下各路人马花式支招——有正经靠谱的、有离谱胡来的、有一本正经胡说八道的、有抬杠的，跨世界各显神通。玩梗可用：蹲一个大佬、这个我会但我选择不说、建议直接问主角、你先说是不是又惹到主角了、集思广益实在不行就硬闯。想写小作文随你：求助者被偏方坑、被真相戳穿，底下乐子人有来有回，越热闹越好。",
+'find':"【寻人/通缉·详细指导】这是找人帖：找失踪的恩人、通缉仇人、或当年那个TA你如今在哪。带故事性和悬念，深浅皆宜。玩梗可用：高价悬赏知道TA下落的人、找到我请你喝酒、别躲了我都看见你了、见字如面回了这个帖。底下有人歪楼、有人真认识、有人乱指路，还能给主角或旧关系埋伏笔。想写小作文随你：把一段故人旧事写开，带点宿命感和烟火气，让人想蹲后续。",
+'joke':"【冷笑话/烂梗大会·详细指导】这是纯乐子帖：讲冷笑话、谐音梗、土味情话、双关梗大比拼。可以一本正经地讲一个冷到冻住的梗，也可以连珠炮式抖段子，跨世界也能接梗。玩梗可用：我讲个冷笑话你别急、这波啊这波是、你说得对但我是来听笑话的、冷知识为什么是冷知识因为我讲了冷笑话。想写小作文随你：开一场烂梗大会，一个接一个，冷到大家都沉默又忍不住笑，纯轻松搞笑ising调剂节奏。",
+'work':"【打工人·详细指导】这是打工人化反差帖。角色一本正经用社畜/打工人口吻给自己的世界、组织、上司汇报工作，或吐槽这破班一天也上不下去了，反差喜剧拉满。玩梗可用：季度KPI达成率0.3%、这个月已经拯救世界三次加班费给我结一下、老板画的饼都够喂龙了、求求各位大佬别卷了、刚开完会救了个城继续写报表。想写小作文随你：把奇幻世界的人设套进现代打工人梗，一本正经地胡说八道，又惨又好笑。",
+'watch':"【围观吐槽·详细指导】注意！你是【路人吃瓜视角】，发帖围观+吐槽主角近期干的离谱事，但发帖人【绝不署名主角本人或其名字】，你只是看热闹的围观群众。要把主角的骚操作用围观者的口吻吐槽：他最近又干了件惊天动地的事、看TA做一票大的我血压先上来了、主角又双叒叕开挂了。玩梗可用：前排围观、这操作秀到我了、主角这次玩得真大、吃瓜吃到自己家头上。想写小作文随你：围观群众七嘴八舌，把主角的离谱事传得像都市传说，热闹又好笑，但始终是路人角度，绝不冒充主角。"
+};
 
 const CD_FORUM_PROMPT_CARD = `这是某世界论坛的角色名片生成。目标角色：{{ROLE}}（所属世界：{{WORLD}}）。
 
@@ -12537,6 +12764,27 @@ function cdForumApiReady(){
  * 真 LLM 生成入口
  * ------------------------------------------------------------ */
 
+/* 读取当前聊天最近 N 条非系统对话，拼成「谁：内容」文本（供发帖参考当前剧情；不写入世界档案） */
+function cfGetRecentChat(n){
+  try{
+    var ctx = SillyTavern.getContext();
+    var chat = (ctx && Array.isArray(ctx.chat)) ? ctx.chat : [];
+    if(!chat.length) return '';
+    n = parseInt(n,10); if(!n || n<1) n=5; if(n>50) n=50;
+    var lines=[];
+    for(var i=chat.length-1;i>=0 && lines.length<n;i--){
+      var m=chat[i];
+      if(!m || m.is_system) continue;
+      var who = (m.is_user ? (ctx&&ctx.name1)||'用户' : (m.name||(ctx&&ctx.name2)||'角色'));
+      var body = (m.mes || m.content || '').replace(/<[^>]*>/g,'').trim();
+      if(!body) continue;
+      lines.unshift(who+'：'+body.slice(0,400));
+    }
+    if(!lines.length) return '';
+    return '【当前正在进行的最新剧情对话（最近 '+lines.length+' 条，作为发帖参考，请紧扣这段来发帖/回帖）】\n' + lines.join('\n---\n');
+  }catch(e){ cdWarn('[论坛] 读取当前聊天失败', e); return ''; }
+}
+
 /* ① 总结当前剧情 → 世界档案（喂最近楼层） */
 async function cdForumGenerateWorld(){
   var ctx = SillyTavern.getContext();
@@ -12593,8 +12841,8 @@ async function cdForumGenerateWorld(){
 async function cdForumGeneratePosts(worlds, types, n, customPrompt, erotica){
   if(!cdForumApiReady()) return [];
   var w = (worlds && worlds.length) ? worlds[0] : null;
-  var POOL = ['s','x','n','lover','gossip','fight','moan'];
-  var typeWord = { s:'剧情相关(story)', x:'他世界闲话(other)', n:'重大新闻(news)', lover:'情感帖(lover)', gossip:'八卦帖(gossip)', fight:'扯皮抬杠(fight)', moan:'吐槽帖(moan)', ero:'色情(成人向)' };
+  var POOL = ['s','x','n','lover','gossip','fight','moan','angst','mo','fan','ship','toxic','hate','show','biz','ask','find','joke','work','watch'];
+  var typeWord = { s:'剧情相关(story)', x:'他世界闲话(other)', n:'重大新闻(news)', lover:'情感帖(lover)', gossip:'八卦帖(gossip)', fight:'扯皮抬杠(fight)', moan:'吐槽帖(moan)', ero:'色情(成人向)', angst:'情感纠结(angst)', mo:'嬷主角(mo)', fan:'同人(fan)', ship:'磕CP(ship)', toxic:'渣男吐槽(toxic)', hate:'辱追(hate)', show:'凡尔赛(show)', biz:'悬赏交易(biz)', ask:'求助(ask)', find:'寻人(find)', joke:'冷笑话(joke)', work:'打工人(work)', watch:'围观吐槽(watch)' };
   var chosen=[];
   if(types && types.length){
     chosen=types.slice();
@@ -12617,32 +12865,62 @@ async function cdForumGeneratePosts(worlds, types, n, customPrompt, erotica){
     (arr||[]).forEach(function(rl){ if(rl&&(rl.name||rl.n)) named.push({name:(rl.name||rl.n), world:ww.name}); });
   });
   var worldJson2 = allJson + (named.length?('\n\n【本论坛已有角色名单】（发帖/回帖请优先从这些有名字的角色里挑，70%用他们，30%用自然的路人人名）\n'+named.slice(0,40).map(function(rc,i){ return (i+1)+'. '+rc.name+'（'+rc.world+'）'; }).join('\n')):'');
+  // 追加：角色与主角的好感/关系图（供"恋人公开/扯头花/控诉/艾特"等关系联动，只用于本帖，不写回数据）
+  try{
+    var _roster = cdForumGetRoster();
+    var _me = '主角';
+    try{ var _c0=SillyTavern.getContext(); if(_c0&&_c0.name1) _me=String(_c0.name1); }catch(_e){}
+    var _rel=( _roster||[] ).filter(function(r){ return r && (r.n||r.name); }).slice(0,40).map(function(r,i){
+      var _nm=r.n||r.name; var _ww=r.w||r.world||'';
+      var _st=r.stage?('，关系：'+r.stage):'';
+      var _fr=(r.f!==undefined?('，好感'+r.f):(r.fav!==undefined?('，好感'+r.fav):''));
+      var _g=(r.grievances&&r.grievances.length)?('；积怨：'+r.grievances.map(function(it){return it.t;}).join(' / ')):'';
+      var _a=(r.affections&&r.affections.length)?('；铭记：'+r.affections.map(function(it){return it.t;}).join(' / ')):'';
+      return (i+1)+'. '+_nm+(_ww?'（'+_ww+'）':'')+_st+_fr+_g+_a;
+    });
+    if(_rel.length) worldJson2 += '\n\n【本论坛角色与主角(@'+_me+')的关系】（供"恋人公开炫耀/吃醋扯头花/控诉"等人际联动，直接代入角色状态表现，别把"好感数值"当内容本身念出来）\n'+_rel.join('\n');
+  }catch(_re){ cdWarn('[论坛] 拼接好感关系失败', _re); }
   var promptBase = (customPrompt && String(customPrompt).trim()) ? String(customPrompt).trim() : CD_FORUM_PROMPT_POSTS;
   var prompt = promptBase
     .replace(/\{\{WORLD_JSON\}\}/g, worldJson2)
     .replace(/\{N\}/g, String(n))
     .replace(/\{环球TYPE\}/g, typeDesc);
+  // 按命中的题材注入对应"详细写作指导"（若该题材在 CF_TYPE_GUIDE 里有）
+  try{
+    if(typeof CF_TYPE_GUIDE==='object' && CF_TYPE_GUIDE){
+      var _glue='';
+      (chosen||[]).forEach(function(t){ if(CF_TYPE_GUIDE[t]) _glue=((_glue)?_glue+'\n\n':'')+CF_TYPE_GUIDE[t]; });
+      if(_glue) prompt += '\n\n===\n'+_glue+'\n（这是本条帖子题材的专属写作要求，请严格按要求写）';
+    }
+  }catch(_ge){ cdWarn('[论坛] 题材详细指导注入失败', _ge); }
   if(promptBase !== CD_FORUM_PROMPT_POSTS && prompt.indexOf('JSON') < 0 && prompt.indexOf('json') < 0){
-    prompt += '\n\n【输出要求】请严格按如下 JSON 数组输出（一个帖子一个对象），不要输出 JSON 以外的话：\n[{"type":"story|other|news|lover|gossip|fight|moan","author":"发帖角色名","world":"所属世界名","title":"帖名","text":"帖子正文（人话、有情绪）","tag":"版块小标签","replies":[{"from":"跟帖人","world":"世界","content":"回复"}]}]';
+    prompt += '\n\n【输出要求】请严格按如下 JSON 数组输出（一个帖子一个对象），不要输出 JSON 以外的话：\n[{"type":"story|other|news|lover|gossip|fight|moan|angst|mo|fan|ship|toxic|hate|show|biz|ask|find|joke|work|watch","author":"发帖角色名","world":"所属世界名","title":"帖名","text":"帖子正文（人话、有情绪）","tag":"版块小标签","replies":[{"from":"跟帖人","world":"世界","content":"回复"}]}]';
   }
+  // 结合当前聊天记录（开关 cfg.chatFeed，默认开；只在生成这一次用，不写入世界档案）
+  try{
+    var _cFeed = cdForumCfg(); if(_cFeed && _cFeed.chatFeed !== false){
+      var _chatTxt = cfGetRecentChat(_cFeed.chatCount || 5);
+      if(_chatTxt) prompt += '\n\n===\n'+_chatTxt+'\n请这些角色【紧扣这段正在发生的最新剧情】去发帖和回帖，让帖子紧跟当下剧情进行时。';
+    }
+  }catch(_fe){ cdWarn('[论坛] 发帖结合聊天失败', _fe); }
   var msgs = [ { role:'system', content: prompt }, { role:'user', content:'现在请生成这些帖子。' } ];
   try{
     var text = await cdForumApiComplete(msgs);
     var arr = cdForumExtractJSON(text);
     if(!Array.isArray(arr)) { var o=cdForumExtractJSON(text); arr = o && Array.isArray(o.posts) ? o.posts : null; }
     if(!arr || !arr.length) return [];
-    var tcmap = { story:'s', other:'x', news:'n', lover:'l', gossip:'g', fight:'f', moan:'m', ero:'e' };
+    var tcmap = { story:'s', other:'x', news:'n', lover:'l', gossip:'g', fight:'f', moan:'m', ero:'e', angst:'angst', mo:'mo', fan:'fan', ship:'ship', toxic:'toxic', hate:'hate', show:'show', biz:'biz', ask:'ask', find:'find', joke:'joke', work:'work', watch:'watch' };
     return arr.slice(0, n).map(function(p,i){
       var tc = String((p.type||chosen[0]||'x')).toLowerCase();
       var tcc = tcmap[tc] || 'x';
       var aiReplies=[];
       if(Array.isArray(p.replies)){
         p.replies.forEach(function(rc){
-          if(rc && (rc.content!==null&&rc.content!==undefined) && String(rc.content).trim()) aiReplies.push({from:String(rc.from||'匿名'),world:String(rc.world||''),content:String(rc.content)});
+          if(rc && (rc.content!==null&&rc.content!==undefined) && String(rc.content).trim()) aiReplies.push({from:cdForumMaskUserName(String(rc.from||'匿名')),world:String(rc.world||''),content:String(rc.content)});
         });
       }
       return {
-        auth: String(p.author||'无名氏'),
+        auth: cdForumMaskUserName(String(p.author||'无名氏')),
         world: String(p.world||(Array.isArray(named)&&named[i]?named[i].world:'')||(w?w.name:'未知世界')),
         tag: String(p.tag||''),
         type: tcc,
@@ -12695,7 +12973,7 @@ async function cdForumJealous(){
       auth: old.n||old.name, world: oldWorld, tag:'x', type:'x',
       time:'刚刚', hot: 300 + Math.floor(Math.random()*200),
       title: String(o.title), text: String(o.text||'')
-      , replies: (o.replies||[]).map(function(r){ return { from:String(r.from||'匿名'), content:String(r.content||'') }; })
+      , replies: (o.replies||[]).map(function(r){ return { from:cdForumMaskUserName(String(r.from||'匿名')), content:String(r.content||'') }; })
       , je:true
     };
   }catch(e){ cdWarn('[论坛] 吃醋联动失败', e); return null; }
@@ -12737,9 +13015,15 @@ function _cfMountV2(){
 
   // ===== 工具 =====
   function esc(s){ s=String(s==null?'':s); return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'"'); }
-  function tagLabel(t){ var m={s:'剧情',x:'他世界',n:'新闻',l:'情感',g:'八卦',f:'扯皮',m:'吐槽',e:'色情'}; return m[t]||'他世界'; }
+  function tagLabel(t){ var m={s:'剧情',x:'他世界',n:'新闻',l:'情感',g:'八卦',f:'扯皮',m:'吐槽',e:'色情',angst:'纠结',mo:'嬷',fan:'同人',ship:'磕CP',toxic:'控诉',hate:'辱追',show:'凡尔赛',biz:'交易',ask:'求助',find:'寻人',joke:'烂梗',work:'打工人',watch:'围观'}; return m[t]||'他世界'; }
 
-  // ===== 渲染帖子流（支持板块过滤） =====
+  // ===== 渲染帖子流（支持板块过滤 + 多选删除） =====
+  var multiMode=false, multiSel={};
+  function paintMulti(){
+    var bar=R.querySelector('#cfMultiBar'); if(bar) bar.style.display=multiMode?'flex':'none';
+    var cnt=R.querySelector('#cfMultiCount'); if(cnt) cnt.textContent='已选 '+Object.keys(multiSel).length+' 条';
+    var q=R.querySelector('#multiQ'); if(q) q.classList.toggle('on',!!multiMode);
+  }
   function renderFeed(){
     var f=R.querySelector('#feed'); if(!f) return; f.innerHTML='';
     var list = (curBoard==='fav') ? POSTS.filter(function(p){ return p.fav; }) : POSTS;
@@ -12749,28 +13033,52 @@ function _cfMountV2(){
     }
     list.forEach(function(p,idx0){
       var i=POSTS.indexOf(p);
-      var d=document.createElement('div'); d.className='post'; d.dataset.i=i;
+      var d=document.createElement('div'); d.className='post'+(multiSel[i]?' multi-on':''); d.dataset.i=i;
       var tl=tagLabel(p.type||'x');
       var tcls=(p.type==='s'?'s':p.type==='n'?'n':'x');
       d.innerHTML=
+        (multiMode?('<div class="p-multi" data-i="'+i+'" style="position:absolute;left:8px;top:24px;z-index:2;width:15px;height:15px;border-radius:4px;border:1.5px solid var(--c-accent);background:'+(multiSel[i]?'var(--c-send)':'var(--c-input)')+';display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;font-weight:700;">'+(multiSel[i]?'✓':'')+'</div>') : '')+
         '<div class="p-top">'+
           '<span class="p-auth" data-role="'+esc(p.auth)+'">'+esc(p.auth)+'<span class="brief">名片</span></span>'+
           '<span class="p-world">'+esc(p.world||'')+'</span><span class="p-tag '+tcls+'">'+tl+'</span>'+
           '<span class="p-time">'+esc(p.time||'')+'</span>'+
           '<span class="p-hot">'+((p.hot>250)?'<span class="h">爆</span> '+(p.hot||0):'<span class="h">热</span> '+(p.hot||0))+'</span>'+
-          '<span class="p-fav" data-fav="'+i+'" style="cursor:pointer;font-size:11px;flex-shrink:0;color:'+(p.fav?'#e0a04a':'#9aa1a7')+';" title="收藏">'+(p.fav?'★':'☆')+'</span>'+
+          (multiMode?'':'<span class="p-fav" data-fav="'+i+'" style="cursor:pointer;font-size:11px;flex-shrink:0;color:'+(p.fav?'#e0a04a':'#9aa1a7')+';" title="收藏">'+(p.fav?'★':'☆')+'</span>')+
         '</div>'+
-        '<div class="p-title">'+esc(p.title||'')+'</div>'+
-        '<div class="p-text">'+esc(p.text||'')+'</div>'+
-        '<div class="p-rep" style="font-size:8.5px;color:#a7adb2;margin-top:3px;">'+(p.replies&&p.replies.length?p.replies.length+'条回复':'暂无回复')+'</div>';
+        (multiMode?'':'<div class="p-title">'+esc(p.title||'')+'</div><div class="p-text">'+cdForumExcerpt(p.text)+'</div>')+
+        '<div class="p-rep" style="font-size:8.5px;color:#a7adb2;margin-top:3px;">'+(p.replies&&p.replies.length?p.replies.length+'条回复':'暂无回复')+((String(p.text||'').replace(/<[^>]*>/g,'').length>80)?(' · 全文'+String(p.text||'').replace(/<[^>]*>/g,'').length+'字·点开查看'):'')+'</div>';
+      if(multiMode) d.style.paddingLeft='28px';
       f.appendChild(d);
     });
     f.querySelectorAll('.p-auth').forEach(function(a){ a.addEventListener('click',function(e){ e.stopPropagation(); openRole(this.dataset.role); }); });
     f.querySelectorAll('.p-fav').forEach(function(s){ s.addEventListener('click',function(e){ e.stopPropagation(); var pi=parseInt(this.dataset.fav,10); var pp=POSTS[pi]; if(pp){ pp.fav=!pp.fav; _cfPostsCache=POSTS; cdForumPersist(); renderFeed(); } }); });
+    // 多选勾选框
+    f.querySelectorAll('.p-multi').forEach(function(m){ m.addEventListener('click',function(e){ e.stopPropagation(); var ii=parseInt(this.dataset.i,10); multiSel[ii]=!multiSel[ii]; paintMulti(); renderFeed(); }); });
     var _pc=f.querySelectorAll('.post');
     try{ if(typeof cdAddLog==='function') cdAddLog('info','[论坛] renderFeed 帖子数='+_pc.length); }catch(e){}
-    _pc.forEach(function(p){ p.addEventListener('click',function(){ try{ if(typeof cdAddLog==='function') cdAddLog('info','[论坛] 帖子被点击 i='+this.dataset.i); }catch(e){} openPost(this.dataset.i); }); });
+    _pc.forEach(function(p){ p.addEventListener('click',function(){ try{ if(typeof cdAddLog==='function') cdAddLog('info','[论坛] 帖子被点击 i='+this.dataset.i); }catch(e){} var ii=parseInt(this.dataset.i,10); if(multiMode){ multiSel[ii]=!multiSel[ii]; paintMulti(); renderFeed(); return; } openPost(ii); }); });
   }
+
+  // ===== 帖子多选：入口 + 操作条 =====
+  cdBindOnce(R.querySelector('#multiQ'), function(){
+    multiMode=!multiMode; multiSel={}; paintMulti(); renderFeed();
+    if(multiMode) try{ if(typeof toastr==='function') toastr.info('已进入多选：点帖子勾选，可批量删除'); }catch(e){}
+  });
+  cdBindOnce(R.querySelector('#cfMultiAll'), function(){
+    if(!multiMode) return;
+    POSTS.forEach(function(p,i){ multiSel[i]=true; }); paintMulti(); renderFeed();
+  });
+  cdBindOnce(R.querySelector('#cfMultiCancel'), function(){ multiMode=false; multiSel={}; paintMulti(); renderFeed(); });
+  cdBindOnce(R.querySelector('#cfMultiDel'), function(){
+    if(!multiMode) return;
+    var keys=Object.keys(multiSel); if(!keys.length){ try{ if(typeof toastr==='function') toastr.info('还没勾选任何帖子'); }catch(e){} return; }
+    if(!confirm('确定删除选中的 '+keys.length+' 条帖子？此操作不可撤销。')) return;
+    // 倒序删除
+    var idxs=keys.map(function(k){return parseInt(k,10);}).sort(function(a,b){return b-a;});
+    idxs.forEach(function(ix){ if(ix>=0 && ix<POSTS.length) POSTS.splice(ix,1); });
+    _cfPostsCache=POSTS; cdForumPersist(); multiMode=false; multiSel={}; paintMulti(); renderFeed();
+    try{ if(typeof toastr==='function') toastr.success('已删除 '+keys.length+' 条帖子'); }catch(e){}
+  });
 
   // ===== 角色查找 + 名片 =====
   function findRole(name){
@@ -12892,6 +13200,8 @@ function _cfMountV2(){
       pi.value=''; _cfPostsCache=POSTS; cdForumPersist(); openPost(i);
     });
   }
+  // 暴露给艾特横幅跳帖用
+  try{ window.__cfOpenPost = function(idx){ try{ openPost(idx); }catch(_e){ cdWarn('[论坛] 横幅跳帖失败', _e); } }; }catch(_e){}
 
   // ===== 面板切换 =====
   var fl=R.querySelector('#fl');
@@ -13094,7 +13404,60 @@ function _cfMountV2(){
       });
     }
   }
-  if(mgQ && panelManage) cdBindOnce(mgQ, function(){ fillManagePanel(); showPanel(panelManage); });
+  // ===== 管理面板：角色/世界 多选删除（独立简化列表，不动原复杂卡） =====
+  var mgMultiMode=false, mgSelR={}, mgSelW={};
+  function fillMgMulti(){
+    if(!panelManage) return;
+    var bar=panelManage.querySelector('#mgMultiBar'); if(bar) bar.style.display=mgMultiMode?'flex':'none';
+    var q=panelManage.querySelector('#mgMultiQ'); if(q) q.style.opacity=mgMultiMode?'.6':'1';
+    var cnt=panelManage.querySelector('#mgMultiCount'); if(cnt) cnt.textContent='角色'+Object.keys(mgSelR).length+' / 世界'+Object.keys(mgSelW).length;
+    var rl=panelManage.querySelector('#mgRoleList'); if(rl){ rl.innerHTML='';
+      if(!ROSTER.length){ rl.innerHTML='<div style="font-size:10px;color:#9aa1a7;padding:16px 4px;">暂无角色。</div>'; }
+      else ROSTER.forEach(function(x){
+        var n=x.n||x.name; if(!n) return;
+        var on=!!mgSelR[n];
+        var c=document.createElement('div');
+        c.style.cssText='display:flex;align-items:center;gap:9px;background:#fff;border:1px solid '+(on?'var(--c-accent)':'#e7e9eb')+';border-radius:10px;padding:8px 10px;margin-bottom:6px;cursor:pointer;';
+        c.innerHTML='<span style="width:16px;height:16px;border-radius:4px;border:1.5px solid '+(on?'var(--c-accent)':'#c9ced2')+';background:'+(on?'var(--c-send)':'#fff')+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;">'+(on?'✓':'')+'</span><b style="flex:1;font-size:11px;color:var(--c-txt)">'+esc0(n)+'</b><span style="font-size:8.5px;color:#8b9298;">'+esc0(x.w||x.world||'')+'</span>';
+        c.addEventListener('click',function(){ mgSelR[n]=!mgSelR[n]; fillMgMulti(); });
+        rl.appendChild(c);
+      });
+    }
+    var wl=panelManage.querySelector('#mgWorldList'); if(wl){ wl.innerHTML='';
+      if(!WORLDS.length){ wl.innerHTML='<div style="font-size:10px;color:#9aa1a7;padding:16px 4px;">暂无世界。</div>'; }
+      else WORLDS.forEach(function(w,i){
+        var on=!!mgSelW[i];
+        var c=document.createElement('div');
+        c.style.cssText='display:flex;align-items:center;gap:9px;background:#fff;border:1px solid '+(on?'var(--c-accent)':'#e7e9eb')+';border-radius:10px;padding:8px 10px;margin-bottom:6px;cursor:pointer;';
+        c.innerHTML='<span style="width:16px;height:16px;border-radius:4px;border:1.5px solid '+(on?'var(--c-accent)':'#c9ced2')+';background:'+(on?'var(--c-send)':'#fff')+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;">'+(on?'✓':'')+'</span><b style="flex:1;font-size:11px;color:var(--c-txt)">'+esc0(w.name||('世界'+(i+1)))+'</b>';
+        c.addEventListener('click',function(){ mgSelW[i]=!mgSelW[i]; fillMgMulti(); });
+        wl.appendChild(c);
+      });
+    }
+  }
+  if(mgQ && panelManage) cdBindOnce(mgQ, function(){ if(mgMultiMode){ fillMgMulti(); } else { fillManagePanel(); } showPanel(panelManage); });
+  cdBindOnce(R.querySelector('#mgMultiQ'), function(){
+    mgMultiMode=!mgMultiMode; mgSelR={}; mgSelW={};
+    if(mgMultiMode) fillMgMulti(); else fillManagePanel();
+  });
+  cdBindOnce(R.querySelector('#mgMultiAllR'), function(){ ROSTER.forEach(function(x){ var n=x.n||x.name; if(n) mgSelR[n]=true; }); fillMgMulti(); });
+  cdBindOnce(R.querySelector('#mgMultiAllW'), function(){ WORLDS.forEach(function(w,i){ mgSelW[i]=true; }); fillMgMulti(); });
+  cdBindOnce(R.querySelector('#mgMultiDelR'), function(){
+    if(!mgMultiMode) return;
+    var names=Object.keys(mgSelR); if(!names.length||!confirm('确定删除选中角色（'+names.length+' 个）？')) return;
+    ROSTER=ROSTER.filter(function(x){ return !mgSelR[(x.n||x.name)]; });
+    _cfRosterCache=ROSTER; cdForumPersist(); mgSelR={}; fillMgMulti();
+    try{ if(typeof toastr==='function') toastr.success('已删除角色'); }catch(e){}
+  });
+  cdBindOnce(R.querySelector('#mgMultiDelW'), function(){
+    if(!mgMultiMode) return;
+    var idxs=Object.keys(mgSelW).map(Number); if(!idxs.length||!confirm('确定删除选中世界（'+idxs.length+' 个）？')) return;
+    idxs.sort(function(a,b){ return b-a; });
+    idxs.forEach(function(ix){ if(ix>=0 && ix<WORLDS.length) WORLDS.splice(ix,1); });
+    _cfWorldsCache=WORLDS; cdForumPersist(); mgSelW={}; fillMgMulti();
+    try{ if(typeof toastr==='function') toastr.success('已删除世界'); }catch(e){}
+  });
+  cdBindOnce(R.querySelector('#mgMultiCancel'), function(){ mgMultiMode=false; mgSelR={}; mgSelW={}; fillManagePanel(); });
   // ===== 我的主页（小红书式：设定发帖昵称 + 我看我发的帖） =====
   var panelHome=R.querySelector('#panelHome');
   var homeQ=R.querySelector('#homeQ');
@@ -13161,6 +13524,23 @@ function _cfMountV2(){
   if(rcInp) rcInp.addEventListener('change',function(){ var c=cdForumCfg(); c.repCount=parseInt(rcInp.value,10)||6; if(c.repCount<0)c.repCount=0;if(c.repCount>30)c.repCount=30; _cfCfgCache=c; cdForumPersist(); repCount=c.repCount; });
   if(aeInp) aeInp.addEventListener('change',function(){ var c=cdForumCfg(); c.autoEvery=parseInt(aeInp.value,10)||5; if(c.autoEvery<1)c.autoEvery=1;if(c.autoEvery>50)c.autoEvery=50; _cfCfgCache=c; cdForumPersist(); autoEvery=c.autoEvery; });
 
+  // ===== 结合当前聊天（手动&自动共用：开关 + 最近N条）=====
+  var chatFeedEl=R.querySelector('#cfChatFeed'), chatCountEl=R.querySelector('#cfChatCount'), chatLbl=R.querySelector('#cfChatFeedLbl');
+  var chatFeedOn = (cfg.chatFeed!==false);
+  function paintChatFeed(){ if(chatFeedEl) chatFeedEl.checked=!!chatFeedOn; if(chatCountEl) chatCountEl.value=cfg.chatCount||5; }
+  if(chatFeedEl) chatFeedEl.addEventListener('change',function(){ chatFeedOn=!!chatFeedEl.checked; var c=cdForumCfg(); c.chatFeed=chatFeedOn; _cfCfgCache=c; cdForumPersist(); cfg.chatFeed=chatFeedOn; paintChatFeed(); });
+  if(chatLbl) chatLbl.addEventListener('click',function(){ chatFeedOn=!chatFeedOn; if(chatFeedEl) chatFeedEl.checked=chatFeedOn; var c=cdForumCfg(); c.chatFeed=chatFeedOn; _cfCfgCache=c; cdForumPersist(); cfg.chatFeed=chatFeedOn; paintChatFeed(); });
+  if(chatCountEl) chatCountEl.addEventListener('change',function(){ var c=cdForumCfg(); c.chatCount=parseInt(chatCountEl.value,10)||5; if(c.chatCount<1)c.chatCount=1; if(c.chatCount>50)c.chatCount=50; _cfCfgCache=c; cdForumPersist(); cfg.chatCount=c.chatCount; paintChatFeed(); });
+  paintChatFeed();
+
+  // ===== 自动发帖总开关（聊到N条自动跑；关闭则不自动）=====
+  var autoGenEl=R.querySelector('#cfAutoGen'), autoGenLbl=R.querySelector('#cfAutoGenLbl');
+  var autoGenOn = (cfg.autoGen!==false);
+  function paintAutoGen(){ if(autoGenEl) autoGenEl.checked=!!autoGenOn; if(autoGenLbl) autoGenLbl.style.opacity=autoGenOn?'1':'.5'; }
+  if(autoGenEl) autoGenEl.addEventListener('change',function(){ autoGenOn=!!autoGenEl.checked; var c=cdForumCfg(); c.autoGen=autoGenOn; _cfCfgCache=c; cdForumPersist(); cfg.autoGen=autoGenOn; paintAutoGen(); });
+  if(autoGenLbl) autoGenLbl.addEventListener('click',function(){ autoGenOn=!autoGenOn; if(autoGenEl) autoGenEl.checked=autoGenOn; var c=cdForumCfg(); c.autoGen=autoGenOn; _cfCfgCache=c; cdForumPersist(); cfg.autoGen=autoGenOn; paintAutoGen(); });
+  paintAutoGen();
+
   // ===== 折叠条：展开/收起 =====
   var genPanel=R.querySelector('#genPanel');
   var genFoldHead=R.querySelector('#genFoldHead');
@@ -13207,11 +13587,45 @@ function _cfMountV2(){
     var me=this; me.disabled=true; var oldTxt=me.textContent; me.textContent='生成中…';
     try{
       var newPost=await cdForumGenerateManual(desc,cfg.erotica);
-      if(newPost){ POSTS.unshift(newPost); if(!findRole(newPost.auth)) ROSTER.push({n:newPost.auth,w:newPost.world,f:Math.floor(Math.random()*60)-10,stage:'初识',judge:''}); _cfPostsCache=POSTS; cdForumPersist(); renderFeed(); R.querySelector('#genManualDesc').value=''; toastr.success('已生成：'+newPost.title); }
+      if(newPost){ POSTS.unshift(newPost); if(!findRole(newPost.auth)) ROSTER.push({n:newPost.auth,w:newPost.world,f:Math.floor(Math.random()*60)-10,stage:'初识',judge:''}); _cfPostsCache=POSTS; cdForumPersist(); renderFeed(); try{ if(typeof cdForumCheckAt==='function') cdForumCheckAt([newPost]); }catch(_e2){} R.querySelector('#genManualDesc').value=''; toastr.success('已生成：'+newPost.title); }
       else toastr.error('手动生成失败，请查看日志');
     } catch(e){ toastr.error('生成失败：'+e.message); }
     me.disabled=false; me.textContent=oldTxt;
   });
+
+  // ===== 题材多选面板（B 弹层）：点「题材」展开，可多选，生成时只从勾选的题材随机 =====
+  var CT_OPTS=[{k:'s',l:'剧情'},{k:'x',l:'他世界'},{k:'n',l:'新闻'},{k:'lover',l:'情感'},{k:'gossip',l:'八卦'},{k:'fight',l:'扯皮'},{k:'moan',l:'吐槽'},{k:'angst',l:'纠结'},{k:'mo',l:'嬷主角'},{k:'fan',l:'同人'},{k:'ship',l:'磕CP'},{k:'toxic',l:'控诉'},{k:'hate',l:'辱追'},{k:'show',l:'凡尔赛'},{k:'biz',l:'交易'},{k:'ask',l:'求助'},{k:'find',l:'寻人'},{k:'joke',l:'烂梗'},{k:'work',l:'打工人'},{k:'watch',l:'围观'}];
+  var TYPE_PANEL=R.querySelector('#genTypePanel'), TYPE_SEL=R.querySelector('#genTypeSel'), TYPE_CHIPS=R.querySelector('#genTypeChips');
+  var selTypes=(cfg.selTypes&&Array.isArray(cfg.selTypes))?cfg.selTypes.slice():[];
+  function paintTypeChips(){
+    if(TYPE_SEL) TYPE_SEL.textContent = selTypes.length ? ('已选'+selTypes.length) : '全部';
+    if(!TYPE_CHIPS) return;
+    TYPE_CHIPS.innerHTML='';
+    CT_OPTS.forEach(function(o){
+      var c=document.createElement('span');
+      var on=selTypes.indexOf(o.k)>=0;
+      c.style.cssText='font-size:9.5px;padding:4px 9px;border-radius:8px;cursor:pointer;border:1px solid '+(on?'var(--c-accent)':'var(--c-line2)')+';background:'+(on?'var(--c-send)':'var(--c-input)')+';color:'+(on?'var(--c-send-txt)':'var(--c-txt2)')+';font-weight:'+(on?'700':'600')+';';
+      c.textContent=o.l;
+      c.addEventListener('click',function(){
+        var i=selTypes.indexOf(o.k); if(i>=0) selTypes.splice(i,1); else selTypes.push(o.k);
+        var _c2=cdForumCfg(); _c2.selTypes=selTypes.slice(); _cfCfgCache=_c2; cfg.selTypes=selTypes.slice(); cdForumPersist(); paintTypeChips();
+      });
+      TYPE_CHIPS.appendChild(c);
+    });
+    var all=document.createElement('span');
+    var none=!selTypes.length;
+    all.style.cssText='font-size:9.5px;padding:4px 9px;border-radius:8px;cursor:pointer;border:1px solid '+(none?'var(--c-accent)':'var(--c-line2)')+';background:'+(none?'var(--c-send)':'var(--c-input)')+';color:'+(none?'var(--c-send-txt)':'var(--c-txt2)')+';font-weight:600;';
+    all.textContent='全部';
+    all.addEventListener('click',function(){ selTypes=[]; var _c2=cdForumCfg(); _c2.selTypes=[]; _cfCfgCache=_c2; cfg.selTypes=[]; cdForumPersist(); paintTypeChips(); });
+    TYPE_CHIPS.insertBefore(all, TYPE_CHIPS.firstChild);
+  }
+  paintTypeChips();
+  (function(){
+    var _head=R.querySelector('#genTypeHead'), _arrow=R.querySelector('#genTypeArrow'), _sel=R.querySelector('#genTypeSel');
+    function _toggle(on){ if(TYPE_PANEL) TYPE_PANEL.style.display=on?'block':'none'; if(_arrow) _arrow.textContent=on?'▴':'▾'; }
+    function _bind(el){ if(!el) return; el.addEventListener('click',function(){ if(TYPE_PANEL) _toggle(TYPE_PANEL.style.display!=='block'); }); }
+    _bind(_head); _bind(_arrow); _bind(_sel);
+  })();
 
   // ===== 自动生成按钮 =====
   cdBindOnce(R.querySelector('#genBtn'), async function(){
@@ -13219,11 +13633,13 @@ function _cfMountV2(){
     var n=parseInt(R.querySelector('#genNum').value,10)||3; if(n<1)n=1; if(n>10)n=10;
     var btn=this; btn.disabled=true; var oldTxt=btn.textContent; btn.textContent='生成中…';
     try{
-      var newPosts=await cdForumGeneratePosts(WORLDS,null,n,customPrompt,cfg.erotica);
+      var _st=(cfg.selTypes&&cfg.selTypes.length)?cfg.selTypes.slice():null;
+      var newPosts=await cdForumGeneratePosts(WORLDS,_st,n,customPrompt,cfg.erotica);
       if(newPosts&&newPosts.length){
         for(var k=newPosts.length-1;k>=0;k--){ ensureReplies(newPosts[k]); POSTS.unshift(newPosts[k]); }
         newPosts.forEach(function(p){ if(!findRole(p.auth)) ROSTER.push({n:p.auth,w:p.world,f:Math.floor(Math.random()*60)-10,stage:'初识',judge:''}); });
         _cfPostsCache=POSTS; cdForumPersist(); renderFeed();
+        try{ if(typeof cdForumCheckAt==='function') cdForumCheckAt(newPosts); }catch(_e2){}
         toastr.success('已生成 '+newPosts.length+' 条帖子');
       } else toastr.error('生成失败，请查看日志');
     } catch(e){ toastr.error('生成失败：'+e.message); }
@@ -13385,9 +13801,9 @@ function cdForumCfg(){
   try{
     var raw=localStorage.getItem('cd-forum-cfg');
     var c=null; if(raw){ try{c=JSON.parse(raw);}catch(e){} }
-    if(!c) c={ repCount:6, autoEvery:5, customPrompt:'', mode:'auto', erotica:false, homeName:'', inject:true, api:{} };
+    if(!c) c={ repCount:6, autoEvery:5, customPrompt:'', mode:'auto', erotica:false, homeName:'', inject:true, chatFeed:true, chatCount:5, autoGen:true, selTypes:[], api:{} };
     _cfCfgCache=c; return c;
-  }catch(e){ return { repCount:6, autoEvery:5, customPrompt:'', mode:'auto', erotica:false, homeName:'', inject:true }; }
+  }catch(e){ if(_cfCfgCache) return _cfCfgCache; return { repCount:6, autoEvery:5, customPrompt:'', mode:'auto', erotica:false, homeName:'', inject:true, chatFeed:true, chatCount:5, autoGen:true, selTypes:[] }; }
 }
 
 /* 在论坛主界面注入显眼入口条：「总结并保存世界」+「吃醋联动」 */
@@ -13479,23 +13895,30 @@ async function cdForumGenerateManual(desc, erotica){
   var worldJson2 = worldJson + (named.length?('\n\n【已有角色名单】（发帖/回帖优先用这些有名字的角色，70%用他们，30%用路人）\n'+named.slice(0,40).map(function(rc,i){ return (i+1)+'. '+rc.name+'（'+rc.world+'）'; }).join('\n')):'');
   var prompt;
   if(desc && String(desc).trim()){
-    prompt = '这是某世界论坛，不同世界角色能跨世界串门。请按【用户指定内容】生成一条帖子（标题+正文+回帖），口吻像真人、有情绪。跨世界：回帖尽量混入别的世界角色；发帖/回帖人优先用世界档案里有名字的角色（70%）或自然路人（30%）。\n\n世界档案：'+worldJson2+'\n\n【用户想让生成的帖子】：'+String(desc).trim()+'\n\n【输出要求】严格按如下 JSON 输出，不要输出 JSON 以外的话：\n{"type":"story|other|news|lover|gossip|fight|moan","author":"发帖角色名","world":"所属世界","title":"帖名","text":"正文（人话）","tag":"标签","replies":[{"from":"跟帖人","world":"世界","content":"回复"}]}';
+    prompt = '这是某世界论坛，不同世界角色能跨世界串门。请按【用户指定内容】生成一条帖子（标题+正文+回帖），口吻像真人、有情绪。跨世界：回帖尽量混入别的世界角色；发帖/回帖人优先用世界档案里有名字的角色（70%）或自然路人（30%）。\n\n世界档案：'+worldJson2+'\n\n【用户想让生成的帖子】：'+String(desc).trim()+'\n\n【输出要求】严格按如下 JSON 输出，不要输出 JSON 以外的话：\n{"type":"story|other|news|lover|gossip|fight|moan|angst|mo|fan|ship|toxic|hate","author":"发帖角色名","world":"所属世界","title":"帖名","text":"正文（人话）","tag":"标签","replies":[{"from":"跟帖人","world":"世界","content":"回复"}]}';
   } else {
     prompt = CD_FORUM_PROMPT_POSTS
       .replace(/\{\{WORLD_JSON\}\}/g, worldJson2)
       .replace(/\{N\}/g, '1')
       .replace(/\{环球TYPE\}/g, (erotica && Math.random()<0.4)?'色情(成人向)':'剧情相关(story)/他世界闲话(other)/重大新闻(news)/情感帖(lover)/八卦帖(gossip)/扯皮抬杠(fight)/吐槽帖(moan)，随机抽一种');
   }
+  // 结合当前聊天记录（开关 cfg.chatFeed，默认开；只在生成这一次用，不写入世界档案）
+  try{
+    var _cFeed = cdForumCfg(); if(_cFeed && _cFeed.chatFeed !== false){
+      var _chatTxt = cfGetRecentChat(_cFeed.chatCount || 5);
+      if(_chatTxt) prompt += '\n\n===\n'+_chatTxt+'\n请紧扣这段正在发生的最新剧情去发这条帖（若用户指定了内容，则以用户内容为主、贴合这段剧情）。';
+    }
+  }catch(_fe){ cdWarn('[论坛] 手动发帖结合聊天失败', _fe); }
   var msgs = [ { role:'system', content: prompt }, { role:'user', content:'请生成这条帖子。' } ];
   try{
     var text = await cdForumApiComplete(msgs);
     var o = cdForumExtractJSON(text);
     if(!o || !o.title) return null;
     var tc = String(o.type||'x').toLowerCase();
-    var tcmap = { story:'s', other:'x', news:'n', lover:'l', gossip:'g', fight:'f', moan:'m', ero:'e' };
+    var tcmap = { story:'s', other:'x', news:'n', lover:'l', gossip:'g', fight:'f', moan:'m', ero:'e', angst:'angst', mo:'mo', fan:'fan', ship:'ship', toxic:'toxic', hate:'hate', show:'show', biz:'biz', ask:'ask', find:'find', joke:'joke', work:'work', watch:'watch' };
     var tcc = tcmap[tc] || 'x';
     var nPost = {
-      auth: String(o.author||'无名氏'),
+      auth: cdForumMaskUserName(String(o.author||'无名氏')),
       world: String(o.world||(w?w.name:'未知世界')),
       tag: String(o.tag||''),
       type: tcc,
@@ -13508,7 +13931,7 @@ async function cdForumGenerateManual(desc, erotica){
       replies: []
     };
     if(Array.isArray(o.replies)){
-      o.replies.forEach(function(rc){ if(rc&&rc.content) nPost.replies.push({from:String(rc.from||'匿名'),world:String(rc.world||''),content:String(rc.content)}); });
+      o.replies.forEach(function(rc){ if(rc&&rc.content) nPost.replies.push({from:cdForumMaskUserName(String(rc.from||'匿名')),world:String(rc.world||''),content:String(rc.content)}); });
     }
     ensureRepliesLocal(nPost);
     return nPost;
@@ -13555,7 +13978,7 @@ async function cdForumGenerateReplies(post, isPublic, userReplies){
     var o = cdForumExtractJSON(text);
     var repliesArr = (o && Array.isArray(o.replies)) ? o.replies : (Array.isArray(o) ? o : []);
     var effects = (o && Array.isArray(o.effects)) ? o.effects : [];
-    var rs = repliesArr.slice(0,6).map(function(r){ return { from:String(r.from||'匿名'), world:String(r.world||''), content:String(r.content||'') }; });
+    var rs = repliesArr.slice(0,6).map(function(r){ return { from:cdForumMaskUserName(String(r.from||'匿名')), world:String(r.world||''), content:String(r.content||'') }; });
     var es = effects.filter(function(e){ return e && e.role; }).slice(0,8).map(function(e){ return { role:String(e.role), type:(String(e.type).toLowerCase()==='affection'?'a':'g'), mood:String(e.mood||''), favDelta:parseInt(e.favDelta,10)||0, event:String(e.event||'') }; });
     return { replies: rs, effects: es };
   }catch(e){ cdWarn('[论坛] 生成回复失败', e); return { replies:[], effects:[] }; }
@@ -13618,6 +14041,8 @@ function cdForumAutoWire(){
       var s = cdGetSettings();
       if(!(s && s.forum && s.forum.enabled !== false)) return;
       var cfg = cdForumCfg();
+      // 自动发帖总开关（折叠条「自动发帖」）：关闭则不计数、不触发
+      if(cfg && cfg.autoGen === false) return;
       var every = cfg.autoEvery || 5;
       _cfAutoCount++;
       if(_cfAutoCount >= every){
@@ -13633,7 +14058,8 @@ async function cdForumAutoGenerate(){
     var s = cdGetSettings();
     if(!(s && s.forum && s.forum.enabled !== false)) return;
     var worlds = cdForumGetWorlds();
-    var newPosts = await cdForumGeneratePosts(worlds, null, 1, (cdForumCfg().customPrompt||''), !!(cdForumCfg().erotica));
+    var _st=cdForumCfg(); _st=(_st&&_st.selTypes&&_st.selTypes.length)?_st.selTypes.slice():null;
+    var newPosts = await cdForumGeneratePosts(worlds, _st, 1, (cdForumCfg().customPrompt||''), !!(cdForumCfg().erotica));
     if(newPosts && newPosts.length){
       var POSTS = cdForumGetPosts();
       var added=[];
@@ -13645,6 +14071,7 @@ async function cdForumAutoGenerate(){
         POSTS.unshift(p); added.push(p.title);
       }
       _cfPostsCache=POSTS; cdForumPersist();
+      try{ if(typeof cdForumCheckAt==='function') cdForumCheckAt(newPosts); }catch(_e2){}
       try{ toastr.success('[论坛] 自动生成帖子：' + (added.join('、')||'若干')); }catch(e){}
     }
   }catch(e){ cdWarn('[论坛] 自动生成执行失败', e); }
