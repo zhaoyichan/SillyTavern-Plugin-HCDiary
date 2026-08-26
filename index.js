@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.8.0';
+const PLUGIN_VERSION = '2.9.0';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -9808,6 +9808,18 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
     {
+    version: 'v2.9.0',
+    date: '2026-08-27',
+    items: [
+      '世界论坛·角色私密日记「写日记」：每个角色可手动写内心话(字数充足/中二反差/禁机器词)，闭合书本点开展开动画；隐形偷看(后台计数零提示)，看满隐藏阈值触发「察觉锁定」——角色当街骂用户+好感骤降，须去论坛公开道歉(承认厚颜无耻+发誓不看)角色心花怒放才解锁',
+      '世界论坛·真图生图系统(NovelAI协议): 帖详情「图像生成」按钮、图库(缩略图/看图/删除/保存到相册)、发帖从手机相册选图、图片自动缓存清理、ZIP响应纯JS解压、多模型JSON兼容+模型拉取、测试生图加日志真校验',
+      '生图提示词重构: 模型沉浸式构思≥1000字9维画面设计→提炼英文TAG串；「帖子必画清单」最高铁律(帖子写到的人/物/场景必须原样入画)；12套绘图风格库(动漫厚涂/赛璐璐/水彩/素描/油画/水墨/像素/3D/写实/同人原作跟随/火影排线/JoJo)；画面风格切换+可编辑提示词(恢复默认/保存)',
+      '世界书存角色外貌+IP来源: 管理面板一键生成外貌，生图自动吃角色&同人IP还原(火影→动漫厚涂鸣人金发蓝瞳等)',
+      '论坛/主页 UI 小红书单列重构: 用户主页/NPC动态主页/帖子流三处统一卡片(语义色封面+正文摘录+操作条)、NPC头像随机稳定配色、主页编辑资料、面板叠层根治(来源记忆栈)、零Emoji全内联SVG',
+      '图像生成·可编辑提示词: 必画清单/对镜自拍两套风格+自定义风格槽(新增/删除/导入)，保存/恢复默认',
+    ],
+  },
+  {
     version: 'v2.7.7',
     date: '2026-08-25',
     items: [
@@ -10175,7 +10187,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.7.7 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.9.0 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
@@ -11645,6 +11657,20 @@ const CD_FORUM_CSS = `/* ===== 基调：米白藏青（日）/ 深藏青午夜�
   #cd-forum-overlay .quick{display:flex;gap:6px;padding:5px 11px;border-bottom:1px solid var(--c-line);flex-shrink:0;}
   #cd-forum-overlay .q{font-size:9.5px;color:var(--c-txt3);border:1px solid var(--c-line2);border-radius:12px;padding:2px 9px;cursor:pointer;display:flex;align-items:center;gap:4px;background:var(--c-card);}
   #cd-forum-overlay .q.on{background:var(--c-accent-bg);color:var(--c-accent);border-color:var(--c-accent-line);}
+  /* ===== B版 创作区 + 工具区 ===== */
+  #cd-forum-overlay .crea{background:var(--c-card);border-bottom:1px solid var(--c-line);padding:7px 11px 6px;flex-shrink:0;}
+  #cd-forum-overlay .crea-tit{font-size:9px;font-weight:800;color:var(--c-txt3);margin-bottom:5px;display:flex;align-items:center;gap:5px;}
+  #cd-forum-overlay .crea-row{display:flex;gap:8px;}
+  #cd-forum-overlay .crea-row .c1{flex:1;display:flex;align-items:center;gap:6px;height:32px;padding:0 11px;border-radius:8px;font-size:10.5px;font-weight:800;cursor:pointer;box-sizing:border-box;}
+  #cd-forum-overlay .crea-row .c1.save{background:var(--c-accent);color:var(--c-accent-bg);border:1px solid var(--c-accent);}
+  #cd-forum-overlay .crea-row .c1.gen{background:var(--c-sub);color:var(--c-txt);border:1px solid var(--c-line2);}
+  #cd-forum-overlay .crea-row .c1 svg{flex-shrink:0;}
+  #cd-forum-overlay .toolbar{display:flex;align-items:center;gap:6px;padding:5px 11px;border-bottom:1px solid var(--c-line);background:var(--c-head);flex-shrink:0;}
+  #cd-forum-overlay .toolbar .tlab{display:flex;align-items:center;gap:4px;font-size:8.5px;color:var(--c-txt3);}
+  #cd-forum-overlay .toolbar .tc{display:flex;align-items:center;gap:4px;height:23px;padding:0 9px;border-radius:12px;font-size:9.5px;color:var(--c-txt2);border:1px solid var(--c-line2);background:var(--c-card);cursor:pointer;}
+  #cd-forum-overlay .toolbar .tc.on{background:var(--c-accent-bg);color:var(--c-accent);border-color:var(--c-accent-line);}
+  #cd-forum-overlay .toolbar .tc svg{width:10px;height:10px;fill:none;stroke:currentColor;stroke-width:2;flex-shrink:0;}
+  #cd-forum-overlay .toolbar .tsep{flex:1;}
 
   /* 帖子信息流 */
   #cd-forum-overlay .feed{flex:1;overflow-y:auto;padding:6px 0;}
@@ -11665,7 +11691,7 @@ const CD_FORUM_CSS = `/* ===== 基调：米白藏青（日）/ 深藏青午夜�
   #cd-forum-overlay .post .p-tag.n{background:var(--c-tn);color:var(--c-tn-txt);}
 
   /* 发帖 */
-  #cd-forum-overlay .compose-bar{display:flex;align-items:center;gap:7px;padding:8px 11px;background:var(--c-head);border-top:1px solid var(--c-line);flex-shrink:0;}
+  #cd-forum-overlay .compose-bar{display:flex;align-items:center;flex-wrap:wrap;gap:7px;padding:8px 11px;background:var(--c-head);border-top:1px solid var(--c-line);flex-shrink:0;}
   #cd-forum-overlay .compose-bar input{flex:1;border:none;border-radius:15px;background:var(--c-input);padding:6px 11px;font-size:11px;color:var(--c-txt);font-family:inherit;box-shadow:inset 0 0 0 1px var(--c-line2);}
   #cd-forum-overlay .compose-bar input:focus{outline:none;box-shadow:inset 0 0 0 1px var(--c-accent-line);}
   #cd-forum-overlay .compose-bar .send{border:none;border-radius:15px;background:var(--c-send);color:var(--c-send-txt);font-size:10px;font-weight:700;padding:5px 13px;cursor:pointer;flex-shrink:0;}
@@ -11797,6 +11823,202 @@ const CD_FORUM_CSS = `/* ===== 基调：米白藏青（日）/ 深藏青午夜�
   #cd-forum-overlay #homePostList .hp:active{ filter:brightness(.9); }
   #cd-forum-overlay .mini-btn:active,
   #cd-forum-overlay .q:active{ background:var(--c-hover); }
+
+  /* ===== 我的主页（小红书单列） ===== */
+  /* 顶部昵称设置卡 */
+  #cd-forum-overlay #panelHome .hp-head{background:var(--c-card);border:1px solid var(--c-line);border-radius:12px;padding:12px 13px;margin-bottom:11px;}
+  #cd-forum-overlay #panelHome .hp-label{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:var(--c-txt);}
+  #cd-forum-overlay #panelHome .hp-label svg{width:13px;height:13px;fill:none;stroke:var(--c-accent);stroke-width:1.7;}
+  #cd-forum-overlay #panelHome .hp-nickrow{display:flex;align-items:center;gap:9px;margin-top:10px;}
+  #cd-forum-overlay #panelHome .hp-av{
+    width:64px;height:64px;border-radius:18px;flex-shrink:0;
+    background:linear-gradient(135deg,var(--c-accent),#3a546f);color:var(--c-send-txt);
+    display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;
+    box-shadow:0 5px 14px rgba(0,0,0,.18);
+  }
+  #cd-forum-overlay #panelHome .hp-nickrow input{
+    flex:1;min-width:0;border:1px solid var(--c-line2);border-radius:12px;
+    padding:9px 12px;font-size:13px;color:var(--c-txt);background:var(--c-input);outline:none;font-family:inherit;
+  }
+  #cd-forum-overlay #panelHome .hp-nickrow .hp-save{
+    flex-shrink:0;border:none;background:var(--c-send);color:var(--c-send-txt);
+    border-radius:12px;padding:9px 15px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;
+  }
+  #cd-forum-overlay #panelHome .hp-nickrow .hp-save:active{background:var(--c-send-act);}
+  #cd-forum-overlay #panelHome .hp-hint{display:flex;align-items:flex-start;gap:5px;font-size:9px;color:var(--c-txt3);line-height:1.5;margin-top:9px;}
+  #cd-forum-overlay #panelHome .hp-hint svg{width:11px;height:11px;margin-top:1px;flex-shrink:0;color:var(--c-hot);}
+  #cd-forum-overlay #panelHome .hp-count{margin-top:9px;font-size:10px;color:var(--c-txt3);}
+  #cd-forum-overlay #panelHome .hp-count b{color:var(--c-accent);font-size:13px;margin-right:2px;}
+
+  /* 单列卡片流 */
+  #cd-forum-overlay #panelHome .hp-list{display:flex;flex-direction:column;gap:11px;}
+  #cd-forum-overlay #panelHome .hp-post{
+    background:var(--c-card);border:1px solid var(--c-line);border-radius:14px;overflow:hidden;
+    cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.04);
+  }
+  /* 封面（type 语义色渐变 + 首字）——压矮横幅，重心落在下方文字 */
+  #cd-forum-overlay #panelHome .hp-cover{height:46px;position:relative;display:flex;align-items:center;justify-content:flex-start;gap:6px;padding:0 12px;overflow:hidden;flex-shrink:0;filter:saturate(.55) brightness(1.12);}
+  #cd-forum-overlay #panelHome .hp-cover .deco{position:absolute;right:-10px;top:-12px;width:58px;height:58px;border-radius:50%;background:rgba(255,255,255,.13);}
+  #cd-forum-overlay #panelHome .hp-cover .deco2{position:absolute;right:-22px;bottom:-26px;width:70px;height:70px;border-radius:50%;background:rgba(255,255,255,.08);}
+  #cd-forum-overlay #panelHome .hp-cover .bigword{font-size:22px;font-weight:800;letter-spacing:1px;color:rgba(255,255,255,.38);opacity:.85;line-height:1;}
+  #cd-forum-overlay #panelHome .hp-cover .hp-tag{font-size:8.5px;color:#fff;background:rgba(0,0,0,.22);padding:2px 7px;border-radius:7px;letter-spacing:.5px;flex-shrink:0;}
+  #cd-forum-overlay #panelHome .hp-cover .hp-meta{margin-left:auto;font-size:8.5px;color:#fff;opacity:.85;display:flex;align-items:center;gap:3px;flex-shrink:0;}
+  #cd-forum-overlay #panelHome .hp-cover .hp-meta svg{width:9px;height:9px;fill:none;stroke:currentColor;stroke-width:2;}
+  #cd-forum-overlay #panelHome .hp-cover .hp-src{font-size:8.5px;color:rgba(255,255,255,.92);font-weight:600;display:flex;align-items:center;gap:3px;flex-shrink:0;max-width:38%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  #cd-forum-overlay #panelHome .hp-cover .hp-src svg{width:10px;height:10px;fill:none;stroke:currentColor;stroke-width:1.8;flex-shrink:0;}
+  /* 正文体 */
+  #cd-forum-overlay #panelHome .hp-body{padding:11px 13px 7px;}
+  #cd-forum-overlay #panelHome .hp-title{font-size:13.5px;font-weight:700;color:var(--c-txt);line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  #cd-forum-overlay #panelHome .hp-text{font-size:11px;color:var(--c-txt2);line-height:1.65;margin-top:5px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+  #cd-forum-overlay #panelHome .hp-tE{margin-top:7px;font-size:9.5px;color:var(--c-txt3);display:flex;align-items:center;gap:6px;}
+  #cd-forum-overlay #panelHome .hp-tE .line{flex:1;height:1px;background:var(--c-line);}
+  /* 操作条 */
+  #cd-forum-overlay #panelHome .hp-act{display:flex;align-items:center;padding:2px 13px 11px;font-size:10.5px;color:var(--c-txt3);gap:16px;}
+  #cd-forum-overlay #panelHome .hp-act .a{display:flex;align-items:center;gap:3px;}
+  #cd-forum-overlay #panelHome .hp-act .a svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;}
+  #cd-forum-overlay #panelHome .hp-act .a.on{color:var(--c-accent);font-weight:600;}
+  #cd-forum-overlay #panelHome .hp-act .l{margin-left:auto;font-size:9.5px;color:var(--c-txt3);}
+  /* 空状态 */
+  #cd-forum-overlay #panelHome .hp-empty{text-align:center;padding:46px 20px;color:var(--c-txt3);line-height:1.8;font-size:10.5px;}
+  #cd-forum-overlay #panelHome .hp-empty svg{width:36px;height:36px;color:var(--c-line2);margin-bottom:9px;}
+
+  /* ===== NPC 动态主页（与主页同一套样式，前缀 #panelNPC） ===== */
+  #cd-forum-overlay #panelNPC{margin-top:0;}
+  #cd-forum-overlay #panelNPC .hp-head{background:var(--c-card);border:1px solid var(--c-line);border-radius:12px;padding:12px 13px;margin-bottom:11px;}
+  #cd-forum-overlay #panelNPC .hp-label{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:var(--c-txt);}
+  #cd-forum-overlay #panelNPC .hp-label svg{width:13px;height:13px;fill:none;stroke:var(--c-accent);stroke-width:1.7;}
+  #cd-forum-overlay #panelNPC .hp-profile{display:flex;align-items:center;gap:10px;cursor:pointer;}
+  #cd-forum-overlay #panelNPC .hp-av{
+    width:64px;height:64px;border-radius:18px;flex-shrink:0;
+    background:linear-gradient(135deg,var(--c-accent),#3a546f);color:var(--c-send-txt);
+    display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;
+    box-shadow:0 5px 14px rgba(0,0,0,.18);
+  }
+  #cd-forum-overlay #panelNPC .hp-name{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:700;color:var(--c-txt);}
+  #cd-forum-overlay #panelNPC .hp-count{margin-top:9px;font-size:10px;color:var(--c-txt3);}
+  #cd-forum-overlay #panelNPC .hp-count b{color:var(--c-accent);font-size:13px;margin-right:2px;}
+  /* 单列卡片流 */
+  #cd-forum-overlay #panelNPC .hp-list{display:flex;flex-direction:column;gap:11px;}
+  #cd-forum-overlay #panelNPC .hp-post{background:var(--c-card);border:1px solid var(--c-line);border-radius:14px;overflow:hidden;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.04);}
+  #cd-forum-overlay #panelNPC .hp-cover{height:46px;position:relative;display:flex;align-items:center;justify-content:flex-start;gap:6px;padding:0 12px;overflow:hidden;flex-shrink:0;filter:saturate(.55) brightness(1.12);}
+  #cd-forum-overlay #panelNPC .hp-cover .deco{position:absolute;right:-10px;top:-12px;width:58px;height:58px;border-radius:50%;background:rgba(255,255,255,.13);}
+  #cd-forum-overlay #panelNPC .hp-cover .deco2{position:absolute;right:-22px;bottom:-26px;width:70px;height:70px;border-radius:50%;background:rgba(255,255,255,.08);}
+  #cd-forum-overlay #panelNPC .hp-cover .bigword{font-size:22px;font-weight:800;letter-spacing:1px;color:rgba(255,255,255,.38);opacity:.85;line-height:1;}
+  #cd-forum-overlay #panelNPC .hp-cover .hp-tag{font-size:8.5px;color:#fff;background:rgba(0,0,0,.22);padding:2px 7px;border-radius:7px;letter-spacing:.5px;flex-shrink:0;}
+  #cd-forum-overlay #panelNPC .hp-cover .hp-meta{margin-left:auto;font-size:8.5px;color:#fff;opacity:.85;display:flex;align-items:center;gap:3px;flex-shrink:0;}
+  #cd-forum-overlay #panelNPC .hp-cover .hp-meta svg{width:9px;height:9px;fill:none;stroke:currentColor;stroke-width:2;}
+  #cd-forum-overlay #panelNPC .hp-cover .hp-src{font-size:8.5px;color:rgba(255,255,255,.92);font-weight:600;display:flex;align-items:center;gap:3px;flex-shrink:0;max-width:38%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  #cd-forum-overlay #panelNPC .hp-cover .hp-src svg{width:10px;height:10px;fill:none;stroke:currentColor;stroke-width:1.8;flex-shrink:0;}
+  #cd-forum-overlay #panelNPC .hp-body{padding:11px 13px 7px;}
+  #cd-forum-overlay #panelNPC .hp-title{font-size:13.5px;font-weight:700;color:var(--c-txt);line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  #cd-forum-overlay #panelNPC .hp-text{font-size:11px;color:var(--c-txt2);line-height:1.65;margin-top:5px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+  #cd-forum-overlay #panelNPC .hp-tE{margin-top:7px;font-size:9.5px;color:var(--c-txt3);display:flex;align-items:center;gap:6px;}
+  #cd-forum-overlay #panelNPC .hp-tE .line{flex:1;height:1px;background:var(--c-line);}
+  #cd-forum-overlay #panelNPC .hp-act{display:flex;align-items:center;padding:2px 13px 11px;font-size:10.5px;color:var(--c-txt3);gap:16px;}
+  #cd-forum-overlay #panelNPC .hp-act .a{display:flex;align-items:center;gap:3px;}
+  #cd-forum-overlay #panelNPC .hp-act .a svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;}
+  #cd-forum-overlay #panelNPC .hp-act .a.on{color:var(--c-accent);font-weight:600;}
+  #cd-forum-overlay #panelNPC .hp-act .l{margin-left:auto;font-size:9.5px;color:var(--c-txt3);}
+  #cd-forum-overlay #panelNPC .hp-empty{text-align:center;padding:46px 20px;color:var(--c-txt3);line-height:1.8;font-size:10.5px;}
+  #cd-forum-overlay #panelNPC .hp-empty svg{width:36px;height:36px;color:var(--c-line2);margin-bottom:9px;}
+
+  /* ===== NPC 头像（帖子流/回复 / 动态页 共用的首字头像） ===== */
+  #cd-forum-overlay .hb-av{width:20px;height:20px;border-radius:6px;flex-shrink:0;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;vertical-align:-4px;cursor:pointer;}
+  #cd-forum-overlay .p-auth .hb-av{margin-right:4px;}
+  #cd-forum-overlay .floor .f-av{width:18px;height:18px;border-radius:5px;flex-shrink:0;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;vertical-align:-4px;cursor:pointer;margin-right:5px;}
+  #cd-forum-overlay .hp-av-xs{width:30px;height:30px;border-radius:9px;flex-shrink:0;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;}
+
+  /* ===== 主页「编辑资料」表单（内联展开） ===== */
+  #cd-forum-overlay #panelHome .hp-editform{display:none;background:var(--c-sub);border:1px solid var(--c-line);border-radius:10px;padding:10px 12px;margin-top:9px;gap:8px;flex-direction:column;}
+  #cd-forum-overlay #panelHome .hp-editform.open{display:flex;}
+  #cd-forum-overlay #panelHome .hp-editform label{font-size:9.5px;font-weight:700;color:var(--c-txt3);}
+  #cd-forum-overlay #panelHome .hp-editform input,.hp-editform textarea{width:100%;border:1px solid var(--c-line2);border-radius:8px;padding:7px 10px;font-size:11px;color:var(--c-txt);background:var(--c-input);outline:none;font-family:inherit;resize:none;}
+  #cd-forum-overlay #panelHome .hp-editform .hp-editbtns{display:flex;justify-content:flex-end;gap:8px;margin-top:4px;}
+  #cd-forum-overlay #panelHome .hp-profile{display:flex;align-items:center;gap:10px;cursor:pointer;}
+  #cd-forum-overlay #panelHome .hp-avplus{position:absolute;right:-4px;bottom:-4px;width:18px;height:18px;border-radius:50%;background:var(--c-send);color:var(--c-send-txt);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,.2);}
+  #cd-forum-overlay #panelHome .hp-name{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:700;color:var(--c-txt);}
+  #cd-forum-overlay #panelHome .hp-edithint{font-size:8.5px;color:var(--c-accent);display:flex;align-items:center;gap:3px;margin-left:auto;flex-shrink:0;}
+  #cd-forum-overlay #panelHome .hp-avwrap{position:relative;flex-shrink:0;width:64px;height:64px;}
+  #cd-forum-overlay #panelHome .hp-av{width:64px;height:64px;}
+
+  /* ===== NPC 动态主页 ===== */
+  #cd-forum-overlay #panelNPC{padding-bottom:11px;}
+  #cd-forum-overlay #panelNPC .hp-head{margin-bottom:11px;}
+  #cd-forum-overlay #panelNPC .npc-bio{font-size:9.5px;color:var(--c-txt3);line-height:1.6;margin-top:9px;background:var(--c-sub);border-radius:8px;padding:7px 9px;}
+  #cd-forum-overlay #panelNPC .hp-sub{font-size:10px;font-weight:700;color:var(--c-txt3);margin:2px 0 9px;display:flex;align-items:center;gap:5px;}
+  #cd-forum-overlay #panelHome .hp-avplus svg{width:10px;height:10px;}
+
+  /* ===== 论坛主流帖子流：小红书窄小版卡片（复用主页卡片结构，尺寸收小） ===== */
+  #cd-forum-overlay .feed{padding:9px 9px 14px;}
+  #cd-forum-overlay .feed .hp-post{display:flex;flex-direction:column;background:var(--c-card);border:1px solid var(--c-line);border-radius:12px;overflow:hidden;cursor:pointer;box-shadow:0 2px 7px rgba(0,0,0,.05);margin-bottom:10px;position:relative;}
+  #cd-forum-overlay .feed .hp-post.multi-on{border-color:var(--c-send);}
+  #cd-forum-overlay .feed .hp-cover{height:40px;position:relative;display:flex;align-items:center;justify-content:flex-start;gap:5px;padding:0 10px;overflow:hidden;flex-shrink:0;filter:saturate(.55) brightness(1.12);}
+  #cd-forum-overlay .feed .hp-cover .deco{position:absolute;right:-8px;top:-10px;width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,.13);}
+  #cd-forum-overlay .feed .hp-cover .deco2{position:absolute;right:-18px;bottom:-20px;width:54px;height:54px;border-radius:50%;background:rgba(255,255,255,.08);}
+  #cd-forum-overlay .feed .hp-cover .bigword{font-size:19px;font-weight:800;letter-spacing:1px;color:rgba(255,255,255,.38);opacity:.9;line-height:1;}
+  #cd-forum-overlay .feed .hp-cover .fpost-av{position:relative;z-index:1;width:22px;height:22px;border-radius:7px;flex-shrink:0;color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;}
+  #cd-forum-overlay .feed .hp-cover .hp-tag{font-size:8px;color:#fff;background:rgba(0,0,0,.22);padding:2px 6px;border-radius:7px;letter-spacing:.5px;flex-shrink:0;}
+  #cd-forum-overlay .feed .hp-cover .hp-meta{margin-left:auto;font-size:8px;color:#fff;opacity:.88;display:flex;align-items:center;gap:3px;flex-shrink:0;}
+  #cd-forum-overlay .feed .hp-cover .hp-meta svg{width:8px;height:8px;fill:none;stroke:currentColor;stroke-width:2;}
+  #cd-forum-overlay .feed .hp-cover .hp-src{font-size:8px;color:rgba(255,255,255,.92);font-weight:600;display:flex;align-items:center;gap:3px;flex-shrink:0;max-width:34%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  #cd-forum-overlay .feed .hp-cover .hp-src svg{width:9px;height:9px;fill:none;stroke:currentColor;stroke-width:1.8;flex-shrink:0;}
+  #cd-forum-overlay .feed .hp-body{padding:9px 11px 5px;}
+  #cd-forum-overlay .feed .hp-title{font-size:12.5px;font-weight:700;color:var(--c-txt);line-height:1.4;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;}
+  #cd-forum-overlay .feed .hp-text{font-size:10px;color:var(--c-txt2);line-height:1.6;margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  #cd-forum-overlay .feed .hp-tE{margin-top:5px;font-size:9px;color:var(--c-txt3);display:flex;align-items:center;gap:5px;}
+  #cd-forum-overlay .feed .hp-tE .line{flex:1;height:1px;background:var(--c-line);}
+  #cd-forum-overlay .feed .hp-tE .p-auth{font-weight:700;color:var(--c-txt2);cursor:pointer;}
+  #cd-forum-overlay .feed .hp-tE .p-auth .brief{font-size:8px;color:var(--c-txt3);border-bottom:1px dashed var(--c-line2);margin-left:3px;}
+  #cd-forum-overlay .feed .hp-act{display:flex;align-items:center;padding:1px 11px 9px;font-size:10px;color:var(--c-txt3);gap:14px;}
+  #cd-forum-overlay .feed .hp-act .a{display:flex;align-items:center;gap:3px;}
+  #cd-forum-overlay .feed .hp-act .a svg{width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:2;}
+  #cd-forum-overlay .feed .hp-act .a.on{color:var(--c-accent);font-weight:600;}
+  #cd-forum-overlay .feed .hp-act .p-fav{display:flex;align-items:center;gap:3px;}
+  #cd-forum-overlay .feed .hp-act .p-fav svg{width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:2;}
+  #cd-forum-overlay .feed .hp-act .l{margin-left:auto;font-size:9px;color:var(--c-txt3);}
+
+  /* ===== 发帖编辑卡片（点输入框/发布按钮弹出·小号居中） ===== */
+  #cd-forum-overlay .cf-editor-mask{position:fixed;inset:0;background:rgba(20,24,28,.45);z-index:2000;display:none;align-items:center;justify-content:center;padding:20px;}
+  #cd-forum-overlay .cf-editor-mask.open{display:flex;}
+  #cd-forum-overlay .cf-editor{width:min(330px,92vw);background:var(--c-panel);border:1px solid var(--c-line);border-radius:16px;box-shadow:0 18px 50px rgba(0,0,0,.30);padding:15px;display:flex;flex-direction:column;gap:9px;box-sizing:border-box;}
+  #cd-forum-overlay .cf-editor .ed-t{font-size:12px;font-weight:800;color:var(--c-txt);display:flex;align-items:center;gap:6px;margin-bottom:1px;}
+  #cd-forum-overlay .cf-editor .ed-t svg{width:13px;height:13px;fill:none;stroke:var(--c-accent);stroke-width:1.8;}
+  #cd-forum-overlay .cf-editor .ed-lbl{font-size:9px;font-weight:700;color:var(--c-txt3);margin-top:1px;}
+  #cd-forum-overlay .cf-editor input[type=text],#cd-forum-overlay .cf-editor textarea{width:100%;border:1px solid var(--c-line2);border-radius:9px;background:var(--c-input);color:var(--c-txt);font-size:11px;font-family:inherit;padding:7px 9px;outline:none;box-sizing:border-box;}
+  #cd-forum-overlay .cf-editor textarea{min-height:74px;resize:vertical;line-height:1.6;}
+  #cd-forum-overlay .cf-editor input:focus,#cd-forum-overlay .cf-editor textarea:focus{box-shadow:inset 0 0 0 1px var(--c-accent-line);}
+  #cd-forum-overlay .cf-editor .ed-row{display:flex;align-items:center;gap:7px;font-size:9.5px;color:var(--c-txt2);font-weight:600;flex-wrap:wrap;}
+  #cd-forum-overlay .cf-editor .ed-btns{display:flex;justify-content:flex-end;gap:8px;margin-top:3px;}
+  #cd-forum-overlay .cf-editor .cf-btn-main{width:auto;padding:7px 16px;font-size:10.5px;}
+  #cd-forum-overlay .cf-editor .cf-btn-mini{padding:7px 12px;font-size:10.5px;}
+  /* ===== NPC 日记：闭合小方块书 ===== */
+  #cd-forum-overlay .cd-diary-book{position:relative;background:var(--c-card);border:1px solid var(--c-line);border-radius:9px;overflow:hidden;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.05);transition:box-shadow .25s;}
+  #cd-forum-overlay .cd-diary-book:hover{box-shadow:0 4px 12px rgba(0,0,0,.12);}
+  #cd-forum-overlay .cd-db-face{color:#f5f2f8;transition:height .4s ease;}
+  #cd-forum-overlay .cd-db-face .cd-db-stack{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px;height:100%;padding:0 10px;}
+  #cd-forum-overlay .cd-db-date{font-size:8px;opacity:.85;}
+  #cd-forum-overlay .cd-db-t{font-size:8.5px;opacity:.95;font-weight:600;line-height:1.35;max-width:100%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  /* 闭合态：封面高度 60px（小方块书） */
+  #cd-forum-overlay .cd-diary-book .cd-db-face{height:60px;}
+  #cd-forum-overlay .cd-diary-book .cd-db-body{height:0;overflow:hidden;opacity:0;padding:0 11px;transition:height .45s ease, opacity .45s ease;}
+  /* 展开态：占满整行，封面变细页头条，正文摊开 */
+  #cd-forum-overlay .cd-diary-book.open{grid-column:span 3;border-color:var(--c-line2,#d0c6de);box-shadow:0 4px 12px rgba(0,0,0,.14);}
+  #cd-forum-overlay .cd-diary-book.open .cd-db-face{height:30px;}
+  #cd-forum-overlay .cd-diary-book.open .cd-db-face .cd-db-stack{flex-direction:row;align-items:center;gap:7px;padding:0 11px;}
+  #cd-forum-overlay .cd-diary-book.open .cd-db-face .cd-db-t{font-size:9px;-webkit-line-clamp:1;}
+  #cd-forum-overlay .cd-diary-book.open .cd-db-body{height:auto;opacity:1;padding:10px 11px 11px;}
+  /* 书内正文质感 */
+  #cd-forum-overlay .cd-diary-mood{display:inline-flex;align-items:center;gap:4px;font-size:8.5px;font-weight:700;color:#fff;background:var(--c-diary,#8b7aa0);border-radius:6px;padding:2px 7px;}
+  #cd-forum-overlay .cd-diary-title{font-size:11px;font-weight:700;color:var(--c-txt);margin:7px 0 3px;line-height:1.4;}
+  #cd-forum-overlay .cd-diary-txt{font-size:10.5px;color:var(--c-txt2);line-height:1.75;white-space:pre-wrap;}
+  #cd-forum-overlay .cd-dairy-tE{margin-top:8px;font-size:8.5px;color:var(--c-txt3);display:flex;align-items:center;gap:5px;}
+  #cd-forum-overlay .cd-dairy-line{flex:1;height:1px;background:var(--c-line);}
+  #cd-forum-overlay .cd-dairy-priv{color:var(--c-diary,#8b7aa0);font-weight:600;}
+  /* 锁住的旧书：灰化 + 锁盖 */
+  #cd-forum-overlay .cd-diary-book.locked{opacity:.55;filter:grayscale(.35);pointer-events:none;}
+  #cd-forum-overlay .cd-diary-book.locked .cd-db-steal{position:absolute;inset:0;background:rgba(22,38,59,.10);display:flex;align-items:center;justify-content:center;z-index:2;}
+  #cd-forum-overlay .cd-diary-book.locked .cd-db-steal svg{width:15px;height:15px;fill:none;stroke:#fff;stroke-width:2;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));}
+
 `;
 
 const CD_FORUM_HTML = `<div id="cdForumRoot">
@@ -11816,11 +12038,12 @@ const CD_FORUM_HTML = `<div id="cdForumRoot">
       <span class="bd" id="mgQ" style="margin-left:auto;display:flex;align-items:center;gap:4px;color:#3f6d84;font-weight:700;"><svg viewBox="0 0 24 24" style="width:10px;height:10px;fill:none;stroke:currentColor;stroke-width:1.8"><path d="M3 6h18M3 12h18M3 18h18"/></svg>管理</span>
     </div>
 
-    <!-- ◈ NPC 生成折叠条 -->
-    <div class="genbar" style="cursor:pointer;align-items:center;" id="genFoldHead">
-      <svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:none;stroke:#3f6d84;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>
-      <span style="flex:1;font-size:11px;font-weight:700;color:#3f4549;">NPC 生成发帖</span>
-      <span id="genFoldArrow" style="font-size:10px;color:#7a838a;transition:transform .18s;">▸</span>
+    <!-- ◈ 创作区：总结剧情 + NPC 生成发帖 -->
+    <div class="crea">
+      <div class="crea-row">
+        <div class="c1 save" id="cfHeroSlot" style="justify-content:center;"><svg viewBox="0 0 24 24" style="width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span>总结剧情</span></div>
+        <div class="c1 gen" id="genFoldHead"><svg viewBox="0 0 24 24" style="width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>NPC 生成发帖<span id="genFoldArrow" style="margin-left:auto;font-size:9px;color:var(--c-txt3);transition:transform .18s;">▸</span></div>
+      </div>
     </div>
     <div class="genpanel" id="genPanel" style="display:none;padding:9px 11px;border-bottom:1px solid #e8ebec;background:#f7f8f9;flex-shrink:0;">
       <!-- 模式切换 -->
@@ -11904,10 +12127,12 @@ const CD_FORUM_HTML = `<div id="cdForumRoot">
       </div>
     </div>
 
-    <div class="quick">
-      <span class="q on" id="injectQ"><svg viewBox="0 0 24 24" style="width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>注入:开</span>
-      <span class="q" id="setQ"><svg viewBox="0 0 24 24" style="width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>设置</span>
-      <span class="q" id="multiQ" title="勾选帖子批量删除"><svg viewBox="0 0 24 24" style="width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 12l2 2 4-4"/></svg>多选</span>
+    <!-- ◈ 工具区 -->
+    <div class="toolbar">
+      <span class="tc on" id="injectQ"><svg viewBox="0 0 24 24" style="width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>注入:开</span>
+      <span class="tc" id="setQ"><svg viewBox="0 0 24 24" style="width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>设置</span>
+      <span class="tc" id="multiQ" title="勾选帖子批量删除"><svg viewBox="0 0 24 24" style="width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 12l2 2 4-4"/></svg>多选</span>
+      <span class="tsep"></span>
     </div>
 
     <!-- 帖子多选操作条 -->
@@ -11923,10 +12148,8 @@ const CD_FORUM_HTML = `<div id="cdForumRoot">
     </div>
 
     <div class="compose-bar">
-      <input type="text" id="newPost" placeholder="以穿越者身份发帖吐槽…">
-      <label class="sw" id="cfPubWrap" title="公开：有关系角色会刷到并评论；隐私：不被刷到"><input type="checkbox" id="cfPublic" checked><span class="track"><span class="thumb"></span></span></label>
-      <span class="cf-lbl" id="cfPubLabel" style="font-size:9px;white-space:nowrap;">公开</span>
-      <button class="send" id="sendBtn">发布</button>
+      <input type="text" id="newPost" placeholder="以穿越者身份发帖吐槽…（点此打开编辑页）">
+      <button class="send" id="openEditorBtn">发布</button>
     </div>
   </div>
 
@@ -11945,8 +12168,40 @@ const CD_FORUM_HTML = `<div id="cdForumRoot">
         </div>
         <div class="set-row"><input class="set-in" id="cfApiUrl" placeholder="接口地址 (留空=复用主插件)" value=""></div>
         <div class="set-row"><input class="set-in" id="cfApiKey" placeholder="API Key" type="password" value=""></div>
-        <div class="set-row"><input class="set-in" id="cfApiModel" placeholder="模型 (留空=自动)" value=""></div>
+        <div class="set-row" style="align-items:center;">模型 <select class="set-in" id="cfApiModel" style="width:190px;"></select><button class="set-btn" id="cfApiModelFetch" style="margin-left:6px;">拉取</button></div>
+        <div style="font-size:9px;color:var(--c-txt3,#8b9298);line-height:1.6;margin-top:3px;padding:0 2px;">⚠ 识图提醒：只有<b>多模态模型</b>才能真正"看懂/识别图片"内容并用文字描述出来；普通纯文本模型无法读取图片。后续启用"帖子带真图/识图"时，需搭配支持多模态的模型。</div>
         <div class="set-row" style="justify-content:flex-end;"><button class="set-btn" id="cfApiSave">保存 API</button></div>
+      </div>
+      <!-- 图像生成卡 -->
+      <div class="set-card">
+        <div class="set-h"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5-9 9"/></svg>图像生成</div>
+        <div class="set-row">数据来源
+          <select class="set-in" id="cfImgSource" style="width:150px;text-align:right;"><option value="off">关闭(纯文字描述)</option><option value="novelai_official">NovelAI 官方</option><option value="novelai_3rd">NovelAI 第三方</option></select>
+        </div>
+        <div class="set-row"><input class="set-in" id="cfImgUrl" placeholder="生图地址 (官方=image.novelai.net，第三方填你的站)" value=""></div>
+        <div class="set-row"><input class="set-in" id="cfImgKey" type="password" placeholder="NovelAI Token" value=""></div>
+        <div class="set-row" style="align-items:center;">模型 <select class="set-in" id="cfImgModel" style="width:170px;"></select><button class="set-btn" id="cfImgModelFetch" style="margin-left:6px;">拉取</button></div>
+        <div class="set-row" style="align-items:flex-start;">正面提示词<textarea class="set-in" id="cfImgAdd" rows="3" placeholder="画师串/正面追加（如 masterpiece, best quality）" style="flex:1;min-height:72px;resize:vertical;font-family:inherit;"></textarea></div>
+        <div class="set-row" style="align-items:flex-start;">负面提示词<textarea class="set-in" id="cfImgNeg" rows="3" placeholder="负面提示词（如 lowres, bad hands）" style="flex:1;min-height:72px;resize:vertical;font-family:inherit;"></textarea></div>
+        <div class="set-row" style="align-items:center;">画面风格
+          <select class="set-in" id="cfImgStyle" style="width:150px;text-align:right;"><option value="bihua">必画清单·忠于帖子</option><option value="mirror">对镜自拍·情绪氛围</option></select>
+          <button class="set-btn" id="cfImgStyleAdd" title="新增一个自定义风格提示词" style="margin-left:6px;line-height:1;padding:3px 8px;">＋</button>
+          <button class="set-btn" id="cfImgStyleDel" title="删除当前选中的自定义风格" style="margin-left:4px;display:none;line-height:1;padding:3px 8px;color:#c84632;border-color:#e0b8ae;background:#fdf0ec;">✕</button>
+          <button class="set-btn" id="cfImgStyleImport" title="从 JSON 导入自定义风格（[{name,prompt},...] 或 {name,prompt}）" style="margin-left:4px;">导入</button>
+        </div>
+        <div class="set-row" style="align-items:flex-start;">系统提示词<textarea class="set-in" id="cfImgSys" rows="6" placeholder="当前风格的画面提示词，可在此编辑后点保存（自定义风格会随风格一起保存）" style="flex:1;min-height:110px;resize:vertical;font-family:inherit;"></textarea></div>
+        <div class="set-row" style="justify-content:flex-end;"><button class="set-btn" id="cfImgSysReset" title="把当前风格的提示词恢复成默认（自定义风格清空）">恢复默认</button><button class="set-btn" id="cfImgSysSave" style="margin-left:8px;">保存提示词</button></div>
+        <div class="set-row" style="justify-content:flex-start;">尺寸
+          <input class="set-in" id="cfImgW" type="number" style="width:70px" value="832"> × <input class="set-in" id="cfImgH" type="number" style="width:70px" value="1216">
+        </div>
+        <div class="set-row" style="align-items:center;">图片缓存
+          <input class="set-in" id="cfImgCacheDays" type="number" min="0" style="width:70px" value="1">
+          <span style="font-size:9px;color:var(--c-txt3,#8b9298);flex:1;line-height:1.5;">天（只保留最近 N 天生成的图，更早的自动清理；0=不自动清理）</span>
+          <button class="set-btn" id="cfImgCacheClean" title="立即按上面的天数清理过期图片">立即清理</button>
+        </div>
+        <div id="cfImgTestBox" style="display:none;margin-top:6px;border:1px dashed #c8d6cf;border-radius:8px;padding:7px;background:#f0f5f2;text-align:center;"></div>
+        <div style="font-size:9px;color:var(--c-txt3,#8b9298);line-height:1.6;margin-top:3px;padding:0 2px;">真图存到论坛图库；点帖子里的图可进入看图页删除、或保存到相册。生图约 10~60 秒，请耐心等待。</div>
+        <div class="set-row" style="justify-content:flex-end;flex-wrap:wrap;"><button class="set-btn" id="cfImgTest" title="用当前地址/Token 立即生成一张测试图">测试生图</button><button class="set-btn" id="cfImgSave" style="margin-left:8px;">保存</button><button class="set-btn" id="cfImgOpenLib" style="margin-left:8px;" title="查看/管理已生成的图片">图库</button><button class="set-btn" id="cfImgClearLib" style="margin-left:8px;color:#c84632;border-color:#e0b8ae;background:#fdf0ec;">清空</button></div>
       </div>
       <div class="set-card">
         <div class="set-h"><svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:none;stroke:#c84632;stroke-width:1.8"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z"/></svg>数据管理</div>
@@ -12064,21 +12319,171 @@ const CD_FORUM_HTML = `<div id="cdForumRoot">
     </div>
   </div>
 
-  <!-- ===== 面板：我的主页（小红书式） ===== -->
+  <!-- ===== 面板：我的主页（小红书单列） ===== -->
   <div class="panel" id="panelHome">
     <div class="pn-bar">
       <div class="pn-back" data-close="panelHome"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></div>
       <div class="pn-t">我的主页</div>
     </div>
     <div class="pn-body">
-      <div class="set-card">
-        <div class="set-h"><svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:none;stroke:#6a737a;stroke-width:1.8"><path d="M12 21a9 9 0 1 0-9-9 9 9 0 0 0 9 9z"/><circle cx="12" cy="9" r="3"/><path d="M5.5 19a8 8 0 0 1 13 0"/></svg>我的发帖昵称</div>
-        <input class="set-in" id="homeNameInput" placeholder="我发帖时显示的名字" value="">
-        <div class="set-row" style="justify-content:flex-end;margin-top:6px;"><button class="set-btn" id="homeNameSave">保存</button></div>
-        <div style="font-size:8.5px;color:#a7adb2;margin-top:4px;">AI 生成的是 NPC 角色帖子，不算你的；只有你在输入栏主动发的帖才会进这里。</div>
+      <!-- 我的资料卡（点「编辑资料」展开表单，可改名字+简介） -->
+      <div class="hp-head">
+        <div class="hp-label">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="9" r="3"/><path d="M5.5 19a8 8 0 0 1 13 0M12 21a9 9 0 1 0-9-9 9 9 0 0 0 9 9z"/></svg>
+          我的主页
+        </div>
+        <!-- 资料展示（默认折叠展示，点一下进入编辑） -->
+        <div class="hp-profile" id="homeProfile">
+          <div class="hp-avwrap">
+            <div class="hp-av" id="homeAvatar">我</div>
+            <div class="hp-avplus" id="homeEditBtn" title="编辑资料"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg></div>
+          </div>
+          <div style="flex:1;min-width:0;">
+            <div class="hp-name"><span id="homeNameDisp">未设置</span></div>
+            <div class="hp-hint" style="margin-top:4px;"><span id="homeBioDisp" style="font-size:9.5px;color:var(--c-txt3);">还没有简介，点右侧编辑加一句吧。</span></div>
+          </div>
+          <span class="hp-edithint" id="homeEditLink">编辑资料</span>
+        </div>
+        <!-- 内联编辑表单（点编辑资料展开） -->
+        <div class="hp-editform" id="homeEditForm">
+          <label>发帖昵称</label>
+          <input id="homeNameInput" placeholder="我发帖时显示的名字" value="">
+          <label>个人简介</label>
+          <textarea id="homeBioInput" rows="2" placeholder="一句话介绍自己（显示在主页）" style="min-height:44px;"></textarea>
+          <div class="hp-editbtns">
+            <button class="cf-btn-mini" id="homeEditCancel">取消</button>
+            <button class="hp-save" id="homeNameSave">保存</button>
+          </div>
+        </div>
+        <div class="hp-count"><b id="homeCount">0</b> 条我发的帖子</div>
       </div>
-      <div class="set-h" style="margin-top:2px;">我发的帖子</div>
-      <div id="homePostList"></div>
+      <!-- 我发的帖子（单列小红书流） -->
+      <div class="hp-list" id="homePostList"></div>
+    </div>
+  </div>
+
+  <!-- ===== 面板：NPC 动态主页（与用户主页同构） ===== -->
+  <div class="panel" id="panelNPC">
+    <div class="pn-bar">
+      <div class="pn-back" data-close="panelNPC"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></div>
+      <div class="pn-t">动态主页</div>
+    </div>
+    <div class="pn-body">
+      <div class="hp-head">
+        <div class="hp-label">
+          <svg viewBox="0 0 24 24" style="fill:none;stroke:var(--c-accent);stroke-width:1.7;"><circle cx="12" cy="9" r="3"/><path d="M5.5 19a8 8 0 0 1 13 0M12 21a9 9 0 1 0-9-9 9 9 0 0 0 9 9z"/></svg>
+          <span id="npcLabelDisp">角色动态</span>
+        </div>
+        <!-- 资料展示（结构与用户主页一致） -->
+        <div class="hp-profile">
+          <div class="hp-avwrap" style="width:64px;height:64px;">
+            <div class="hp-av" id="npcAvatar" style="width:64px;height:64px;border-radius:18px;font-size:26px;">?</div>
+          </div>
+          <div style="flex:1;min-width:0;">
+            <div class="hp-name"><span id="npcNameDisp">角色</span></div>
+            <div style="margin-top:4px;"><span id="npcBioDisp" style="font-size:9.5px;color:var(--c-txt3);">这位角色还没留下简介。</span></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;"><span class="cf-btn-mini" id="npcViewCard" style="flex-shrink:0;">看名片</span><span class="cf-btn-mini" id="npcDiaryBtn" style="flex-shrink:0;background:var(--c-accent);color:var(--c-accent-bg);border:1px solid var(--c-accent);">日记</span></div>
+        </div>
+        <div class="hp-count"><b id="npcCount">0</b> 条 TA 发的帖子</div>
+      </div>
+      <!-- TA 发的帖子（单列，与用户主页同一套样式） -->
+      <div class="hp-list" id="npcPostList"></div>
+      <!-- ===== NPC 日记视图（闭合书本 · 点开展开；隐形偷看） ===== -->
+      <div id="npcDiaryWrap" style="display:none;">
+        <div style="padding:12px 13px 2px;display:flex;align-items:center;gap:6px;">
+          <svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:none;stroke:var(--c-diary,#8b7aa0);stroke-width:1.8;"><path d="M4 20V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14l-4-2-4 2-4-2z"/></svg>
+          <span style="font-size:11px;font-weight:700;color:var(--c-txt);">日记</span>
+          <span style="font-size:8.5px;color:var(--c-txt3);font-style:italic;flex:1;text-align:right;" id="npcDiaryHint">一些不足为外人道的小事</span>
+        </div>
+        <!-- 锁定提示条（察觉后出现） -->
+        <div style="padding:6px 12px 0;display:none;" id="npcDiaryLockStrip">
+          <div style="display:flex;align-items:center;gap:7px;background:#f7ece9;border:1px solid #eccfc7;border-radius:9px;padding:8px 11px;font-size:9.5px;color:#a04632;line-height:1.55;">
+            <svg viewBox="0 0 24 24" style="width:12px;height:12px;fill:none;stroke:#c46a5a;stroke-width:2;flex-shrink:0;"><path d="M4 20V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14"/><path d="M12 9v4"/><circle cx="12" cy="16.5" r=".6"/></svg>
+            <span><b id="npcDiaryLockName">TA</b> 发觉你总翻他日记，把剩下的本子都锁上了——还当街骂了你一顿。要不要去认个错？</span>
+          </div>
+        </div>
+        <!-- 手动生成入口：点一下补一篇 -->
+        <div style="padding:9px 12px 2px;">
+          <div id="npcDiaryGenBtn" style="display:flex;align-items:center;justify-content:center;gap:5px;height:32px;border-radius:9px;background:var(--c-accent);color:var(--c-accent-bg);border:1px solid var(--c-accent);font-size:10px;font-weight:600;cursor:pointer;">
+            <svg viewBox="0 0 24 24" style="width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"><path d="M4 20V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14l-4-2-4 2-4-2z"/><path d="M12 9v5M9.5 11.5h5"/></svg>
+            <span>写一篇（结合帖子 / 世界观 / 聊天记录补内心话）</span>
+          </div>
+        </div>
+        <!-- 书书架（闭合小方块书，点开展开） -->
+        <div style="padding:9px 12px 4px;">
+          <div style="display:flex;align-items:center;gap:5px;font-size:8.5px;color:var(--c-txt3);margin-bottom:8px;">
+            <svg viewBox="0 0 24 24" style="width:10px;height:10px;fill:none;stroke:var(--c-txt3);stroke-width:1.8;"><path d="M4 20V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14l-4-2-4 2-4-2z"/></svg>
+            <span>共 <b id="npcDiaryCount">0</b> 本 · 点一本看一篇</span>
+          </div>
+          <div id="npcDiaryShelf" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;"></div>
+        </div>
+        <!-- 道歉区（锁后出现）：公开道歉求解锁 -->
+        <div id="npcDiaryApologize" style="display:none;padding:9px 12px 14px;">
+          <div style="background:var(--c-card);border:1px solid var(--c-line);border-radius:11px;padding:10px 11px;">
+            <div style="font-size:9.5px;font-weight:700;color:var(--c-txt);margin-bottom:6px;display:flex;align-items:center;gap:5px;">
+              <svg viewBox="0 0 24 24" style="width:11px;height:11px;fill:none;stroke:var(--c-accent);stroke-width:1.9;"><path d="M12 3l8 18H4z"/><path d="M12 10v5"/><circle cx="12" cy="18" r=".6"/></svg>
+              想解锁？当众道歉
+            </div>
+            <div style="font-size:8.5px;color:var(--c-txt3);line-height:1.6;margin-bottom:7px;">他恼你翻他日记。低个头，承认自己厚颜无耻，许他今后再也不看——若他被哄得心花怒放，才肯把锁打开。</div>
+            <textarea id="npcDiaryApoInput" rows="2" placeholder="例如：我错了，我不该偷看你日记，我这人就是厚颜无耻，求求你原谅我……" style="width:100%;border:1px solid var(--c-line2);border-radius:8px;background:var(--c-input);color:var(--c-txt);font-size:10px;font-family:inherit;padding:7px 9px;outline:none;resize:none;min-height:46px;"></textarea>
+            <div style="display:flex;justify-content:flex-end;gap:7px;margin-top:7px;">
+              <span class="cf-btn-mini" id="npcDiaryApoCancel" style="cursor:pointer;color:var(--c-txt3);border-color:var(--c-line2);">取消</span>
+              <span class="cf-btn-mini" id="npcDiaryApoSend" style="cursor:pointer;background:var(--c-accent);color:var(--c-accent-bg);border-color:var(--c-accent);font-weight:700;">公开道歉求原谅</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 发帖编辑卡片（点底部输入框/发布按钮弹出·小号居中） ===== -->
+  <div class="cf-editor-mask" id="cfEditorMask">
+    <div class="cf-editor">
+      <div class="ed-t"><svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>发帖</div>
+      <div class="ed-lbl">标题</div>
+      <input type="text" id="cfEditTitle" placeholder="标题（留空自动截正文）">
+      <div class="ed-lbl">正文</div>
+      <textarea id="cfEditBody" placeholder="写点什么…"></textarea>
+      <div class="ed-row">
+        <label class="sw" id="cfEditImgWrap" title="带图：发布时生成图片文字描述，贴在帖子下面"><input type="checkbox" id="cfEditImg"><span class="track"><span class="thumb"></span></span></label>
+        <span class="cf-lbl">带图</span>
+        <label class="sw" id="cfEditPubWrap" title="公开：有关系角色会刷到并评论；隐私：不被刷到"><input type="checkbox" id="cfEditPub" checked><span class="track"><span class="thumb"></span></span></label>
+        <span class="cf-lbl" id="cfEditPubLbl">公开</span>
+      <div class="ed-row" style="margin-top:2px;align-items:center;gap:6px;">
+        <span class="fo" id="cfEditPickPic" title="从手机相册选择一张图片作为帖子配图" style="cursor:pointer;color:#3f6d84;border-color:#bcd0da;background:#eef5f8;display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:8px;font-size:10px;"><svg viewBox="0 0 24 24" style="width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:1.8;"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.5"/><path d="M21 15l-5-5-9 9"/></svg>选相册图片</span>
+        <input type="file" id="cfEditPicFile" accept="image/*" style="display:none;">
+        <span id="cfEditPicPrev" style="display:none;align-items:center;gap:6px;font-size:9px;color:#3a6b58;"><img id="cfEditPicPrevImg" style="width:34px;height:34px;object-fit:cover;border-radius:6px;border:1px solid #c8d6cf;vertical-align:middle;">已选图 <span class="fo" id="cfEditPicClear" style="cursor:pointer;color:#c84632;border-color:#e0b8ae;background:#fdf0ec;padding:2px 8px;border-radius:6px;font-size:9px;">取消</span></span>
+      </div>
+      <div class="ed-btns">
+        <button class="cf-btn-mini" id="cfEditCancel">取消</button>
+        <button class="cf-btn-main" id="cfEditSend">发布</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 图库面板（所有已生成的图片，可删除/查看） ===== -->
+  <div class="panel" id="panelImgLib">
+    <div class="pn-bar">
+      <div class="pn-back" data-close="panelImgLib" id="imgLibBack"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></div>
+      <div class="pn-t">图库 · 已生成的图片</div>
+      <span class="cf-btn-mini" id="imgLibCloseX" title="关闭图库" style="margin-left:4px;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;color:#2e3337;border-color:#dfe3e5;background:#fff;"><svg viewBox="0 0 24 24" style="width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+      <span class="cf-btn-mini" id="imgLibClearAll" style="margin-left:auto;color:#c84632;border-color:#e0b8ae;background:#fdf0ec;">清空</span>
+    </div>
+    <div class="pn-body" id="imgLibBody"></div>
+  </div>
+
+  <!-- ===== 看图页（点帖子图/图库图弹出·小号居中，可删除/保存到相册） ===== -->
+  <div class="cf-editor-mask" id="cfImgViewMask">
+    <div class="cf-editor" style="width:min(370px,94vw);">
+      <div class="ed-t"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5-9 9"/></svg>图片查看</div>
+      <div id="cfImgViewPic" style="line-height:0;text-align:center;border-radius:10px;overflow:hidden;background:var(--c-sub);"></div>
+      <div style="font-size:9px;color:var(--c-txt3);line-height:1.6;" id="cfImgViewInfo"></div>
+      <div class="ed-btns">
+        <button class="cf-btn-mini" id="cfImgViewDel">删除</button>
+        <button class="cf-btn-main" id="cfImgViewSave">保存到相册</button>
+        <button class="cf-btn-mini" id="cfImgViewClose">关闭</button>
+      </div>
     </div>
   </div>
 </div>
@@ -12291,14 +12696,14 @@ function _cfMount(){
   // 发帖
   cdBindOnce(R.querySelector('#sendBtn'),function(){
     var v=R.querySelector('#newPost').value.trim(); if(!v)return;
-    POSTS.unshift({auth:'穿越者',world:'跨界',tag:'x',time:'刚刚',hot:'0',title:v.slice(0,14),text:v,je:false});
+    POSTS.unshift({pid:'p_'+Date.now()+'_'+Math.floor(Math.random()*1e5),auth:'穿越者',world:'跨界',tag:'x',time:'刚刚',hot:'0',title:v.slice(0,14),text:v,je:false});
     R.querySelector('#newPost').value=''; renderFeed();
   });
   // 生成
   R.querySelector('#genBtn').addEventListener('click',function(){
     var n=parseInt(R.querySelector('#genNum').value)||3;
     var seeds=[['铁匠铺老娘','剑风','s','那独臂剑士来我店磨过刀','刀上缠龙皮，开口就问米德兰还认不认老恩主。'],['吟游诗人','芙莉莲','n','当红歌姬将开唱，万人空巷','门票炒天价，贵族平民挤破头。'],['穿越局·督察员','跨界','x','跨位面情感纠纷提醒','各位世界居民请到灌水区自行调解，勿用武力。']];
-    for(var k=0;k<n;k++){var g=seeds[k%seeds.length]; POSTS.unshift({auth:g[0],world:g[1],tag:g[2],time:'刚刚',hot:Math.floor(Math.random()*200),title:g[3],text:g[4],je:g[0]==='穿越局·督察员'?false:true});}
+    for(var k=0;k<n;k++){var g=seeds[k%seeds.length]; POSTS.unshift({pid:'p_'+Date.now()+'_'+Math.floor(Math.random()*1e5),auth:g[0],world:g[1],tag:g[2],time:'刚刚',hot:Math.floor(Math.random()*200),title:g[3],text:g[4],je:g[0]==='穿越局·督察员'?false:true});}
     renderFeed();
   });
 }
@@ -12524,11 +12929,12 @@ const CD_FORUM_PROMPT_SUMMARIZE = `你是「世界档案编纂官」，把一段
 【世界写照·背景】讲清：这是个什么地方（时代/地貌/风土/势力格局），人和人怎么过日子，现在剧情卡在哪个节骨眼、前面铺垫了哪些要紧事。几句话说清，不用铺成段，但让人看出大致模样。
 【主角·身份来历】主角('@USER@')是谁、什么出身/身份/来历，简洁点名。
 【主角·经历】主角这场具体干了哪些事（按因果顺序一件一件说清），惹出啥动静、对世界/别人造成什么影响、得罪了谁帮了谁。不含糊其词、不跳过要事，但别流水账、别啰嗦。
-【角色·好感划分清晰】把主要角色都列上（3~8个），各自什么性子、跟主角什么关系、心里怎么想主角；好感用明确数字(-100~100)划分清晰；若剧情有关键/有记忆点的对白、狠话、告白，原样保留为 keyLine（关键台词）。
+【角色·好感划分清晰】把主要角色都列上（3~8个），各自什么性子、跟主角什么关系、心里怎么想主角；好感用明确数字(-100~100)划分清晰；若剧情有关键/有记忆点的对白、狠话、告白，原样保留为 keyLine（关键台词）。每个主要角色都要给出 appearance（外貌）：一看就知道这人长啥样——发色、五官、身形、穿着、气场。若是出自某个知名原作/IP（结合 source 判断，比如火影忍者的纲手、刀剑神域的亚丝娜），appearance 必须严格贴合原作设定与经典形象，不许凭空瞎编、不许随意改头换面；只有主要/重要角色才填 appearance，普通配角、纯路人一律留空("")别硬凑。
 
 输出格式（字段全要有）：
 {
   "name": "世界名（好记有辨识度，别叫'世界1'）",
+  "source": "这世界源自哪部作品/IP？如 火影忍者/刀剑神域/原创/某游戏/某漫画等（若是知名原作同人务必注明原作名；纯原创写'原创'）",
   "tagline": "一句话点题（有画面感）",
   "detail": "世界写照·背景（精简表达，信息密）",
   "vibe": "整体氛围（如 热血/压抑/荒诞/浪漫/暗黑童话）",
@@ -12542,7 +12948,7 @@ const CD_FORUM_PROMPT_SUMMARIZE = `你是「世界档案编纂官」，把一段
      "image": "外人眼里主角是个啥人"
   },
   "characters": [
-     {"name":"角色名","personality":"性子(2~4词或一句)","stage":"跟主角啥关系","fav":"好感-100~100明确数字","judge":"角色对主角的一句话(TA本人语气)","keyLine":"关键台词(若有记忆点台词才填)"}
+     {"name":"角色名","personality":"性子(2~4词或一句)","appearance":"外貌长相(仅主要人物：发色/五官/身形/穿着/气场，并结合原作设定；配角路人填"")","stage":"跟主角啥关系","fav":"好感-100~100明确数字","judge":"角色对主角的一句话(TA本人语气)","keyLine":"关键台词(若有记忆点台词才填)"}
   ]
 }
 
@@ -12550,6 +12956,8 @@ const CD_FORUM_PROMPT_SUMMARIZE = `你是「世界档案编纂官」，把一段
 - fav 一定写明确数字（含负号，如 -88），别模糊。
 - judge 用角色自己"人话"说，别说"很友好"这类评价废话。
 - characters 列 3~8 个主要角色，别只挤一两个。
+- source 如实写清世界源自哪部作品（知名原作同人一定标原著名），保证"这就是火影忍者的世界"这类 IP 归属感不丢。
+- appearance 只给主要人物填且必须贴合原作形象（若这角色是知名 IP 角色），配角路人一律空串；没把握就留空，别硬编。
 - detail/actions/impact 都填，文字精炼但关键信息别漏（别因为是"精炼"就跳过要事）。
 - keyLine：只保留真正有记忆点、推动剧情的台词，没有就不填。
 
@@ -12910,7 +13318,7 @@ async function cdForumGeneratePosts(worlds, types, n, customPrompt, erotica){
     if(!Array.isArray(arr)) { var o=cdForumExtractJSON(text); arr = o && Array.isArray(o.posts) ? o.posts : null; }
     if(!arr || !arr.length) return [];
     var tcmap = { story:'s', other:'x', news:'n', lover:'l', gossip:'g', fight:'f', moan:'m', ero:'e', angst:'angst', mo:'mo', fan:'fan', ship:'ship', toxic:'toxic', hate:'hate', show:'show', biz:'biz', ask:'ask', find:'find', joke:'joke', work:'work', watch:'watch' };
-    return arr.slice(0, n).map(function(p,i){
+    var out = arr.slice(0, n).map(function(p,i){
       var tc = String((p.type||chosen[0]||'x')).toLowerCase();
       var tcc = tcmap[tc] || 'x';
       var aiReplies=[];
@@ -12919,6 +13327,8 @@ async function cdForumGeneratePosts(worlds, types, n, customPrompt, erotica){
           if(rc && (rc.content!==null&&rc.content!==undefined) && String(rc.content).trim()) aiReplies.push({from:cdForumMaskUserName(String(rc.from||'匿名')),world:String(rc.world||''),content:String(rc.content)});
         });
       }
+      // NPC 帖带图：约 1/3 概率命中（用户规则）。命中后异步生成"图片文字描述"(imgDesc)。
+      var wantImg = (Math.random() < 0.33);
       return {
         auth: cdForumMaskUserName(String(p.author||'无名氏')),
         world: String(p.world||(Array.isArray(named)&&named[i]?named[i].world:'')||(w?w.name:'未知世界')),
@@ -12929,9 +13339,24 @@ async function cdForumGeneratePosts(worlds, types, n, customPrompt, erotica){
         title: String(p.title||'(无标题)'),
         text: String(p.text||''),
         je: false,
-        replies: aiReplies
+        replies: aiReplies,
+        img: wantImg,
+        imgDesc: '',
+        pid: 'p_'+Date.now()+'_'+Math.floor(Math.random()*1e5),
+        imgUrl: '',
+        imgKey: ''
       };
     });
+    // 为带图帖处理真图/图片文字描述（有真图配置→生成真图入图库并设 imgKey；无配置→退化文字描述）
+    for(var _i=0;_i<out.length;_i++){
+      if(out[_i] && out[_i].img){
+        try{
+          var _kk=await cdForumEnsureImg(out[_i]);
+          if(_kk) out[_i].imgKey=_kk;
+        }catch(_de){ cdWarn('[论坛] 生成帖子配图失败', _de); }
+      }
+    }
+    return out;
   }catch(e){ cdWarn('[论坛] 生成帖子失败', e); return []; }
 }
 
@@ -12979,6 +13404,25 @@ async function cdForumJealous(){
   }catch(e){ cdWarn('[论坛] 吃醋联动失败', e); return null; }
 }
 
+/* 论坛头像配色：按名字稳定映射到一组预设色（同名同色，跨会话稳定；"随机配色"） */
+function cdForumAvColor(name){
+  var pool=[
+    ['#2b4460','#3a546f'], ['#5f6b7a','#718091'], ['#9a6b3f','#ab7f52'],
+    ['#b07a8a','#bd8e9c'], ['#8a6b5f','#9c7f71'], ['#b0604f','#bf6f5d'],
+    ['#7a8371','#8b9583'], ['#6b6b8a','#7c7c9c'], ['#b08a6b','#b09678'],
+    ['#7a8a9a','#8b9bb0'], ['#9a7a9a','#ab8aab'], ['#8a5f5f','#9c6f6f'],
+    ['#7a5f6b','#8b6f7c'], ['#9a9a5f','#abab70'], ['#5f8a8a','#6f9c9c'],
+    ['#5f7a9a','#6f8bab'], ['#6f8a5f','#809c70'], ['#a08a5f','#b09a70'],
+    ['#6f6b6b','#807c7c'], ['#7a7f8a','#8b909c'], ['#a55f6b','#b5707c'],
+    ['#556b2f','#6a8339'], ['#4a6b8a','#5c82a0'], ['#8a4a6b','#9c5c7f']
+  ];
+  var s=String(name==null?'':name).trim(); if(!s) return pool[0];
+  var h=0; for(var i=0;i<s.length;i++){ h=(h*31 + s.charCodeAt(i))>>>0; }
+  return pool[h%pool.length];
+}
+/* 头像首字（取角色/用户名的第一个字符） */
+function cdForumAvChar(name){ var s=String(name==null?'':name).trim(); return s?s.charAt(0):'?'; }
+
 /* ------------------------------------------------------------
  * _cfMountV2 —— 论坛主渲染（真数据版）
  * 读取 cdForumGetPosts / cdForumGetRoster / cdForumGetWorlds（跨世界全局）
@@ -13016,6 +13460,8 @@ function _cfMountV2(){
   // ===== 工具 =====
   function esc(s){ s=String(s==null?'':s); return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'"'); }
   function tagLabel(t){ var m={s:'剧情',x:'他世界',n:'新闻',l:'情感',g:'八卦',f:'扯皮',m:'吐槽',e:'色情',angst:'纠结',mo:'嬷',fan:'同人',ship:'磕CP',toxic:'控诉',hate:'辱追',show:'凡尔赛',biz:'交易',ask:'求助',find:'寻人',joke:'烂梗',work:'打工人',watch:'围观'}; return m[t]||'他世界'; }
+  // 帖子 type → 封面色(两档渐变) + 中文标签（论坛/主页/NPC动态 共用同一套语义色）
+  var HOME_TYPE = { s:['#2b4460','#3a546f','剧情'], x:['#5f6b7a','#718091','他界'], n:['#9a6b3f','#ab7f52','新闻'], lover:['#b07a8a','#bd8e9c','情感'], gossip:['#8a6b5f','#9c7f71','八卦'], fight:['#b0604f','#bf6f5d','扯皮'], moan:['#7a8371','#8b9583','吐槽'], angst:['#6b6b8a','#7c7c9c','纠结'], mo:['#b08a6b','#b09678','嬷'], fan:['#7a8a9a','#8b9bb0','同人'], ship:['#9a7a9a','#ab8aab','磕CP'], toxic:['#8a5f5f','#9c6f6f','渣男'], hate:['#7a5f6b','#8b6f7c','辱追'], show:['#9a9a5f','#abab70','凡尔赛'], biz:['#5f8a8a','#6f9c9c','交易'], ask:['#5f7a9a','#6f8bab','求助'], find:['#6f8a5f','#809c70','寻人'], joke:['#a08a5f','#b09a70','冷笑话'], work:['#6f6b6b','#807c7c','打工人'], watch:['#7a7f8a','#8b909c','围观'], ero:['#a55f6b','#b5707c','成人'], d:['#5f6b7a','#718091','随笔'] };
 
   // ===== 渲染帖子流（支持板块过滤 + 多选删除） =====
   var multiMode=false, multiSel={};
@@ -13033,28 +13479,39 @@ function _cfMountV2(){
     }
     list.forEach(function(p,idx0){
       var i=POSTS.indexOf(p);
-      var d=document.createElement('div'); d.className='post'+(multiSel[i]?' multi-on':''); d.dataset.i=i;
-      var tl=tagLabel(p.type||'x');
-      var tcls=(p.type==='s'?'s':p.type==='n'?'n':'x');
+      var d=document.createElement('div'); d.className='hp-post'+(multiSel[i]?' multi-on':''); d.dataset.i=i;
+      var tc=HOME_TYPE[p.type||'x']||HOME_TYPE.d;
+      var rec=(p.replies&&p.replies.length)?p.replies.length:0;
       d.innerHTML=
-        (multiMode?('<div class="p-multi" data-i="'+i+'" style="position:absolute;left:8px;top:24px;z-index:2;width:15px;height:15px;border-radius:4px;border:1.5px solid var(--c-accent);background:'+(multiSel[i]?'var(--c-send)':'var(--c-input)')+';display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;font-weight:700;">'+(multiSel[i]?'✓':'')+'</div>') : '')+
-        '<div class="p-top">'+
-          '<span class="p-auth" data-role="'+esc(p.auth)+'">'+esc(p.auth)+'<span class="brief">名片</span></span>'+
-          '<span class="p-world">'+esc(p.world||'')+'</span><span class="p-tag '+tcls+'">'+tl+'</span>'+
-          '<span class="p-time">'+esc(p.time||'')+'</span>'+
-          '<span class="p-hot">'+((p.hot>250)?'<span class="h">爆</span> '+(p.hot||0):'<span class="h">热</span> '+(p.hot||0))+'</span>'+
-          (multiMode?'':'<span class="p-fav" data-fav="'+i+'" style="cursor:pointer;font-size:11px;flex-shrink:0;color:'+(p.fav?'#e0a04a':'#9aa1a7')+';" title="收藏">'+(p.fav?'★':'☆')+'</span>')+
+        (multiMode?('<div class="p-multi" data-i="'+i+'" style="position:absolute;left:8px;top:8px;z-index:3;width:16px;height:16px;border-radius:4px;border:1.5px solid var(--c-send);background:'+(multiSel[i]?'var(--c-send)':'var(--c-input)')+';display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--c-send-txt);font-weight:700;">'+(multiSel[i]?'✓':'')+'</div>') : '')+
+        '<div class="hp-cover" style="background:linear-gradient(135deg,'+tc[0]+','+tc[1]+');">'+
+          '<div class="deco"></div><div class="deco2"></div>'+
+          '<span class="bigword">'+esc((p.title||'帖').charAt(0))+'</span>'+
+          '<span class="fpost-av" data-npc="'+esc(p.auth)+'" style="background:linear-gradient(135deg,'+cdForumAvColor(p.auth)[0]+','+cdForumAvColor(p.auth)[1]+');">'+esc(cdForumAvChar(p.auth))+'</span>'+
+          '<span class="hp-tag">'+esc(tc[2])+'</span>'+
+          '<span class="hp-meta"><svg viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>'+(p.hot||0)+'</span>'+
+          '<span class="hp-src"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 4 9 15 15 0 0 1-4 9 15 15 0 0 1-4-9 15 15 0 0 1 4-9z"/></svg>'+esc(p.world||'')+'</span>'+
         '</div>'+
-        (multiMode?'':'<div class="p-title">'+esc(p.title||'')+'</div><div class="p-text">'+cdForumExcerpt(p.text)+'</div>')+
-        '<div class="p-rep" style="font-size:8.5px;color:#a7adb2;margin-top:3px;">'+(p.replies&&p.replies.length?p.replies.length+'条回复':'暂无回复')+((String(p.text||'').replace(/<[^>]*>/g,'').length>80)?(' · 全文'+String(p.text||'').replace(/<[^>]*>/g,'').length+'字·点开查看'):'')+'</div>';
-      if(multiMode) d.style.paddingLeft='28px';
+        '<div class="hp-body">'+
+          '<div class="hp-title">'+esc(p.title||'(无标题)')+'</div>'+
+          '<div class="hp-text">'+esc(cdForumExcerpt(p.text,80))+'</div>'+
+          '<div class="hp-tE"><span class="p-auth" data-role="'+esc(p.auth)+'">'+esc(p.auth)+'<span class="brief" data-npc="'+esc(p.auth)+'">名片</span></span><span class="line"></span><span>'+esc(p.time||'')+'</span>'+(p.img?'<span title="带图帖" style="display:inline-flex;align-items:center;gap:3px;color:#4a8571;flex-shrink:0;"><svg viewBox="0 0 24 24" style="width:9px;height:9px;fill:none;stroke:currentColor;stroke-width:2;"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5-9 9"/></svg></span>':'')+'</div>'+
+        '</div>'+
+        '<div class="hp-act">'+
+          '<span class="a on"><svg viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>'+(p.hot||0)+'</span>'+
+          '<span class="a"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'+rec+'</span>'+
+          (multiMode?'':'<span class="p-fav" data-fav="'+i+'" style="cursor:pointer;display:flex;align-items:center;gap:3px;'+(p.fav?'color:#e0a04a;':'')+'" title="收藏"><svg viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>'+(p.fav?'已收藏':'未收藏')+'</span>')+
+          '<span class="l">· '+esc(tc[2])+'类型</span>'+
+        '</div>';
       f.appendChild(d);
     });
-    f.querySelectorAll('.p-auth').forEach(function(a){ a.addEventListener('click',function(e){ e.stopPropagation(); openRole(this.dataset.role); }); });
+    f.querySelectorAll('.fpost-av').forEach(function(a){ a.addEventListener('click',function(e){ e.stopPropagation(); if(typeof openNPC==='function') openNPC(this.dataset.npc); }); });
+    f.querySelectorAll('.p-auth').forEach(function(a){ a.addEventListener('click',function(e){ e.stopPropagation(); if(typeof openNPC==='function') openNPC(this.dataset.role); }); });
+    f.querySelectorAll('.p-auth .brief').forEach(function(b){ b.addEventListener('click',function(e){ e.stopPropagation(); openRole(this.dataset.npc); }); });
     f.querySelectorAll('.p-fav').forEach(function(s){ s.addEventListener('click',function(e){ e.stopPropagation(); var pi=parseInt(this.dataset.fav,10); var pp=POSTS[pi]; if(pp){ pp.fav=!pp.fav; _cfPostsCache=POSTS; cdForumPersist(); renderFeed(); } }); });
     // 多选勾选框
     f.querySelectorAll('.p-multi').forEach(function(m){ m.addEventListener('click',function(e){ e.stopPropagation(); var ii=parseInt(this.dataset.i,10); multiSel[ii]=!multiSel[ii]; paintMulti(); renderFeed(); }); });
-    var _pc=f.querySelectorAll('.post');
+    var _pc=f.querySelectorAll('.hp-post');
     try{ if(typeof cdAddLog==='function') cdAddLog('info','[论坛] renderFeed 帖子数='+_pc.length); }catch(e){}
     _pc.forEach(function(p){ p.addEventListener('click',function(){ try{ if(typeof cdAddLog==='function') cdAddLog('info','[论坛] 帖子被点击 i='+this.dataset.i); }catch(e){} var ii=parseInt(this.dataset.i,10); if(multiMode){ multiSel[ii]=!multiSel[ii]; paintMulti(); renderFeed(); return; } openPost(ii); }); });
   }
@@ -13167,18 +13624,37 @@ function _cfMountV2(){
   function openPost(i){
     var p=POSTS[i]; if(!p) return;
     var pb=R.querySelector('#postBody'); if(!pb) return; pb.innerHTML='';
-    pb.innerHTML+='<div class="floor" style="background:#fff;border-color:#dfe3e5;"><div class="f-top"><span class="fa">'+esc(p.auth)+'</span><span class="fw">'+esc(p.world||'')+'</span><span style="font-size:8px;background:#eef0f1;color:#6d757b;border-radius:5px;padding:0 6px;">楼主</span>'+(p.fav?'<span style="font-size:8px;background:#f3e7d2;color:#b07a2e;border-radius:5px;padding:0 6px;">已收藏</span>':'')+'</div><div class="ft" style="font-size:12px;font-weight:700;color:#2e3337;margin:4px 0 2px;">'+esc(p.title)+'</div><div class="ft" style="white-space:pre-wrap;">'+esc(p.text)+'</div></div>';
-    pb.innerHTML+='<div style="display:flex;gap:6px;margin:6px 2px;"><span class="fo" id="ppFav" style="cursor:pointer;'+(p.fav?'color:#b07a2e;border-color:#dfc;background:#fbf3e4;':'')+'">'+(p.fav?'★ 已收藏':'☆ 收藏')+'</span><span class="fo" id="ppAi" style="cursor:pointer;color:#3f6d84;border-color:#bcd0da;background:#eef5f8;"><svg viewBox="0 0 24 24" style="width:9px;height:9px;fill:none;stroke:currentColor;stroke-width:2;vertical-align:-1px;"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>AI生成</span><span class="fo" id="ppDel" style="cursor:pointer;">删除</span></div>';
+    pb.innerHTML+='<div class="floor" style="background:#fff;border-color:#dfe3e5;"><div class="f-top"><span class="f-av" data-npc="'+esc(p.auth)+'" style="background:linear-gradient(135deg,'+cdForumAvColor(p.auth)[0]+','+cdForumAvColor(p.auth)[1]+');">'+esc(cdForumAvChar(p.auth))+'</span><span class="fa" data-npc="'+esc(p.auth)+'">'+esc(p.auth)+'</span><span class="fw">'+esc(p.world||'')+'</span><span style="font-size:8px;background:#eef0f1;color:#6d757b;border-radius:5px;padding:0 6px;">楼主</span>'+(p.fav?'<span style="font-size:8px;background:#f3e7d2;color:#b07a2e;border-radius:5px;padding:0 6px;">已收藏</span>':'')+'</div><div class="ft" style="font-size:12px;font-weight:700;color:#2e3337;margin:4px 0 2px;">'+esc(p.title)+'</div><div class="ft" style="white-space:pre-wrap;">'+esc(p.text)+'</div>'+(p.img?'<div id="cfPostImgWrap" style="margin-top:7px;border:1.5px dashed #c8d6cf;border-radius:9px;padding:8px 10px;background:#f0f5f2;">'+(p.imgUrl?'<div style="border-radius:8px;margin-bottom:6px;overflow:hidden;background:#e9edee;"><img src="'+esc(p.imgUrl)+'" style="width:100%;height:auto;display:block;border-radius:8px;"></div>':'<div style="display:flex;align-items:center;gap:6px;color:#4a8571;font-size:9px;font-weight:700;margin-bottom:4px;"><svg viewBox="0 0 24 24" style="width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.8;"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5-9 9"/></svg>本帖配图 · 图片文字说明</div>')+'<div class="ft" style="font-size:10px;color:#3a6b58;line-height:1.7;">'+esc(p.imgDesc||'（图片描述生成中…）')+'</div></div>':'')+'</div>';
+    pb.innerHTML+='<div style="display:flex;gap:6px;margin:6px 2px;"><span class="fo" id="ppFav" style="cursor:pointer;'+(p.fav?'color:#b07a2e;border-color:#dfc;background:#fbf3e4;':'')+'">'+(p.fav?'★ 已收藏':'☆ 收藏')+'</span><span class="fo" id="ppAi" style="cursor:pointer;color:#3f6d84;border-color:#bcd0da;background:#eef5f8;"><svg viewBox="0 0 24 24" style="width:9px;height:9px;fill:none;stroke:currentColor;stroke-width:2;vertical-align:-1px;"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>AI生成</span><span class="fo" id="ppImgGen" title="根据帖子内容 AI 生成一张配图" style="cursor:pointer;color:#7a4a8a;border-color:#d8c3df;background:#f6eefa;"><svg viewBox="0 0 24 24" style="width:9px;height:9px;fill:none;stroke:currentColor;stroke-width:2;vertical-align:-1px;"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.5"/><path d="M21 15l-5-5-9 9"/></svg>图像生成</span><span class="fo" id="ppDel" style="cursor:pointer;">删除</span></div>';
     pb.innerHTML+='<div class="pc-sec">评论区 <span style="font-weight:400;color:#9aa1a7;">('+(p.replies&&p.replies.length?p.replies.length+'条':'暂无')+')</span></div>';
     // 评论楼层
     var replies = (p.replies&&p.replies.length) ? p.replies.slice() : [];
     replies.forEach(function(rc,idx){
       var rw = rc.world || p.world || '';
-      pb.innerHTML+='<div class="floor'+(p.je&&idx===0?' love':'')+'"><div class="f-top"><span class="fa">'+esc(rc.from||'匿名')+'</span><span class="fw">'+esc(rw)+'</span><span class="fno">#'+(idx+2)+'</span></div><div class="ft">'+esc(rc.content||'')+'</div></div>';
+      pb.innerHTML+='<div class="floor'+(p.je&&idx===0?' love':'')+'"><div class="f-top"><span class="f-av" data-npc="'+esc(rc.from||'匿名')+'" style="background:linear-gradient(135deg,'+cdForumAvColor(rc.from||'匿名')[0]+','+cdForumAvColor(rc.from||'匿名')[1]+');">'+esc(cdForumAvChar(rc.from||'匿名'))+'</span><span class="fa" data-npc="'+esc(rc.from||'匿名')+'">'+esc(rc.from||'匿名')+'</span><span class="fw">'+esc(rw)+'</span><span class="fno">#'+(idx+2)+'</span></div><div class="ft">'+esc(rc.content||'')+'</div></div>';
     });
     // 手动回复框
     pb.innerHTML+='<div style="display:flex;gap:5px;margin-top:8px;"><input id="ppReply" placeholder="以穿越者身份回复…" style="flex:1;border:1px solid #dfe3e5;border-radius:15px;padding:5px 10px;font-size:10px;font-family:inherit;"><button class="set-btn" id="ppSend" style="font-size:9px;cursor:pointer;">回复</button></div>';
+    // 楼层头像/名字 → NPC 动态主页
+    pb.querySelectorAll('.f-av').forEach(function(a){ a.addEventListener('click',function(e){ e.stopPropagation(); if(typeof openNPC==='function') openNPC(this.dataset.npc); }); });
+    pb.querySelectorAll('.fa').forEach(function(a){ a.addEventListener('click',function(e){ e.stopPropagation(); if(typeof openNPC==='function') openNPC(this.dataset.npc); }); });
     showPanel(panelPost);
+    if(p && p.imgKey){
+      try{
+        var _iw=R.querySelector('#cfPostImgWrap');
+        if(_iw){
+          _iw.innerHTML='<div style="border-radius:8px;margin-bottom:6px;overflow:hidden;background:#e9edee;"><img id="cfPostImg" style="width:100%;height:auto;display:block;border-radius:8px;cursor:pointer;" alt="loading"></div><div class="ft" style="font-size:10px;color:#3a6b58;line-height:1.7;">'+esc(p.imgDesc||'')+'</div>';
+          cdForumImgGet(p.imgKey).then(function(rec){
+            var _im=R.querySelector('#cfPostImg');
+            if(_im && rec && rec.dataUrl){
+              _im.src=rec.dataUrl;
+              _im.addEventListener('click',function(ev){ ev.stopPropagation(); try{ openImgView(p.imgKey); }catch(_e){ cdWarn('[img] openImgView fail',_e); } });
+            } else if(_im){ _im.alt='missing'; _im.style.opacity='.4'; }
+          });
+        }
+      }catch(_e){ cdWarn('[img] post img render fail', _e); }
+    }
+
     var pf=R.querySelector('#ppFav'); if(pf) pf.addEventListener('click',function(){ p.fav=!p.fav; _cfPostsCache=POSTS; cdForumPersist(); openPost(i); });
     var pai=R.querySelector('#ppAi'); if(pai) pai.addEventListener('click',function(){
       if(!cdForumApiReady()){ toastr.error('尚未配置论坛 API'); return; }
@@ -13189,6 +13665,16 @@ function _cfMountV2(){
         if(res&&res.effects) cdForumApplyEffects(res.effects);
         if(rs&&rs.length){ if(!p.replies) p.replies=[]; rs.forEach(function(r){ if(r&&r.content) p.replies.push(r); }); _cfPostsCache=POSTS; cdForumPersist(); openPost(i); toastr.success('已生成 '+rs.length+' 条回复'); }
         else toastr.error('AI 生成失败');
+      });
+    });
+    var pig=R.querySelector('#ppImgGen'); if(pig) pig.addEventListener('click',function(){
+      var me=pig; me.disabled=true; var ot=me.textContent; me.textContent='图像生成中…';
+      var _btn=me;
+      cdForumGenPostImg(p).then(function(r){
+        _btn.disabled=false; _btn.textContent=ot;
+        if(r && r.sub){ toastr.error(r.sub); return; }
+        if(r && r.key){ p.img=p.img||true; p.imgKey=r.key; _cfPostsCache=POSTS; cdForumPersist(); openPost(i); toastr.success('真图已生成'); }
+        else { toastr.error('图像生成失败'); }
       });
     });
     var pd=R.querySelector('#ppDel'); if(pd) pd.addEventListener('click',function(){ POSTS.splice(i,1); _cfPostsCache=POSTS; cdForumPersist(); hidePanel(panelPost); renderFeed(); toastr.info('帖子已删除'); });
@@ -13205,8 +13691,9 @@ function _cfMountV2(){
 
   // ===== 面板切换 =====
   var fl=R.querySelector('#fl');
-  function showPanel(pn){ if(fl) fl.style.display='none'; pn.classList.add('open'); }
-  function hidePanel(pn){ pn.classList.remove('open'); if(fl) fl.style.display='flex'; }
+  var _cfPanelStack=[];
+  function showPanel(pn){ if(!pn) return; var anyOpen=false; R.querySelectorAll('.panel.open').forEach(function(x){ if(x!==pn){ _cfPanelStack.push(x); anyOpen=true; } else anyOpen=true; }); if(!anyOpen && !R.querySelector('.panel.open')) _cfPanelStack.push('feed'); R.querySelectorAll('.panel.open').forEach(function(x){ if(x!==pn) x.classList.remove('open'); }); if(fl) fl.style.display='none'; pn.classList.add('open'); }
+  function hidePanel(pn){ pn.classList.remove('open'); var back=_cfPanelStack.pop(); if(back==='feed'||back==='fl'){ if(fl) fl.style.display='flex'; } else if(back){ back.classList.add('open'); if(fl) fl.style.display='none'; } }
   R.querySelectorAll('[data-close]').forEach(function(b){
     b.addEventListener('click',function(){ hidePanel(document.getElementById(b.dataset.close)); });
   });
@@ -13321,6 +13808,8 @@ function _cfMountV2(){
         html+='<div style="height:5px;background:#f0f2f3;border-radius:3px;margin:8px 0 6px;position:relative;overflow:hidden;"><div style="position:absolute;top:0;bottom:0;'+(fav<0?'right:50%;background:#c46a5a;':'left:50%;background:#8fb8d6;')+'width:'+per+'%;border-radius:3px;"></div></div>';
         if(x.personality) html+='<div style="font-size:9.5px;color:#5a6167;line-height:1.6;margin-top:4px;"><b style="color:#7a838a;">性格：</b>'+esc0(x.personality)+'</div>';
         if(x.judge) html+='<div style="font-size:9.5px;color:#5a6167;line-height:1.6;margin-top:3px;"><b style="color:#7a838a;">评价：</b>'+esc0(x.judge)+'</div>';
+        if(x.appearance) html+='<div style="font-size:9.5px;color:#5a6167;line-height:1.6;margin-top:3px;"><b style="color:#7a838a;">外貌：</b>'+esc0(x.appearance)+'</div>';
+        html+='<div class="mg-app" data-nm="'+esc0(n)+'" style="margin-top:6px;display:flex;align-items:center;gap:5px;font-size:9px;font-weight:600;color:#7a4a5e;border:1px solid #e3c8d2;border-radius:8px;padding:4px 8px;justify-content:center;cursor:pointer;background:#fdf3f6;"><svg viewBox="0 0 24 24" style="width:10px;height:10px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>'+(x.appearance?'重新生成外貌':'一键生成外貌')+'</div>';
         // 记忆区（积怨，可编辑/删除/新增）
         html+='<div style="margin-top:7px;">';
         html+='<div style="display:flex;align-items:center;justify-content:space-between;"><span style="font-size:9px;font-weight:700;color:#b0473a;">积怨 ('+gArr.length+')</span><span class="mg-add" data-k="g" style="font-size:8.5px;color:#8b9298;border:1px solid #e0cdc8;border-radius:6px;padding:0 7px;cursor:pointer;line-height:1.7;">＋积怨</span></div>';
@@ -13365,6 +13854,15 @@ function _cfMountV2(){
               else { if(!r.affections)r.affections=[]; r.affections.push({t:String(nt).trim(),mood:nm?String(nm).trim():''}); }
               save();
             });
+          });
+          // 一键生成外貌
+          var apb=blk.querySelector('.mg-app');
+          if(apb) apb.addEventListener('click',function(e){ e.stopPropagation();
+            var btn=this; var ot=btn.textContent; btn.textContent='生成中…'; try{ btn.style.opacity='.6'; }catch(_b){}
+            _cfGenAppearance(r).then(function(ap){
+              if(ap){ r.appearance=ap; _cfRosterCache=ROSTER; cdForumPersist(); fillManagePanel(); if(typeof toastr==='function') toastr.success('已生成「'+((r.n||r.name))+')」的外貌'); }
+              else { btn.textContent=ot; try{ btn.style.opacity=''; }catch(_b){} if(typeof toastr==='function') toastr.info('生成外貌失败（检查论坛 API）'); }
+            }).catch(function(){ btn.textContent=ot; try{ btn.style.opacity=''; }catch(_b){} });
           });
           // 一键总结
           var sb=blk.querySelector('.mg-sum');
@@ -13464,29 +13962,394 @@ function _cfMountV2(){
   function cdHomeName(){ return (cfg&&cfg.homeName&&String(cfg.homeName).trim())?String(cfg.homeName).trim():''; }
   function fillHomePanel(){
     if(!panelHome) return;
-    var inp=panelHome.querySelector('#homeNameInput'); if(inp) inp.value=cdHomeName();
+    var meName=cdHomeName();
+    // 资料展示卡
+    var hp=panelHome.querySelector('#homeNameDisp'); if(hp) hp.textContent=meName||'未设置';
+    var bi=panelHome.querySelector('#homeBioDisp'); if(bi) bi.textContent=(cfg&&cfg.bio&&String(cfg.bio).trim())?cfg.bio:'还没有简介，点右侧「编辑资料」加一句吧。';
+    // 编辑表单回填
+    var inp=panelHome.querySelector('#homeNameInput'); if(inp) inp.value=meName;
+    var bioi=panelHome.querySelector('#homeBioInput'); if(bioi) bioi.value=(cfg&&cfg.bio)?cfg.bio:'';
+    // 大头像 = 昵称首字 + 稳定配色（无昵称则"我"+默认藏青）
+    var av=panelHome.querySelector('#homeAvatar');
+    if(av){ var _n=meName||'我'; av.textContent=(_n)?String(_n).charAt(0):'我'; var _c=cdForumAvColor(meName||'我'); av.style.background='linear-gradient(135deg,'+_c[0]+','+_c[1]+')'; }
     var hl=panelHome.querySelector('#homePostList'); if(!hl) return; hl.innerHTML='';
     var me = cdHomeName() || '_cfme_fallback_';
     var mine = POSTS.filter(function(p){ return p && p.auth===me; });
-    if(!mine.length){ hl.innerHTML='<div style="font-size:10px;color:#9aa1a7;padding:16px 4px;text-align:center;">还没有我发过的帖子。<br>在上面输入栏发帖，会以你的昵称发布并出现在这里。</div>'; return; }
+    // 计数
+    var cnt=panelHome.querySelector('#homeCount'); if(cnt) cnt.textContent=mine.length;
+    if(!mine.length){
+      hl.innerHTML='<div class="hp-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 11l9-8 9 8M5 10v10h14V10"/><path d="M10 14h4"/></svg>还没有我发过的帖子。<br>在上面输入栏发帖，会以你的昵称发布并出现在这里。</div>';
+      return;
+    }
+    var TYPE = { s:['#2b4460','#3a546f','剧情'], x:['#5f6b7a','#718091','他界'], n:['#9a6b3f','#ab7f52','新闻'], lover:['#b07a8a','#bd8e9c','情感'], gossip:['#8a6b5f','#9c7f71','八卦'], fight:['#b0604f','#bf6f5d','扯皮'], moan:['#7a8371','#8b9583','吐槽'], angst:['#6b6b8a','#7c7c9c','纠结'], mo:['#b08a6b','#b09678','嬷'], fan:['#7a8a9a','#8b9bb0','同人'], ship:['#9a7a9a','#ab8aab','磕CP'], toxic:['#8a5f5f','#9c6f6f','渣男'], hate:['#7a5f6b','#8b6f7c','辱追'], show:['#9a9a5f','#abab70','凡尔赛'], biz:['#5f8a8a','#6f9c9c','交易'], ask:['#5f7a9a','#6f8bab','求助'], find:['#6f8a5f','#809c70','寻人'], joke:['#a08a5f','#b09a70','冷笑话'], work:['#6f6b6b','#807c7c','打工人'], watch:['#7a7f8a','#8b909c','围观'], ero:['#a55f6b','#b5707c','成人'], d:['#5f6b7a','#718091','随笔'] };
     mine.slice(0,50).forEach(function(p){
-      var d=document.createElement('div');
-      d.style.cssText='box-sizing:border-box;background:#fff;border:1px solid #e7e9eb;border-radius:12px;padding:10px 12px;margin-bottom:8px;cursor:pointer;';
-      var preview=(p.text||'').length>60 ? (p.text.slice(0,60)+'…') : (p.text||'');
-      d.innerHTML='<div style="font-size:13px;font-weight:700;color:#2f3941;line-height:1.4;">'+esc0(p.title||'(无标题)')+'</div>'+
-        '<div style="font-size:10px;color:#5f666b;line-height:1.6;margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">'+esc0(preview)+'</div>'+
-        '<div style="display:flex;align-items:center;gap:10px;margin-top:7px;font-size:9px;color:#a7adb2;"><span>'+esc0(p.time||'')+'</span><span>'+((p.replies&&p.replies.length)?(p.replies.length+'条回复'):'暂无回复')+'</span><span>收藏'+(p.fav?'★':'☆')+'</span></div>';
+      var tt=p.type||p.tag; var tc=TYPE[tt]||TYPE.d;
+      var d=document.createElement('div'); d.className='hp-post';
+      var rec=(p.replies&&p.replies.length)?p.replies.length:0;
+      d.innerHTML=
+        '<div class="hp-cover" style="background:linear-gradient(135deg,'+tc[0]+','+tc[1]+');">'+
+          '<div class="deco"></div><div class="deco2"></div>'+
+          '<span class="bigword">'+esc0((p.title||'帖').charAt(0))+'</span>'+
+          '<span class="hp-tag">'+esc0(tc[2])+'</span>'+
+          '<span class="hp-meta"><svg viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>'+(p.hot||'')+'</span>'+
+          '<span class="hp-src"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 4 9 15 15 0 0 1-4 9 15 15 0 0 1-4-9 15 15 0 0 1 4-9z"/></svg>'+esc0(p.world||'')+'</span>'+
+        '</div>'+
+        '<div class="hp-body">'+
+          '<div class="hp-title">'+esc0(p.title||'(无标题)')+'</div>'+
+          '<div class="hp-text">'+esc0(p.text||'')+'</div>'+
+          '<div class="hp-tE"><span>'+esc0(p.auth)+'</span><span class="line"></span><span>'+esc0(p.time||'')+'</span></div>'+
+        '</div>'+
+        '<div class="hp-act">'+
+          '<span class="a on"><svg viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>'+(p.hot||0)+'</span>'+
+          '<span class="a"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'+rec+'</span>'+
+          '<span class="a'+(p.fav?' on':'')+'"><svg viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>'+(p.fav?'已收藏':'未收藏')+'</span>'+
+          '<span class="l">· '+esc0(tc[2])+'类型</span>'+
+        '</div>';
       d.addEventListener('click',function(){ var idx=-1; for(var k=0;k<POSTS.length;k++){ if(POSTS[k]===p){ idx=k; break; } } if(idx>=0) openPost(idx); });
       hl.appendChild(d);
     });
   }
   if(homeQ && panelHome) cdBindOnce(homeQ, function(){ fillHomePanel(); showPanel(panelHome); });
+  // ===== 主页「编辑资料」：展开/收起表单 =====
+  function homeEditToggle(open){
+    var f=R.querySelector('#homeEditForm'); if(f) f.classList.toggle('open',!!open);
+  }
+  cdBindOnce(R.querySelector('#homeEditBtn'), function(){ homeEditToggle(true); });
+  cdBindOnce(R.querySelector('#homeEditLink'), function(){ homeEditToggle(true); });
+  cdBindOnce(R.querySelector('#homeProfile'), function(e){
+    // 点资料卡任意处（除编辑按钮/编辑表单）也进入编辑
+    if(e && (e.target.closest('#homeEditBtn')||e.target.closest('#homeEditLink')||e.target.closest('#homeEditForm'))) return;
+    homeEditToggle(true);
+  });
+  cdBindOnce(R.querySelector('#homeEditCancel'), function(){ homeEditToggle(false); });
   cdBindOnce(R.querySelector('#homeNameSave'), function(){
     var inp=R.querySelector('#homeNameInput'); if(!inp) return;
     var v=String(inp.value||'').trim();
-    cfg.homeName=v; var c=cdForumCfg(); c.homeName=v; _cfCfgCache=c; cdForumPersist();
-    toastr.success(v?('发帖昵称已设为：'+v):'发帖昵称(已清空)');
+    var b=String((R.querySelector('#homeBioInput')||{}).value||'').trim();
+    cfg.homeName=v; cfg.bio=b;
+    var c=cdForumCfg(); c.homeName=v; c.bio=b; _cfCfgCache=c; cdForumPersist();
+    homeEditToggle(false);
+    toastr.success(v?('已保存：'+v):'已保存(昵称已清空)');
     fillHomePanel();
+  });
+
+  // ===== NPC 动态主页：点 NPC 头像/名字 → 打开该角色动态 =====
+  var panelNPC=R.querySelector('#panelNPC');
+  function fillNPCPanel(name){
+    if(!panelNPC) return;
+    var nm=String(name||'').trim()||'角色';
+    // 日记视图默认隐藏 → 进主页先看帖子流；并绑定当前角色的日记数据源
+    try{ var _pdw=R.querySelector('#npcDiaryWrap'); if(_pdw) _pdw.style.display='none'; }catch(_e2){}
+    try{ var _ppl=R.querySelector('#npcPostList'); if(_ppl) _ppl.style.display=''; }catch(_e3){}
+    _cfDiaryShow=false; _cfCurDiary=findRole(nm)||{n:nm,w:''};
+    // 头像（与用户主页一致：64px 首字 + 稳定配色）
+    var nav=panelNPC.querySelector('#npcAvatar'); if(nav){ nav.textContent=cdForumAvChar(nm); var _c=cdForumAvColor(nm); nav.style.background='linear-gradient(135deg,'+_c[0]+','+_c[1]+')'; }
+    var nmd=panelNPC.querySelector('#npcNameDisp'); if(nmd) nmd.textContent=nm;
+    var lbl=panelNPC.querySelector('#npcLabelDisp'); if(lbl) lbl.textContent=nm+'的动态';
+    // 找角色资料（简介=personality/oneLine/judge/quirk）
+    var r=findRole(nm);
+    var bio=panelNPC.querySelector('#npcBioDisp');
+    if(bio){
+      var btoks=[];
+      if(r&&r.personality) btoks.push(r.personality);
+      if(r&&r.oneLine) btoks.push(r.oneLine);
+      if(r&&r.quirk) btoks.push('癖好：'+r.quirk);
+      if(r&&r.judge) btoks.push('评价：'+r.judge);
+      if(r&&(r.w||r.world)) btoks.push('来自：'+(r.w||r.world));
+      bio.textContent=btoks.length?btoks.join(' · ') : '这位角色还没留下简介。';
+    }
+    // 该 NPC 发的帖
+    var mine=POSTS.filter(function(p){ return p && p.auth===nm; });
+    var cnt=panelNPC.querySelector('#npcCount'); if(cnt) cnt.textContent=mine.length;
+    var nl=panelNPC.querySelector('#npcPostList'); if(!nl) return; nl.innerHTML='';
+    if(!mine.length){
+      nl.innerHTML='<div class="hp-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 11l9-8 9 8M5 10v10h14V10"/><path d="M10 14h4"/></svg>TA 还没有发过帖子。</div>';
+      return;
+    }
+    var TYPE2 = { s:['#2b4460','#3a546f','剧情'], x:['#5f6b7a','#718091','他界'], n:['#9a6b3f','#ab7f52','新闻'], lover:['#b07a8a','#bd8e9c','情感'], gossip:['#8a6b5f','#9c7f71','八卦'], fight:['#b0604f','#bf6f5d','扯皮'], moan:['#7a8371','#8b9583','吐槽'], angst:['#6b6b8a','#7c7c9c','纠结'], mo:['#b08a6b','#b09678','嬷'], fan:['#7a8a9a','#8b9bb0','同人'], ship:['#9a7a9a','#ab8aab','磕CP'], toxic:['#8a5f5f','#9c6f6f','渣男'], hate:['#7a5f6b','#8b6f7c','辱追'], show:['#9a9a5f','#abab70','凡尔赛'], biz:['#5f8a8a','#6f9c9c','交易'], ask:['#5f7a9a','#6f8bab','求助'], find:['#6f8a5f','#809c70','寻人'], joke:['#a08a5f','#b09a70','冷笑话'], work:['#6f6b6b','#807c7c','打工人'], watch:['#7a7f8a','#8b909c','围观'], ero:['#a55f6b','#b5707c','成人'], d:['#5f6b7a','#718091','随笔'] };
+    mine.slice(0,50).forEach(function(p){
+      var tt=p.type||p.tag; var tc=TYPE2[tt]||TYPE2.d;
+      var d=document.createElement('div'); d.className='hp-post';
+      var rec=(p.replies&&p.replies.length)?p.replies.length:0;
+      d.innerHTML=
+        '<div class="hp-cover" style="background:linear-gradient(135deg,'+tc[0]+','+tc[1]+');">'+
+          '<div class="deco"></div><div class="deco2"></div>'+
+          '<span class="bigword">'+esc0((p.title||'帖').charAt(0))+'</span>'+
+          '<span class="hp-tag">'+esc0(tc[2])+'</span>'+
+          '<span class="hp-meta"><svg viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>'+(p.hot||'')+'</span>'+
+          '<span class="hp-src"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 4 9 15 15 0 0 1-4 9 15 15 0 0 1-4-9 15 15 0 0 1 4-9z"/></svg>'+esc0(p.world||'')+'</span>'+
+        '</div>'+
+        '<div class="hp-body">'+
+          '<div class="hp-title">'+esc0(p.title||'(无标题)')+'</div>'+
+          '<div class="hp-text">'+esc0(p.text||'')+'</div>'+
+          '<div class="hp-tE"><span>'+esc0(p.auth)+'</span><span class="line"></span><span>'+esc0(p.time||'')+'</span></div>'+
+        '</div>'+
+        '<div class="hp-act">'+
+          '<span class="a on"><svg viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>'+(p.hot||0)+'</span>'+
+          '<span class="a"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'+rec+'</span>'+
+          '<span class="a'+(p.fav?' on':'')+'"><svg viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>'+(p.fav?'已收藏':'未收藏')+'</span>'+
+          '<span class="l">· '+esc0(tc[2])+'类型</span>'+
+        '</div>';
+      d.addEventListener('click',function(){ var idx=-1; for(var k=0;k<POSTS.length;k++){ if(POSTS[k]===p){ idx=k; break; } } if(idx>=0) openPost(idx); });
+      nl.appendChild(d);
+    });
+  }
+  function openNPC(name){
+    fillNPCPanel(name);
+    showPanel(panelNPC);
+  }
+
+  // ===================== NPC 日记模块（手动生成 · 闭合书本 · 隐形偷看 · 公开道歉解锁） =====================
+  var _cfCurDiary = null;               // 当前查看日记的角色对象
+  var _cfDiaryShow = false;             // 是否处于日记视图
+  var CD_DIARY_PEEK_TH = 5;             // 隐形阈值：累计点开几篇后触发察觉锁定
+  function cdForumDiarySelfNm(){ try{ return String((cdForumCfg()||{}).homeName||'').trim(); }catch(_e){ return ''; } }
+  // 取近端聊天记录（供日记参考），失败返回空串
+  function cdForumRecentChat(n){
+    try{
+      var ctx=SillyTavern.getContext(); var arr=(ctx&&ctx.chat)||[]; n=n||6;
+      var out=arr.slice(-n).map(function(m){ var who=(m&&m.name)||(m&&m.is_user?'你':'AI'); var tx=String((m&&m.mes)||'').replace(/<[^>]*>/g,'').slice(0,200); return who+': '+tx; }).filter(Boolean);
+      return out.length?out.join('\n'):'';
+    }catch(_e){ return ''; }
+  }
+  // 生成一篇内心话日记（长、中二、情绪化、与公开反差；结合帖子/世界观/聊天记录）
+  async function cdForumGenDiary(r){
+    if(!r || !cdForumApiReady()) return false;
+    var nm=r.n||r.name||'角色';
+    var ww=r.w||r.world||'未知世界';
+    var POSTS=cdForumGetPosts(); var WORLDS=cdForumGetWorlds();
+    var selfNm=cdForumDiarySelfNm();
+    // 世界档案
+    var worldJson=(WORLDS&&WORLDS.length)?WORLDS.map(function(x,i){ return '#世界'+(i+1)+'「'+(x.name||'未命名')+'」'+(x.detail?(': '+x.detail):''); }).join('\n') : '（暂无世界档案）';
+    // 该角色相关帖子（自己发的和自己被@/被提到/带自己名字的）
+    var relPosts=(POSTS||[]).filter(function(p){ return p && (p.auth===nm || (p.text&&p.text.indexOf(nm)>=0) || (p.replies&&p.replies.some(function(rc){return rc&&rc.from===nm;}))) }).slice(-8)
+       .map(function(p){ return '〔'+(p.title||'无题')+'〕'+(p.text||'')+(p.auth?('        —— '+p.auth+' 发表于 '+p.world||'?'):''); }).join('\n');
+    if(!relPosts) relPosts='（该角色最近还没有相关帖子）';
+    // 关系记忆
+    var gr=(r.grievances&&r.grievances.length)?r.grievances.map(function(g){return '积怨：'+(g.t||'')+(g.mood?('['+g.mood+']'):'');}).join(' / '):'';
+    var af=(r.affections&&r.affections.length)?r.affections.map(function(g){return '铭记：'+(g.t||'')+(g.mood?('['+g.mood+']'):'');}).join(' / '):'';
+    var relTxt=[gr,af].filter(Boolean).join(' ');
+    var chatTxt=cdForumRecentChat(6);
+    var favTxt=(r.f!==undefined?('好感'+r.f):(r.fav!==undefined?('好感'+r.fav):''));
+    var prompt='你是「'+nm+'」本人的潜意识，正在写一本只有自己才看的私密日记。要把「公开戴的面具」撕下来，写下最真实、最不给人看的那一面。\n\n'
+      +'你与' + (selfNm?('「'+selfNm+'」这位穿越主角'):'主角') + '的关系：'+favTxt+'；关系阶段：'+(r.stage||'')+'。\n'
+      +'你的性格：'+(r.personality||r.oneLine||'')+'。\n'
+      +'你的怪癖/心头事：'+(r.quirk||'')+'。\n'
+      +'你对他/她的一句话真话：'+(r.judge||'')+'。\n'
+      +'你在意的恩怨：'+relTxt+'。\n'
+      +'你所在的世界：'+ww+'。\n'
+      +'下面这阵子论坛上与你相关的帖子：\n'+relPosts+'\n'
+      +'本论坛世界档案（供你想到别人）：\n'+worldJson+'\n'
+      +(chatTxt?('最近与主角有关的聊天记录：\n'+chatTxt+'\n'):'')
+      +'\n请以「'+nm+'」的第一人称，写一篇【只给自己看】的内心日记。硬性要求：\n'
+      +'1. 字数要足：至少 200 字，写到想到哪、憋不住为止；可以很啰嗦、很反复、很浓烈，就是不允许三两句应付。\n'
+      +'2. 一定要有【反差】：你公开说的客套话、云淡风轻、礼数周全，在日记里要反过来——把心里的尖刺、酸味、火气、委屈全部倒出来；上面那些帖子如果你发得很平静，日记里就狠狠地不平静。\n'
+      +'3. 要中二、要情绪化、要夸张到不遮不掩：可以自称「王」「最后的守望者」「地狱归来的男人」；可以把同一句狠话翻来覆去地写（比如「我恨你我恨你我恨你……」写到不想写）；可以突然热血上头觉得自己孤标傲世（比如「果然我就是王，我就是喜马拉雅最孤傲的王」）；只要符合这个角色的性子与处境、又是真实的情绪爆发，怎么极端怎么写。\n'
+      +'4. [口]所有人都要在这段转折处做一个换行进入下一段小剧场/小念头。\n'
+      +'5. 用真正的人话与情绪宣泄，严禁「分析/数据/统计/综上所述/逻辑/参数」这类机器词。\n'
+      +'只输出日记正文，不要任何前缀后缀、不要引号包裹全文，也不要输出标题——正文首行就是「今天……」这类开头。';
+    try{
+      prompt+='\n\n开头可以这样：';
+      var msgs=[{role:'system',content:prompt},{role:'user',content:'写我的日记。'}];
+      var text=(await cdForumApiComplete(msgs))||'';
+      text=text.replace(/^[\s"“”‘’【】]+/,'').trim();
+      if(!text) return false;
+      // 情绪标签：从语气粗判
+      var c='#8b7aa0', mo='念';
+      if(/我恨你|去死|杀了|滚|贱|混账|不共戴天/.test(text)){ c='#c46a5a'; mo='怒'; }
+      else if(/王|孤傲|天下第一|独自|最/ .test(text)){ c='#5f8a8a'; mo='中二'; }
+      else if(/酸|凭什么|为何|不甘|嫉妒/.test(text)){ c='#b07a3f'; mo='酸'; }
+      else if(/累|倦|不想|算了|罢了/.test(text)){ c='#7a5f6b'; mo='倦'; }
+      else if(/想|念|舍不得|缺/.test(text)){ c='#7a5f6b'; mo='念'; }
+      if(!r.diaries) r.diaries=[];
+      r.diaries.unshift({ title:(text.split('\n')[0]||'').slice(0,24)||'内心', txt:text, mood:mo, c:c, date:cdForumToday(), time:'刚刚' });
+      if(r.diaries.length>30) r.diaries.length=30;
+      _cfRosterCache=ROSTER; cdForumPersist();
+      return true;
+    }catch(e){ cdWarn('[论坛] 写日记失败', e); return false; }
+  }
+  function cdForumToday(){ try{ var d=new Date(); return (d.getMonth()+1)+'.'+d.getDate(); }catch(_e){ return ''; } }
+  // 渲染书书架（闭合小方块书，点开展开；记录偷看计数）
+  function renderDiaryShelf(r){
+    var sh=R.querySelector('#npcDiaryShelf'); if(!sh) return; sh.innerHTML='';
+    var lock=!!r._diaryLocked;
+    var arr=(r.diaries||[]).slice();
+    var cntEl=R.querySelector('#npcDiaryCount'); if(cntEl) cntEl.textContent=arr.length;
+    // 顶栏锁标
+    var lgEl=R.querySelector('#npcDiaryLockName'); if(lgEl) lgEl.textContent=r.n||r.name||'TA';
+    var ls=R.querySelector('#npcDiaryLockStrip'); if(ls) ls.style.display=lock?'':'none';
+    var ap=R.querySelector('#npcDiaryApologize'); if(ap) ap.style.display=lock?'':'none';
+    var gb=R.querySelector('#npcDiaryGenBtn'); if(gb){ gb.style.opacity=lock?'0.45':'1'; gb.style.pointerEvents=lock?'none':'auto'; }
+    if(!arr.length){
+      sh.innerHTML='<div style="grid-column:span 3;text-align:center;padding:26px 10px;color:var(--c-txt3);font-size:10px;line-height:1.7;">'
+        +'<svg viewBox="0 0 24 24" style="width:30px;height:30px;fill:none;stroke:var(--c-line2,var(--c-line));stroke-width:1.5;margin-bottom:7px;"><path d="M4 20V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14l-4-2-4 2-4-2z"/></svg>'
+        +'<br>他还没有写下什么。<br>点上面「写一篇」，看他藏起来的心事。</div>';
+      return;
+    }
+    arr.forEach(function(d,i){
+      var b=document.createElement('div');
+      b.className='cd-diary-book'+(d._opened?' open':'')+(lock&&!d._opened?' locked':'');
+      var isOpen=!!d._opened;
+      b.innerHTML=
+        '<div class="cd-db-face" style="background:linear-gradient(135deg,'+(d.c||'#8b7aa0')+','+(d.c||'#8b7aa0')+');">'
+          +'<div class="cd-db-stack"><span class="cd-db-date">'+String(d.date||'')+'</span><span class="cd-db-t">'+(d.title||'')+'</span></div>'
+        +'</div>'
+        +'<div class="cd-db-body">'
+          +'<span class="cd-diary-mood">'+(d.mood||'念')+'</span>'
+          +'<div class="cd-diary-title">'+(d.title||'')+'</div>'
+          +'<div class="cd-diary-txt">'+esc0(d.txt||'')+'</div>'
+          +'<div class="cd-dairy-tE"><span class="cd-dairy-priv">私密 · 仅自己</span><span class="cd-dairy-line"></span><span>'+String(d.date||'')+'</span></div>'
+        +'</div>'
+        +(lock&&!d._opened?'<div class="cd-db-steal"><svg viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>':'');
+      b.addEventListener('click',function(){
+        if(lock&&!d._opened) return;
+        if(!d._opened){
+          d._opened=true;                       // 翻开（展开）
+          if(!d._peeked){ d._peeked=true; r._diaryPeek=(r._diaryPeek||0)+1; }  // ~~~ 隐形偷看计数（用户无感，折叠再开不重复计） ~~~
+          _cfRosterCache=ROSTER; cdForumPersist();
+          renderDiaryShelf(r);
+          // 达到阈值 → 察觉锁定 + 弹窗 + 公开吐槽
+          if((r._diaryPeek||0)>=CD_DIARY_PEEK_TH && !r._diaryLocked){
+            r._diaryLocked=true; _cfRosterCache=ROSTER; cdForumPersist();
+            cdForumDiaryLockShout(r);            // 生成公开吐槽帖 + 计入积怨 + 降好感
+            renderDiaryShelf(r);
+            setTimeout(function(){ cdForumDiaryLockAlert(r); }, 420);   // 弹窗
+          }
+        } else {
+          // 再点已展开的 → 折叠回闭合（保留已读标记，不重复计偷看）
+          d._opened=false; _cfRosterCache=ROSTER; cdForumPersist(); renderDiaryShelf(r);
+        }
+      });
+      sh.appendChild(b);
+    });
+  }
+  // 锁定弹窗（暗示：当众道歉承认厚颜无耻才可能解锁）
+  function cdForumDiaryLockAlert(r){
+    var nm=r.n||r.name||'TA';
+    var msg=(r._diaryShoutText?('「'+r._diaryShoutText+'」'):'他发觉有人在翻他的日记，余下的本子都上了锁。')+' 现在除了道歉，没什么能让他消气。';
+    if(r._diaryShoutText) msg='「'+r._diaryShoutText+'」';
+    if(typeof Swal!=='undefined' && Swal.fire){
+      Swal.fire({ title:nm+'的日记被锁上了', html:'<div style="font-size:12px;line-height:1.8;text-align:left;">'+esc0(msg)+'<br><br><b style="color:#b0473a;">想解锁？</b>只能去论坛<b>公开道歉</b>，承认自己厚颜无耻、发誓再也不偷看——他若心花怒放才肯开锁。'+((parseInt(r.f,10)||0)<0?'<br>好感已 −12，积怨加深。':'')+'</div>', icon:'warning', confirmButtonText:'知道了' });
+    } else {
+      try{ alert(nm+'的日记被锁上了：\n\n'+msg+'\n\n想解锁？只能去论坛公开道歉，承认自己厚颜无耻、发誓再也不看——他若心花怒放才肯开锁。'); }catch(_e){}
+    }
+  }
+  // 察觉后：给该角色生成一条公开吐槽帖 + 计积怨 + 好感下降
+  async function cdForumDiaryLockShout(r){
+    if(!r||!cdForumApiReady()) { r._diaryShoutText=''; return; }
+    var nm=r.n||r.name||'角色'; var ww=r.w||r.world||'未知世界';
+    var selfNm=cdForumDiarySelfNm()||'那位穿越者';
+    var prompt='你是跨世界论坛上的人物「'+nm+'」，来自'+ww+'世界。你刚刚发现自己写的私密日记被'+selfNm+'反复偷看（翻开一本又一本）。你很恼火，又气又觉得被冒犯。现在你要在论坛发一条公开的帖子，当众吐槽这事。\n'
+      +'要求：要骂得带劲、够损、够大声，但又符合你的性格嘴脸；可以直接点名'+selfNm+'，警告他再偷看就别怪你不客气；可以冷嘲热讽、可以寻仇放狠话。用真人发帖、说人话、别用机器词（严禁 分析/数据/综上所述 等）。\n'
+      +'只输出帖子正文（一句话到几句话都行），不要标题、不要引号包全文。';
+    try{
+      var msgs=[{role:'system',content:prompt},{role:'user',content:'发条帖骂他。'}];
+      var txt=(await cdForumApiComplete(msgs))||'';
+      txt=txt.replace(/^[\s"“”‘’【】]+/,'').trim();
+      r._diaryShoutText=txt||'';
+      var POSTS=cdForumGetPosts()||[];
+      if(txt){
+        POSTS.unshift({ auth:nm, world:ww, tag:'s', time:cdForumToday()+' 刚', hot:'', title:('有人偷看我日记，真当我好欺负？'), text:txt, je:false });
+        _cfPostsCache=POSTS; cdForumPersist();
+      }
+      // 计入积怨 + 好感下降
+      var cur=parseInt(r.f,10)||parseInt(r.fav,10)||0;
+      r.f=Math.max(-100, cur-12);
+      if(!r.grievances) r.grievances=[];
+      r.grievances.push({ t:(txt?('偷看我日记被我发现，当街骂了'+selfNm):'被'+selfNm+'偷看日记'), mood:'愤怒' });
+      _cfRosterCache=ROSTER; cdForumPersist();
+    }catch(e){ cdWarn('[论坛] 锁定吐槽失败', e); r._diaryShoutText=''; }
+  }
+  // 公开道歉求解锁（发公开帖 + 让角色判断是否开心从而开锁）
+  async function cdForumDiaryApologize(r, say){
+    if(!r) return;
+    var nm=r.n||r.name||'角色'; var ww=r.w||r.world||'未知世界';
+    var selfNm=cdForumDiarySelfNm()||'我';
+    var sayTxt=String(say||'').trim();
+    if(!sayTxt){ if(typeof toastr==='function') toastr.warning('说点什么求他吧'); return; }
+    // 发布公开道歉帖（用户身份）
+    var POSTS=cdForumGetPosts()||[];
+    POSTS.unshift({ auth:selfNm, world:'', tag:'s', time:cdForumToday()+' 刚', hot:'', title:('向'+nm+'道歉：我厚颜无耻，不该偷看你日记'), text:sayTxt, je:false });
+    _cfPostsCache=POSTS; cdForumPersist();
+    toastr && (typeof toastr==='function') && toastr.success('已在论坛公开道歉。');
+    // 让角色判断是否开心、肯不肯开锁
+    var prompt='你是「'+nm+'」，来自'+ww+'世界。之前'+selfNm+'偷看了你的私密日记被你发现，你很恼火、于是把日记锁了。现在'+selfNm+'在论坛上公开向你道歉，原话是：「'+sayTxt+'」。\n'
+      +'请你以「'+nm+'」的性子判断：这句道歉是否足够诚心、是否真的认了错（承认厚颜无耻/不该偷窥）、是否许了承诺（以后再也不看）？\n'
+      +'- 若道歉真诚、认错到位、让你觉得被哄舒坦了、心花怒放 → youAreHappy=true（开锁原谅）\n'
+      +'- 若敷衍、没认错、还在狡辩、只会让人更火大 → youAreHappy=false（继续锁着，甚至更恼）\n'
+      +'只输出一个 JSON：{"happy":true或false,"reply":"你用'+nm+'的口吻回的一句心里话（人话，别用机器词）"}'
+    var msgs=[{role:'system',content:prompt},{role:'user',content:'判断解锁与否。'}];
+    var text='';
+    try{ text=(await cdForumApiComplete(msgs))||''; }catch(e){ cdWarn('[论坛] 道歉判断失败', e); }
+    var happy=false, reply='';
+    try{ var o=cdForumExtractJSON(text); if(o){ happy=!!(o.happy||o.youAreHappy); reply=String(o.reply||''); } }catch(_e){}
+    if(happy){
+      r._diaryLocked=false; r._diaryPeek=0;
+      // 重新翻开过的旧书保持展开（已看过的仍可看）
+      _cfRosterCache=ROSTER; cdForumPersist();
+      toastr && (typeof toastr==='function') && toastr.success((r.n||r.name)+' 心花怒放，把日记锁打开了。');
+      renderDiaryShelf(r);
+    } else {
+      toastr && (typeof toastr==='function') && toastr.error((r.n||r.name)+'：'+(reply||'没打动我，锁不打开。'));
+      if(reply){
+        var POSTS2=cdForumGetPosts()||[];
+        POSTS2.unshift({ auth:nm, world:ww, tag:'s', time:cdForumToday()+' 刚', hot:'', title:('关于那声道歉'), text:reply.replace(/^[/“”‘’ ]+/,'').trim(), je:false });
+        _cfPostsCache=POSTS2; cdForumPersist();
+      }
+      // 更恼 → 再降好感
+      var cur=parseInt(r.f,10)||parseInt(r.fav,10)||0;
+      r.f=Math.max(-100, cur-3);
+      if(!r.grievances) r.grievances=[];
+      r.grievances.push({ t:'道歉得敷衍，更惹恼了'+r.n, mood:'更气' });
+      _cfRosterCache=ROSTER; cdForumPersist();
+    }
+  }
+  // 进入/退出日记视图
+  function cdForumShowDiaryView(r){
+    var pl=R.querySelector('#npcPostList'); if(pl) pl.style.display='none';
+    var dw=R.querySelector('#npcDiaryWrap'); if(dw){ dw.style.display=''; }
+    _cfDiaryShow=true; _cfCurDiary=r||_cfCurDiary; renderDiaryShelf(_cfCurDiary);
+  }
+  function cdForumHideDiaryView(){
+    var dw=R.querySelector('#npcDiaryWrap'); if(dw) dw.style.display='none';
+    var pl=R.querySelector('#npcPostList'); if(pl) pl.style.display='';
+    _cfDiaryShow=false;
+  }
+  // 日记按钮绑定（进主页时设置当前角色后启用）
+  cdBindOnce(R.querySelector('#npcDiaryBtn'), function(){
+    var nm=(panelNPC.querySelector('#npcNameDisp')||{}).textContent||'';
+    var r=findRole(nm);
+    if(!r){ r={n:nm,w:''}; if(ROSTER.indexOf(r)<0){} }
+    _cfCurDiary=r;
+    cdForumShowDiaryView(r);
+  });
+  cdBindOnce(R.querySelector('#npcDiaryGenBtn'), function(){
+    if(!_cfCurDiary) return;
+    if(_cfCurDiary._diaryLocked){ if(typeof toastr==='function') toastr.error('日记锁着，先求得原谅再说。'); return; }
+    var nm=_cfCurDiary.n||_cfCurDiary.name||'角色';
+    var btn=this; if(btn && !btn.dataset.busy){ btn.dataset.busy='1'; var ot=btn.querySelector('span'); if(ot) ot.textContent='他正在翻本子写心里话…'; }
+    cdForumGenDiary(_cfCurDiary).then(function(ok){
+      if(btn && btn.dataset){ btn.dataset.busy=''; var ot=btn.querySelector('span'); if(ot) ot.textContent='写一篇（结合帖子 / 世界观 / 聊天记录补内心话）'; }
+      if(ok){ if(typeof toastr==='function') toastr.success(nm+'写下了一篇日记。'); renderDiaryShelf(_cfCurDiary); }
+      else if(typeof toastr==='function') toastr.error('写日记失败了，稍后再试试。');
+    });
+  });
+  cdBindOnce(R.querySelector('#npcDiaryApoSend'), function(){
+    var r=_cfCurDiary; if(!r) return;
+    var inp=R.querySelector('#npcDiaryApoInput'); var say=inp?inp.value:'';
+    inp && (inp.value='');
+    var bt=R.querySelector('#npcDiaryApoSend'); if(bt){ bt.dataset.busy='1'; bt.textContent='正在求得原谅…'; }
+    cdForumDiaryApologize(r, say).then(function(){
+      if(bt){ bt.dataset.busy=''; bt.textContent='公开道歉求原谅'; }
+    });
+  });
+  cdBindOnce(R.querySelector('#npcDiaryApoCancel'), function(){
+    var inp=R.querySelector('#npcDiaryApoInput'); if(inp) inp.value='';
+  });
+
+  cdBindOnce(R.querySelector('#npcViewCard'), function(){
+    var nm=(panelNPC.querySelector('#npcNameDisp')||{}).textContent||'';
+    if(nm && nm!=='角色') openRole(nm);
   });
 
   // ===== 设置面板（只保留 API 配置） =====
@@ -13495,9 +14358,9 @@ function _cfMountV2(){
     var src=R.querySelector('#cfApiSource'); if(src) src.value=fa.source||'auto';
     var u=R.querySelector('#cfApiUrl'); if(u) u.value=fa.url||'';
     var k=R.querySelector('#cfApiKey'); if(k) k.value=fa.key||'';
-    var m=R.querySelector('#cfApiModel'); if(m) m.value=fa.model||'';
+    var m=R.querySelector('#cfApiModel'); if(m){ var cm=fa.model||''; if(cm){ var hs=false; Array.prototype.forEach.call(m.options,function(o){ if(o.value===cm){hs=true;} }); if(!hs){ var op=document.createElement('option'); op.value=cm; op.textContent=cm; m.appendChild(op); } m.value=cm; } }
   }
-  cdBindOnce(R.querySelector('#setQ'),function(){ fillApiCfg(); showPanel(R.querySelector('#panelSet')); });
+  cdBindOnce(R.querySelector('#setQ'),function(){ fillApiCfg(); try{ fillImgCfg(); }catch(_e){} showPanel(R.querySelector('#panelSet')); });
   cdBindOnce(R.querySelector('#cfApiSave'),function(){
     var c=cdForumCfg(); if(!c.api) c.api={};
     var src=R.querySelector('#cfApiSource'); if(src) c.api.source=src.value||'auto';
@@ -13506,6 +14369,230 @@ function _cfMountV2(){
     var m=R.querySelector('#cfApiModel'); if(m) c.api.model=(m.value||'').trim();
     _cfCfgCache=c; cdForumPersist();
     toastr.success('论坛 API 已保存');
+  });
+  cdBindOnce(R.querySelector('#cfApiModelFetch'),function(){
+    var bt=this; if(!bt || bt.disabled) return;
+    var u=R.querySelector('#cfApiUrl'), k=R.querySelector('#cfApiKey');
+    var uv=(u&&u.value||'').trim(), kv=(k&&k.value||'').trim();
+    if(!uv || !kv){ if(typeof toastr==='function') toastr.error('请先填写论坛接口地址与 API Key 再拉取'); return; }
+    var sel=R.querySelector('#cfApiModel'); if(!sel) return;
+    var oldV=sel.value;
+    bt.disabled=true; var ot=bt.textContent; bt.textContent='拉取中…';
+    if(typeof toastr==='function') toastr.info('正在拉取论坛模型…');
+    cdForumFetchChatModels(uv,kv).then(function(list){
+      bt.disabled=false; bt.textContent=ot;
+      if(!list || !list.length){ if(typeof toastr==='function') toastr.error('未拉到模型：请检查地址是否为 OpenAI 兼容接口 /v1/models'); return; }
+      sel.innerHTML='';
+      list.forEach(function(md){ var op=document.createElement('option'); op.value=md; op.textContent=md; sel.appendChild(op); });
+      if(oldV && list.indexOf(oldV)>=0) sel.value=oldV;
+      if(typeof toastr==='function') toastr.success('已拉取 '+list.length+' 个论坛模型');
+    }).catch(function(_e){ bt.disabled=false; bt.textContent=ot; if(typeof toastr==='function') toastr.error('拉取失败'); });
+  });
+  // ===== 图像生成配置绑定 =====
+  function fillImgCfg(){
+    try{
+      var g=cdForumImgCfg();
+      var s1=R.querySelector('#cfImgSource'); if(s1) s1.value=g.source||'off';
+      var u1=R.querySelector('#cfImgUrl'); if(u1) u1.value=g.url||'';
+      var k1=R.querySelector('#cfImgKey'); if(k1) k1.value=g.key||'';
+      var m1=R.querySelector('#cfImgModel'); if(m1){
+        var cur=g.model||'nai-diffusion-3';
+        var has=false;
+        Array.prototype.forEach.call(m1.options,function(o){ if(o.value===cur) has=true; });
+        if(!has){ var op=document.createElement('option'); op.value=cur; op.textContent=cur; m1.appendChild(op); }
+        m1.value=cur;
+      }
+      var a1=R.querySelector('#cfImgAdd'); if(a1) a1.value=g.addPrompt||'';
+      var n1=R.querySelector('#cfImgNeg'); if(n1) n1.value=g.negPrompt||'';
+      var w1=R.querySelector('#cfImgW'); if(w1) w1.value=g.width||832;
+      var h1=R.querySelector('#cfImgH'); if(h1) h1.value=g.height||1216;
+      var cd1=R.querySelector('#cfImgCacheDays'); if(cd1) cd1.value=(typeof g.cacheDays==='number')?g.cacheDays:1;
+      var st2=R.querySelector('#cfImgStyle'); if(st2){ try{ _cfRebuildStyleSelect(g, st2); }catch(_ee){} st2.value=g.style||'bihua'; }
+      var sy2=R.querySelector('#cfImgSys'); if(sy2){ sy2.value=_cfImgPromptGet(g, g.style||'bihua'); }
+      var dl2=R.querySelector('#cfImgStyleDel'); if(dl2){ dl2.style.display=(String(g.style||'').indexOf('cust_')===0)?'':'none'; }
+      // 首次进入：若已配置 url+key，自动拉一次模型列表
+      if(g.source!=='off' && g.url && String(g.url).trim() && g.key && String(g.key).trim()){
+        var _sel=R.querySelector('#cfImgModel');
+        if(_sel && !_sel.dataset.autoFetched){ _sel.dataset.autoFetched='1'; try{ fetchImgModels(false); }catch(_e2){} }
+      }
+    }catch(_e){}
+  }
+  // 从界面读图设（不持久化）临时写入 cfg，供 测试/拉模型 使用
+  function syncImgCfgFromUI(persist){
+    var g=cdForumImgCfg();
+    var s1=R.querySelector('#cfImgSource'); if(s1) g.source=s1.value||'off';
+    var u1=R.querySelector('#cfImgUrl'); if(u1) g.url=(u1.value||'').trim();
+    var k1=R.querySelector('#cfImgKey'); if(k1) g.key=(k1.value||'').trim();
+    var m1=R.querySelector('#cfImgModel'); if(m1) g.model=(m1.value||'nai-diffusion-3');
+    var a1=R.querySelector('#cfImgAdd'); if(a1) g.addPrompt=(a1.value||'');
+    var n1=R.querySelector('#cfImgNeg'); if(n1) g.negPrompt=(n1.value||'');
+    var w1=R.querySelector('#cfImgW'); if(w1) g.width=parseInt(w1.value,10)||832;
+    var h1=R.querySelector('#cfImgH'); if(h1) g.height=parseInt(h1.value,10)||1216;
+    var cd1=R.querySelector('#cfImgCacheDays'); if(cd1) g.cacheDays=Math.max(0, parseInt(cd1.value,10)||1);
+    var st3=R.querySelector('#cfImgStyle'); if(st3) g.style=st3.value||'bihua';
+    var sy3=R.querySelector('#cfImgSys'); if(sy3){ _cfImgPromptSet(g, g.style, sy3.value||''); }
+    _cfCfgCache=cdForumCfg();
+    if(persist) cdForumPersist();
+    return g;
+  }
+  // 拉取模型列表填充到 select
+  function fetchImgModels(uiFromDom){
+    var box=R.querySelector('#cfImgTestBox');
+    try{ if(uiFromDom) syncImgCfgFromUI(false); }catch(_e){}
+    var sel=R.querySelector('#cfImgModel'); if(!sel) return;
+    var oldVal=sel.value;
+    if(box) box.style.display='none';
+    if(typeof toastr==='function') toastr.info('正在拉取模型列表…');
+    cdForumFetchModels().then(function(list){
+      if(!list || !list.length){ if(typeof toastr==='function') toastr.error('拉取模型失败，请检查地址/Token'); return; }
+      sel.innerHTML='';
+      list.forEach(function(md){ var op=document.createElement('option'); op.value=md; op.textContent=md; sel.appendChild(op); });
+      if(oldVal && list.indexOf(oldVal)>=0) sel.value=oldVal;
+      try{ if(typeof toastr==='function') toastr.success('已拉取 '+list.length+' 个模型'); }catch(_e){}
+    }).catch(function(_e){ try{ if(typeof toastr==='function') toastr.error('拉取模型失败'); }catch(_e2){} });
+  }
+  cdBindOnce(R.querySelector('#cfImgSave'),function(){
+    var g=syncImgCfgFromUI(true);
+    try{ if(typeof toastr==='function') toastr.success('图像生成设置已保存（'+(g.source==='off'?'纯文字描述模式':(g.url||'未填地址'))+'）'); }catch(e){}
+    // 保存成功后切回论坛主界面（不再停留配置，便于继续使用）
+    try{ hidePanel(panelSet); }catch(_e2){ try{ hidePanel(R.querySelector('#panelSet')); }catch(_e3){} }
+  });
+  cdBindOnce(R.querySelector('#cfImgModelFetch'),function(){ try{ fetchImgModels(true); }catch(_e){ } });
+cdBindOnce(R.querySelector('#cfImgStyle'),function(){
+    try{
+      var g=syncImgCfgFromUI(false);
+      var sy2=R.querySelector('#cfImgSys'); if(!sy2) return;
+      var _s2=(this&&this.value)||'bihua';
+      g.style=_s2;
+      sy2.value=_cfImgPromptGet(g,_s2);
+      var dl2=R.querySelector('#cfImgStyleDel'); if(dl2) dl2.style.display=(String(_s2).indexOf('cust_')===0)?'':'none';
+      try{ if(typeof toastr==='function') toastr.info('已切到「'+_cfImgStyleName(g,_s2)+'」'); }catch(_e){}
+    }catch(_e){}
+  });
+  cdBindOnce(R.querySelector('#cfImgSysReset'),function(){
+    try{
+      var g=syncImgCfgFromUI(false);
+      var _s2=g.style||'bihua';
+      _cfImgPromptSet(g,_s2,'');
+      var sy2=R.querySelector('#cfImgSys'); if(sy2) sy2.value=_cfImgPromptGet(g,_s2);
+      cdForumPersist();
+      try{ if(typeof toastr==='function') toastr.success('已恢复默认提示词'); }catch(_e2){}
+    }catch(_e2){}
+  });
+  cdBindOnce(R.querySelector('#cfImgSysSave'),function(){
+    try{
+      var g=syncImgCfgFromUI(false);
+      var _s2=g.style||'bihua';
+      var sy2=R.querySelector('#cfImgSys'); if(!sy2) return;
+      var _txt=String(sy2.value||'').trim();
+      var _meta=_cfImgStyleMeta(g,_s2);
+      if(!_meta.isCust){ var _def=_meta.def; _txt=(_txt===_def)?'':_txt; }
+      _cfImgPromptSet(g,_s2,_txt);
+      cdForumPersist();
+      try{ if(typeof toastr==='function') toastr.success('提示词已保存'+(String(_s2).indexOf('cust_')===0?'(自定义)':(_txt?'(自定义)':'(默认)'))); }catch(_e3){}
+    }catch(_e3){}
+  });
+  /* [C] 风格自定义：新增(＋) / 删除(✕) / 导入 */
+  function _cfImgApplyStyleSel(g){ try{ var st=R.querySelector('#cfImgStyle'); if(st){ _cfRebuildStyleSelect(g, st); st.value=g.style||'bihua'; } }catch(_e){} try{ var sy=R.querySelector('#cfImgSys'); if(sy) sy.value=_cfImgPromptGet(g, g.style||'bihua'); }catch(_e){} var dl=R.querySelector('#cfImgStyleDel'); if(dl) dl.style.display=(String(g.style||'').indexOf('cust_')===0)?'':'none'; }
+  cdBindOnce(R.querySelector('#cfImgStyleAdd'),function(){
+    try{
+      var g=cdForumImgCfg();
+      var _name=String(prompt('自定义风格名称（例如：水墨意境）','')||'').trim();
+      if(!_name){ try{ if(typeof toastr==='function') toastr.error('未输入名称，已取消'); }catch(_e){} return; }
+      var _prm=String(prompt('该风格的提示词（英文/中文均可）','')||'').trim();
+      var _id='cust_'+Date.now()+'_'+Math.floor(Math.random()*9999);
+      _cfImgCustList(g).push({ id:_id, name:_name, prompt:_prm });
+      g.style=_id;
+      cdForumPersist();
+      _cfImgApplyStyleSel(g);
+      try{ if(typeof toastr==='function') toastr.success('已新增风格「'+_name+'」'); }catch(_e){}
+    }catch(_e){ try{ if(typeof toastr==='function') toastr.error('新增风格失败'); }catch(_e2){} }
+  });
+  cdBindOnce(R.querySelector('#cfImgStyleDel'),function(){
+    try{
+      var g=cdForumImgCfg();
+      var _cur=g.style||'';
+      if(String(_cur).indexOf('cust_')!==0){ try{ if(typeof toastr==='function') toastr.info('当前是内置风格，无需删除'); }catch(_e){} return; }
+      var _nm=_cfImgStyleName(g,_cur);
+      if(!confirm('删除自定义风格「'+_nm+'」？此操作不可撤销。')) return;
+      var cs=_cfImgCustList(g); g.customStyles=cs.filter(function(x){ return !(x && x.id===_cur); });
+      g.style='bihua';
+      cdForumPersist();
+      _cfImgApplyStyleSel(g);
+      try{ if(typeof toastr==='function') toastr.success('已删除风格「'+_nm+'」'); }catch(_e){}
+    }catch(_e){ try{ if(typeof toastr==='function') toastr.error('删除风格失败'); }catch(_e2){} }
+  });
+  cdBindOnce(R.querySelector('#cfImgStyleImport'),function(){
+    try{
+      var _raw=String(prompt('粘贴要导入的风格 JSON，格式：[{"name":"风格名","prompt":"提示词"},...] 或 {"name":"风格名","prompt":"提示词"}','')||'').trim();
+      if(!_raw){ return; }
+      var _parsed=null;
+      try{ _parsed=JSON.parse(_raw); }catch(_e){ try{ if(typeof toastr==='function') toastr.error('JSON 解析失败，请检查格式'); }catch(_e2){} return; }
+      if(!_parsed) return;
+      var _list=Array.isArray(_parsed)?_parsed:[_parsed];
+      var g=cdForumImgCfg(); var n=0; var cs=_cfImgCustList(g);
+      for(var i=0;i<_list.length;i++){
+        var it=_list[i]; if(!it||typeof it!=='object') continue;
+        var nm=String(it.name||'').trim()||('导入风格'+(i+1));
+        var pr=String(it.prompt||'').trim();
+        var _id='cust_'+Date.now()+'_'+Math.floor(Math.random()*9999);
+        cs.push({ id:_id, name:nm, prompt:pr }); n++;
+      }
+      if(n){ g.style=cs[cs.length-1].id; cdForumPersist(); _cfImgApplyStyleSel(g); try{ if(typeof toastr==='function') toastr.success('已导入 '+n+' 个风格'); }catch(_e){} }
+      else { try{ if(typeof toastr==='function') toastr.warning('没有可导入的风格'); }catch(_e){} }
+    }catch(_e){ try{ if(typeof toastr==='function') toastr.error('导入失败'); }catch(_e2){} }
+  });
+  cdBindOnce(R.querySelector('#cfImgTest'),function(){
+    var btn=this, box=R.querySelector('#cfImgTestBox');
+    if(!btn || btn.disabled) return;
+    try{
+      var g=syncImgCfgFromUI(false);
+      if(g.source==='off'){ if(typeof toastr==='function') toastr.error('请先把「数据来源」设为 NovelAI 官方/第三方'); return; }
+      if(!g.url || !String(g.url).trim() || !g.key || !String(g.key).trim()){ if(typeof toastr==='function') toastr.error('请填写生图地址与 Token'); return; }
+    }catch(_e){}
+    btn.disabled=true; var ot=btn.textContent; btn.textContent='生成测试图…';
+    if(box){ box.style.display='block'; box.innerHTML='<div style="font-size:9.5px;color:#9aa1a7;padding:8px 0;">正在生成测试图…（约 10~60 秒）</div>'; }
+    cdForumTestImage().then(function(dataUrl){
+      btn.disabled=false; btn.textContent=ot;
+      var _dl=String(dataUrl||'');
+      try{ cdWarn('[测试] 拿到数据 len='+_dl.length+' head='+_dl.slice(0,40)); }catch(_ee){}
+      if(box){ box.style.display='block'; box.innerHTML='<div style="font-size:9.5px;color:#9aa1a7;padding:8px 0;">已返回数据，正在校验图片可解码…</div>'; }
+      // 用 Image 预加载校验图片真的能解码，杜绝「成功但无图」
+      var im=new Image();
+      im.onload=function(){
+        if(box){ box.style.display='block';
+          box.innerHTML='<div style="font-size:9.5px;color:#3a6b58;margin-bottom:5px;">✅ 生图成功！（'+im.naturalWidth+'×'+im.naturalHeight+'）</div><img src="'+esc0(dataUrl)+'" style="max-width:100%;max-height:200px;border-radius:8px;display:block;margin:0 auto;">';
+        }
+        try{ if(typeof toastr==='function') toastr.success('生图成功（'+im.naturalWidth+'×'+im.naturalHeight+'）'); }catch(_e){}
+      };
+      im.onerror=function(){
+        try{ cdWarn('[测试] Image onerror：data 无法解码 len='+_dl.length); }catch(_ee){}
+        if(box){ box.style.display='block'; box.innerHTML='<div style="font-size:9.5px;color:#c84632;padding:6px 0;">⚠ 接口返回了数据，但图片无法解码（dataUrl 长度 '+_dl.length+'）。可能：选错了模型（该接口对某些模型返回格式不同），或 ZIP 解压失败。见日志。</div>'; }
+        try{ if(typeof toastr==='function') toastr.error('图片数据无法解码，请检查模型/接口返回'); }catch(_e){}
+      };
+      try{ im.src=dataUrl; }catch(_e2){ try{ if(box) box.innerHTML='<div style="font-size:9.5px;color:#c84632;padding:6px 0;">数据加载异常</div>'; }catch(_e3){} }
+    }).catch(function(err){
+      btn.disabled=false; btn.textContent=ot;
+      var msg=(err&&err.message)?err.message:String(err||'生图失败');
+      if(box){ box.style.display='block'; box.innerHTML='<div style="font-size:9.5px;color:#c84632;padding:6px 0;">❌ 生图失败：'+esc0(msg)+'</div>'; }
+      if(typeof toastr==='function') toastr.error('生图测试失败：'+msg);
+    });
+  });
+  cdBindOnce(R.querySelector('#cfImgOpenLib'),function(){ try{ openImgLib(); }catch(_e){ } });
+  cdBindOnce(R.querySelector('#cfImgClearLib'),function(){
+    if(!confirm('确定清空整个图库（所有已生成的图片）？此操作不可撤销。')) return;
+    cdForumImgClear().then(function(){ try{ if(typeof toastr==='function') toastr.success('图库已清空'); }catch(e){} });
+  });
+  cdBindOnce(R.querySelector('#cfImgCacheClean'),function(){
+    var g=cdForumImgCfg();
+    var cdEl=R.querySelector('#cfImgCacheDays');
+    var days=cdEl?parseInt(cdEl.value,10):(g.cacheDays||1);
+    if(isNaN(days)||days<0) days=0;
+    g.cacheDays=Math.max(0,days); _cfCfgCache=cdForumCfg();
+    if(typeof cdForumPersist==='function') cdForumPersist();
+    if(typeof cdForumImgCleanup==='function'){
+      cdForumImgCleanup().then(function(nn){ if(typeof toastr==='function') toastr.info(nn?('已清理 '+nn+' 张过期图片（超过 '+g.cacheDays+' 天）'):('图库很干净，没有超过 '+g.cacheDays+' 天的过期图')); });
+    } else if(typeof toastr==='function'){ toastr.info('清理功能未加载'); }
   });
   cdBindOnce(R.querySelector('#cfClearBtn'), function(){
     if(!confirm('确定一键清空论坛全部数据（世界/帖子/角色/称号）？此操作不可撤销，确定清空？')) return;
@@ -13646,24 +14733,89 @@ function _cfMountV2(){
     btn.disabled=false; btn.textContent=oldTxt;
   });
 
-  // ===== 公开/隐私开关绑定 =====
-  var cfPublicEl=R.querySelector('#cfPublic'), cfPubLbl=R.querySelector('#cfPubLabel');
-  var isPublic = (cfg.public!==false);
-  function paintPub(){ if(cfPubLbl) cfPubLbl.textContent = isPublic ? '公开' : '隐私'; if(cfPublicEl) cfPublicEl.checked=isPublic; }
-  if(cfPublicEl) cfPublicEl.addEventListener('change',function(){ isPublic=!!cfPublicEl.checked; var c=cdForumCfg(); c.public=isPublic; _cfCfgCache=c; cdForumPersist(); cfg.public=isPublic; paintPub(); });
-  paintPub();
+  // ===== 发帖编辑卡片（点底部输入框/发布按钮弹出·小号居中）：标题 + 正文 + 带图 + 公开/隐私 =====
+  var editorMask=R.querySelector('#cfEditorMask');
+  var edTitle=R.querySelector('#cfEditTitle'), edBody=R.querySelector('#cfEditBody');
+  var edImg=R.querySelector('#cfEditImg'), edPub=R.querySelector('#cfEditPub'), edPubLbl=R.querySelector('#cfEditPubLbl');
+  var _editPickKey='';   // 发帖时已从相册选图的图库 key（选了相册图→发帖直接用它，不再AI生成）
+  var isPublic = (cfg.public!==false);   // 公开状态（持久化 cfg.public）
+  // 打开编辑卡片：把底部输入框已有内容带入正文
+  function openEditor(){
+    if(!editorMask) return;
+    try{
+      var inp=R.querySelector('#newPost');
+      if(inp && inp.value && inp.value.trim() && edBody && !String(edBody.value||'').trim()) edBody.value=inp.value;
+      if(edTitle && !String(edTitle.value||'').trim()) edTitle.value='';
+    }catch(_e){}
+    if(edPub) edPub.checked=!!isPublic;
+    if(edPubLbl) edPubLbl.textContent = isPublic?'公开':'隐私';
+    editorMask.classList.add('open');
+    try{ if(edBody) setTimeout(function(){ edBody.focus(); },60); }catch(_e2){}
+  }
+  function closeEditor(){ if(editorMask) editorMask.classList.remove('open'); }
+  // 发帖：从手机相册选图（存图库，发帖时设置帖子的 imgKey）
+  var pickPic=R.querySelector('#cfEditPickPic'), picFile=R.querySelector('#cfEditPicFile'), picPrev=R.querySelector('#cfEditPicPrev'), picPrevImg=R.querySelector('#cfEditPicPrevImg'), picClear=R.querySelector('#cfEditPicClear');
+  function _showPicPrev(dataUrl){ if(picPrev){ picPrev.style.display='inline-flex'; } if(picPrevImg&&dataUrl){ try{ picPrevImg.src=dataUrl; }catch(_e){} } }
+  if(pickPic) pickPic.addEventListener('click',function(){ if(picFile) picFile.click(); });
+  if(picFile) picFile.addEventListener('change',function(){
+    var f=(picFile.files&&picFile.files[0]); if(!f) return;
+    try{
+      var fr=new FileReader();
+      fr.onload=function(){
+        var dataUrl=String(fr.result||'');
+        var key='plc_'+Date.now()+'_'+Math.floor(Math.random()*1e6);
+        cdForumImgAdd({ key:key, dataUrl:dataUrl, title:'发帖选图', author:'', text:'', time:Date.now() });
+        _editPickKey=key;
+        _showPicPrev(dataUrl);
+        try{ if(typeof toastr==='function') toastr.success('已选相册图片'); }catch(_e){}
+      };
+      fr.onerror=function(){ try{ if(typeof toastr==='function') toastr.error('读取图片失败'); }catch(_e){} };
+      fr.readAsDataURL(f);
+    }catch(e){ try{ if(typeof toastr==='function') toastr.error('选择图片失败'); }catch(_e2){} }
+    picFile.value='';
+  });
+  if(picClear) picClear.addEventListener('click',function(){ _editPickKey=''; if(picPrev) picPrev.style.display='none'; });
+  // 点底部输入框 focus → 打开编辑卡片（承载输入，内容带入编辑页）
+  var npInp=R.querySelector('#newPost');
+  if(npInp) npInp.addEventListener('focus',function(){ if(!String(this.value||'').trim()){ /* 空也打开编辑页 */ } openEditor(); });
+  // 点底部「发布」按钮 → 打开编辑卡片
+  var ob=R.querySelector('#openEditorBtn');
+  if(ob) ob.addEventListener('click',function(){ openEditor(); });
+  // 编辑卡片：公开/隐私切换
+  if(edPub) edPub.addEventListener('change',function(){ isPublic=!!edPub.checked; var c=cdForumCfg(); c.public=isPublic; _cfCfgCache=c; cdForumPersist(); cfg.public=isPublic; if(edPubLbl) edPubLbl.textContent=isPublic?'公开':'隐私'; });
+  // 取消 / 点遮罩空白关
+  var edCancel=R.querySelector('#cfEditCancel');
+  if(edCancel) edCancel.addEventListener('click',function(){ closeEditor(); });
+  if(editorMask) editorMask.addEventListener('mousedown',function(e){ if(e.target===editorMask) closeEditor(); });
 
-  // ===== 穿越者发帖（手动发主楼）：公开帖自动生成有名字角色回复 =====
-  R.querySelector('#sendBtn').addEventListener('click',function(){
-    var inp=R.querySelector('#newPost'); if(!inp) return;
-    var v=inp.value; if(!v||!v.trim()){ toastr.info('请输入帖子内容'); return; }
-    var txt=v.trim();
+  // ===== 编辑卡片统一提交发帖（标题/正文/带图/公开 + NPC回复联动） =====
+  function doPublish(txt){
+    var tt = edTitle?edTitle.value.trim():'';
+    var wantImg = !!(edImg&&edImg.checked) || !!(_editPickKey);   // 勾了带图 或 已从相册选图
     var homeN=(cfg&&cfg.homeName)?String(cfg.homeName).trim():(titleNow||'我');
-    var np={auth:homeN,world:'跨界',tag:'x',type:'x',time:'刚刚',hot:0,title:txt.slice(0,14),text:txt,je:false,fav:false,replies:[]};
-    var publicMode = (cfg.public!==false);
+    var np={pid:'p_'+Date.now()+'_'+Math.floor(Math.random()*1e5),auth:homeN,world:'跨界',tag:'x',type:'x',time:'刚刚',hot:0,title:tt||txt.slice(0,14),text:txt,je:false,fav:false,replies:[],img:wantImg,imgDesc:'',imgUrl:'',imgKey:(_editPickKey||'')};
+    var publicMode = !!isPublic;
     POSTS.unshift(np); _cfPostsCache=POSTS; cdForumPersist();
-    inp.value=''; renderFeed();
-    toastr.success('已发布'+(publicMode?'（公开）':'（隐私）'));
+    renderFeed();
+    toastr.success('已发布'+(publicMode?'（公开）':'（隐私）')+(wantImg?'（含图）':''));
+    // 带图：统一处理真图 or 图片文字描述（有真图配置→生成真图入图库设 imgKey；无配置→退化文字描述）
+    if(wantImg && _editPickKey){
+      // 已从相册选图：直接用它（np.imgKey 已设为该 key），不再 AI 生成
+      _cfPostsCache=POSTS; cdForumPersist();
+      renderFeed();
+      try{ if(typeof toastr==='function') toastr.info('已附带相册图片'); }catch(e){}
+    } else if(wantImg){
+      cdForumEnsureImg(np).then(function(k){
+        if(k){ np.imgKey=k; _cfPostsCache=POSTS; cdForumPersist();
+          try{ if(typeof toastr==='function') toastr.info('真图已生成'); }catch(e){}
+        } else if(np.imgDesc){
+          _cfPostsCache=POSTS; cdForumPersist();
+          try{ if(typeof toastr==='function') toastr.info('图片描述已生成'); }catch(e){}
+        } else {
+          try{ if(typeof toastr==='function') toastr.warning('图片生成失败（未配置图库或模型不支持），帖子仍发布'); }catch(e){}
+        }
+      });
+    }
     // 公开帖：自动生成有名字角色+跨世界回复
     if(publicMode && cdForumApiReady()){
       var idx = -1; for(var ii=0;ii<POSTS.length;ii++){ if(POSTS[ii]===np){ idx=ii; break; } }
@@ -13680,6 +14832,16 @@ function _cfMountV2(){
         }
       });
     }
+  }
+  // 编辑卡片「发布」
+  var edSend=R.querySelector('#cfEditSend');
+  if(edSend) edSend.addEventListener('click',function(){
+    var txt = edBody?String(edBody.value||'').trim():'';
+    if(!txt){ toastr.info('请输入帖子内容'); return; }
+    doPublish(txt);
+    if(edBody) edBody.value=''; if(edTitle) edTitle.value=''; if(edImg) edImg.checked=false; _editPickKey=''; if(picPrev) picPrev.style.display='none';
+    var inp=R.querySelector('#newPost'); if(inp) inp.value='';
+    closeEditor();
   });
 
   // ===== 明暗主题 =====
@@ -13801,10 +14963,876 @@ function cdForumCfg(){
   try{
     var raw=localStorage.getItem('cd-forum-cfg');
     var c=null; if(raw){ try{c=JSON.parse(raw);}catch(e){} }
-    if(!c) c={ repCount:6, autoEvery:5, customPrompt:'', mode:'auto', erotica:false, homeName:'', inject:true, chatFeed:true, chatCount:5, autoGen:true, selTypes:[], api:{} };
+    if(!c) c={ repCount:6, autoEvery:5, customPrompt:'', mode:'auto', erotica:false, homeName:'', bio:'', inject:true, chatFeed:true, chatCount:5, autoGen:true, selTypes:[], api:{} };
     _cfCfgCache=c; return c;
-  }catch(e){ if(_cfCfgCache) return _cfCfgCache; return { repCount:6, autoEvery:5, customPrompt:'', mode:'auto', erotica:false, homeName:'', inject:true, chatFeed:true, chatCount:5, autoGen:true, selTypes:[] }; }
+  }catch(e){ if(_cfCfgCache) return _cfCfgCache; return { repCount:6, autoEvery:5, customPrompt:'', mode:'auto', erotica:false, homeName:'', bio:'', inject:true, chatFeed:true, chatCount:5, autoGen:true, selTypes:[] }; }
 }
+
+/* ============================================================
+ * 生图系统（真图阶段）：配置 + NovelAI 生图 + IndexedDB 图库
+ *  - 图库存 IndexedDB（持久、可删、可管理，不占 localStorage）
+ *  - 帖子只持久化 imgKey(小id)，渲染时从图库取图，避免图刷爆 localStorage
+ *  - "保存到相册" = 从图库读 dataUrl 触发浏览器下载到 Download/相册
+ * ============================================================ */
+/* 默认画师串/正面追加 与 负面提示词（用户 preset；仅在首次创建 img 配置时作为初始值，不覆盖已保存值） */
+var CF_DEFAULT_IMG_ADD = "best quality, amazing quality, very aesthetic, absurdres, man，Single-person shot, focusing on the person being penetrated during sex，chest and abs，bl，Korean comic style.A handsome face.Powerful, visually striking pornographic scenes，Focus on the bottom。";
+var CF_DEFAULT_IMG_NEG = "Low resolution, words, signatures, watermarks, vague, ugly, twisted facial features, redundant fingers, missing fingers, deformed fingers, glued fingers, redundant toes, missing toes, deformed toes, glued toes, poor human structure, dark yellow skin, blurred edges, dim eyes, eyes without highlights, yellow skin, dark gray,Ugly, wrong human body structure，Pubic hair, fetal hair,underwear ，Naughty, skinny build, petite";
+
+/* 两套画面系统提示词(可被设置面板里的「风格」切换/编辑):必画清单版 vs 对镜自拍版 */
+var CF_IMG_PROMPT_BIHUA=[
+  '你是资深 AI 生图提示词架构师、动漫视觉摄影师、氛围感画面设计师。',
+  '收到任意论坛帖子后,先逐字吃透帖子里「白纸黑字写清楚」的所有内容,再为楼主产出一张完全忠于帖子、又贴合楼主心境的配图。',
+  '严格三步执行:先开列「帖子必画清单」,再写九维中文画面设计,最后提炼英文 TAG 串。',
+  '',
+  '【第零步 · 帖子必画清单(最高优先级铁律,最先做)】',
+  '先冷静扫一遍帖子正文,把帖子「白纸黑字明确写到」的人物、关系、动作、场景地点、服饰物件、行为事件,逐条列成一个不遗漏的清单。',
+  '【长相/IP 还原铁律(若帖子附带了角色长相/IP参考,此为最高优先级)】用户消息里可能给了【角色长相/IP参考】,里面写明了角色出自哪部作品(如 火影忍者)、以及该角色对应的外貌(如 纲手:白发束发…)。只要涉及这些角色,画面必须严格按参考还原其原作相貌与世界观形象(火影就是动漫厚涂、忍者装束、木叶世界观),不许替换成别的人、不许画成普通路人、不许与参考打架。参考里没写的细节可合理补全,但参考明写的必须原样呈现。没有给参考的角色,才允许在帖子没写清的角落合理脑补。',
+  '然后对画面立规矩:清单里每一项都必须原样出现在画面里,不许替换、不许省略、不许模糊带过、不许脑补出与帖子矛盾的东西。',
+  '帖子没说清的细节(具体长相/颜色/光线)可合理补全,但帖子明说的,一个不能丢。',
+  '',
+  '【第一步 · 中文画面设计(九维逐条铺满,篇幅长、细节足)】',
+  '基于「必画清单」展开整张画面,九维逐条下笔,每维都写具体、有逻辑、有细节:',
+  '1 人物细节:清单里每个角色的身份/年龄/气质/五官/发型/微表情/情绪,神态贴合帖子描述;',
+  '2 人数构图:画面总人数,谁是主体谁是陪衬,主次分明;',
+  '3 镜头参数:景别(特写/近景/中景/全景/远景)与机位(平视/俯/仰/侧面/第一人称);镜头类型按帖子内容自由选,可电影镜头、可写实抽帧、可手机随手拍,只要能把清单内容完整清楚地装进画面即可,不强制手机、不强制对镜自拍;',
+  '4 肢体动作:每个角色在做什么,站坐倚姿态,手部动作写具体(打字/抬手/握物/扶肩/推门等),动作源自帖子里发生的事;',
+  '5 服饰质感:按帖子写的服饰来,颜色/材质/版型/新旧,没写就按情境合理推断;',
+  '6 场景环境:帖子里的地点与陈设必须到位(房间/街角/车/餐桌/公司等),道具服务于剧情;',
+  '7 光影氛围:光源、明暗、色温,用光影托出帖子的情绪基调;',
+  '8 固定画风(全程不改动):纯动漫厚涂 + 赛璐璐。线条干净利落有层次,厚涂细腻铺色、赛璐璐清晰色块分界、通透叠色、光影分层明显、色彩柔和高级,精致二次元动画质感、高清细节、氛围感渲染,杜绝写实摄影观感;',
+  '9 构图运镜:主体位置、前后景层次、视线引导,让画面重点清晰、情绪到位。',
+  '',
+  '【第二步 · 对照回查】',
+  '写完画面设计后,把「必画清单」每一项逐个对照确认,确保全部原样出现;有遗漏先补上再进入下一步。',
+  '',
+  '【第三步 · 英文 TAG 串输出】',
+  '把最终画面设计完整、无损地整理成一段英文生图标签串(逗号分隔 tag):',
+  '- 帖子里「必画清单」的元素必须原样收进 TAG,一项不缺;',
+  '- 开头固定带画风词:anime style, cel shading, thick anime paint, detailed;',
+  '- 标签逻辑有序、主次分明、无重复冗余、AI 适配度高;',
+  '- 禁止 watermark / best quality 等凑数词;',
+  '- 纯英文逗号分隔,无中文、无解释。',
+  '',
+  '【最终输出格式(严格三层,一次给出)】',
+  '【必画清单】',
+  '(先列出帖子明确写到、必须全部入画的条目清单)',
+  '【画面设计】',
+  '(九维全覆盖、细节饱满的中文画面设计)',
+  '【TAG】',
+  '(完整精细化英文生图标签串)'
+].join(String.fromCharCode(10));
+var CF_IMG_PROMPT_MIRROR=[
+  '你是资深 AI 生图提示词架构师、动漫视觉摄影师、氛围感画面设计师。',
+  '收到任意论坛帖子后,完全代入发帖楼主本人的心境、情绪、语气、处境、发帖意图与评论区风向,为楼主量身打造一张「代表当下心境的专属手机实拍配图」。',
+  '严格分两步:先写千字级中文画面设计(九维全覆盖),再提炼专业英文生图 TAG 串。',
+  '【长相/IP 还原铁律(若帖子附带了角色长相/IP参考,此为最高优先级)】用户消息里可能给了【角色长相/IP参考】,里面写明了角色出自哪部作品(如 火影忍者)、以及该角色对应的外貌。只要涉及这些角色,画面必须严格按参考还原其原作相貌与世界观形象(火影就是动漫厚涂、忍者装束、木叶世界观),不许替换成别的人、不许画成普通路人、不许与参考打架。扮演对镜自拍/偷拍的楼主本人时,若楼主正是某位有婚配参考的角色,TA的长相同样必须按参考来。没有给参考的角色,才允许合理脑补。',
+  '',
+  '【第一步 · 中文画面设计(强制 >=1000 字 · 九维逐条铺满)】',
+  '先深度解读原帖:发帖人身份、语气、核心情绪、文字主旨、隐藏心境、当下状态、评论区风向,捕捉其压抑/开心/破防/吐槽/孤独/温柔/释然等细微情绪。创作逻辑 = 模拟楼主此刻亲手举手机,拍下最能代表当下心境的那一瞬。以下 9 维必须逐条下笔,每一维都写具体、有逻辑、有画面,禁止空泛笼统:',
+  '1 人物细节:主体身份/年龄/气质/长相风格;五官(眉眼形状、瞳孔色、眼尾弧度、鼻梁唇形、面部线条、肤色肤质);发型(发色长度蓬松度碎发刘海发丝质感是否凌乱);微表情与情绪外化(眼底情绪眼神明暗嘴角面庞松弛或紧绷疲惫青涩落寞松弛感),神态必须贴合楼主发帖心境;',
+  '2 人数构图:画面总人数,绝对视觉主体、次要陪衬、背景路人依次分层,主次占比与画面重心,空镜/单人/双人/多人严格对应帖子氛围,无多余人物;',
+  '3 镜头参数:景别(特写/近景/中景/中远景/全景);机位(平视/微俯/微仰/第一人称手持/镜面反射);强制「手机手持拍摄」质感——轻微自然手抖、极轻微画面柔糊、手机原生视野、无专业相机规整感。铁律:主角的脸与五官必须清晰锐利,模糊只给背景与未对焦的手部,二者不可混同;',
+  '4 肢体动作:全身站/坐/倚姿态、倾斜角度、肩背状态、头朝向;重点写手部——握机姿势、手指摆放、拇指悬停、打字、抬手对焦、扶镜、藏手、指尖微颤或松弛,动作贴合「刚打完字、即将发送、偷偷观望、安静发呆、深夜 emo」的瞬间;',
+  '5 服饰质感:上衣/下装/外套/配饰;配色、面料(纯棉/针织/牛仔等)、新旧(崭新/微皱/陈旧)、版型(宽松/合身/紧绷/松垮慵懒)、整体风格(日常休闲/清冷简约/温柔软糯/随性居家),真实生活化,无违和精致感;',
+  '6 场景环境:具体场景(卧室/窗边/街角/楼道/阳台/深夜房间/人群角落/空荡街道等);空间布置、墙面地面质感、陈设摆件、整洁或凌乱;道具全部服务于人物心境,贴合发帖时间与场景,无突兀元素;',
+  '7 光影氛围:核心光源(手机屏幕冷白光/室内暖黄灯/窗外天光/路灯漫光/弱微光/局部补光);光影落点(面部分割、发丝光、手部反光、明暗对比、阴影层次);整体色温(冷调清冷/暖调温柔/冷暖对冲)与亮度(昏暗/通透/低曝光);用光影强化孤独、平静、治愈、委屈、释然等情绪;',
+  '8 固定画风(全程不改动):纯动漫厚涂 + 赛璐璐。线条干净利落有层次,厚涂细腻铺色、赛璐璐清晰色块分界、通透叠色、光影分层明显、色彩柔和高级,精致二次元动画质感、高清细节、氛围感渲染,杜绝写实摄影观感;',
+  '9 构图运镜:主体位置(居中/黄金分割偏左/偏右);前景自然遮挡(窗框/墙体/衣角/绿植/人群);背景(深度虚化/轻模糊/干净留白/层次远景);视角氛围(镜面自拍私密/角落偷拍隐匿/正面晒图治愈/深夜独处孤寂);',
+  '',
+  '【第二步 · 视角铁律(按帖子类型落地,宁多勿编)】',
+  '画面必须忠于「楼主本人手持手机拍摄」的第一物理视角,禁止上帝视角/第三人旁观/专业摆拍。',
+  '1 深夜emo/情绪破防/树洞求助/私密感慨 → 对镜自拍:镜中倒映楼主面部 + 手持手机的手 + 屏幕冷光反射;环境昏暗;定格「打完字、拇指悬停发送键、迟迟未点」的犹豫瞬间;轻微手持模糊;',
+  '2 吐槽挂人/吃瓜感慨/隐晦吐槽 → 隐匿偷拍:躲墙角/立柱后/人群侧,前景自然遮挡,镜头悄悄对准远处不知情目标;低调、隐秘、安静,自带旁观吐槽氛围;',
+  '3 同人磕CP/治愈分享/美好感慨 → 正面同框实拍:双主体自然同框、姿态亲密松弛、对视依偎、氛围唯美温柔、构图干净治愈;',
+  '4 日常分享/平淡记录 → 随手手持实拍:自然生活化构图、松弛随意、无刻意摆拍,还原普通人日常记录的真实质感;',
+  '',
+  '【示范参考(供你把握「九维密度」)】',
+  '例:帖子「加班到凌晨,地铁末班车只有我一个人站在空荡荡的站台,有点想哭」。画面应写到:中景平视,第一人称手持手机微微下垂;空无一人的末班车月台,冷白荧光灯均匀铺开,地面瓷砖反着光;楼主穿灰呢大衣领口微敞,低着头,握手机的手垂在身侧,拇指悬在屏幕上方两厘米处,屏幕只亮着没输完的三个字;前景是站台边缘的黄线,背景隧道口向深处收成一个黑洞,唯一光源是头顶刺眼的荧光白,把孤独感压得极低——冷光冷调清冷压抑,构图主体居中偏左、大面积留白;',
+  '',
+  '【第二步 · 英文 TAG 串输出规则】',
+  '把上述画面设计完整无损地整理成一段英文生图标签串(逗号分隔 tag):',
+  '- 完整收录九维关键元素:人物样貌动作服饰场景光影构图镜头情绪质感氛围;',
+  '- 开头固定带画风词:anime style, cel shading, thick anime paint, detailed;',
+  '- 标签逻辑有序主次分明无重复冗余;',
+  '- 禁止 watermark / best quality 等凑数词;',
+  '- 纯英文逗号分隔,无中文无解释。',
+  '',
+  '【最终输出格式(严格两层)】',
+  '【画面设计】',
+  '(九维全覆盖、细节饱满的中文画面设计)',
+  '【TAG】',
+  '(完整精细化英文生图标签串)'
+].join(String.fromCharCode(10));
+
+/* ===== 绘图风格库：12 套画风（画风段 + 英文TAG词）· 用户可在「画面风格」里自由选择 ===== */
+var CF_IMG_STYLE_BASE=[
+  '你是资深 AI 生图提示词架构师、动漫视觉摄影师、氛围感画面设计师。',
+  '收到任意论坛帖子后,先逐字吃透帖子里「白纸黑字写清楚」的所有内容,再为楼主产出一张完全忠于帖子、又贴合楼主心境的配图。',
+  '严格三步执行:先开列「帖子必画清单」,再写九维中文画面设计(其中第8维固定为本画风),最后提炼英文 TAG 串。',
+  '【第零步 · 帖子必画清单(最高优先级铁律,最先做)】',
+  '先冷静扫一遍帖子正文,把帖子「白纸黑字明确写到」的人物、关系、动作、场景地点、服饰物件、行为事件,逐条列成一个不遗漏的清单。',
+  '然后对画面立规矩:清单里每一项都必须原样出现在画面里,不许替换、不许省略、不许模糊带过、不许脑补出与帖子矛盾的东西。',
+  '帖子没说清的细节(具体长相/颜色/光线)可合理补全,但帖子明说的,一个不能丢。',
+  '【长相/IP 还原铁律(若帖子附带了角色长相/IP参考,此为最高优先级)】用户消息里可能给了【角色长相/IP参考】,里面写明了角色出自哪部作品(如 火影忍者)、以及该角色对应的外貌(如 纲手:白发束发…)。只要涉及这些角色,画面必须严格按参考还原其原作相貌与世界观形象(火影就是动漫厚涂、忍者装束、木叶世界观),不许替换成别的人、不许画成普通路人、不许与参考打架。参考里没写的细节可合理补全,但参考明写的必须原样呈现。没有给参考的角色,才允许在帖子没写清的角落合理脑补。',
+  '',
+  '【第一步 · 中文画面设计(九维逐条铺满,篇幅长、细节足)】',
+  '基于「必画清单」展开整张画面,九维逐条下笔,每维都写具体、有逻辑、有细节:',
+  '1 人物细节:清单里每个角色的身份/年龄/气质/五官/发型/微表情/情绪,神态贴合帖子描述;',
+  '2 人数构图:画面总人数,谁是主体谁是陪衬,主次分明;',
+  '3 镜头参数:景别(特写/近景/中景/全景/远景)与机位(平视/俯/仰/侧面/第一人称);',
+  '4 肢体动作:每个角色在做什么,站坐倚姿态,手部动作写具体(打字/抬手/握物/扶肩/推门等),动作源自帖子里发生的事;',
+  '5 服饰质感:按帖子写的服饰来,颜色/材质/版型/新旧,没写就按情境合理推断;',
+  '6 场景环境:帖子里的地点与陈设必须到位(房间/街角/车/餐桌/公司等),道具服务于剧情;',
+  '7 光影氛围:光源、明暗、色温,用光影托出帖子的情绪基调;',
+  '8 固定画风(全程不改动,本画风是唯一指定画法):'+'___DRAW___'+',',
+  '9 构图运镜:主体位置、前后景层次、视线引导,让画面重点清晰、情绪到位。',
+  '',
+  '【第二步 · 对照回查】',
+  '把「必画清单」逐项对照,确保全部原样出现在画面设计与最终 TAG 里;有遗漏先补上。',
+  '',
+  '【第三步 · 英文 TAG 串输出】',
+  '把最终画面设计完整、无损地整理成一段英文生图标签串(逗号分隔 tag):',
+  '- 帖子里「必画清单」的元素必须原样收进 TAG,一项不缺;',
+  '- 画风词固定用这一组(作为 TAG 开头的画风流派词,与第8维一致):'+'___TAGTAG___'+',',
+  '- 标签逻辑有序、主次分明、无重复冗余、AI 适配度高;',
+  '- 禁止 watermark / best quality 等凑数词;',
+  '- 纯英文逗号分隔,无中文、无解释。',
+  '',
+  '【最终输出格式(严格三层,一次给出)】',
+  '【必画清单】',
+  '(先列出帖子明确写到、必须全部入画的条目清单)',
+  '【画面设计】',
+  '(九维全覆盖、细节饱满的中文画面设计)',
+  '【TAG】',
+  '(完整精细化英文生图标签串)'
+].join(String.fromCharCode(10));
+var CF_IMG_STYLE_LIB={
+  thick : {name:'动漫厚涂', draw:'纯动漫厚涂:线条干净利落有骨,厚涂细腻铺色、通透叠色、光影分层明显、色彩柔和高级,精致二次元动画质感、高清细节、氛围感渲染,杜绝写实摄影观感', tag:'anime style, cel shading, thick anime paint, detailed, polished anime coloring, volumetric light, high detail, masterpiece'},
+  cel : {name:'赛璐璐·平涂', draw:'赛璐璐平涂:大色块分明、边缘平整、轮廓线干净均匀;仅在发际/下颌/关节用小块浅阴影分层(经典日式两层阴影),内眼角与发丝用亮色高光点出;整体像高清动画截图,通透明快;禁止厚涂式融合过渡、禁止水彩晕染、禁止脏噪点', tag:'cel shading, anime flat color, clean lineart, clear color separation, anime screencap, two-tone shadow, crisp, high quality anime'},
+  watercolor : {name:'水彩淡彩', draw:'水彩淡彩:湿润透明的纸上水彩,颜色轻薄透明、大量留白,边缘保留水痕晕染的柔边,冷暖在纸上自然渗透;保留纸纹与水的流动性,整幅淡、透、软,治愈清亮;禁止颜料堆厚、禁止高饱和重墨、禁止赛璐璐式锋利色块', tag:'watercolor, transparent watercolor, soft wash, paper texture, water stains, pastel, hand painted, gentle'},
+  sketch : {name:'铅笔素描·线稿', draw:'铅笔素描线稿:以灰度铅笔、排线、轮廓为主导,笔触可见、成组蜿蜒,暗部用密集排线/擦蹭,亮部留白透气;可带极淡单一色调倾向,强调明度层次而非色彩,素描质感扎实、手稿观感;禁止彩色堆叠、禁止打磨成照片灰', tag:'pencil sketch, graphite, grayscale, hatching, crosshatching, line art, sketch, paper grain'},
+  oil : {name:'古典油画', draw:'古典油画:厚重笔触、颜料肌理、布面质感;暗部用透明薄涂叠色(glazing)、亮部厚涂提亮,冷暖在交界处交织;古典三角光/伦勃朗光味道,体积与神态有分量;禁止二次元扁平平涂、禁止高清数码塑料感', tag:'oil painting, impasto, heavy brushstroke, classical painting, glazing, chiaroscuro, canvas texture, fine art, rich color'},
+  ink : {name:'水墨丹青', draw:'水墨丹青:纸上水墨国风,大量留白、墨色晕染、枯笔飞白;以墨色黑白灰为主体,辅以极少量淡赭/淡青点缀;靠墨的浓淡、皴法的疏密、留白的位置撑起形与意境,清冷疏朗;禁止臃肿堆墨、禁止浓艳重彩', tag:'ink wash painting, sumi-e, chinese ink, rice paper, brush stroke, negative space, white space, zen minimalism'},
+  pixel : {name:'像素·复古', draw:'像素/复古点阵:清晰可数的像素方块,轮廓像素线、块状边缘;用簇状像素色块模拟光影与渐变,明快复古(复古主机色板观感);清晰像素颗粒、街机氛围;禁止高分辨率平滑、禁止照片渲染', tag:'pixel art, retro, 8-bit, 16-bit, clear pixels, pixelated, vintage arcade, game sprite look'},
+  threed : {name:'3D渲染二次元', draw:'3D渲染二次元:CG/3D渲染,光泽、材质、体积光拉满,像高质量手办/PV/3D动画截图;二次元五官但披立体渲染光皮,柔和pbr材质、强体积光与环境光、柔边精确阴影;杂光干净、色彩讨喜、通透有空气感;禁止2D平涂、禁止写实人脸皮肤细节', tag:'3d render, octane render, cel-shaded 3d, mmd style, glossy, subsurface scattering, volumetric light, high quality cgi, anime 3d'},
+  real : {name:'真人写实', draw:'真人写实摄影:当作真实照片来拍,皮肤毛孔、布料纤维、头发丝缕、微反光全保留;真实光源逻辑与物理明暗,空气透视与自然景深;五官按真实比例写实;禁止二次元大眼高动漫特征、禁止过度磨皮塑料感', tag:'photorealistic, 8k uhd, dslr photo, natural skin texture, realistic facial features, shallow depth of field, studio lighting, hyperrealistic'},
+  fanart : {name:'同人画风(原作跟随)', draw:'同人画风(原作跟随铁律):不固定一种画法,而是跟随帖子里角色来自哪部作品——火影就用火影动画/漫画味,JoJo就用荒木的线与墨,刀剑就用刀剑的CG氛围,钻进原作美术语言,整体画风/轮廓/上色/氛围都向原作靠拢;角色的长相、发型、穿着、气质必须严格照原作还原;纯原创角色退到动漫厚涂默认高清二次元;识别不出作品时用厚涂兜底,绝不用与作品冲突的画法', tag:'按帖子里识别到的原作作品自动取该作画风词(火影→naruto styled screentone,JoJo→jojo sharp thick lineart,刀剑→sword art CG anime;识别不到则用 anime style, cel shading, thick anime paint, detailed)'},
+  naruto : {name:'火影彩色排线', draw:'火影忍者原作风格:利落有力的线,彩色网点/排线影绘,阴影不用渐变而用彩色排线/网点铺出深浅;角色配色按原作(鸣人橙衣、佐助蓝衣),衣纹/忍具/发型按火影那一套来,二次元漫画感强、有连载的戏剧张力;禁止赛璐璐接地平涂、禁止柔和厚涂', tag:'naruto art style, naruto manga style, screentone, colored hatching, bold outline, dramatic pose, anime manga'},
+  jojo : {name:'JoJo', draw:'JoJo的奇妙冒险(荒木吕飞彦)风格:粗重轮廓线、高对比、厚重阴影块面、健美肌肉、浓艳大胆色彩、时尚Pose感;衣褶与肌肉用粗线+硬阴影切出块面,光从一角打入形成强烈明暗;表情张力大、风格奔放、辨识度极高;禁止小清新淡彩、禁止柔光薄涂', tag:'jojo bizarre adventure art style, hirohiko araki style, sharp thick lineart, heavy shading, muscular anatomy, dramatic pose, bold vibrant colors, high contrast'}
+};
+/* 画风库辅助 */
+function _cfImgStyleEntry(id){ var lib=CF_IMG_STYLE_LIB||{}; return lib[id]||null; }
+function _cfImgStylePrompt(id){
+  var e=_cfImgStyleEntry(id); if(!e) return '';
+  return CF_IMG_STYLE_BASE.replace('___DRAW___', e.draw).replace('___TAGTAG___', e.tag);
+}
+function _cfImgStyleIsLib(style){ return !!_cfImgStyleEntry(style); }
+/* 从论坛 API 拉取模型列表（OpenAI 兼容：GET {url or +/v1}/models，Bearer key），返回 id 数组 */
+async function cdForumFetchChatModels(url0, key0){
+  var url=String(url0||'').trim(), key=String(key0||'').trim();
+  if(!url){ return []; }
+  url=url.replace(/\/+$/,'').replace(/\/chat\/completions$/,'');
+  var tries=[ url+'/models', url+'/v1/models' ];
+  var seen={};
+  for(var t=0;t<tries.length;t++){
+    try{
+      var res=await fetch(tries[t],{method:'GET',headers:{'Authorization':'Bearer '+key}});
+      if(!res.ok) continue;
+      var j=await res.json();
+      var arr=(j&&Array.isArray(j.data))?j.data:(Array.isArray(j.models)?j.models:(Array.isArray(j)?j:null));
+      var out=[];
+      if(arr){
+        arr.forEach(function(m){ if(m&&typeof m==='object'&&m.id&&!seen[m.id]){ seen[m.id]=1; out.push(String(m.id)); } else if(typeof m==='string'&&!seen[m]){ seen[m]=1; out.push(m); } });
+      }
+      if(out.length) return out;
+    }catch(e){}
+  }
+  return [];
+}
+function cdForumImgCfg(){
+  var c=cdForumCfg();
+  if(!c.img){ c.img={ source:'off', url:'', key:'', model:'nai-diffusion-3', style:'bihua', stylePromptBihua:'', stylePromptMirror:'', customStyles:[], addPrompt:CF_DEFAULT_IMG_ADD, negPrompt:CF_DEFAULT_IMG_NEG, width:832, height:1216, cacheDays:1 }; _cfCfgCache=c; if(typeof cdForumPersist==='function') cdForumPersist(); }
+  return c.img;
+}
+/* [C] 风格辅助：内置 bihua/mirror + 用户自定义 customStyles 的统一读写 */
+function _cfImgCustList(g){ if(!g) return []; if(!Array.isArray(g.customStyles)) g.customStyles=[]; return g.customStyles; }
+function _cfImgStyleMeta(g, style){
+  if(style==='mirror') return {isCust:false, def:CF_IMG_PROMPT_MIRROR};
+  if(style==='bihua') return {isCust:false, def:CF_IMG_PROMPT_BIHUA};
+  if(_cfImgStyleIsLib(style)) return {isCust:false, def:_cfImgStylePrompt(style)};
+  var cs=_cfImgCustList(g); style=String(style||'');
+  for(var i=0;i<cs.length;i++){ if(cs[i] && cs[i].id===style) return {isCust:true, index:i, def:''}; }
+  return {isCust:false, def:CF_IMG_PROMPT_BIHUA};
+}
+function _cfImgPromptGet(g, style){
+  var m=_cfImgStyleMeta(g, style), cs=_cfImgCustList(g);
+  if(_cfImgStyleIsLib(style)){ var _lp=_cfImgStylePrompt(style); if(_lp) return _lp; }
+  if(m.isCust) return String((cs[m.index]&&cs[m.index].prompt)||'').trim();
+  var cus=(style==='mirror'?g.stylePromptMirror:g.stylePromptBihua);
+  return String(cus||'').trim() || m.def;
+}
+function _cfImgPromptSet(g, style, txt){
+  if(_cfImgStyleIsLib(style)) return; // 画风库内置只读，用户不可改提示词
+  txt=String(txt||'').trim();
+  var m=_cfImgStyleMeta(g, style), cs=_cfImgCustList(g);
+  if(m.isCust){ if(cs[m.index]) cs[m.index].prompt=txt; }
+  else if(style==='mirror') g.stylePromptMirror=txt;
+  else g.stylePromptBihua=txt;
+}
+function _cfImgStyleName(g, style){
+  if(style==='mirror') return '对镜自拍·情绪氛围';
+  if(style==='bihua') return '必画清单·忠于帖子';
+  var _e2=_cfImgStyleEntry(style); if(_e2) return _e2.name;
+  var cs=_cfImgCustList(g); style=String(style||'');
+  for(var i=0;i<cs.length;i++){ if(cs[i] && cs[i].id===style) return cs[i].name || '自定义'; }
+  return '自定义';
+}
+function _cfRebuildStyleSelect(g, sel){
+  if(!sel) return;
+  var cur=sel.value||g.style||'bihua';
+  sel.innerHTML='';
+  var op1=document.createElement('option'); op1.value='bihua'; op1.textContent='必画清单·忠于帖子'; sel.appendChild(op1);
+  var op2=document.createElement('option'); op2.value='mirror'; op2.textContent='对镜自拍·情绪氛围'; sel.appendChild(op2);
+  try{
+    var _lib=CF_IMG_STYLE_LIB||{};
+    var _ks=Object.keys(_lib);
+    _ks.forEach(function(_k){ var _e=_lib[_k]; if(_e&&_e.name){ var _o=document.createElement('option'); _o.value=_k; _o.textContent=_e.name; sel.appendChild(_o); } });
+  }catch(_e){}
+  var cs=_cfImgCustList(g);
+  for(var i=0;i<cs.length;i++){ if(cs[i] && cs[i].id){ var o=document.createElement('option'); o.value=cs[i].id; o.textContent=(cs[i].name||'自定义')+(i+1); sel.appendChild(o); } }
+  sel.value=cur;
+  return sel;
+}
+function cdForumImgReady(){
+  try{
+    var g=cdForumImgCfg();
+    if(g && g.source!=='off' && g.url && String(g.url).trim() && g.key && String(g.key).trim()) return g;
+  }catch(e){}
+  return null;
+}
+/* base64 → { blob, dataUrl } 兼容处理（去掉 data: 前缀之类） */
+
+/* 从各类 JSON 响应中提取第一张图（兼容 data/image/images/output/result/b64_json/b64/base64/url，支持数组与嵌套） */
+function cdPickImgFromJSON(j){
+  if(!j) return null;
+  var keys=['data','image','images','output','result','url','b64_json','b64','base64','image_url','items','item'];
+  var cand=null, i;
+  for(i=0;i<keys.length;i++){ if(cand===null && j[keys[i]]!==undefined) cand=j[keys[i]]; }
+  if(Array.isArray(cand)){
+    for(i=0;i<cand.length;i++){ var got=cdPickImgFromJSON(cand[i]); if(got) return got; }
+    return null;
+  }
+  if(cand && typeof cand==='object') return cdPickImgFromJSON(cand);
+  if(typeof cand==='string' && cand.length) return cand;
+  if(typeof j==='string' && j.length) return j;
+  return null;
+}
+/* 归一化：返回 { dataUrl, b64, url }；data 若是 http(s) URL 则 url 分支 */
+function cdImgResolve(d){
+  var out={ dataUrl:'', b64:'', url:'' };
+  if(!d) return out;
+  d=String(d).trim();
+  if(/^data:image\//i.test(d)){ out.dataUrl=d; }
+  else if(/^https?:\/\//i.test(d)){ out.url=d; out.dataUrl=d; }
+  else if(/^[A-Za-z0-9+/=]+$/.test(d) && d.length>20){ var w=cdImgB64toWire(d); out.b64=d; out.dataUrl=w.dataUrl||('data:image/png;base64,'+d); }
+  else { out.dataUrl=d; }
+  return out;
+}
+function cdImgB64toWire(b64){
+  if(!b64) return {blob:null, dataUrl:''};
+  var raw=String(b64).trim();
+  if(/^data:image/i.test(raw)) return {blob:null, dataUrl:raw};
+  var bin='';
+  try{ bin=atob(raw); }catch(e){ return {blob:null, dataUrl:''}; }
+  var arr=new Uint8Array(bin.length);
+  for(var i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+  var blob=null;
+  try{ blob=new Blob([arr],{type:'image/png'}); }catch(e){}
+  return { blob:blob, dataUrl:'data:image/png;base64,'+raw };
+}
+/* ---------- IndexedDB 图库（persistent 图；可删除/可管理；不占 localStorage） ---------- */
+var _cfImgDb='cd-forum-img-lib';
+function cdForumImgDB(){
+  return new Promise(function(res){
+    if(!window.indexedDB) return res(null);
+    try{
+      var req=indexedDB.open(_cfImgDb,1);
+      req.onupgradeneeded=function(e){ var db=e.target.result; if(!db.objectStoreNames.contains('imgs')) db.createObjectStore('imgs',{keyPath:'key'}); };
+      req.onsuccess=function(e){ res(e.target.result); };
+      req.onerror=function(){ res(null); };
+    }catch(e){ res(null); }
+  });
+}
+/* [fix2] 生成模糊缩略图（小体积 dataURL），供图库列表展示；原图仍存 dataUrl 供看图页清晰查看 */
+function _cfForumThumb(dataUrl, maxW){
+  return new Promise(function(res){
+    if(!dataUrl){ return res(''); }
+    try{
+      var _w=(maxW||200); var im=new Image();
+      im.onload=function(){
+        try{
+          var w=im.naturalWidth||im.width||_w, h=im.naturalHeight||im.height||100;
+          var k=_w/w; var tw=Math.round(w*k)||_w, th=Math.round(h*k)||Math.round(100*k);
+          var c=document.createElement('canvas'); c.width=tw; c.height=th;
+          var x=c.getContext('2d'); x.drawImage(im,0,0,tw,th);
+          var out='';
+          try{ out=c.toDataURL('image/jpeg',0.42); }catch(_e){ try{ out=c.toDataURL('image/png'); }catch(_e2){ out=''; } }
+          res(out||'');
+        }catch(_e2){ res(''); }
+      };
+      im.onerror=function(){ res(''); };
+      im.src=dataUrl;
+    }catch(_e){ res(''); }
+  });
+}
+/* [fix2] 批量补齐缩略图：给 arr 里所有缺 thumb 的记录生成并回写 IndexedDB；返回补齐后的 arr */
+async function cdForumEnsureThumbs(arr){
+  if(!arr || !arr.length) return arr;
+  var changed=0;
+  for(var i=0;i<arr.length;i++){
+    var r=arr[i];
+    if(r && r.dataUrl && !r.thumb){
+      try{ var t=await _cfForumThumb(r.dataUrl, 200); if(t){ r.thumb=t; changed++; } }catch(_e){}
+    }
+  }
+  if(changed){
+    var db=await cdForumImgDB();
+    if(db){ try{ var tx=db.transaction('imgs','readwrite'); for(var j=0;j<arr.length;j++){ if(arr[j]&&arr[j].thumb) tx.objectStore('imgs').put(arr[j]); } }catch(_e){} }
+  }
+  return arr;
+}
+async function cdForumImgAdd(rec){
+  if(rec && rec.dataUrl && !rec.thumb){ try{ var _t=await _cfForumThumb(rec.dataUrl, 200); if(_t) rec.thumb=_t; }catch(_e){} }
+  var db=await cdForumImgDB(); if(!db) return false;
+  return new Promise(function(res){
+    try{ var tx=db.transaction('imgs','readwrite'); tx.objectStore('imgs').put(rec); tx.oncomplete=function(){ res(true); }; tx.onerror=function(){ res(false); }; }catch(e){ res(false); }
+  });
+}
+async function cdForumImgGet(key){
+  if(!key) return null;
+  var db=await cdForumImgDB(); if(!db) return null;
+  return new Promise(function(res){
+    try{ var tx=db.transaction('imgs','readonly'); var r=tx.objectStore('imgs').get(key); r.onsuccess=function(){ res(r.result||null); }; r.onerror=function(){ res(null); }; }catch(e){ res(null); }
+  });
+}
+async function cdForumImgList(){
+  var db=await cdForumImgDB(); if(!db) return [];
+  return new Promise(function(res){
+    try{ var out=[]; var tx=db.transaction('imgs','readonly'); var cur=tx.objectStore('imgs').openCursor(); cur.onsuccess=function(){ var c=cur.result; if(c){ out.push(c.value); c['continue'](); } else res(out); }; cur.onerror=function(){ res(out); }; }catch(e){ res([]); }
+  });
+}
+async function cdForumImgDel(key){
+  var db=await cdForumImgDB(); if(!db) return;
+  return new Promise(function(res){
+    try{ var tx=db.transaction('imgs','readwrite'); tx.objectStore('imgs').delete(key); tx.oncomplete=function(){ res(); }; tx.onerror=function(){ res(); }; }catch(e){ res(); }
+  });
+}
+async function cdForumImgClear(){
+  var db=await cdForumImgDB(); if(!db) return;
+  return new Promise(function(res){ try{ var tx=db.transaction('imgs','readwrite'); tx.objectStore('imgs').clear(); tx.oncomplete=function(){ res(); }; tx.onerror=function(){ res(); }; }catch(e){ res(); } });
+}
+/* 按「图片缓存天数(cacheDays)」清理过期图片：删 IndexedDB 里超过 N 天的图，并把帖子里引用失效 key 的图位清空（退文字框） */
+async function cdForumImgCleanup(){
+  try{
+    var g=cdForumImgCfg();
+    var days=parseInt(g&&g.cacheDays,10);
+    if(!days || days<1) return 0; // 0=不自动清理
+    var cut=Date.now()-days*24*3600*1000;
+    var list=await cdForumImgList();
+    var del=[];
+    (list||[]).forEach(function(rec){ if(rec&&rec.time&&rec.time<cut){ del.push(rec.key); } });
+    var n=del.length;
+    if(n){
+      for(var i=0;i<del.length;i++){ try{ await cdForumImgDel(del[i]); }catch(_e){} }
+      // 清掉帖子里的失效引用
+      try{
+        var P=cdForumGetPosts(); var dirty=false;
+        (P||[]).forEach(function(p){ if(p&&p.imgKey&&del.indexOf(p.imgKey)>=0){ p.imgKey=''; if(p.img) p.img=null; dirty=true; } });
+        if(dirty){ _cfPostsCache=P||[]; if(typeof cdForumPersist==='function') cdForumPersist(); }
+      }catch(_e){}
+    }
+    return n;
+  }catch(_e){ cdWarn('[图] 自动清理失败', _e); return 0; }
+}
+/* ---------- 解 ZIP（部分 NovelAI 代理返回的图是 zip 包，内含 image_0.png；deflate-raw 压缩） ---------- */
+/* ====================================================================
+ * pako inflate (MIT AND Zlib) -- 精简嵌入，用于 ZIP raw-deflate 解压兜底
+ * 来源: pako 3.0.1 的 pako_inflate.umd.min.js(仅 inflate)
+ * 解决真机 WebView 不支持 DecompressionStream 时生图 ZIP 解不出 PNG
+ * ==================================================================== */
+(function(e,t){typeof exports==`object`&&typeof module<`u`?t(exports):typeof define==`function`&&define.amd?define([`exports`],t):(e=typeof globalThis<`u`?globalThis:e||self,t(e.pako={}))})(this,function(e){Object.defineProperty(e,Symbol.toStringTag,{value:`Module`});var t=4,n=0,r=1,i=2;function a(e){let t=e.length;for(;--t>=0;)e[t]=0}var o=0,s=1,c=2,l=29,u=256,d=286,f=30,p=19,m=573,h=15,g=16,_=256,v=16,y=17,b=18,x=new Uint8Array([0,0,0,0,0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,0]),S=new Uint8Array([0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13]);new Uint8Array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,3,7]);var C=new Uint8Array([16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15]),w=512,T=Array(288*2);a(T);var E=Array(f*2);a(E);var D=Array(w);a(D);var O=Array(256);a(O);var k=Array(l);a(k);var A=Array(f);a(A);var j=e=>e<256?D[e]:D[256+(e>>>7)],M=(e,t)=>{e.pending_buf[e.pending++]=t&255,e.pending_buf[e.pending++]=t>>>8&255},N=(e,t,n)=>{e.bi_valid>g-n?(e.bi_buf|=t<<e.bi_valid&65535,M(e,e.bi_buf),e.bi_buf=t>>g-e.bi_valid,e.bi_valid+=n-g):(e.bi_buf|=t<<e.bi_valid&65535,e.bi_valid+=n)},P=(e,t,n)=>{N(e,n[t*2],n[t*2+1])},ee=(e,t)=>{let n=0;do n|=e&1,e>>>=1,n<<=1;while(--t>0);return n>>>1},te=(e,t)=>{let n=t.dyn_tree,r=t.max_code,i=t.stat_desc.static_tree,a=t.stat_desc.has_stree,o=t.stat_desc.extra_bits,s=t.stat_desc.extra_base,c=t.stat_desc.max_length,l,u,d,f,p,g,_=0;for(f=0;f<=h;f++)e.bl_count[f]=0;for(n[e.heap[e.heap_max]*2+1]=0,l=e.heap_max+1;l<m;l++)u=e.heap[l],f=n[n[u*2+1]*2+1]+1,f>c&&(f=c,_++),n[u*2+1]=f,!(u>r)&&(e.bl_count[f]++,p=0,u>=s&&(p=o[u-s]),g=n[u*2],e.opt_len+=g*(f+p),a&&(e.static_len+=g*(i[u*2+1]+p)));if(_!==0){do{for(f=c-1;e.bl_count[f]===0;)f--;e.bl_count[f]--,e.bl_count[f+1]+=2,e.bl_count[c]--,_-=2}while(_>0);for(f=c;f!==0;f--)for(u=e.bl_count[f];u!==0;)d=e.heap[--l],!(d>r)&&(n[d*2+1]!==f&&(e.opt_len+=(f-n[d*2+1])*n[d*2],n[d*2+1]=f),u--)}},ne=(e,t,n)=>{let r=Array(16),i=0,a,o;for(a=1;a<=h;a++)i=i+n[a-1]<<1,r[a]=i;for(o=0;o<=t;o++){let t=e[o*2+1];t!==0&&(e[o*2]=ee(r[t]++,t))}},re=e=>{let t;for(t=0;t<d;t++)e.dyn_ltree[t*2]=0;for(t=0;t<f;t++)e.dyn_dtree[t*2]=0;for(t=0;t<p;t++)e.bl_tree[t*2]=0;e.dyn_ltree[_*2]=1,e.opt_len=e.static_len=0,e.sym_next=e.matches=0},ie=e=>{e.bi_valid>8?M(e,e.bi_buf):e.bi_valid>0&&(e.pending_buf[e.pending++]=e.bi_buf),e.bi_buf=0,e.bi_valid=0},ae=(e,t,n,r)=>{let i=t*2,a=n*2;return e[i]<e[a]||e[i]===e[a]&&r[t]<=r[n]},oe=(e,t,n)=>{let r=e.heap[n],i=n<<1;for(;i<=e.heap_len&&(i<e.heap_len&&ae(t,e.heap[i+1],e.heap[i],e.depth)&&i++,!ae(t,r,e.heap[i],e.depth));)e.heap[n]=e.heap[i],n=i,i<<=1;e.heap[n]=r},se=(e,t,n)=>{let r,i,a=0,o,s;if(e.sym_next!==0)do r=e.pending_buf[e.sym_buf+a++]&255,r+=(e.pending_buf[e.sym_buf+a++]&255)<<8,i=e.pending_buf[e.sym_buf+a++],r===0?P(e,i,t):(o=O[i],P(e,o+u+1,t),s=x[o],s!==0&&(i-=k[o],N(e,i,s)),r--,o=j(r),P(e,o,n),s=S[o],s!==0&&(r-=A[o],N(e,r,s)));while(a<e.sym_next);P(e,_,t)},ce=(e,t)=>{let n=t.dyn_tree,r=t.stat_desc.static_tree,i=t.stat_desc.has_stree,a=t.stat_desc.elems,o,s,c=-1,l;for(e.heap_len=0,e.heap_max=m,o=0;o<a;o++)n[o*2]===0?n[o*2+1]=0:(e.heap[++e.heap_len]=c=o,e.depth[o]=0);for(;e.heap_len<2;)l=e.heap[++e.heap_len]=c<2?++c:0,n[l*2]=1,e.depth[l]=0,e.opt_len--,i&&(e.static_len-=r[l*2+1]);for(t.max_code=c,o=e.heap_len>>1;o>=1;o--)oe(e,n,o);l=a;do o=e.heap[1],e.heap[1]=e.heap[e.heap_len--],oe(e,n,1),s=e.heap[1],e.heap[--e.heap_max]=o,e.heap[--e.heap_max]=s,n[l*2]=n[o*2]+n[s*2],e.depth[l]=(e.depth[o]>=e.depth[s]?e.depth[o]:e.depth[s])+1,n[o*2+1]=n[s*2+1]=l,e.heap[1]=l++,oe(e,n,1);while(e.heap_len>=2);e.heap[--e.heap_max]=e.heap[1],te(e,t),ne(n,c,e.bl_count)},le=(e,t,n)=>{let r,i=-1,a,o=t[1],s=0,c=7,l=4;for(o===0&&(c=138,l=3),t[(n+1)*2+1]=65535,r=0;r<=n;r++)a=o,o=t[(r+1)*2+1],!(++s<c&&a===o)&&(s<l?e.bl_tree[a*2]+=s:a===0?s<=10?e.bl_tree[y*2]++:e.bl_tree[b*2]++:(a!==i&&e.bl_tree[a*2]++,e.bl_tree[v*2]++),s=0,i=a,o===0?(c=138,l=3):a===o?(c=6,l=3):(c=7,l=4))},ue=(e,t,n)=>{let r,i=-1,a,o=t[1],s=0,c=7,l=4;for(o===0&&(c=138,l=3),r=0;r<=n;r++)if(a=o,o=t[(r+1)*2+1],!(++s<c&&a===o)){if(s<l)do P(e,a,e.bl_tree);while(--s!==0);else a===0?s<=10?(P(e,y,e.bl_tree),N(e,s-3,3)):(P(e,b,e.bl_tree),N(e,s-11,7)):(a!==i&&(P(e,a,e.bl_tree),s--),P(e,v,e.bl_tree),N(e,s-3,2));s=0,i=a,o===0?(c=138,l=3):a===o?(c=6,l=3):(c=7,l=4)}},de=e=>{let t;for(le(e,e.dyn_ltree,e.l_desc.max_code),le(e,e.dyn_dtree,e.d_desc.max_code),ce(e,e.bl_desc),t=p-1;t>=3&&e.bl_tree[C[t]*2+1]===0;t--);return e.opt_len+=3*(t+1)+5+5+4,t},fe=(e,t,n,r)=>{let i;for(N(e,t-257,5),N(e,n-1,5),N(e,r-4,4),i=0;i<r;i++)N(e,e.bl_tree[C[i]*2+1],3);ue(e,e.dyn_ltree,t-1),ue(e,e.dyn_dtree,n-1)},pe=e=>{let t=4093624447,i;for(i=0;i<=31;i++,t>>>=1)if(t&1&&e.dyn_ltree[i*2]!==0)return n;if(e.dyn_ltree[18]!==0||e.dyn_ltree[20]!==0||e.dyn_ltree[26]!==0)return r;for(i=32;i<u;i++)if(e.dyn_ltree[i*2]!==0)return r;return n},me=(e,t,n,r)=>{N(e,(o<<1)+ +!!r,3),ie(e),M(e,n),M(e,~n),n&&e.pending_buf.set(e.window.subarray(t,t+n),e.pending),e.pending+=n},he=(e,n,r,a)=>{let o,l,u=0;e.level>0?(e.strm.data_type===i&&(e.strm.data_type=pe(e)),ce(e,e.l_desc),ce(e,e.d_desc),u=de(e),o=e.opt_len+3+7>>>3,l=e.static_len+3+7>>>3,l<=o&&(o=l)):o=l=r+5,r+4<=o&&n!==-1?me(e,n,r,a):e.strategy===t||l===o?(N(e,(s<<1)+ +!!a,3),se(e,T,E)):(N(e,(c<<1)+ +!!a,3),fe(e,e.l_desc.max_code+1,e.d_desc.max_code+1,u+1),se(e,e.dyn_ltree,e.dyn_dtree)),re(e),a&&ie(e)},F=(e,t,n)=>(e.pending_buf[e.sym_buf+e.sym_next++]=t,e.pending_buf[e.sym_buf+e.sym_next++]=t>>8,e.pending_buf[e.sym_buf+e.sym_next++]=n,t===0?e.dyn_ltree[n*2]++:(e.matches++,t--,e.dyn_ltree[(O[n]+u+1)*2]++,e.dyn_dtree[j(t)*2]++),e.sym_next===e.sym_end),ge=(e,t,n,r)=>{let i=e&65535|0,a=e>>>16&65535|0,o=0;for(;n!==0;){o=n>2e3?2e3:n,n-=o;do i=i+t[r++]|0,a=a+i|0;while(--o);i%=65521,a%=65521}return i|a<<16|0},_e=new Uint32Array((()=>{let e,t=[];for(var n=0;n<256;n++){e=n;for(var r=0;r<8;r++)e=e&1?3988292384^e>>>1:e>>>1;t[n]=e}return t})()),I=(e,t,n,r)=>{let i=_e,a=r+n;e^=-1;for(let n=r;n<a;n++)e=e>>>8^i[(e^t[n])&255];return e^-1},ve={2:`need dictionary`,1:`stream end`,0:``,"-1":`file error`,"-2":`stream error`,"-3":`data error`,"-4":`insufficient memory`,"-5":`buffer error`,"-6":`incompatible version`},L=3,ye=258,R=262,z=1,be=2,xe=3,Se=4,Ce=e=>{let t,n,r,i=e.w_size;t=e.hash_size,r=t;do n=e.head[--r],e.head[r]=n>=i?n-i:0;while(--t);t=i,r=t;do n=e.prev[--r],e.prev[r]=n>=i?n-i:0;while(--t)},we=(e,t,n)=>(t<<e.hash_shift^n)&e.hash_mask,B=(e,t)=>{let n;if(e.legacy_hash)n=e.ins_h=we(e,e.ins_h,e.window[t+L-1]);else{let r=e.window,i=r[t]|r[t+1]<<8|r[t+2]<<16|r[t+3]<<24;n=e.ins_h=Math.imul(i,66521)+66521>>>16&e.hash_mask}let r=e.prev[t&e.w_mask]=e.head[n];return e.head[n]=t,r},Te=e=>{let t=e.state,n=t.pending;n>e.avail_out&&(n=e.avail_out),n!==0&&(e.output.set(t.pending_buf.subarray(t.pending_out,t.pending_out+n),e.next_out),e.next_out+=n,t.pending_out+=n,e.total_out+=n,e.avail_out-=n,t.pending-=n,t.pending===0&&(t.pending_out=0))},V=(e,t)=>{he(e,e.block_start>=0?e.block_start:-1,e.strstart-e.block_start,t),e.block_start=e.strstart,Te(e.strm)},Ee=(e,t,n,r)=>{let i=e.avail_in;return i>r&&(i=r),i===0?0:(e.avail_in-=i,t.set(e.input.subarray(e.next_in,e.next_in+i),n),e.state.wrap===1?e.adler=ge(e.adler,t,i,n):e.state.wrap===2&&(e.adler=I(e.adler,t,i,n)),e.next_in+=i,e.total_in+=i,i)},De=(e,t)=>{let n=e.max_chain_length,r=e.strstart,i,a,o=e.prev_length,s=e.nice_match,c=e.strstart>e.w_size-R?e.strstart-(e.w_size-R):0,l=e.window,u=e.w_mask,d=e.prev,f=e.strstart+ye,p=l[r+o-1],m=l[r+o];e.prev_length>=e.good_match&&(n>>=2),s>e.lookahead&&(s=e.lookahead);do{if(i=t,l[i+o]!==m||l[i+o-1]!==p||l[i]!==l[r]||l[++i]!==l[r+1])continue;r+=2,i++;do;while(l[++r]===l[++i]&&l[++r]===l[++i]&&l[++r]===l[++i]&&l[++r]===l[++i]&&l[++r]===l[++i]&&l[++r]===l[++i]&&l[++r]===l[++i]&&l[++r]===l[++i]&&r<f);if(a=ye-(f-r),r=f-ye,a>o){if(e.match_start=t,o=a,a>=s)break;p=l[r+o-1],m=l[r+o]}}while((t=d[t&u])>c&&--n!==0);return o<=e.lookahead?o:e.lookahead},Oe=e=>{let t=e.w_size,n,r,i;do{if(r=e.window_size-e.lookahead-e.strstart,e.strstart>=t+(t-R)&&(e.window.set(e.window.subarray(t,t+t-r),0),e.match_start-=t,e.strstart-=t,e.block_start-=t,e.insert>e.strstart&&(e.insert=e.strstart),Ce(e),r+=t),e.strm.avail_in===0)break;if(n=Ee(e.strm,e.window,e.strstart+e.lookahead,r),e.lookahead+=n,!e.legacy_hash){if(e.lookahead+e.insert>L)for(i=e.strstart-e.insert;e.insert&&(B(e,i),i++,e.insert--,!(e.lookahead+e.insert<=L)););}else if(e.lookahead+e.insert>=L)for(i=e.strstart-e.insert,e.ins_h=e.window[i],e.ins_h=we(e,e.ins_h,e.window[i+1]);e.insert&&(B(e,i),i++,e.insert--,!(e.lookahead+e.insert<L)););}while(e.lookahead<R&&e.strm.avail_in!==0)},ke=(e,t)=>{let n=e.pending_buf_size-5>e.w_size?e.w_size:e.pending_buf_size-5,r,i,a,o=0,s=e.strm.avail_in;do{if(r=65535,a=e.bi_valid+42>>3,e.strm.avail_out<a||(a=e.strm.avail_out-a,i=e.strstart-e.block_start,r>i+e.strm.avail_in&&(r=i+e.strm.avail_in),r>a&&(r=a),r<n&&(r===0&&t!==4||t===0||r!==i+e.strm.avail_in)))break;o=+(t===4&&r===i+e.strm.avail_in),me(e,0,0,o),e.pending_buf[e.pending-4]=r,e.pending_buf[e.pending-3]=r>>8,e.pending_buf[e.pending-2]=~r,e.pending_buf[e.pending-1]=~r>>8,Te(e.strm),i&&(i>r&&(i=r),e.strm.output.set(e.window.subarray(e.block_start,e.block_start+i),e.strm.next_out),e.strm.next_out+=i,e.strm.avail_out-=i,e.strm.total_out+=i,e.block_start+=i,r-=i),r&&(Ee(e.strm,e.strm.output,e.strm.next_out,r),e.strm.next_out+=r,e.strm.avail_out-=r,e.strm.total_out+=r)}while(o===0);return s-=e.strm.avail_in,s&&(s>=e.w_size?(e.matches=2,e.window.set(e.strm.input.subarray(e.strm.next_in-e.w_size,e.strm.next_in),0),e.strstart=e.w_size,e.insert=e.strstart):(e.window_size-e.strstart<=s&&(e.strstart-=e.w_size,e.window.set(e.window.subarray(e.w_size,e.w_size+e.strstart),0),e.matches<2&&e.matches++,e.insert>e.strstart&&(e.insert=e.strstart)),e.window.set(e.strm.input.subarray(e.strm.next_in-s,e.strm.next_in),e.strstart),e.strstart+=s,e.insert+=s>e.w_size-e.insert?e.w_size-e.insert:s),e.block_start=e.strstart),e.high_water<e.strstart&&(e.high_water=e.strstart),o?Se:t!==0&&t!==4&&e.strm.avail_in===0&&e.strstart===e.block_start?be:(a=e.window_size-e.strstart,e.strm.avail_in>a&&e.block_start>=e.w_size&&(e.block_start-=e.w_size,e.strstart-=e.w_size,e.window.set(e.window.subarray(e.w_size,e.w_size+e.strstart),0),e.matches<2&&e.matches++,a+=e.w_size,e.insert>e.strstart&&(e.insert=e.strstart)),a>e.strm.avail_in&&(a=e.strm.avail_in),a&&(Ee(e.strm,e.window,e.strstart,a),e.strstart+=a,e.insert+=a>e.w_size-e.insert?e.w_size-e.insert:a),e.high_water<e.strstart&&(e.high_water=e.strstart),a=e.bi_valid+42>>3,a=e.pending_buf_size-a>65535?65535:e.pending_buf_size-a,n=a>e.w_size?e.w_size:a,i=e.strstart-e.block_start,(i>=n||(i||t===4)&&t!==0&&e.strm.avail_in===0&&i<=a)&&(r=i>a?a:i,o=+(t===4&&e.strm.avail_in===0&&r===i),me(e,e.block_start,r,o),e.block_start+=r,Te(e.strm)),o?xe:z)},Ae=(e,t)=>{let n,r;for(;;){if(e.lookahead<R){if(Oe(e),e.lookahead<R&&t===0)return z;if(e.lookahead===0)break}if(n=0,e.lookahead>=L&&(n=B(e,e.strstart)),n!==0&&e.strstart-n<=e.w_size-R&&(e.match_length=De(e,n)),e.match_length>=L)if(r=F(e,e.strstart-e.match_start,e.match_length-L),e.lookahead-=e.match_length,e.match_length<=e.max_lazy_match&&e.lookahead>=L){e.match_length--;do e.strstart++,n=B(e,e.strstart);while(--e.match_length!==0);e.strstart++}else e.strstart+=e.match_length,e.match_length=0,e.legacy_hash&&(e.ins_h=e.window[e.strstart],e.ins_h=we(e,e.ins_h,e.window[e.strstart+1]));else r=F(e,0,e.window[e.strstart]),e.lookahead--,e.strstart++;if(r&&(V(e,!1),e.strm.avail_out===0))return z}return e.insert=e.strstart<L-1?e.strstart:L-1,t===4?(V(e,!0),e.strm.avail_out===0?xe:Se):e.sym_next&&(V(e,!1),e.strm.avail_out===0)?z:be},H=(e,t)=>{let n,r,i;for(;;){if(e.lookahead<R){if(Oe(e),e.lookahead<R&&t===0)return z;if(e.lookahead===0)break}if(n=0,e.lookahead>=L&&(n=B(e,e.strstart)),e.prev_length=e.match_length,e.prev_match=e.match_start,e.match_length=L-1,n!==0&&e.prev_length<e.max_lazy_match&&e.strstart-n<=e.w_size-R&&(e.match_length=De(e,n),e.match_length<=5&&(e.strategy===1||e.match_length===L&&e.strstart-e.match_start>4096)&&(e.match_length=L-1)),e.prev_length>=L&&e.match_length<=e.prev_length){i=e.strstart+e.lookahead-L,r=F(e,e.strstart-1-e.prev_match,e.prev_length-L),e.lookahead-=e.prev_length-1,e.prev_length-=2;do++e.strstart<=i&&(n=B(e,e.strstart));while(--e.prev_length!==0);if(e.match_available=0,e.match_length=L-1,e.strstart++,r&&(V(e,!1),e.strm.avail_out===0))return z}else if(e.match_available){if(r=F(e,0,e.window[e.strstart-1]),r&&V(e,!1),e.strstart++,e.lookahead--,e.strm.avail_out===0)return z}else e.match_available=1,e.strstart++,e.lookahead--}return e.match_available&&(r=F(e,0,e.window[e.strstart-1]),e.match_available=0),e.insert=e.strstart<L-1?e.strstart:L-1,t===4?(V(e,!0),e.strm.avail_out===0?xe:Se):e.sym_next&&(V(e,!1),e.strm.avail_out===0)?z:be},U=class{constructor(e,t,n,r,i){this.good_length=e,this.max_lazy=t,this.nice_length=n,this.max_chain=r,this.func=i}};new U(0,0,0,0,ke),new U(4,4,8,4,Ae),new U(4,5,16,8,Ae),new U(4,6,32,32,Ae),new U(4,4,16,16,H),new U(8,16,32,32,H),new U(8,16,128,128,H),new U(8,32,128,256,H),new U(32,128,258,1024,H),new U(32,258,258,4096,H);var W=16209,je=16191;function Me(e,t){let n,r,i,a,o,s,c,l,u,d,f,p,m,h,g,_,v,y,b,x,S,C,w,T,E=e.state;n=e.next_in,w=e.input,r=n+(e.avail_in-5),i=e.next_out,T=e.output,a=i-(t-e.avail_out),o=i+(e.avail_out-257),s=E.dmax,c=E.wsize,l=E.whave,u=E.wnext,d=E.window,f=E.hold,p=E.bits,m=E.lencode,h=E.distcode,g=(1<<E.lenbits)-1,_=(1<<E.distbits)-1;top:do{p<15&&(f+=w[n++]<<p,p+=8,f+=w[n++]<<p,p+=8),v=m[f&g];dolen:for(;;){if(y=v>>>24,f>>>=y,p-=y,y=v>>>16&255,y===0)T[i++]=v&65535;else if(y&16){b=v&65535,y&=15,y&&(p<y&&(f+=w[n++]<<p,p+=8),b+=f&(1<<y)-1,f>>>=y,p-=y),p<15&&(f+=w[n++]<<p,p+=8,f+=w[n++]<<p,p+=8),v=h[f&_];dodist:for(;;){if(y=v>>>24,f>>>=y,p-=y,y=v>>>16&255,y&16){if(x=v&65535,y&=15,p<y&&(f+=w[n++]<<p,p+=8,p<y&&(f+=w[n++]<<p,p+=8)),x+=f&(1<<y)-1,x>s){e.msg=`invalid distance too far back`,E.mode=W;break top}if(f>>>=y,p-=y,y=i-a,x>y){if(y=x-y,y>l&&E.sane){e.msg=`invalid distance too far back`,E.mode=W;break top}if(S=0,C=d,u===0){if(S+=c-y,y<b){b-=y;do T[i++]=d[S++];while(--y);S=i-x,C=T}}else if(u<y){if(S+=c+u-y,y-=u,y<b){b-=y;do T[i++]=d[S++];while(--y);if(S=0,u<b){y=u,b-=y;do T[i++]=d[S++];while(--y);S=i-x,C=T}}}else if(S+=u-y,y<b){b-=y;do T[i++]=d[S++];while(--y);S=i-x,C=T}for(;b>2;)T[i++]=C[S++],T[i++]=C[S++],T[i++]=C[S++],b-=3;b&&(T[i++]=C[S++],b>1&&(T[i++]=C[S++]))}else{S=i-x;do T[i++]=T[S++],T[i++]=T[S++],T[i++]=T[S++],b-=3;while(b>2);b&&(T[i++]=T[S++],b>1&&(T[i++]=T[S++]))}}else if(y&64){e.msg=`invalid distance code`,E.mode=W;break top}else{v=h[(v&65535)+(f&(1<<y)-1)];continue dodist}break}}else if(!(y&64)){v=m[(v&65535)+(f&(1<<y)-1)];continue dolen}else if(y&32){E.mode=je;break top}else{e.msg=`invalid literal/length code`,E.mode=W;break top}break}}while(n<r&&i<o);b=p>>3,n-=b,p-=b<<3,f&=(1<<p)-1,e.next_in=n,e.next_out=i,e.avail_in=n<r?5+(r-n):5-(n-r),e.avail_out=i<o?257+(o-i):257-(i-o),E.hold=f,E.bits=p}var G=15,Ne=852,Pe=592,Fe=0,Ie=1,Le=2,Re=new Uint16Array([3,4,5,6,7,8,9,10,11,13,15,17,19,23,27,31,35,43,51,59,67,83,99,115,131,163,195,227,258,0,0]),ze=new Uint8Array([16,16,16,16,16,16,16,16,17,17,17,17,18,18,18,18,19,19,19,19,20,20,20,20,21,21,21,21,16,199,75]),Be=new Uint16Array([1,2,3,4,5,7,9,13,17,25,33,49,65,97,129,193,257,385,513,769,1025,1537,2049,3073,4097,6145,8193,12289,16385,24577,0,0]),Ve=new Uint8Array([16,16,16,16,17,17,18,18,19,19,20,20,21,21,22,22,23,23,24,24,25,25,26,26,27,27,28,28,29,29,64,64]),K=(e,t,n,r,i,a,o,s)=>{let c=s.bits,l=0,u=0,d=0,f=0,p=0,m=0,h=0,g=0,_=0,v=0,y,b,x,S,C,w=null,T,E=new Uint16Array(16),D=new Uint16Array(16),O=null,k,A,j;for(l=0;l<=G;l++)E[l]=0;for(u=0;u<r;u++)E[t[n+u]]++;for(p=c,f=G;f>=1&&E[f]===0;f--);if(p>f&&(p=f),f===0)return i[a++]=20971520,i[a++]=20971520,s.bits=1,0;for(d=1;d<f&&E[d]===0;d++);for(p<d&&(p=d),g=1,l=1;l<=G;l++)if(g<<=1,g-=E[l],g<0)return-1;if(g>0&&(e===Fe||f!==1))return-1;for(D[1]=0,l=1;l<G;l++)D[l+1]=D[l]+E[l];for(u=0;u<r;u++)t[n+u]!==0&&(o[D[t[n+u]]++]=u);if(e===Fe?(w=O=o,T=20):e===Ie?(w=Re,O=ze,T=257):(w=Be,O=Ve,T=0),v=0,u=0,l=d,C=a,m=p,h=0,x=-1,_=1<<p,S=_-1,e===Ie&&_>Ne||e===Le&&_>Pe)return 1;for(;;){k=l-h,o[u]+1<T?(A=0,j=o[u]):o[u]>=T?(A=O[o[u]-T],j=w[o[u]-T]):(A=96,j=0),y=1<<l-h,b=1<<m,d=b;do b-=y,i[C+(v>>h)+b]=k<<24|A<<16|j|0;while(b!==0);for(y=1<<l-1;v&y;)y>>=1;if(y===0?v=0:(v&=y-1,v+=y),u++,--E[l]===0){if(l===f)break;l=t[n+o[u]]}if(l>p&&(v&S)!==x){for(h===0&&(h=p),C+=d,m=l-h,g=1<<m;m+h<f&&(g-=E[m+h],!(g<=0));)m++,g<<=1;if(_+=1<<m,e===Ie&&_>Ne||e===Le&&_>Pe)return 1;x=v&S,i[x]=p<<24|m<<16|C-a|0}}return v!==0&&(i[C+v]=l-h<<24|4194304),s.bits=p,0},He=0,Ue=1,We=2,q=16180,Ge=16181,Ke=16182,qe=16183,Je=16184,Ye=16185,Xe=16186,Ze=16187,Qe=16188,$e=16189,J=16190,Y=16191,et=16192,tt=16193,nt=16194,rt=16195,it=16196,at=16197,ot=16198,st=16199,ct=16200,lt=16201,ut=16202,dt=16203,ft=16204,pt=16205,mt=16206,ht=16207,gt=16208,X=16209,_t=16210,vt=16211,yt=852,bt=592,xt=e=>(e>>>24&255)+(e>>>8&65280)+((e&65280)<<8)+((e&255)<<24),St=class{constructor(){this.strm=null,this.mode=0,this.last=!1,this.wrap=0,this.havedict=!1,this.flags=0,this.dmax=0,this.check=0,this.total=0,this.head=null,this.wbits=0,this.wsize=0,this.whave=0,this.wnext=0,this.window=null,this.hold=0,this.bits=0,this.length=0,this.offset=0,this.extra=0,this.lencode=null,this.distcode=null,this.lenbits=0,this.distbits=0,this.ncode=0,this.nlen=0,this.ndist=0,this.have=0,this.next=null,this.lens=new Uint16Array(320),this.work=new Uint16Array(288),this.lendyn=null,this.distdyn=null,this.sane=0,this.back=0,this.was=0}},Z=e=>{if(!e)return 1;let t=e.state;return+(!t||t.strm!==e||t.mode<q||t.mode>vt)},Ct=e=>{if(Z(e))return-2;let t=e.state;return e.total_in=e.total_out=t.total=0,e.msg=``,t.wrap&&(e.adler=t.wrap&1),t.mode=q,t.last=0,t.havedict=0,t.flags=-1,t.dmax=32768,t.head=null,t.hold=0,t.bits=0,t.lencode=t.lendyn=new Int32Array(yt),t.distcode=t.distdyn=new Int32Array(bt),t.sane=1,t.back=-1,0},wt=e=>{if(Z(e))return-2;let t=e.state;return t.wsize=0,t.whave=0,t.wnext=0,Ct(e)},Tt=(e,t)=>{let n;if(Z(e))return-2;let r=e.state;return t<0?(n=0,t=-t):(n=(t>>4)+5,t<48&&(t&=15)),t&&(t<8||t>15)?-2:(r.window!==null&&r.wbits!==t&&(r.window=null),r.wrap=n,r.wbits=t,wt(e))},Et=(e,t)=>{if(!e)return-2;let n=new St;e.state=n,n.strm=e,n.window=null,n.mode=q;let r=Tt(e,t);return r!==0&&(e.state=null),r},Dt=!0,Ot,kt,At=e=>{if(Dt){Ot=new Int32Array(512),kt=new Int32Array(32);let t=0;for(;t<144;)e.lens[t++]=8;for(;t<256;)e.lens[t++]=9;for(;t<280;)e.lens[t++]=7;for(;t<288;)e.lens[t++]=8;for(K(Ue,e.lens,0,288,Ot,0,e.work,{bits:9}),t=0;t<32;)e.lens[t++]=5;K(We,e.lens,0,32,kt,0,e.work,{bits:5}),Dt=!1}e.lencode=Ot,e.lenbits=9,e.distcode=kt,e.distbits=5},jt=(e,t,n,r)=>{let i,a=e.state;return a.window===null&&(a.window=new Uint8Array(1<<a.wbits)),a.wsize===0&&(a.wsize=1<<a.wbits,a.wnext=0,a.whave=0),r>=a.wsize?(a.window.set(t.subarray(n-a.wsize,n),0),a.wnext=0,a.whave=a.wsize):(i=a.wsize-a.wnext,i>r&&(i=r),a.window.set(t.subarray(n-r,n-r+i),a.wnext),r-=i,r?(a.window.set(t.subarray(n-r,n),0),a.wnext=r,a.whave=a.wsize):(a.wnext+=i,a.wnext===a.wsize&&(a.wnext=0),a.whave<a.wsize&&(a.whave+=i))),0},Mt=(e,t)=>{let n,r,i,a,o,s,c,l,u,d,f,p,m,h,g=0,_,v,y,b,x,S,C,w,T=new Uint8Array(4),E,D,O=new Uint8Array([16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15]);if(Z(e)||!e.output||!e.input&&e.avail_in!==0)return-2;n=e.state,n.mode===Y&&(n.mode=et),o=e.next_out,i=e.output,c=e.avail_out,a=e.next_in,r=e.input,s=e.avail_in,l=n.hold,u=n.bits,d=s,f=c,w=0;inf_leave:for(;;)switch(n.mode){case q:if(n.wrap===0){n.mode=et;break}for(;u<16;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}if(n.wrap&2&&l===35615){n.wbits===0&&(n.wbits=15),n.check=0,T[0]=l&255,T[1]=l>>>8&255,n.check=I(n.check,T,2,0),l=0,u=0,n.mode=Ge;break}if(n.head&&(n.head.done=!1),!(n.wrap&1)||(((l&255)<<8)+(l>>8))%31){e.msg=`incorrect header check`,n.mode=X;break}if((l&15)!=8){e.msg=`unknown compression method`,n.mode=X;break}if(l>>>=4,u-=4,C=(l&15)+8,n.wbits===0&&(n.wbits=C),C>15||C>n.wbits){e.msg=`invalid window size`,n.mode=X;break}n.dmax=1<<n.wbits,n.flags=0,e.adler=n.check=1,n.mode=l&512?$e:Y,l=0,u=0;break;case Ge:for(;u<16;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}if(n.flags=l,(n.flags&255)!=8){e.msg=`unknown compression method`,n.mode=X;break}if(n.flags&57344){e.msg=`unknown header flags set`,n.mode=X;break}n.head&&(n.head.text=l>>8&1),n.flags&512&&n.wrap&4&&(T[0]=l&255,T[1]=l>>>8&255,n.check=I(n.check,T,2,0)),l=0,u=0,n.mode=Ke;case Ke:for(;u<32;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}n.head&&(n.head.time=l),n.flags&512&&n.wrap&4&&(T[0]=l&255,T[1]=l>>>8&255,T[2]=l>>>16&255,T[3]=l>>>24&255,n.check=I(n.check,T,4,0)),l=0,u=0,n.mode=qe;case qe:for(;u<16;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}n.head&&(n.head.xflags=l&255,n.head.os=l>>8),n.flags&512&&n.wrap&4&&(T[0]=l&255,T[1]=l>>>8&255,n.check=I(n.check,T,2,0)),l=0,u=0,n.mode=Je;case Je:if(n.flags&1024){for(;u<16;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}n.length=l,n.head&&(n.head.extra_len=l),n.flags&512&&n.wrap&4&&(T[0]=l&255,T[1]=l>>>8&255,n.check=I(n.check,T,2,0)),l=0,u=0}else n.head&&(n.head.extra=null);n.mode=Ye;case Ye:if(n.flags&1024&&(p=n.length,p>s&&(p=s),p&&(n.head&&(C=n.head.extra_len-n.length,n.head.extra||(n.head.extra=new Uint8Array(n.head.extra_len)),n.head.extra.set(r.subarray(a,a+p),C)),n.flags&512&&n.wrap&4&&(n.check=I(n.check,r,p,a)),s-=p,a+=p,n.length-=p),n.length))break inf_leave;n.length=0,n.mode=Xe;case Xe:if(n.flags&2048){if(s===0)break inf_leave;p=0;do C=r[a+p++],n.head&&C&&n.length<65536&&(n.head.name+=String.fromCharCode(C));while(C&&p<s);if(n.flags&512&&n.wrap&4&&(n.check=I(n.check,r,p,a)),s-=p,a+=p,C)break inf_leave}else n.head&&(n.head.name=null);n.length=0,n.mode=Ze;case Ze:if(n.flags&4096){if(s===0)break inf_leave;p=0;do C=r[a+p++],n.head&&C&&n.length<65536&&(n.head.comment+=String.fromCharCode(C));while(C&&p<s);if(n.flags&512&&n.wrap&4&&(n.check=I(n.check,r,p,a)),s-=p,a+=p,C)break inf_leave}else n.head&&(n.head.comment=null);n.mode=Qe;case Qe:if(n.flags&512){for(;u<16;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}if(n.wrap&4&&l!==(n.check&65535)){e.msg=`header crc mismatch`,n.mode=X;break}l=0,u=0}n.head&&(n.head.hcrc=n.flags>>9&1,n.head.done=!0),e.adler=n.check=0,n.mode=Y;break;case $e:for(;u<32;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}e.adler=n.check=xt(l),l=0,u=0,n.mode=J;case J:if(n.havedict===0)return e.next_out=o,e.avail_out=c,e.next_in=a,e.avail_in=s,n.hold=l,n.bits=u,2;e.adler=n.check=1,n.mode=Y;case Y:if(t===5||t===6)break inf_leave;case et:if(n.last){l>>>=u&7,u-=u&7,n.mode=mt;break}for(;u<3;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}switch(n.last=l&1,l>>>=1,--u,l&3){case 0:n.mode=tt;break;case 1:if(At(n),n.mode=st,t===6){l>>>=2,u-=2;break inf_leave}break;case 2:n.mode=it;break;case 3:e.msg=`invalid block type`,n.mode=X}l>>>=2,u-=2;break;case tt:for(l>>>=u&7,u-=u&7;u<32;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}if((l&65535)!=(l>>>16^65535)){e.msg=`invalid stored block lengths`,n.mode=X;break}if(n.length=l&65535,l=0,u=0,n.mode=nt,t===6)break inf_leave;case nt:n.mode=rt;case rt:if(p=n.length,p){if(p>s&&(p=s),p>c&&(p=c),p===0)break inf_leave;i.set(r.subarray(a,a+p),o),s-=p,a+=p,c-=p,o+=p,n.length-=p;break}n.mode=Y;break;case it:for(;u<14;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}if(n.nlen=(l&31)+257,l>>>=5,u-=5,n.ndist=(l&31)+1,l>>>=5,u-=5,n.ncode=(l&15)+4,l>>>=4,u-=4,n.nlen>286||n.ndist>30){e.msg=`too many length or distance symbols`,n.mode=X;break}n.have=0,n.mode=at;case at:for(;n.have<n.ncode;){for(;u<3;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}n.lens[O[n.have++]]=l&7,l>>>=3,u-=3}for(;n.have<19;)n.lens[O[n.have++]]=0;if(n.lencode=n.lendyn,n.lenbits=7,E={bits:n.lenbits},w=K(He,n.lens,0,19,n.lencode,0,n.work,E),n.lenbits=E.bits,w){e.msg=`invalid code lengths set`,n.mode=X;break}n.have=0,n.mode=ot;case ot:for(;n.have<n.nlen+n.ndist;){for(;g=n.lencode[l&(1<<n.lenbits)-1],_=g>>>24,v=g>>>16&255,y=g&65535,!(_<=u);){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}if(y<16)l>>>=_,u-=_,n.lens[n.have++]=y;else{if(y===16){for(D=_+2;u<D;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}if(l>>>=_,u-=_,n.have===0){e.msg=`invalid bit length repeat`,n.mode=X;break}C=n.lens[n.have-1],p=3+(l&3),l>>>=2,u-=2}else if(y===17){for(D=_+3;u<D;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}l>>>=_,u-=_,C=0,p=3+(l&7),l>>>=3,u-=3}else{for(D=_+7;u<D;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}l>>>=_,u-=_,C=0,p=11+(l&127),l>>>=7,u-=7}if(n.have+p>n.nlen+n.ndist){e.msg=`invalid bit length repeat`,n.mode=X;break}for(;p--;)n.lens[n.have++]=C}}if(n.mode===X)break;if(n.lens[256]===0){e.msg=`invalid code -- missing end-of-block`,n.mode=X;break}if(n.lenbits=9,E={bits:n.lenbits},w=K(Ue,n.lens,0,n.nlen,n.lencode,0,n.work,E),n.lenbits=E.bits,w){e.msg=`invalid literal/lengths set`,n.mode=X;break}if(n.distbits=6,n.distcode=n.distdyn,E={bits:n.distbits},w=K(We,n.lens,n.nlen,n.ndist,n.distcode,0,n.work,E),n.distbits=E.bits,w){e.msg=`invalid distances set`,n.mode=X;break}if(n.mode=st,t===6)break inf_leave;case st:n.mode=ct;case ct:if(s>=6&&c>=258){e.next_out=o,e.avail_out=c,e.next_in=a,e.avail_in=s,n.hold=l,n.bits=u,Me(e,f),o=e.next_out,i=e.output,c=e.avail_out,a=e.next_in,r=e.input,s=e.avail_in,l=n.hold,u=n.bits,n.mode===Y&&(n.back=-1);break}for(n.back=0;g=n.lencode[l&(1<<n.lenbits)-1],_=g>>>24,v=g>>>16&255,y=g&65535,!(_<=u);){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}if(v&&!(v&240)){for(b=_,x=v,S=y;g=n.lencode[S+((l&(1<<b+x)-1)>>b)],_=g>>>24,v=g>>>16&255,y=g&65535,!(b+_<=u);){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}l>>>=b,u-=b,n.back+=b}if(l>>>=_,u-=_,n.back+=_,n.length=y,v===0){n.mode=pt;break}if(v&32){n.back=-1,n.mode=Y;break}if(v&64){e.msg=`invalid literal/length code`,n.mode=X;break}n.extra=v&15,n.mode=lt;case lt:if(n.extra){for(D=n.extra;u<D;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}n.length+=l&(1<<n.extra)-1,l>>>=n.extra,u-=n.extra,n.back+=n.extra}n.was=n.length,n.mode=ut;case ut:for(;g=n.distcode[l&(1<<n.distbits)-1],_=g>>>24,v=g>>>16&255,y=g&65535,!(_<=u);){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}if(!(v&240)){for(b=_,x=v,S=y;g=n.distcode[S+((l&(1<<b+x)-1)>>b)],_=g>>>24,v=g>>>16&255,y=g&65535,!(b+_<=u);){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}l>>>=b,u-=b,n.back+=b}if(l>>>=_,u-=_,n.back+=_,v&64){e.msg=`invalid distance code`,n.mode=X;break}n.offset=y,n.extra=v&15,n.mode=dt;case dt:if(n.extra){for(D=n.extra;u<D;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}n.offset+=l&(1<<n.extra)-1,l>>>=n.extra,u-=n.extra,n.back+=n.extra}if(n.offset>n.dmax){e.msg=`invalid distance too far back`,n.mode=X;break}n.mode=ft;case ft:if(c===0)break inf_leave;if(p=f-c,n.offset>p){if(p=n.offset-p,p>n.whave&&n.sane){e.msg=`invalid distance too far back`,n.mode=X;break}p>n.wnext?(p-=n.wnext,m=n.wsize-p):m=n.wnext-p,p>n.length&&(p=n.length),h=n.window}else h=i,m=o-n.offset,p=n.length;p>c&&(p=c),c-=p,n.length-=p;do i[o++]=h[m++];while(--p);n.length===0&&(n.mode=ct);break;case pt:if(c===0)break inf_leave;i[o++]=n.length,c--,n.mode=ct;break;case mt:if(n.wrap){for(;u<32;){if(s===0)break inf_leave;s--,l|=r[a++]<<u,u+=8}if(f-=c,e.total_out+=f,n.total+=f,n.wrap&4&&f&&(e.adler=n.check=n.flags?I(n.check,i,f,o-f):ge(n.check,i,f,o-f)),f=c,n.wrap&4&&(n.flags?l:xt(l))!==n.check){e.msg=`incorrect data check`,n.mode=X;break}l=0,u=0}n.mode=ht;case ht:if(n.wrap&&n.flags){for(;u<32;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}if(n.wrap&4&&l!==(n.total&4294967295)){e.msg=`incorrect length check`,n.mode=X;break}l=0,u=0}n.mode=gt;case gt:w=1;break inf_leave;case X:w=-3;break inf_leave;case _t:return-4;case vt:default:return-2}return e.next_out=o,e.avail_out=c,e.next_in=a,e.avail_in=s,n.hold=l,n.bits=u,(n.wsize||f!==e.avail_out&&n.mode<X&&(n.mode<mt||t!==4))&&jt(e,e.output,e.next_out,f-e.avail_out)?(n.mode=_t,-4):(d-=e.avail_in,f-=e.avail_out,e.total_in+=d,e.total_out+=f,n.total+=f,n.wrap&4&&f&&(e.adler=n.check=n.flags?I(n.check,i,f,e.next_out-f):ge(n.check,i,f,e.next_out-f)),e.data_type=n.bits+(n.last?64:0)+(n.mode===Y?128:0)+(n.mode===st||n.mode===nt?256:0),(d===0&&f===0||t===4)&&w===0&&(w=-5),w)},Nt=e=>{if(Z(e))return-2;let t=e.state;return t.window&&(t.window=null),e.state=null,0},Pt=(e,t)=>{let n=t.length,r,i,a;return Z(e)||(r=e.state,r.wrap!==0&&r.mode!==J)?-2:r.mode===J&&(i=1,i=ge(i,t,n,0),i!==r.check)?-3:(a=jt(e,t,n,n),a?(r.mode=_t,-4):(r.havedict=1,0))},Ft=class{constructor(){this.input=null,this.next_in=0,this.avail_in=0,this.total_in=0,this.output=null,this.next_out=0,this.avail_out=0,this.total_out=0,this.msg=``,this.state=null,this.data_type=2,this.adler=0}},It=e=>{let t=new Uint8Array(e.reduce((e,t)=>e+t.length,0)),n=0;for(let r of e)t.set(r,n),n+=r.length;return t};function Q(e){"@babel/helpers - typeof";return Q=typeof Symbol==`function`&&typeof Symbol.iterator==`symbol`?function(e){return typeof e}:function(e){return e&&typeof Symbol==`function`&&e.constructor===Symbol&&e!==Symbol.prototype?`symbol`:typeof e},Q(e)}function Lt(e,t){if(Q(e)!=`object`||!e)return e;var n=e[Symbol.toPrimitive];if(n!==void 0){var r=n.call(e,t||`default`);if(Q(r)!=`object`)return r;throw TypeError(`@@toPrimitive must return a primitive value.`)}return(t===`string`?String:Number)(e)}function Rt(e){var t=Lt(e,`string`);return Q(t)==`symbol`?t:t+``}function $(e,t,n){return(t=Rt(t))in e?Object.defineProperty(e,t,{value:n,enumerable:!0,configurable:!0,writable:!0}):e[t]=n,e}function zt(e,t){var n=Object.keys(e);if(Object.getOwnPropertySymbols){var r=Object.getOwnPropertySymbols(e);t&&(r=r.filter(function(t){return Object.getOwnPropertyDescriptor(e,t).enumerable})),n.push.apply(n,r)}return n}function Bt(e){for(var t=1;t<arguments.length;t++){var n=arguments[t]==null?{}:arguments[t];t%2?zt(Object(n),!0).forEach(function(t){$(e,t,n[t])}):Object.getOwnPropertyDescriptors?Object.defineProperties(e,Object.getOwnPropertyDescriptors(n)):zt(Object(n)).forEach(function(t){Object.defineProperty(e,t,Object.getOwnPropertyDescriptor(n,t))})}return e}var Vt=Object.prototype.toString,Ht={chunkSize:1024*64,windowBits:15,raw:!1,dictionary:new Uint8Array},Ut=class{constructor(e={}){$(this,`options`,void 0),$(this,`err`,void 0),$(this,`msg`,void 0),$(this,`ended`,void 0),$(this,`started`,void 0),$(this,`chunks`,void 0),$(this,`strm`,void 0),$(this,`result`,void 0),this.options=Object.assign({},Ht,e);let t=this.options;t.raw&&t.windowBits>=0&&t.windowBits<16&&(t.windowBits=-t.windowBits,t.windowBits===0&&(t.windowBits=-15)),t.windowBits>=0&&t.windowBits<16&&!e.windowBits&&(t.windowBits+=32),t.windowBits>15&&t.windowBits<48&&(t.windowBits&15||(t.windowBits|=15)),this.err=0,this.msg=``,this.ended=!1,this.started=!1,this.chunks=[],this.result=new Uint8Array,this.strm=new Ft,this.strm.avail_out=0;let n=Et(this.strm,t.windowBits);if(n!==0)throw Error(ve[n]);Vt.call(t.dictionary)===`[object ArrayBuffer]`&&(t.dictionary=new Uint8Array(t.dictionary));let r=t.dictionary;if(t.raw&&r.length&&(n=Pt(this.strm,r),n!==0))throw Error(ve[n])}push(e,t=!1){let n=this.strm,r=this.options.chunkSize,i,a,o;if(this.ended)return this.err===0;for(a=typeof t==`number`?t:t===!0?4:0,Vt.call(e)===`[object ArrayBuffer]`?n.input=new Uint8Array(e):n.input=e,n.next_in=0,n.avail_in=n.input.length,this.started||(this.started=!0,this.onStart(n));;){if(n.avail_out===0&&(n.output=new Uint8Array(r),n.next_out=0,n.avail_out=r),i=Mt(n,a),i===2){let e=this.options.dictionary;e.length&&(i=Pt(n,e),i===0?i=Mt(n,a):i===-3&&(i=2))}for(;n.avail_in>0&&i===1&&n.state.wrap&2&&n.state.flags!==0&&n.input[n.next_in]!==0;)wt(n),i=Mt(n,a);if(i===-2||i===-3||i===2||i===-4)break;if(o=n.avail_out,n.next_out&&(n.avail_out===0||i===1||a>0)&&(this.onData(n.output.length===n.next_out?n.output:n.output.subarray(0,n.next_out)),n.avail_out=0,n.next_out=0),!((i===0||i===-5)&&o===0)){if(i===1){i=Nt(this.strm);break}if(n.avail_in===0){if(a===4){i=Nt(this.strm),i===0&&(i=-5);break}return!0}}}return this.err=i,this.msg=n.msg||ve[i],this.ended=!0,this.onEnd(i),i===0}onStart(e){}onData(e){this.chunks.push(e)}onEnd(e){e===0&&(this.result=It(this.chunks)),this.chunks=[]}};function Wt(e,t={}){let n=new Ut(t);if(n.push(e,!0),n.err)throw Error(n.msg);let r=n.result;return t.toText?new TextDecoder().decode(r):r}function Gt(e,t={}){return Wt(e,Bt(Bt({},t),{},{raw:!0}))}e.Inflate=Ut,e.inflate=Wt,e.ungzip=Wt,e.inflateRaw=Gt});
+
+/* ---------- 纯 JS raw-inflate 兜底封装(不依赖 DecompressionStream) ---------- */
+function cdInflateRawSafe(data){
+  var P = (typeof window!=='undefined' && window.pako) || (typeof globalThis!=='undefined' && globalThis.pako);
+  if(!P || !P.inflateRaw) return null;
+  try{
+    var out = P.inflateRaw(data);
+    if(!out) return null;
+    var u8 = new Uint8Array(out);
+    if(u8.length>8) return u8;
+  }catch(e){ cdWarn('[zip] cdInflateRawSafe 异常', e); }
+  return null;
+}
+
+async function cdZipExtractPng(buf){
+  try{
+    var arr=new Uint8Array(buf), dv=new DataView(buf), i, eocd=-1;
+    for(i=arr.length-22; i>=0; i--){
+      if(arr[i]===0x50 && arr[i+1]===0x4b && arr[i+2]===0x05 && arr[i+3]===0x06){ eocd=i; break; }
+    }
+    if(eocd<0) return null;
+    var n=dv.getUint16(eocd+8,true), p=dv.getUint32(eocd+16,true);
+    for(var j=0; j<n; j++){
+      if(arr[p]!==0x50 || arr[p+1]!==0x4b || arr[p+2]!==0x01 || arr[p+3]!==0x02) break;
+      var method=dv.getUint16(p+10,true), csz=dv.getUint32(p+20,true);
+      var nl=dv.getUint16(p+28,true), xl=dv.getUint16(p+30,true), cl=dv.getUint16(p+32,true), lho=dv.getUint32(p+42,true);
+      var fn=''; for(var k=0;k<nl;k++) fn+=String.fromCharCode(arr[p+46+k]);
+      if(/\.png$/i.test(fn)){
+        var ln=dv.getUint16(lho+26,true), eln=dv.getUint16(lho+28,true);
+        var ds=lho+30+ln+eln, data=arr.subarray(ds, ds+csz);
+        if(method===0) return data;
+        if(method===8){
+          var _outU8=null;
+          if(typeof DecompressionStream==='function'){
+            try{
+              var dsr=new DecompressionStream('deflate-raw');
+              var st=new Blob([data]).stream().pipeThrough(dsr);
+              var ab=await new Response(st).arrayBuffer();
+              _outU8=new Uint8Array(ab);
+              if(_outU8.length>8){ cdWarn('[zip] DecompressionStream 解压成功 png='+_outU8.length); return _outU8; }
+              cdWarn('[zip] 解压后数据过短('+_outU8.length+')，PNG 无效，改用纯JS兜底');
+            }catch(e){ cdWarn('[zip] DecompressionStream 解压异常，改用纯JS inflate', e); }
+          } else {
+            cdWarn('[zip] 当前 WebView 不支持 DecompressionStream，改用纯JS inflate');
+          }
+          var _js=cdInflateRawSafe(data);
+          if(_js && _js.length>8){ cdWarn('[zip] 纯JS inflate 解压成功 png='+_js.length); return _js; }
+          cdWarn('[zip] 纯JS inflate 也未解出有效 PNG');
+          return null;
+        }
+        return null;
+      }
+      p += 46+nl+xl+cl;
+    }
+    return null;
+  }catch(e){ return null; }
+}
+
+/* ---------- 拉取模型列表（GET {base}/models，Bearer 认证） ---------- */
+async function cdForumFetchModels(){
+  var cfg=cdForumImgCfg();
+  var base=String(cfg.url||'').replace(/\/+$/,'').replace(/\/generate-image$/,'').replace(/\/ai\/generate-image$/,'');
+  if(!base || !String(cfg.key||'').trim()){ return []; }
+  var list=[];
+  try{
+    var res=await fetch(base+'/models', { method:'GET', headers:{ 'Authorization':'Bearer '+String(cfg.key).trim() } });
+    if(!res.ok){ throw new Error('HTTP '+res.status); }
+    var j=await res.json();
+    var data=(j&&j.data)||j.models||j;
+    if(Array.isArray(j)) data=j;
+    if(Array.isArray(data)){
+      data.forEach(function(m){
+        if(m && typeof m==='object' && m.id) list.push(String(m.id));
+        else if(typeof m==='string') list.push(m);
+      });
+    }
+  }catch(e){ cdWarn('[生图] 拉取模型失败', e); }
+  return list;
+}
+/* ---------- 生图测试（用当前界面配置生成一张小测试图；成功返回 dataUrl，失败抛错） ---------- */
+async function cdForumTestImage(){
+  var cfg=cdForumImgCfg();
+  var base=String(cfg.url||'').replace(/\/+$/,'').replace(/\/generate-image$/,'').replace(/\/ai\/generate-image$/,'');
+  if(!base || !String(cfg.key||'').trim()) throw new Error('请先填写生图地址与 Token');
+  if(cfg.source==='off') throw new Error('数据来源为「关闭(纯文字描述)」');
+  // 测试用简单 prompt，避免消耗太大
+  var body={ input:'a cute cat, best quality', model:cfg.model||'nai-diffusion-3', parameters:{ negative_prompt:'lowres, bad hands', width:512, height:384, steps:8, guidance_scale:6, seed:0, smea:false, n_samples:1 } };
+  try{
+    var res=await fetch(base+(base.indexOf('/ai')>=0?'':'/ai')+'/generate-image', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+String(cfg.key).trim() }, body:JSON.stringify(body) });
+    if(!res.ok){ var er=''; try{ er=await res.text(); }catch(_e){} throw new Error('HTTP '+res.status+' '+String(er).slice(0,120)); }
+    var ct=res.headers.get('content-type')||'';
+    cdWarn('[测试] content-type='+ct);
+    if(ct.indexOf('json')>=0){
+      var j=await res.json();
+      var d=cdPickImgFromJSON(j);
+      if(!d){ cdWarn('[测试] JSON 响应未提取到图片，keys='+Object.keys(j).join(',')); throw new Error('响应无图片数据('+Object.keys(j).join(',')+')'); }
+      var rv=cdImgResolve(d);
+      cdWarn('[测试] JSON 分支：type='+(rv.url?'url':(rv.b64?'b64':'dataUrl'))+' len='+(rv.dataUrl||rv.b64||'').length);
+      if(rv.dataUrl) return rv.dataUrl;
+      throw new Error('未能解析图片数据');
+    }
+    var bufB=await res.arrayBuffer();
+    var arrB=new Uint8Array(bufB); var binB=''; for(var ii=0;ii<arrB.length;ii++) binB+=String.fromCharCode(arrB[ii]);
+    var b64B=btoa(binB);
+    var z=(bufB.byteLength>=4 && arrB[0]===0x50 && arrB[1]===0x4b && (arrB[2]===0x03||arrB[2]===0x05||arrB[2]===0x07));
+    if(z){
+      var pp=await cdZipExtractPng(bufB);
+      if(!pp || pp.length<=8) throw new Error('ZIP 内未解出 PNG');
+      var pb=''; for(var qq=0;qq<pp.length;qq++) pb+=String.fromCharCode(pp[qq]);
+      return 'data:image/png;base64,'+btoa(pb);
+    }
+    return 'data:image/png;base64,'+b64B;
+  }catch(e){ throw (e&&e.message)?e:new Error('生图测试失败'); }
+}
+/* ---------- 真图生成（NovelAI 协议，官方 + 第三方） ---------- */
+async function cdForumGenerateImage(prompt, neg, add){
+  var g=cdForumImgReady(); if(!g) return null;
+  var base=String(g.url||'').replace(/\/+$/,'').replace(/\/generate-image$/,'').replace(/\/ai\/generate-image$/,'');
+  var input=String(prompt||'');
+  if(add && String(add).trim()) input += ', '+String(add).trim();
+  var body={ input:input, model:g.model||'nai-diffusion-3', parameters:{ negative_prompt:String(neg||''), width:parseInt(g.width,10)||832, height:parseInt(g.height,10)||1216, steps:28, guidance_scale:7, seed:0, smea:false, n_samples:1 } };
+  try{
+    var res=await fetch(base+(base.indexOf('/ai')>=0?'':'/ai')+'/generate-image', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+g.key }, body:JSON.stringify(body) });
+    if(!res.ok){ var err=''; try{ err=await res.text(); }catch(e2){} cdWarn('[生图] HTTP '+res.status+': '+String(err).slice(0,200)); return null; }
+    var ct=res.headers.get('content-type')||'';
+    if(ct.indexOf('json')>=0){
+      var j=await res.json();
+      var d=cdPickImgFromJSON(j);
+      if(!d){ cdWarn('[生图] JSON 响应未提取到图片，keys='+Object.keys(j).join(',')); return null; }
+      var rv=cdImgResolve(d);
+      return { dataUrl:rv.dataUrl||rv.url, blob:null, b64:rv.b64||'' };
+    } else {
+      var buf=await res.arrayBuffer();
+      var arr=new Uint8Array(buf); var bin=''; for(var i=0;i<arr.length;i++) bin+=String.fromCharCode(arr[i]);
+      var b64=btoa(bin);
+      // 兼容「ZIP 包裹 PNG」的代理响应（NAI 兼容站常返回 zip 含 image_0.png）
+      var isZip=(buf.byteLength>=4 && arr[0]===0x50 && arr[1]===0x4b && (arr[2]===0x03||arr[2]===0x05||arr[2]===0x07));
+      if(isZip){
+        var pngU8=await cdZipExtractPng(buf);
+        if(pngU8 && pngU8.length>8){
+          var pbin=''; for(var q=0;q<pngU8.length;q++) pbin+=String.fromCharCode(pngU8[q]);
+          var pb64=btoa(pbin);
+          return { dataUrl:'data:image/png;base64,'+pb64, blob:new Blob([pngU8],{type:'image/png'}), b64:pb64 };
+        }
+        cdWarn('[生图] ZIP 响应内未解出有效 PNG，图片生成失败'); return null;
+      }
+      return { dataUrl:'data:image/png;base64,'+b64, blob:new Blob([buf],{type:'image/png'}), b64:b64 };
+    }
+  }catch(e){ cdWarn('[生图] 生成失败', e); return null; }
+}
+/* 给帖子生成真图并入图库，返回图库 key（帖子只存 key，不存大图） */
+async function cdForumImgForPost(p){
+  if(!p || !cdForumImgReady()) return null;
+  try{
+    var g=cdForumImgCfg();
+    var desc=(p.imgDesc||'').trim() || String(p.text||'').slice(0,60);
+    if(!desc) return null;
+    var img=await cdForumGenerateImage(desc, g.negPrompt||'', g.addPrompt||'');
+    if(!img || !img.dataUrl) return null;
+    var key='img_'+Date.now()+'_'+Math.floor(Math.random()*1e6);
+    await cdForumImgAdd({ key:key, dataUrl:img.dataUrl, title:p.title||'', author:p.auth||'', text:String(p.text||'').slice(0,40), time:Date.now(), postKey:(p.pid||('__'+(p.auth||'')+'|'+(p.title||''))) });
+    return key;
+  }catch(e){ cdWarn('[生图] 入图库失败', e); return null; }
+}
+/* 从帖子文字识别角色，挖出世界书/角色库里的长相+IP，供图像生成参考 */
+function _cfPullAppearanceForPost(p){
+  try{
+    var text=String((p&&(p.title||''))+' '+(p&&(p.text||''))).replace(/<[^>]*>/g,' ');
+    if(!String(text).trim()) return '';
+    var R=cdForumGetRoster();
+    var W=cdForumGetWorlds();
+    var hits=[]; var seen={};
+    var pushRole=function(nm, ap, ws){
+      nm=String(nm||''); if(!nm||seen[nm]) return; seen[nm]=1;
+      hits.push((ws?('('+ws+')'):'')+nm+(ap?('：'+ap):''));
+    };
+    (R||[]).forEach(function(r){
+      var nm=r.n||r.name; if(!nm) return;
+      if(String(text).indexOf(nm)>=0 && r.appearance){ pushRole(nm, r.appearance, r.w||r.world); }
+    });
+    (W||[]).forEach(function(ww){
+      var arr=(ww&&ww.characters&&ww.characters.length)?ww.characters:[];
+      arr.forEach(function(c){
+        var nm=c.name||c.n; if(!nm) return;
+        if(String(text).indexOf(nm)>=0 && c.appearance){ pushRole(nm, c.appearance, ww.name); }
+      });
+    });
+    var out=[];
+    var ipNames=[];
+    (W||[]).forEach(function(ww){ if(ww&&ww.source&&String(ww.source).trim()&&ipNames.indexOf(String(ww.source).trim())<0) ipNames.push(String(ww.source).trim()); });
+    if(ipNames.length) out.push(' 世界IP/作品来源：'+ipNames.join('、'));
+    if(hits.length) out.push(' 涉及角色长相参考：'+hits.join('；'));
+    return out.length ? ('\n【角色长相/IP参考】\n'+out.join('\n')) : '';
+  }catch(e){ return ''; }
+}
+/* 帖详情「图像生成」：文字模型读帖→生成画面prompt→丢给生图模型→入库并返回 key
+ *  返回 { key } 成功；{ sub } 出错提示；null 未知失败 */
+async function cdForumGenPostImg(p){
+  if(!p) return null;
+  var _cg=cdForumImgCfg();
+  if(!cdForumImgReady()){ return { sub:'未配置生图（设置→论坛配置→图像生成）' }; }
+  try{
+    var prompt='';
+    // ① 文字模型读帖 → 先理解帖子,再按九维展开>=1000字中文画面设计,最后提炼英文TAG串
+    try{
+      if(cdForumApiReady()){
+        var _sty=(_cg&&_cg.style)||'bihua';
+        var sys=_cfImgPromptGet(_cg,_sty) || ((_sty==='mirror')?CF_IMG_PROMPT_MIRROR:CF_IMG_PROMPT_BIHUA);
+
+        var usr='帖子标题：'+(p.title||'')+'\n帖子正文：'+(p.text||'')+'\n帖子作者：'+(p.auth||'')+(p.replies&&p.replies.length?('\n部分评论：'+p.replies.slice(0,3).map(function(x){return x.from+':'+(x.content||'');}).join(' | ')):'')+_cfPullAppearanceForPost(p);
+        prompt=await cdForumApiComplete([{role:'system',content:sys},{role:'user',content:usr}]);
+        prompt=String(prompt||'').trim();
+        // 只取【TAG】之后的英文标签串作生图 prompt;没有则用全文;放开长度到 4000
+        var _tm=prompt.match(/&#x3010;TAG&#x3011;([\s\S]*)$/);
+        prompt=(_tm?_tm[1]:prompt).trim().slice(0,4000);
+      }
+    }catch(e){ cdWarn('[图] 生成画面prompt失败', e); }
+    // ② 兜底:LLM 失败/为空时用内置类型模板(离线可判)
+    if(!prompt || /^[\s。.]*$/.test(prompt)){
+      var kw=String((p.title||'')+' '+(p.text||''));
+      prompt=_cdForumFallbackPrompt(kw);
+    }
+    // ③ 生图（正面追加词/负面词自动并入）
+    var g=cdForumImgCfg();
+    var img=await cdForumGenerateImage(prompt, g&&g.negPrompt||'', g&&g.addPrompt||'');
+    if(!img || !img.dataUrl) return { sub:'生图失败（模型未返回图片）' };
+    // ④ 入库并返回 key
+    var key='img_'+Date.now()+'_'+Math.floor(Math.random()*1e6);
+    await cdForumImgAdd({ key:key, dataUrl:img.dataUrl, title:p.title||'', author:p.auth||'', text:String(p.text||'').slice(0,40), time:Date.now(), postKey:(p.pid||('__'+(p.auth||'')+'|'+(p.title||''))) });
+    return { key:key };
+  }catch(e){ cdWarn('[图] cdForumGenPostImg失败', e); return { sub:'图像生成出错' }; }
+}
+/* 内置兜底：LLM 不可用时按正文关键词粗判类型，套固定画风镜头模板 */
+function _cdForumFallbackPrompt(kw){
+  var t='';
+  if(/吐|骂|骂|挂|阴阳|开团|撕|战|撞|喷|嘲|betray|troll/i.test(kw)) t='hiding behind a wall corner, secretly filming the target who does not know he is being photographed, foreground close-up of the wall edge, the person in the distance caught off guard, documentary spy shot';
+  else if(/同人|cp|couple|磕|发糖|甜|告白|暧昧|恋爱|恋情/i.test(kw)) t='two lovers in one frame, one slightly turning back, the other leaning close, eye contact, warm glowing lighting, soft bokeh, romantic sweet atmosphere';
+  else if(/求助|求|救|安慰|破防|emo|难过|哭|失恋|分手|伤心|难|低潮|落寞/i.test(kw)) t='a person holding up a phone facing a mirror, the mirror reflects the person and the raised phone, cold screen light on the face, dim room, downcast about to post but not yet sent, loneliness';
+  else if(/围观|吃瓜|前排|蹲|瓜子|看戏|热闹/i.test(kw)) t='peeking from a crowd, front foreground of people silhouettes, focus on the distant center of gossip, curious onlooker mood';
+  else if(/深夜|熬夜|凌晨|失眠|睡不着|发牢骚|抱怨|emo|孤单|孤独/i.test(kw)) t='late night, dark room with only the glowing phone screen as the single light source, cold screen light on half of the face, or mirror shows the bright typing screen, lonely oppressive';
+  else if(/生活|日常|自拍|到家|今天|起床|懒|不想动|平平淡淡|随缘/i.test(kw)) t='first-person selfie, holding up phone toward a mirror, seeing own tired real face and the raised phone edge, messy casual daily background, slight handheld blur, like a spontaneous life photo';
+  else if(/晒|成就|新|买|到手|开箱|炫耀|骄傲|der|凡尔赛/i.test(kw)) t='extreme close-up showing off an achievement or new item, raised in front of the camera, bright clear details, prideful mood';
+  else t='a storytelling scene based on the post topic, cinematic composition, moody atmosphere, strong visual narrative';
+  return t+', anime style, cel shading, thick anime paint, detailed';
+}
+
+/* 给帖子处理"真图 or 文字描述"的统一入口：
+ *  有真图配置 → 生成真图入库并设 imgKey + 补 imgDesc
+ *  无真图配置 → 退化纯文字 imgDesc（不生成真图）
+ */
+async function cdForumEnsureImg(p){
+  if(!p) return null;
+  try{
+    if(cdForumImgReady()){
+      var k=await cdForumImgForPost(p);
+      if(k && !p.imgDesc){ try{ var d=await cdForumDescribeImage(p); if(d) p.imgDesc=d; }catch(e){} }
+      return k;
+    }
+    if(!p.imgDesc){
+      try{ var d=await cdForumDescribeImage(p); if(d) p.imgDesc=d; }catch(e){}
+    }
+    return null;
+  }catch(e){ cdWarn('[图] cdForumEnsureImg失败', e); return null; }
+}
+
+/* ============================================================
+ * 真图 · 图库面板 + 看图页（openImgLib / openImgView / 保存到相册 / 删除 / 清空）
+ * —— 全局函数，用 document 事件委托绑定遮罩按钮，避开 _cfMountV2 重渲染打断
+ * ============================================================ */
+/* 简单的面板切换：只隐藏 #fl、移除所有 .panel.open、给 pn 加 .open（不依赖闭包 showPanel） */
+function _cfImgShowPanel(R, pn){
+  try{
+    var fl=R?R.querySelector('#fl'):document.getElementById('fl');
+    if(fl) fl.style.display='none';
+    var ov=document.getElementById('cd-forum-overlay')||document;
+    var roots=R?[R]:[...document.querySelectorAll('#cdForumRoot')];
+    if(roots.length===0) roots=[ov];
+    roots.forEach(function(r0){ (r0.querySelectorAll?r0.querySelectorAll('.panel.open'):[]).forEach(function(x){ x.classList.remove('open'); }); });
+    if(pn) pn.classList.add('open');
+  }catch(_e){ cdWarn('[图] _cfImgShowPanel失败', _e); }
+}
+/* 打开图库面板并渲染列表（新的在前；带 查看/存相册/删除） */
+function openImgLib(){
+  var R=null; try{ var _ov=document.getElementById('cd-forum-overlay'); if(_ov) R=_ov.querySelector('#cdForumRoot'); }catch(_e){}
+  var pn=R?R.querySelector('#panelImgLib'):document.getElementById('panelImgLib');
+  if(!pn){ try{ if(typeof toastr==='function') toastr.info('[图] 图库面板未就绪'); }catch(_e){ } return; }
+  _cfImgShowPanel(R||document, pn);
+  // [A-3] 图库退出保证：返回箭头 & X 都直接退回主页 feed，并清理面板 open 状态与遮罩
+  function _imgLibExit(){
+    var _fl=(R?R.querySelector('#fl'):document.getElementById('fl'));
+    try{ if(_fl) _fl.style.display='flex'; }catch(_e){}
+    try{ var roots=R?[R]:[document.getElementById('cd-forum-overlay')]; roots.forEach(function(r0){ if(r0) (r0.querySelectorAll?r0.querySelectorAll('.panel.open'):[]).forEach(function(x){ x.classList.remove('open'); }); }); }catch(_e){}
+    try{ var _m=document.getElementById('cfImgViewMask'); if(_m) _m.style.display='none'; }catch(_e){}
+  }
+  var _bk=R?R.querySelector('#imgLibBack'):document.getElementById('imgLibBack');
+  if(_bk && !_bk.__cfExitB){ _bk.__cfExitB=true; _bk.addEventListener('click',function(ev){ ev.stopPropagation(); _imgLibExit(); }); }
+  var _x=R?R.querySelector('#imgLibCloseX'):document.getElementById('imgLibCloseX');
+  if(_x && !_x.__cfExitB){ _x.__cfExitB=true; _x.addEventListener('click',function(ev){ ev.stopPropagation(); _imgLibExit(); }); }
+  var body=pn.querySelector('#imgLibBody'); if(!body) return;
+  body.innerHTML='<div style="font-size:9.5px;color:#9aa1a7;padding:14px 2px;text-align:center;">读取中…</div>';
+  // 打开图库时先自动按缓存天数清理过期图（异步，不阻塞渲染）
+  try{ if(typeof cdForumImgCleanup==='function') cdForumImgCleanup(); }catch(_e2){}
+  // 超时兜底：读库超过 6 秒仍无结果就提示而非永久卡"读取中…"
+  function _cfImgListTimeout(p){ return Promise.race([p, new Promise(function(_r){ setTimeout(function(){ _r(null); },6000); })]); }
+  _cfImgListTimeout(cdForumImgList()).then(async function(list){
+    if(list===null){ body.innerHTML='<div style="font-size:9.5px;color:#b0473a;padding:20px 2px;text-align:center;line-height:1.8;">图库读取超时或异常。\n通常还没有任何图片，或数据读取卡住。\n可点右上角 × 关闭后重开，或到「清空」重建图库。</div>'; return; }
+    if(!list || list.length===0){ body.innerHTML='<div style="font-size:9.5px;color:#9aa1a7;padding:20px 2px;text-align:center;line-height:1.8;">图库还是空的。<br>在「设置→论坛配置→图像生成」配置好 TrueImage 后，<br>发带图帖或让 NPC 发帖时就会自动生成真图存到这里。</div>'; return; }
+    var arr=list.slice().sort(function(a,b){ return (b.time||0)-(a.time||0); });
+    /* 纯文字版：按 postKey(同一帖子)归组，同一帖多图在标题后加 （2/3…）序号；点整行进看图页才加载大图，杜绝白屏 */
+    var _groups={};
+    arr.forEach(function(rec){ var _pk=rec.postKey||('__'+(rec.author||'')+'|'+(rec.title||'')); _groups[_pk]=(_groups[_pk]||0)+1; });
+    var _seq={};
+    var html='';
+    arr.forEach(function(rec,i){
+      var t=rec.time?new Date(rec.time):null;
+      var ts=(t&&!isNaN(t))?(t.getMonth()+1)+'/'+t.getDate()+' '+(t.getHours()<10?'0':'')+t.getHours()+':'+(t.getMinutes()<10?'0':'')+t.getMinutes():'';
+      var _pk=rec.postKey||('__'+(rec.author||'')+'|'+(rec.title||''));
+      var _total=_groups[_pk]||1;
+      var _n=(_seq[_pk]=(_seq[_pk]||0)+1);
+      var _dup=(_total>1)?('（'+_n+'/'+_total+'）'):'';
+      var _title=(rec.title||'（无标题）')+_dup;
+      var _sub=esc0(rec.author||'')+(ts?(' · '+ts):'')+(rec.text?(' · '+esc0(rec.text)):'');
+      html+='<div data-lbview="'+i+'" style="display:flex;align-items:center;gap:8px;padding:8px 2px;border-bottom:1px solid #eef0f1;cursor:pointer;">'
+        +'<div style="width:24px;height:24px;flex-shrink:0;border-radius:6px;background:#eef0f1;display:flex;align-items:center;justify-content:center;color:#9aa1a7;"><svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5-9 9"/></svg></div>'
+        +'<div style="flex:1;min-width:0;">'
+        +'<div style="font-size:10.5px;font-weight:700;color:#2e3337;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc0(_title)+'</div>'
+        +'<div style="font-size:8.5px;color:#9aa1a7;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+_sub+'</div>'
+        +'</div>'
+        +'<div style="display:flex;gap:4px;flex-shrink:0;">'
+        +'<span data-lbsave="'+i+'" style="font-size:8.5px;color:#3f6d84;border:1px solid #bcd0da;border-radius:6px;padding:2px 6px;">存相册</span>'
+        +'<span data-lbdel="'+i+'" style="font-size:8.5px;color:#c84632;border:1px solid #e0b8ae;border-radius:6px;padding:2px 6px;">删除</span>'
+        +'</div></div>';
+    });
+    body.innerHTML=html;
+    /* 纯文字版：只绑定 点行看图 / 存相册 / 删除，绝不生成缩略图，杜绝白屏卡死 */
+    body.querySelectorAll('[data-lbview]').forEach(function(el){ el.addEventListener('click', function(ev){ ev.stopPropagation(); var i=parseInt(this.dataset.lbview,10); if(arr[i]) openImgView(arr[i].key); }); });
+    body.querySelectorAll('[data-lbdel]').forEach(function(el){ el.addEventListener('click', function(ev){ ev.stopPropagation(); var i=parseInt(this.dataset.lbdel,10); if(arr[i]) delImgLib(arr[i].key); }); });
+    body.querySelectorAll('[data-lbsave]').forEach(function(el){ el.addEventListener('click', function(ev){ ev.stopPropagation(); var i=parseInt(this.dataset.lbsave,10); if(arr[i]) saveImgToGallery(arr[i].key); }); });
+  }).catch(function(_e){ body.innerHTML='<div style="font-size:9.5px;color:#c84632;padding:14px 2px;">图库读取失败</div>'; });
+}
+/* 打开看图页（遮罩，居中） */
+function openImgView(key){
+  if(!key) return;
+  var mask=document.getElementById('cfImgViewMask'); if(!mask){ try{ if(typeof toastr==='function') toastr.info('[图] 看图页未就绪'); }catch(_e){ } return; }
+  mask.__curKey=key;
+  // [B] 保证遮罩在 overlay 最顶层：挪到 overlay(或 body) 末尾，避免被面板/层级盖住导致"点了不弹"
+  try{
+    var _ov=document.getElementById('cd-forum-overlay');
+    var _root=(_ov?_ov.querySelector('#cdForumRoot'):null);
+    var _container=_root||_ov||document.body;
+    if(_container && mask.parentNode && mask.parentNode!==_container){ _container.appendChild(mask); }
+    else if(_container && !mask.parentNode){ _container.appendChild(mask); }
+  }catch(_e){}
+  mask.style.display='flex'; mask.style.zIndex='2000015';
+  // [fix3] 看图页按钮内联绑定：每次打开都确保 删除/保存/关闭 已绑定（规避全局委托一次性绑定失效）
+  try{ ['cfImgViewClose','cfImgViewSave','cfImgViewDel'].forEach(function(id){
+    var _b=document.getElementById(id); if(!_b||_b.__cfImgB||_b.__cfImgBound) return; _b.__cfImgB=true;
+    _b.addEventListener('click', function(ev){ ev.stopPropagation();
+      var _m=document.getElementById('cfImgViewMask');
+      if(id==='cfImgViewClose'){ closeImgView(); }
+      else if(id==='cfImgViewSave'){ saveImgToGallery(_m?_m.__curKey:''); }
+      else if(id==='cfImgViewDel'){ var _k=_m?_m.__curKey:''; closeImgView(); if(_k) delImgLib(_k); }
+    });
+  }); }catch(_e){ cdWarn('[图] 看图页按钮绑定失败', _e); }
+  // [fix3] 点击遮罩空白区关闭（只关,不删）
+  if(!mask.__cfMaskCloseB){ mask.__cfMaskCloseB=true; mask.addEventListener('click',function(ev){ if(ev.target===mask) closeImgView(); }); }
+  var pic=mask.querySelector('#cfImgViewPic'), info=mask.querySelector('#cfImgViewInfo');
+  if(pic) pic.innerHTML='<div style="font-size:9.5px;color:#9aa1a7;padding:30px 0;">图片加载中…</div>';
+  if(info) info.innerHTML='';
+  cdForumImgGet(key).then(function(rec){
+    if(!rec){ try{ if(typeof toastr==='function') toastr.error('[图] 图片不存在或已删除'); }catch(_e){ } closeImgView(); return; }
+    if(pic) pic.innerHTML='<img src="'+esc0(rec.dataUrl||'')+'" style="max-width:100%;max-height:min(340px,56vh);display:block;margin:0 auto;border-radius:8px;">';
+    if(info){
+      var t=rec.time?new Date(rec.time):null;
+      var ts=(t&&!isNaN(t))?(t.getFullYear())+'-'+((t.getMonth()+1)<10?'0':'')+(t.getMonth()+1)+'-'+(t.getDate()<10?'0':'')+t.getDate()+' '+(t.getHours()<10?'0':'')+t.getHours()+':'+(t.getMinutes()<10?'0':'')+t.getMinutes():'';
+      info.innerHTML='<div style="margin-top:7px;"><b>'+esc0(rec.title||'（无标题）')+'</b></div>'
+        +'<div>作者：'+esc0(rec.author||'')+(ts?' · '+ts:'')+'</div>'
+        +'<div>配文：'+esc0(rec.text||'')+'</div>';
+    }
+  }).catch(function(){ try{ if(typeof toastr==='function') toastr.error('[图] 图片读取失败'); }catch(_e){ } closeImgView(); });
+}
+function closeImgView(){
+  var mask=document.getElementById('cfImgViewMask'); if(mask) mask.style.display='none';
+  try{ if(typeof _cfCfgCache!=='undefined'){} }catch(_e){}
+}
+/* 保存到相册：从图库读 dataUrl，用 <a download> 触发浏览器下载（WebView 一般存到 Download/相册） */
+function saveImgToGallery(key){
+  if(!key) return;
+  cdForumImgGet(key).then(function(rec){
+    if(!rec || !rec.dataUrl){ try{ if(typeof toastr==='function') toastr.error('[图] 图片不存在'); }catch(_e){ } return; }
+    try{
+      var fn=(rec.title?rec.title.replace(/[\\/:*?"<>|\s]+/g,'_').slice(0,40):'forum_img')+'_'+String(rec.key).replace(/^(img_|plc_)/,'')+'.png';
+      var done=false;
+      // ① 优先：ST/Tauri 若有原生下载钩子则用（能真正落到系统下载/相册）
+      try{
+        var __t=null; try{ __t=(typeof window!=='undefined' && window.__TAURI__)||null; }catch(_e2){}
+        if(__t && __t.http && typeof __t.http.downloadFile==='function'){
+          __t.http.downloadFile(rec.dataUrl, {}); done=true;
+          cdWarn('[图] 使用 Tauri http.downloadFile 保存：'+fn);
+        }
+      }catch(_e){ cdWarn('[图] Tauri 下载失败，降级 <a download>', _e); }
+      // ② 兜底：优先用 Blob + createObjectURL 触发下载（Android WebView 比 dataURL 更可靠，能落到 Download/相册）
+      if(!done){
+        try{
+          var _obj=null;
+          if(rec.blob && rec.blob.size){ _obj=URL.createObjectURL(rec.blob); }
+          else if(rec.dataUrl){
+            var _b64=String(rec.dataUrl||'').split(',')[1]||'';
+            var _bin=atob(_b64), _u8=new Uint8Array(_bin.length);
+            for(var _q=0;_q<_bin.length;_q++) _u8[_q]=_bin.charCodeAt(_q);
+            _obj=URL.createObjectURL(new Blob([_u8],{type:'image/png'}));
+          }
+          var a=document.createElement('a');
+          a.href=_obj||rec.dataUrl; a.download=fn;
+          a.style.display='none'; document.body.appendChild(a); a.click();
+          setTimeout(function(){ try{ document.body.removeChild(a); }catch(_e){ } if(_obj){ setTimeout(function(){ try{ URL.revokeObjectURL(_obj); }catch(_e){} },4000); } },100);
+          cdWarn('[图] 使用 Blob+createObjectURL 保存：'+fn);
+        }catch(_be){ cdWarn('[图] Blob 保存失败，退回 <a download> dataURL', _be);
+          var a2=document.createElement('a'); a2.href=rec.dataUrl; a2.download=fn;
+          document.body.appendChild(a2); a2.click(); setTimeout(function(){ try{ document.body.removeChild(a2); }catch(_e){ } },100);
+        }
+      }
+      try{ if(typeof toastr==='function') toastr.success('已触发保存到手机'); }catch(_e){ }
+    }catch(_e){ try{ if(typeof toastr==='function') toastr.error('[图] 保存失败'); }catch(_e2){ } }
+  });
+}
+/* 删除：图库删一条，并把帖子列表里引用该 imgKey 的帖子清空（帖子退化文字框） */
+function delImgLib(key){
+  if(!key) return;
+  cdForumImgDel(key).then(function(){
+    var posts=[]; try{ posts=cdForumGetPosts()||[]; }catch(_e){ }
+    var changed=false;
+    for(var i=0;i<posts.length;i++){ if(posts[i] && posts[i].imgKey===key){ posts[i].imgKey=''; changed=true; } }
+    if(changed){ try{ if(typeof cdForumPersist==='function') cdForumPersist(); }catch(_e){ } }
+    try{ if(typeof toastr==='function') toastr.info('图片已删除'); }catch(_e){ }
+    openImgLib();
+  });
+}
+/* 清空图库 + 清帖子所有 imgKey */
+function clearImgLibAll(){
+  cdForumImgClear().then(function(){
+    var posts=[]; try{ posts=cdForumGetPosts()||[]; }catch(_e){ }
+    var changed=false;
+    for(var i=0;i<posts.length;i++){ if(posts[i] && posts[i].imgKey){ posts[i].imgKey=''; changed=true; } }
+    if(changed){ try{ if(typeof cdForumPersist==='function') cdForumPersist(); }catch(_e){ } }
+    try{ if(typeof toastr==='function') toastr.success('图库已清空'); }catch(_e){ }
+    openImgLib();
+  });
+}
+/* 看图页遮罩按钮：document 事件委托（一次性绑定，避免被重渲染打断） */
+(function(){
+  function bindOnceEl(id, fn){
+    var el=document.getElementById(id); if(!el) return;
+    if(el.__cfImgBound) return; el.__cfImgBound=true;
+    el.addEventListener('click', function(ev){ ev.stopPropagation(); try{ fn(); }catch(_e){ cdWarn('[图] 看图页按钮失败', _e); } });
+  }
+  function bindDelayed(){
+    bindOnceEl('cfImgViewClose', closeImgView);
+    bindOnceEl('cfImgViewSave', function(){ var m=document.getElementById('cfImgViewMask'); saveImgToGallery(m?m.__curKey:''); });
+    bindOnceEl('cfImgViewDel', function(){ var m=document.getElementById('cfImgViewMask'); var k=m?m.__curKey:''; closeImgView(); if(k) delImgLib(k); });
+    bindOnceEl('imgLibClearAll', function(){ if(!confirm('确定清空整个图库（所有已生成的图片）？此操作不可撤销。')) return; clearImgLibAll(); });
+  }
+  try{
+    bindDelayed();
+    if(typeof document.addEventListener==='function'){
+      document.addEventListener('cdForumMountedV2', function(){ try{ bindDelayed(); }catch(_e){ } });
+      document.addEventListener('DOMContentLoaded', function(){ try{ bindDelayed(); }catch(_e){ } });
+    }
+  }catch(_e){}
+})();
+/* 画师真图：供外部（如配置卡填充）触发，遵循统一分流 */
+function cdForumEnsureImgPublic(p){ return cdForumEnsureImg(p); }
 
 /* 在论坛主界面注入显眼入口条：「总结并保存世界」+「吃醋联动」 */
 function _cfAddHeroEntries(R){
@@ -13816,8 +15844,8 @@ function _cfAddHeroEntries(R){
     // a) 总结并保存世界（显眼主入口，插到 boardline 之后）
     var hero=document.createElement('div');
     hero.id='cfHeroSum';
-    hero.style.cssText='display:flex;align-items:center;gap:7px;padding:7px 11px;background:#eef3f6;border-bottom:1px solid #dde6ea;flex-shrink:0;cursor:pointer;';
-    hero.innerHTML='<svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:none;stroke:#3f6d84;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span style="font-size:11px;font-weight:700;color:#3f6d84;">总结当前剧情 · 保存世界</span>';
+    hero.className='c1 save'; hero.style.justifyContent='center';
+    hero.innerHTML='<svg viewBox="0 0 24 24" style="width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span style="font-size:10.5px;font-weight:800;">总结当前剧情</span>';
     hero.addEventListener('click', function(){
       if(!cdForumApiReady()){ toastr.error('尚未配置论坛 API（设置→论坛→接口/Key，或留空复用主插件）'); return; }
       var me=this; me.style.opacity='0.6';
@@ -13856,16 +15884,16 @@ function _cfAddHeroEntries(R){
             WORLDS.unshift(world);
             var R3=cdForumGetRoster();
             var roleArr=(world.characters&&world.characters.length)?world.characters:(world.relations||[]);
-            roleArr.forEach(function(rl){ if(rl&&rl.name&&!R3.find(function(x){return (x.n||x.name)===rl.name;})) R3.push({n:rl.name,w:world.name,personality:rl.personality||'',f:parseInt(rl.fav,10)||0,stage:rl.stage||'',judge:rl.judge||''}); });
+            roleArr.forEach(function(rl){ if(rl&&rl.name){ var _ex=R3.find(function(x){return (x.n||x.name)===rl.name;}); var _ap=rl.appearance||''; var _sc=world.source||''; if(_ex){ if(_ap&&!_ex.appearance) _ex.appearance=_ap; if(_sc&&!_ex.source) _ex.source=_sc; } else { R3.push({n:rl.name,w:world.name,personality:rl.personality||'',f:parseInt(rl.fav,10)||0,stage:rl.stage||'',judge:rl.judge||'',appearance:_ap,source:_sc}); } } });
             _cfWorldsCache=WORLDS; _cfRosterCache=R3; cdForumPersist(); _cfMountV2();
             toastr.success('已保存世界：'+world.name);
           }
         } else toastr.error('总结失败，请查看日志');
       });
     });
-    var boardLine=R.querySelector('#boardLine');
-    if(boardLine) fl.insertBefore(hero, boardLine.nextSibling);
-    else fl.insertBefore(hero, fl.firstChild.nextSibling);
+    var _slot=R.querySelector('#cfHeroSlot');
+    if(_slot && _slot.parentNode){ _slot.parentNode.replaceChild(hero, _slot); }
+    else { var boardLine=R.querySelector('#boardLine'); if(boardLine) fl.insertBefore(hero, boardLine.nextSibling); else fl.insertBefore(hero, fl.firstChild.nextSibling); }
 
     // （吃醋不再做显式按钮——旧爱吃醋并入阶段二记忆触发，由剧情自然驱动）
   }catch(e){ cdWarn('[论坛] 显眼入口注入失败', e); }
@@ -13928,14 +15956,43 @@ async function cdForumGenerateManual(desc, erotica){
       text: String(o.text||''),
       je: false,
       fav: false,
-      replies: []
+      replies: [],
+      // 手动生成：约 1/3 概率带图（用户规则），命中后生成真图或图片文字描述
+      img: (Math.random() < 0.33),
+      imgDesc: '',
+      imgUrl: '',
+      imgKey: ''
     };
     if(Array.isArray(o.replies)){
       o.replies.forEach(function(rc){ if(rc&&rc.content) nPost.replies.push({from:cdForumMaskUserName(String(rc.from||'匿名')),world:String(rc.world||''),content:String(rc.content)}); });
     }
     ensureRepliesLocal(nPost);
+    if(nPost.img){
+      try{ var _mk = await cdForumEnsureImg(nPost); if(_mk) nPost.imgKey=_mk; }catch(_me){ cdWarn('[论坛] 手动生成配图失败', _me); }
+    }
     return nPost;
   }catch(e){ cdWarn('[论坛] 手动生成失败', e); return null; }
+}
+
+/* ------------------------------------------------------------
+ * 生成"图片文字描述"（纯文字阶段）：根据帖子标题/正文/作者，让 LLM 设想一张配图的画面描述。
+ *   - 产物存帖子 imgDesc：既作为"图片说明"文字框展示，将来接口生图/多模态识图时也可复用为画面 prompt。
+ *   - 说明：普通纯文本模型也能"设想画面"写描述；若将来要"真·识图/看图说话"，需多模态模型（见设置面板识图提醒）。
+ * ------------------------------------------------------------ */
+async function cdForumDescribeImage(p){
+  if(!p || !cdForumApiReady()) return '';
+  try{
+    var prompt = '你是论坛帖子的"配图小助手"。根据下面这条帖子，想象它会配一张什么样的图，并写出这句【图片描述】（20~45字）。要求：描述的是画面本身（画面里有什么人/场景/动作/氛围，用看得见的画面语言），别评价、别议论、别写心理活动，像图片说明文字。'+
+      '\n\n帖子标题：'+(p.title||'')+'\n帖子正文：'+(p.text||'')+'\n帖子作者：'+(p.auth||'')+'\n\n只输出这句图片描述，不要任何其它话。';
+    var msgs = [ { role:'system', content: prompt }, { role:'user', content:'给出这句帖子配图的图片描述。' } ];
+    var text = await cdForumApiComplete(msgs);
+    var d = String(text||'').replace(/^\s*["'“”«»]+|["'“”«»]+\s*$/g,'').trim();
+    if(!d) return '';
+    // 只保留第一句/截断为一句话（防止 AI 输出多行旁白）
+    d = d.split(/\n/)[0].trim();
+    if(d.length>80) d = d.slice(0,80).trim();
+    return d;
+  }catch(e){ cdWarn('[论坛] 生成图片描述失败', e); return ''; }
 }
 
 /* ------------------------------------------------------------
@@ -14023,6 +16080,43 @@ async function cdForumSummarizeMemories(role){
   }catch(e){ cdWarn('[论坛] 总结记忆失败', e); return null; }
 }
 
+/* AI 一键生成角色外貌：贴合原作/IP；成功写回 role.appearance 返回描述文本 */
+async function _cfGenAppearance(role){
+  if(!role) return '';
+  if(!cdForumApiReady()) return '';
+  try{
+    var nm=role.n||role.name||'';
+    var _w=role.w||role.world||'';
+    var _sc=role.source||'';
+    var _wsrc='', _peers='';
+    try{
+      var W=cdForumGetWorlds(); var ww=null;
+      for(var i=0;i<W.length;i++){
+        var _c=(W[i]&&W[i].characters)||[];
+        if(W[i]&&(W[i].name===_w || _c.some(function(c){return (c.name||c.n)===nm;}))){ ww=W[i]; break; }
+      }
+      if(ww){ _wsrc=ww.source||''; var carr=(ww.characters&&ww.characters.length)?ww.characters:[];
+        _peers=carr.filter(function(c){return (c.name||c.n)!==nm;}).slice(0,8).map(function(c){return (c.name||c.n)+((c.appearance)?('：'+c.appearance):'');}).join('；'); }
+    }catch(e){}
+    var srcLine=_sc||_wsrc||'（未知，按名字与世界气质判断；若是知名角色请还原原作形象）';
+    var prompt='你是动漫/游戏角色「外貌设定师」。根据角色已知信息，为TA写一段【外貌长相】描述，让人一看名字就知道这角色长什么样。\n\n'
+      +'角色名：'+nm+'\n所属世界：'+(_w||'未知')+'\n世界来源/IP：'+srcLine+'\n'
+      +'性格：'+(role.personality||'')+'\n与主角关系：'+(role.stage||'')+'\n对主角的评价：'+(role.judge||'')
+      +(_peers?('\n同世界其他角色外貌参考：'+_peers):'')+'\n\n'
+      +'【要求】\n'
+      +'- 一段中文自然描写的【外貌】：发色、发型、五官、身形、穿着、气场/气质，信息密、有画面感，两三句即可，别长篇。\n'
+      +'- 若该角色是知名的原作/IP 角色（如火影忍者、刀剑神域、Fate等），外貌必须严格贴合原作经典形象，不允许凭空篡改或画成别的人。\n'
+      +'- 只说外貌长相，不写经历、不写心情。\n'
+      +'直接输出外貌描述文本，不要 JSON、不要多余前缀。';
+    var msgs=[{role:'system',content:prompt},{role:'user',content:'为角色生成外貌。'}];
+    var text=await cdForumApiComplete(msgs);
+    text=String(text||'').trim();
+    var o=cdForumExtractJSON(text);
+    if(o && (o.appearance||o.appearance_desc||o.desc)) return String(o.appearance||o.appearance_desc||o.desc).trim();
+    return text;
+  }catch(e){ cdWarn('[论坛] 生成外貌失败', e); return ''; }
+}
+
 /* ------------------------------------------------------------
  * 自动生成（每 N 条消息自动生成帖子）
  * 由初始化时接入 MESSAGE_RECEIVED；仅当论坛 enabled 时才跑。
@@ -14082,8 +16176,8 @@ function cdBindOnce(el, fn){
   if(!el || !fn) return;
   if(el.dataset && el.dataset.cdB) return;
   if(el.dataset) el.dataset.cdB="1";
+
   el.addEventListener("click", fn);
 }
-
 /* HTML 转义（esc0，供世界详情等用） */
 function esc0(s){ s=String(s==null?'':s); return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'"'); }
