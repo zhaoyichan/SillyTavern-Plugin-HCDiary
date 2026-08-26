@@ -15691,8 +15691,10 @@ function _cdImgTellRender(R){
     }
     var h=[];
     a.forEach(function(r,i){
-      var prc = function(x,mx){ x=String(x||''); return x.length>mx? x.slice(0,mx)+'…' : x; };
-      var warn = /[\u4e00-\u9fff]/.test(r.promptFinal||'');
+      // 先转义再截断：防止 AI 原文/提示词里的 < > & 等字符破坏面板 HTML（导致日志打不开/错乱）
+      var esc = (typeof esc0==='function') ? esc0 : function(x){ return String(x==null?'':x); };
+      var prc = function(x,mx){ x=String(x==null?'':x); x=esc(x); return x.length>mx? x.slice(0,mx)+'…' : x; };
+      var warn = /[\u4e00-\u9fff]/.test(String(r.promptFinal||''));
       h.push('<div class="itl-card">');
       h.push('<div class="itl-head"><b>'+prc(r.title||'（无标题）',30)+'</b><span class="itl-tag'+(warn?' warn':'')+'">'+(warn?'含中文':'OK')+'</span><span>'+_cdImgTellTime(r.time)+'</span></div>');
       h.push('<div class="itl-sec"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>发送给 AI 的 system 提示词</div><div class="itl-box">'+prc(r.sys||'',900)+'</div>');
@@ -15720,8 +15722,11 @@ function openImgTell(){
     }
     var _bk=R?R.querySelector('#imgTellBack'):document.getElementById('imgTellBack');
     if(_bk && !_bk.__itExitB){ _bk.__itExitB=true; _bk.addEventListener('click',function(ev){ ev.stopPropagation(); _imgTellExit(); }); }
-    _cfImgShowPanel(R, pn);
-    _cdImgTellRender(R);
+    if(!R){ try{ var _ov=document.getElementById('cd-forum-overlay'); if(_ov) R=_ov.querySelector('#cdForumRoot')||_ov; }catch(_e){} }
+    try{ _cfImgShowPanel(R, pn); }catch(_e){ cdWarn('[日志] 打开面板失败', _e); }
+    try{ pn.classList.add('open'); var _fl=(R?R.querySelector('#fl'):document.getElementById('fl')); if(_fl) _fl.style.display='none'; }catch(_e){}
+    try{ _cdImgTellRender(R); }catch(_e){ cdWarn('[日志] 渲染日志失败', _e); }
+    try{ if(typeof cdAddLog==='function') cdAddLog('info','[日志] openImgTell 已执行'); }catch(_e2){}
   }catch(e){ cdWarn('[日志] openImgTell失败', e); }
 }
 
