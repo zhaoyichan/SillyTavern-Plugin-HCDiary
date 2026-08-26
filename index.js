@@ -12352,6 +12352,12 @@ const CD_FORUM_HTML = `<div id="cdForumRoot">
           <input id="homeNameInput" placeholder="我发帖时显示的名字" value="">
           <label>个人简介</label>
           <textarea id="homeBioInput" rows="2" placeholder="一句话介绍自己（显示在主页）" style="min-height:44px;"></textarea>
+          <label style="margin-top:8px;display:flex;align-items:center;gap:5px;">我的外貌 · 生图TAG
+            <span style="font-size:8px;color:var(--c-txt3);font-weight:400;">生成后自动折叠，可在下方逐类编辑；我发的帖子生图时会直接按这套还原我的长相</span>
+          </label>
+          <textarea id="homeTagInput" rows="2" placeholder="输入你的大概外貌需求，如：银发红瞳、身形清瘦、穿深色长裙、发尾有火焰般的纹样…（越具体越还原）" style="min-height:44px;"></textarea>
+          <div style="display:flex;gap:6px;margin:6px 0;"><button class="cf-btn-mini" id="homeTagGen">生成我的外貌TAG</button><button class="cf-btn-mini" id="homeTagClear" style="background:#f2f3f4;color:var(--c-txt2);border:1px solid var(--c-line);">清除</button></div>
+          <div id="homeTagResult"></div>
           <div class="hp-editbtns">
             <button class="cf-btn-mini" id="homeEditCancel">取消</button>
             <button class="hp-save" id="homeNameSave">保存</button>
@@ -12482,6 +12488,7 @@ const CD_FORUM_HTML = `<div id="cdForumRoot">
       <div id="cfImgViewPic" style="line-height:0;text-align:center;border-radius:10px;overflow:hidden;background:var(--c-sub);"></div>
       <div style="font-size:9px;color:var(--c-txt3);line-height:1.6;" id="cfImgViewInfo"></div>
       <div class="ed-btns">
+        
         <button class="cf-btn-mini" id="cfImgViewDel">删除</button>
         <button class="cf-btn-main" id="cfImgViewSave">保存到相册</button>
         <button class="cf-btn-mini" id="cfImgViewClose">关闭</button>
@@ -13627,7 +13634,7 @@ function _cfMountV2(){
     var p=POSTS[i]; if(!p) return;
     var pb=R.querySelector('#postBody'); if(!pb) return; pb.innerHTML='';
     pb.innerHTML+='<div class="floor" style="background:#fff;border-color:#dfe3e5;"><div class="f-top"><span class="f-av" data-npc="'+esc(p.auth)+'" style="background:linear-gradient(135deg,'+cdForumAvColor(p.auth)[0]+','+cdForumAvColor(p.auth)[1]+');">'+esc(cdForumAvChar(p.auth))+'</span><span class="fa" data-npc="'+esc(p.auth)+'">'+esc(p.auth)+'</span><span class="fw">'+esc(p.world||'')+'</span><span style="font-size:8px;background:#eef0f1;color:#6d757b;border-radius:5px;padding:0 6px;">楼主</span>'+(p.fav?'<span style="font-size:8px;background:#f3e7d2;color:#b07a2e;border-radius:5px;padding:0 6px;">已收藏</span>':'')+'</div><div class="ft" style="font-size:12px;font-weight:700;color:#2e3337;margin:4px 0 2px;">'+esc(p.title)+'</div><div class="ft" style="white-space:pre-wrap;">'+esc(p.text)+'</div>'+(p.img?'<div id="cfPostImgWrap" style="margin-top:7px;border:1.5px dashed #c8d6cf;border-radius:9px;padding:8px 10px;background:#f0f5f2;">'+(p.imgUrl?'<div style="border-radius:8px;margin-bottom:6px;overflow:hidden;background:#e9edee;"><img src="'+esc(p.imgUrl)+'" style="width:100%;height:auto;display:block;border-radius:8px;"></div>':'<div style="display:flex;align-items:center;gap:6px;color:#4a8571;font-size:9px;font-weight:700;margin-bottom:4px;"><svg viewBox="0 0 24 24" style="width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.8;"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5-9 9"/></svg>本帖配图 · 图片文字说明</div>')+'<div class="ft" style="font-size:10px;color:#3a6b58;line-height:1.7;">'+esc(p.imgDesc||'（图片描述生成中…）')+'</div></div>':'')+'</div>';
-    pb.innerHTML+='<div style="display:flex;gap:6px;margin:6px 2px;"><span class="fo" id="ppFav" style="cursor:pointer;'+(p.fav?'color:#b07a2e;border-color:#dfc;background:#fbf3e4;':'')+'">'+(p.fav?'★ 已收藏':'☆ 收藏')+'</span><span class="fo" id="ppAi" style="cursor:pointer;color:#3f6d84;border-color:#bcd0da;background:#eef5f8;"><svg viewBox="0 0 24 24" style="width:9px;height:9px;fill:none;stroke:currentColor;stroke-width:2;vertical-align:-1px;"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>AI生成</span><span class="fo" id="ppImgGen" title="根据帖子内容 AI 生成一张配图" style="cursor:pointer;color:#7a4a8a;border-color:#d8c3df;background:#f6eefa;"><svg viewBox="0 0 24 24" style="width:9px;height:9px;fill:none;stroke:currentColor;stroke-width:2;vertical-align:-1px;"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.5"/><path d="M21 15l-5-5-9 9"/></svg>图像生成</span><span class="fo" id="ppDel" style="cursor:pointer;">删除</span></div>';
+    pb.innerHTML+='<div style="display:flex;gap:6px;margin:6px 2px;"><span class="fo" id="ppFav" style="cursor:pointer;'+(p.fav?'color:#b07a2e;border-color:#dfc;background:#fbf3e4;':'')+'">'+(p.fav?'★ 已收藏':'☆ 收藏')+'</span><span class="fo" id="ppAi" style="cursor:pointer;color:#3f6d84;border-color:#bcd0da;background:#eef5f8;"><svg viewBox="0 0 24 24" style="width:9px;height:9px;fill:none;stroke:currentColor;stroke-width:2;vertical-align:-1px;"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>AI生成</span><span class="fo" id="ppImgGen" title="根据帖子内容 AI 生成一张配图" style="cursor:pointer;color:#7a4a8a;border-color:#d8c3df;background:#f6eefa;"><svg viewBox="0 0 24 24" style="width:9px;height:9px;fill:none;stroke:currentColor;stroke-width:2;vertical-align:-1px;"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.5"/><path d="M21 15l-5-5-9 9"/></svg>图像生成</span><span class="fo" id="ppRegen" title="用这张图已存的生图标签重新生成一张(不调用AI再构思)" style="cursor:pointer;color:#3a6b58;border-color:#bcd6c9;background:#eef5f2;"><svg viewBox="0 0 24 24" style="width:9px;height:9px;fill:none;stroke:currentColor;stroke-width:2;vertical-align:-1px;"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>重新生成</span><span class="fo" id="ppDel" style="cursor:pointer;">删除</span></div>';
     pb.innerHTML+='<div class="pc-sec">评论区 <span style="font-weight:400;color:#9aa1a7;">('+(p.replies&&p.replies.length?p.replies.length+'条':'暂无')+')</span></div>';
     // 评论楼层
     var replies = (p.replies&&p.replies.length) ? p.replies.slice() : [];
@@ -13678,6 +13685,11 @@ function _cfMountV2(){
         if(r && r.key){ p.img=p.img||true; p.imgKey=r.key; _cfPostsCache=POSTS; cdForumPersist(); openPost(i); toastr.success('真图已生成'); }
         else { toastr.error('图像生成失败'); }
       });
+    });
+    var prg=R.querySelector('#ppRegen'); if(prg) prg.addEventListener('click',function(){
+      if(!p.imgKey){ try{ if(typeof toastr==='function') toastr.info('该帖暂无真图，先点「图像生成」生成一张'); }catch(e){} return; }
+      var me=prg; me.disabled=true; var ot=me.textContent; me.textContent='重新生成中…';
+      regenPostImg(p, i, function(){ me.disabled=false; me.textContent=ot; });
     });
     var pd=R.querySelector('#ppDel'); if(pd) pd.addEventListener('click',function(){ POSTS.splice(i,1); _cfPostsCache=POSTS; cdForumPersist(); hidePanel(panelPost); renderFeed(); toastr.info('帖子已删除'); });
     var ps=R.querySelector('#ppSend'); var pi=R.querySelector('#ppReply'); if(ps&&pi) ps.addEventListener('click',function(){
@@ -13811,6 +13823,18 @@ function _cfMountV2(){
         if(x.personality) html+='<div style="font-size:9.5px;color:#5a6167;line-height:1.6;margin-top:4px;"><b style="color:#7a838a;">性格：</b>'+esc0(x.personality)+'</div>';
         if(x.judge) html+='<div style="font-size:9.5px;color:#5a6167;line-height:1.6;margin-top:3px;"><b style="color:#7a838a;">评价：</b>'+esc0(x.judge)+'</div>';
         if(x.appearance) html+='<div style="font-size:9.5px;color:#5a6167;line-height:1.6;margin-top:3px;"><b style="color:#7a838a;">外貌：</b>'+esc0(x.appearance)+'</div>';
+        // 外貌 TAG（默认折叠，可展开编辑；5 分类英文生图标签）
+        (function(){
+          var _at = (x.appTags && typeof x.appTags==='object')?x.appTags:{};
+          var _cnt=0; for(var zi=0;zi<_cfAPPTAGS_KEYS.length;zi++){ if(_at[_cfAPPTAGS_KEYS[zi]]) _cnt++; }
+          if(_cnt){
+            html+='<div style="margin-top:6px;border:1px solid #d8d2c4;border-radius:8px;background:#faf7f0;overflow:hidden;">'+
+              '<div class="mg-apptags-toggle" style="display:flex;align-items:center;justify-content:space-between;padding:4px 8px;cursor:pointer;font-size:9px;font-weight:700;color:#7a6a4a;"><span>外貌TAG ('+_cnt+'/5)</span><span class="mg-arrow" style="font-size:8px;transition:transform .15s;">▸</span></div>'+
+              '<div class="mg-apptags-body" style="display:none;padding:2px 8px 7px;">';
+            for(var zj=0;zj<_cfAPPTAGS_KEYS.length;zj++){ var _k=_cfAPPTAGS_KEYS[zj]; if(_at[_k]){ html+='<div style="display:flex;align-items:flex-start;gap:5px;font-size:8.5px;color:#6a5a3a;line-height:1.5;padding:3px 0;border-top:1px dashed #e8e0cf;"><b style="flex-shrink:0;color:#8a7a55;">'+(_cfAPPTAGS_LABEL[_k])+'：</b><span style="flex:1;word-break:break-all;">'+esc0(String(_at[_k]))+'</span><span class="mg-apptags-edit" data-k="'+_k+'" style="flex-shrink:0;font-size:9px;color:#8a7a55;cursor:pointer;">✏</span></div>'; } }
+            html+='</div></div>';
+          }
+        })();
         html+='<div class="mg-app" data-nm="'+esc0(n)+'" style="margin-top:6px;display:flex;align-items:center;gap:5px;font-size:9px;font-weight:600;color:#7a4a5e;border:1px solid #e3c8d2;border-radius:8px;padding:4px 8px;justify-content:center;cursor:pointer;background:#fdf3f6;"><svg viewBox="0 0 24 24" style="width:10px;height:10px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>'+(x.appearance?'重新生成外貌':'一键生成外貌')+'</div>';
         // 记忆区（积怨，可编辑/删除/新增）
         html+='<div style="margin-top:7px;">';
@@ -13857,12 +13881,32 @@ function _cfMountV2(){
               save();
             });
           });
+          // 外貌TAG：折叠/展开 + 单类编辑
+          var _tt=blk.querySelector('.mg-apptags-toggle');
+          if(_tt) _tt.addEventListener('click',function(){ var _b=blk.querySelector('.mg-apptags-body'); if(!_b) return; var _open=_b.style.display!=='none'; _b.style.display=_open?'none':'block'; var _ar=blk.querySelector('.mg-arrow'); if(_ar) _ar.style.transform=_open?'':'rotate(90deg)'; });
+          blk.querySelectorAll('.mg-apptags-edit').forEach(function(eb){
+            eb.addEventListener('click',function(e){ e.stopPropagation();
+              var kk=eb.getAttribute('data-k'); if(!kk) return;
+              if(!r.appTags || typeof r.appTags!=='object') r.appTags={};
+              var cur=r.appTags[kk]||'';
+              var nt=prompt('编辑「'+(_cfAPPTAGS_LABEL[kk]||kk)+'」的英文生图TAG（逗号分隔）：', cur); if(nt===null) return;
+              r.appTags[kk]=String(nt).trim();
+              _cfRosterCache=ROSTER; cdForumPersist(); fillManagePanel();
+              try{ if(typeof toastr==='function') toastr.success('已更新 '+(_cfAPPTAGS_LABEL[kk]||kk)+' TAG'); }catch(e2){}
+            });
+          });
           // 一键生成外貌
           var apb=blk.querySelector('.mg-app');
           if(apb) apb.addEventListener('click',function(e){ e.stopPropagation();
             var btn=this; var ot=btn.textContent; btn.textContent='生成中…'; try{ btn.style.opacity='.6'; }catch(_b){}
             _cfGenAppearance(r).then(function(ap){
-              if(ap){ r.appearance=ap; _cfRosterCache=ROSTER; cdForumPersist(); fillManagePanel(); if(typeof toastr==='function') toastr.success('已生成「'+((r.n||r.name))+')」的外貌'); }
+              var _hasText=ap && (ap.appearance||(typeof ap==='string'&&ap));
+              var _hasTag=ap && ap.appTags && typeof ap.appTags==='object' && (function(){ for(var z=0;z<_cfAPPTAGS_KEYS.length;z++){ if(ap.appTags[_cfAPPTAGS_KEYS[z]]) return true; } return false; })();
+              if(_hasText || _hasTag){
+                if(_hasText) r.appearance = (typeof ap==='string')?ap:(ap.appearance||r.appearance);
+                if(_hasTag){ if(!r.appTags || typeof r.appTags!=='object') r.appTags={}; for(var z2=0;z2<_cfAPPTAGS_KEYS.length;z2++){ var kk=_cfAPPTAGS_KEYS[z2]; if(ap.appTags[kk]) r.appTags[kk]=String(ap.appTags[kk]).trim(); } }
+                _cfRosterCache=ROSTER; cdForumPersist(); fillManagePanel(); if(typeof toastr==='function') toastr.success('已生成「'+((r.n||r.name))+'」的外貌与生图TAG');
+              }
               else { btn.textContent=ot; try{ btn.style.opacity=''; }catch(_b){} if(typeof toastr==='function') toastr.info('生成外貌失败（检查论坛 API）'); }
             }).catch(function(){ btn.textContent=ot; try{ btn.style.opacity=''; }catch(_b){} });
           });
@@ -14015,6 +14059,7 @@ function _cfMountV2(){
   // ===== 主页「编辑资料」：展开/收起表单 =====
   function homeEditToggle(open){
     var f=R.querySelector('#homeEditForm'); if(f) f.classList.toggle('open',!!open);
+    if(open){ try{ _cfRenderHomeApp(); }catch(_e){} }
   }
   cdBindOnce(R.querySelector('#homeEditBtn'), function(){ homeEditToggle(true); });
   cdBindOnce(R.querySelector('#homeEditLink'), function(){ homeEditToggle(true); });
@@ -14033,6 +14078,64 @@ function _cfMountV2(){
     homeEditToggle(false);
     toastr.success(v?('已保存：'+v):'已保存(昵称已清空)');
     fillHomePanel();
+  });
+
+  // ===== 我的主页「编辑外貌」：生成我的长相TAG（存 cfg.homeAppearance + cfg.homeAppTags；我发的帖子生图时还原） =====
+  function _cfHomeAppFromCfg(){
+    var c2=cdForumCfg();
+    return { app: (c2&&c2.homeAppearance)?String(c2.homeAppearance).trim():'', tags: (c2&&c2.homeAppTags&&typeof c2.homeAppTags==='object')?c2.homeAppTags:null };
+  }
+  function _cfRenderHomeApp(){
+    try{
+      var res=R.querySelector('#homeTagResult'); if(!res) return;
+      var _cfg=_cfHomeAppFromCfg();
+      var at=_cfg.tags||{};
+      var cnt=0; for(var zi=0;zi<_cfAPPTAGS_KEYS.length;zi++){ if(at[_cfAPPTAGS_KEYS[zi]]) cnt++; }
+      if(!_cfg.app && !cnt){ res.innerHTML='<div style="font-size:8.5px;color:var(--c-txt3);">还没生成过我的外貌TAG。在上面输入大概需求，点「生成我的外貌TAG」即可。</div>'; return; }
+      var h='';
+      if(_cfg.app) h+='<div style="font-size:9px;color:var(--c-txt2);line-height:1.5;margin-bottom:4px;"><b style="color:var(--c-txt);">外貌：</b>'+esc0(_cfg.app)+'</div>';
+      if(cnt){
+        h+='<div style="border:1px solid var(--c-line);border-radius:8px;background:#f8f6f0;overflow:hidden;">'+
+           '<div class="homeTagToggle" style="display:flex;align-items:center;justify-content:space-between;padding:4px 8px;cursor:pointer;font-size:9px;font-weight:700;color:#7a6a4a;"><span>我的外貌TAG ('+cnt+'/5)</span><span style="font-size:8px;">▸</span></div>'+
+           '<div class="homeTagBody" style="display:none;padding:2px 8px 7px;">';
+        for(var zj=0;zj<_cfAPPTAGS_KEYS.length;zj++){ var k=_cfAPPTAGS_KEYS[zj]; if(at[k]) h+='<div style="display:flex;align-items:flex-start;gap:5px;font-size:8.5px;color:#6a5a3a;line-height:1.5;padding:3px 0;border-top:1px dashed #e8e0cf;"><b style="flex-shrink:0;color:#8a7a55;">'+(_cfAPPTAGS_LABEL[k])+'：</b><span style="flex:1;word-break:break-all;">'+esc0(String(at[k]))+'</span><span class="homeTagEdit" data-k="'+k+'" style="flex-shrink:0;font-size:9px;color:#8a7a55;cursor:pointer;">✏</span></div>'; }
+        h+='</div></div>';
+      }
+      res.innerHTML=h;
+      var tt=res.querySelector('.homeTagToggle');
+      if(tt) tt.addEventListener('click',function(){ var b=res.querySelector('.homeTagBody'); if(!b) return; var op=b.style.display!=='none'; b.style.display=op?'none':'block'; });
+      res.querySelectorAll('.homeTagEdit').forEach(function(eb){
+        eb.addEventListener('click',function(){ var kk=eb.getAttribute('data-k'); if(!kk) return; var c2=cdForumCfg(); if(!c2.homeAppTags||typeof c2.homeAppTags!=='object') c2.homeAppTags={}; var cur=c2.homeAppTags[kk]||''; var nt=prompt('编辑「'+(_cfAPPTAGS_LABEL[kk]||kk)+'」的英文TAG：',cur); if(nt===null) return; c2.homeAppTags[kk]=String(nt).trim(); _cfCfgCache=c2; cdForumPersist(); _cfRenderHomeApp(); });
+      });
+    }catch(e){ cdWarn('[home] 渲染我的外貌TAG失败', e); }
+  }
+  // 生成我的外貌（复用角色外貌生成器，把「我」当角色）
+  var homeGen=R.querySelector('#homeTagGen');
+  if(homeGen) homeGen.addEventListener('click',function(){
+    var inpT=R.querySelector('#homeTagInput'); if(!inpT) return;
+    var req=String(inpT.value||'').trim();
+    if(!req){ try{ if(typeof toastr==='function') toastr.info('先在上方输入你的大概外貌需求'); }catch(e){} return; }
+    if(!cdForumApiReady()){ try{ if(typeof toastr==='function') toastr.error('尚未配置论坛 API'); }catch(e){} return; }
+    var meN=cdHomeName()||'我';
+    var bioS=(cfg&&cfg.bio)?cfg.bio:'';
+    var btn=this; var ot=btn.textContent; btn.textContent='生成中…'; try{ btn.style.opacity='.6'; }catch(_e){}
+    var fakeRole={ n:meN, name:meN, w:'跨界', personality:bioS, stage:'主角自己', judge:'' };
+    _cfGenAppearance(fakeRole).then(function(ap){
+      btn.textContent=ot; try{ btn.style.opacity=''; }catch(_e){}
+      var c2=cdForumCfg();
+      var gotText=ap&&(typeof ap==='string'?ap:(ap.appearance||''));
+      var gotTags=ap&&ap.appTags&&typeof ap.appTags==='object';
+      if(!gotText && !gotTags){ try{ if(typeof toastr==='function') toastr.error('生成我的外貌失败（检查论坛 API / 网络）'); }catch(e3){} return; }
+      if(gotText){ c2.homeAppearance=(typeof ap==='string')?String(ap).trim():String(ap.appearance||'').trim(); }
+      if(gotTags){ if(!c2.homeAppTags||typeof c2.homeAppTags!=='object') c2.homeAppTags={}; for(var z=0;z<_cfAPPTAGS_KEYS.length;z++){ var k=_cfAPPTAGS_KEYS[z]; if(ap.appTags[k]) c2.homeAppTags[k]=String(ap.appTags[k]).trim(); } }
+      _cfCfgCache=c2; cdForumPersist(); _cfRenderHomeApp();
+      try{ if(typeof toastr==='function') toastr.success('已生成我的外貌与生图TAG'); }catch(e3){}
+    }).catch(function(){ btn.textContent=ot; try{ btn.style.opacity=''; }catch(_e){} });
+  });
+  var homeGenClr=R.querySelector('#homeTagClear');
+  if(homeGenClr) homeGenClr.addEventListener('click',function(){
+    var c2=cdForumCfg(); c2.homeAppearance=''; c2.homeAppTags=null; _cfCfgCache=c2; cdForumPersist(); _cfRenderHomeApp();
+    try{ if(typeof toastr==='function') toastr.info('已清除我的外貌TAG'); }catch(e){}
   });
 
   // ===== NPC 动态主页：点 NPC 头像/名字 → 打开该角色动态 =====
@@ -14977,7 +15080,7 @@ function cdForumCfg(){
  *  - "保存到相册" = 从图库读 dataUrl 触发浏览器下载到 Download/相册
  * ============================================================ */
 /* 默认画师串/正面追加 与 负面提示词（用户 preset；仅在首次创建 img 配置时作为初始值，不覆盖已保存值） */
-var CF_DEFAULT_IMG_ADD = "best quality, amazing quality, very aesthetic, absurdres, man，Single-person shot, focusing on the person being penetrated during sex，chest and abs，bl，Korean comic style.A handsome face.Powerful, visually striking pornographic scenes，Focus on the bottom。";
+var CF_DEFAULT_IMG_ADD = "best quality, amazing quality, very aesthetic, absurdres, detailed, anime style, thick paint";
 var CF_DEFAULT_IMG_NEG = "lowres, low quality, worst quality, bad anatomy, bad hands, bad face, bad proportions, malformed limbs, deformed body, mutated hands, extra limbs, fused fingers, extra fingers, missing fingers, deformed fingers, six fingers, glued fingers, extra hands, wrong number of fingers, malformed hand, misshapen hand, deformed limbs, fused limbs, missing arms, extra arms, twisted body, contorted posture, broken spine, disconnected limbs, ambiguous depth, blurred edges, out of focus, jpeg artifacts, compression artifacts, noise, grain, overexposed, text, letters, typography, words, captions, subtitles, logo, watermark, signature, barcode, writing on skin, tiled pattern, internal organs, exposed organs, visible intestines, viscera, gore, mutilation, dismemberment, body horror, grotesque anatomy, misplaced organs, deformed face, distorted face, asymmetric face, ugly, twisted facial features, crossed eyes, extra eyes, missing eyes, bad eyes, empty eyes, no pupils, dead eyes, vague, low detail, dark yellow skin, yellow skin, blurred face, deformed ear, extra ear, missing ear, poor shading, flat lighting, weird, mutant, mutation, deformity, disfigured, grotesque, pubic hair, fetal hair, underwear";
 
 /* 两套画面系统提示词(可被设置面板里的「风格」切换/编辑):必画清单版 vs 对镜自拍版 */
@@ -14992,7 +15095,7 @@ var CF_IMG_PROMPT_BIHUA=[
   '然后对画面立规矩:清单里每一项都必须原样出现在画面里,不许替换、不许省略、不许模糊带过、不许脑补出与帖子矛盾的东西。',
   '帖子没说清的细节(具体长相/颜色/光线)可合理补全,但帖子明说的,一个不能丢。',
   '',
-  '【第一步 · 中文画面设计(九维逐条铺满,篇幅长、细节足)】',
+  '【第一步 · 中文画面设计(九维逐条讲清,细节足、不堆空话)】',
   '基于「必画清单」展开整张画面,九维逐条下笔,每维都写具体、有逻辑、有细节:',
   '1 人物细节:清单里每个角色的身份/年龄/气质/五官/发型/微表情/情绪,神态贴合帖子描述;',
   '2 人数构图:画面总人数,谁是主体谁是陪衬,主次分明;',
@@ -15026,10 +15129,10 @@ var CF_IMG_PROMPT_BIHUA=[
 var CF_IMG_PROMPT_MIRROR=[
   '你是资深 AI 生图提示词架构师、动漫视觉摄影师、氛围感画面设计师。',
   '收到任意论坛帖子后,完全代入发帖楼主本人的心境、情绪、语气、处境、发帖意图与评论区风向,为楼主量身打造一张「代表当下心境的专属手机实拍配图」。',
-  '严格分两步:先写千字级中文画面设计(九维全覆盖),再提炼专业英文生图 TAG 串。',
+  '严格分两步:先写出九维覆盖、内容充分的中文画面设计(讲清即可、不堆空话),再提炼专业英文生图 TAG 串。',
   '【长相/IP 还原铁律(若帖子附带了角色长相/IP参考,此为最高优先级)】用户消息里可能给了【角色长相/IP参考】,里面写明了角色出自哪部作品(如 火影忍者)、以及该角色对应的外貌。只要涉及这些角色,画面必须严格按参考还原其原作相貌与世界观形象(火影就是动漫厚涂、忍者装束、木叶世界观),不许替换成别的人、不许画成普通路人、不许与参考打架。扮演对镜自拍/偷拍的楼主本人时,若楼主正是某位有婚配参考的角色,TA的长相同样必须按参考来。没有给参考的角色,才允许合理脑补。',
   '',
-  '【第一步 · 中文画面设计(强制 >=1000 字 · 九维逐条铺满)】',
+  '【第一步 · 中文画面设计(九维逐条铺满)】',
   '先深度解读原帖:发帖人身份、语气、核心情绪、文字主旨、隐藏心境、当下状态、评论区风向,捕捉其压抑/开心/破防/吐槽/孤独/温柔/释然等细微情绪。创作逻辑 = 模拟楼主此刻亲手举手机,拍下最能代表当下心境的那一瞬。以下 9 维必须逐条下笔,每一维都写具体、有逻辑、有画面,禁止空泛笼统:',
   '1 人物细节:主体身份/年龄/气质/长相风格;五官(眉眼形状、瞳孔色、眼尾弧度、鼻梁唇形、面部线条、肤色肤质);发型(发色长度蓬松度碎发刘海发丝质感是否凌乱);微表情与情绪外化(眼底情绪眼神明暗嘴角面庞松弛或紧绷疲惫青涩落寞松弛感),神态必须贴合楼主发帖心境;',
   '2 人数构图:画面总人数,绝对视觉主体、次要陪衬、背景路人依次分层,主次占比与画面重心,空镜/单人/双人/多人严格对应帖子氛围,无多余人物;',
@@ -15077,7 +15180,7 @@ var CF_IMG_STYLE_BASE=[
   '帖子没说清的细节(具体长相/颜色/光线)可合理补全,但帖子明说的,一个不能丢。',
   '【长相/IP 还原铁律(若帖子附带了角色长相/IP参考,此为最高优先级)】用户消息里可能给了【角色长相/IP参考】,里面写明了角色出自哪部作品(如 火影忍者)、以及该角色对应的外貌(如 纲手:白发束发…)。只要涉及这些角色,画面必须严格按参考还原其原作相貌与世界观形象(火影就是动漫厚涂、忍者装束、木叶世界观),不许替换成别的人、不许画成普通路人、不许与参考打架。参考里没写的细节可合理补全,但参考明写的必须原样呈现。没有给参考的角色,才允许在帖子没写清的角落合理脑补。',
   '',
-  '【第一步 · 中文画面设计(九维逐条铺满,篇幅长、细节足)】',
+  '【第一步 · 中文画面设计(九维逐条讲清,细节足、不堆空话)】',
   '基于「必画清单」展开整张画面,九维逐条下笔,每维都写具体、有逻辑、有细节:',
   '1 人物细节:清单里每个角色的身份/年龄/气质/五官/发型/微表情/情绪,神态贴合帖子描述;',
   '2 人数构图:画面总人数,谁是主体谁是陪衬,主次分明;',
@@ -15537,6 +15640,8 @@ async function cdForumImgForPost(p){
       var _en=desc.replace(/[^\x00-\x7F]+/g,' ').replace(/\s+/g,' ').trim();
       _use=_en.length>=4 ? _en : String(p.text||'').slice(0,80);
     }
+    /* 统一收口：去中文/去噪声/保留角色段/质量词限2 + 限长，脚本直生同样走兜底防污染 */
+    _use=_cfForumTidyTags(String(_use||'')).slice(0,1400);
     var img=await cdForumGenerateImage(_use, g.negPrompt||'', g.addPrompt||'');
     if(!img || !img.dataUrl) return null;
     var key='img_'+Date.now()+'_'+Math.floor(Math.random()*1e6);
@@ -15562,19 +15667,69 @@ async function cdForumImgForPost(p){
 /* 从帖子文字识别角色，挖出世界书/角色库里的长相+IP，供图像生成参考 */
 /* [生图·TAG去重兜底(B)] 把提取到的英文TAG串按逗号拆开,去空、去重复、去首尾噪声,再以「, 」重拼。
  * 即便AI输出里带了重复语义或冗余噪声,也能在此保底,避免重复标稀释权重。保留标签原有顺序。 */
-function _cfForumTidyTags(str){
+/* 统一收口清洗(单个标签清单串)：去中文/去全角、去markdown与序号噪声、按逗号拆分去重、压空白 */
+function _cfCleanEn(x){
   try{
-    var parts=String(str||'').split(',');
-    var seen={}; var out=[]; var i;
+    var s=String(x==null?'':x);
+    s=s.replace(/[^\x00-\x7F]+/g,' ');            /* 去中文/全角标点 */
+    s=s.replace(/[*#`_~>|(){}\[\]]+/g,' ');        /* 去 markdown / 括号 / 装饰符噪声 */
+    s=s.replace(/^\s*\d+[\.\u3001:]\s*/gm,' '); /* 去序号(数字+点/顿号/冒号) */
+    s=s.replace(/\s+/g,' ').trim();
+    var parts=s.split(','); var seen={}; var out=[]; var i;
     for(i=0;i<parts.length;i++){
       var t=String(parts[i]||'').replace(/\s+/g,' ').trim();
       if(!t) continue;
       var lo=t.toLowerCase();
-      if(seen[lo]) continue;      /* 去 重复标签(忽略大小写) */
+      if(seen[lo]) continue;                         /* 去 重复(忽略大小写) */
       seen[lo]=1;
       out.push(t);
     }
     return out.join(', ');
+  }catch(e){ return String(x==null?'':x); }
+}
+/* 统一收口兜底：把 masterpiece/best quality/8k 等通用质量词压制到最多 2 个并放末尾，防堆砌稀释 */
+function _cfCapQuality(x){
+  try{
+    var qm={ 'masterpiece':1,'best quality':1,'high quality':1,'highly detailed':1,'extremely detailed':1,'sharp focus':1,'ultra detailed':1,'8k':1,'8k uhd':1,'absurdres':1,'very aesthetic':1,'amazing quality':1 };
+    var parts=String(x||'').split(','); var kept=[]; var quals=[]; var i;
+    for(i=0;i<parts.length;i++){
+      var t=String(parts[i]||'').replace(/\s+/g,' ').trim(); if(!t) continue;
+      var lk=t.toLowerCase().replace(/\s+/g,'');
+      if(qm[lk]||qm[t.toLowerCase()]){ quals.push(t); } else { kept.push(t); }
+    }
+    var qq=[]; var seen2={};
+    for(var j=0;j<quals.length && qq.length<2;j++){ var k=quals[j].toLowerCase(); if(seen2[k]) continue; seen2[k]=1; qq.push(quals[j]); }
+    return kept.concat(qq).join(', ');
+  }catch(e){ return String(x||''); }
+}
+/* 最终生图TAG统一收口：保留〖角色 X〗段边界(不拆碎角色归属)，逐段清洗，质量词限≤2 */
+function _cfForumTidyTags(str){
+  try{
+    var raw=String(str||'').trim();
+    if(!raw) return '';
+    var reSeg=/〖角色[\s\S]+?〗/g;                 /* 角色归属段 */
+    var segBlocks=[]; var m;
+    var parts2=raw.split(/〖角色/g);
+    var outSeg=[];
+    for(var i2=0;i2<parts2.length;i2++){
+      var seg=parts2[i2];
+      if(i2>0){ /* 该段以角色开头? split后首段=位于〖角色之前的片段 */
+        var endIdx=seg.indexOf('〗');
+        if(endIdx>=0){
+          var head=seg.slice(0,endIdx);               /* "名称 → tags" 或 "名称" */
+          var rest=seg.slice(endIdx+1);
+          var arrow=head.indexOf(' → ');
+          var nm= arrow>=0 ? head.slice(0,arrow).trim() : head.trim();
+          var body= arrow>=0 ? head.slice(arrow+3) : '';
+          if(nm) outSeg.push('〖角色 '+nm+' → '+_cfCapQuality(_cfCleanEn(body))+'〗');
+          if(rest && String(rest).trim()) outSeg.push(_cfCleanEn(rest));
+          continue;
+        }
+      }
+      if(String(seg).trim()) outSeg.push(_cfCapQuality(_cfCleanEn(seg)));
+    }
+    if(outSeg.length) return outSeg.join(' ');
+    return _cfCapQuality(_cfCleanEn(raw));
   }catch(e){ return String(str||''); }
 }
 
@@ -15584,20 +15739,31 @@ function _cfPullAppearanceForPost(p){
     if(!String(text).trim()) return '';
     var R=cdForumGetRoster();
     var W=cdForumGetWorlds();
-    var hits=[]; var seen={};
-    var pushRole=function(nm, ap, ws){
-      nm=String(nm||''); if(!nm||seen[nm]) return; seen[nm]=1;
-      hits.push((ws?('('+ws+')'):'')+nm+(ap?('：'+ap):''));
+    /* 把某角色的 appTags{5类} 合并成可直接生图的英文TAG串（每类前带中文部位前缀做指引） */
+    var joinTags=function(at){
+      try{
+        if(!at || typeof at!=='object') return '';
+        var seg=[]; var z;
+        for(z=0;z<_cfAPPTAGS_KEYS.length;z++){ var k=_cfAPPTAGS_KEYS[z]; if(at[k]&&String(at[k]).trim()){ seg.push(_cfAPPTAGS_LABEL[k]+':'+String(at[k]).trim()); } }
+        if(!seg.length) return '';
+        return _cfForumTidyTags(seg.join(','));
+      }catch(e){ return ''; }
+    };
+    var hits=[]; var tagHits=[]; var seen={}; var seenTag={};
+    var pushRole=function(nm, ap, ws, tags){
+      nm=String(nm||'');
+      if(nm && !seen[nm]){ seen[nm]=1; if(ap){ hits.push((ws?('('+ws+')'):'')+nm+(ap?('：'+ap):'')); } }
+      if(tags && nm && !seenTag[nm]){ seenTag[nm]=1; tagHits.push(nm+' → '+tags); }
     };
     (R||[]).forEach(function(r){
       var nm=r.n||r.name; if(!nm) return;
-      if(String(text).indexOf(nm)>=0 && r.appearance){ pushRole(nm, r.appearance, r.w||r.world); }
+      if(String(text).indexOf(nm)>=0 && (r.appearance||r.appTags)){ pushRole(nm, r.appearance, r.w||r.world, joinTags(r.appTags)); }
     });
     (W||[]).forEach(function(ww){
       var arr=(ww&&ww.characters&&ww.characters.length)?ww.characters:[];
       arr.forEach(function(c){
         var nm=c.name||c.n; if(!nm) return;
-        if(String(text).indexOf(nm)>=0 && c.appearance){ pushRole(nm, c.appearance, ww.name); }
+        if(String(text).indexOf(nm)>=0 && (c.appearance||c.appTags)){ pushRole(nm, c.appearance, ww.name, joinTags(c.appTags)); }
       });
     });
     var out=[];
@@ -15605,6 +15771,19 @@ function _cfPullAppearanceForPost(p){
     (W||[]).forEach(function(ww){ if(ww&&ww.source&&String(ww.source).trim()&&ipNames.indexOf(String(ww.source).trim())<0) ipNames.push(String(ww.source).trim()); });
     if(ipNames.length) out.push(' 世界IP/作品来源：'+ipNames.join('、'));
     if(hits.length) out.push(' 涉及角色长相参考：'+hits.join('；'));
+    if(tagHits.length) out.push(' 角色生图TAG（必须逐角色隔离：每段〖角色 X〗里的全部英文标签只画在角色X身上，严禁跨角色混用/把A的特征画到B头上）：'+ (function(){ var _iso=''; var _ti; for(_ti=0;_ti<tagHits.length;_ti++){ _iso+='\n 〖角色 '+tagHits[_ti]+'〗'; } return _iso; })() );
+    // 楼主本人（用户「我」）的外貌TAG：若这帖是「我」发的，把我的长相TAG也带上，还原我的形象
+    try{
+      var _hc=cdForumCfg();
+      var _aut=String((p&&p.auth)||'');
+      var _meN=String((_hc&&_hc.homeName)||'');
+      if(_meN && _aut===_meN && _hc && _hc.homeAppTags && typeof _hc.homeAppTags==='object'){
+        var _mseg=[]; var _mz;
+        for(_mz=0;_mz<_cfAPPTAGS_KEYS.length;_mz++){ var _mk=_cfAPPTAGS_KEYS[_mz]; if(_hc.homeAppTags[_mk]&&String(_hc.homeAppTags[_mk]).trim()) _mseg.push(String(_hc.homeAppTags[_mk]).trim()); }
+        if(_mseg.length) out.push(' 楼主本人「'+_meN+'」生图TAG（这组英文标签只画在'+_meN+'本人身上，若画面含楼主本人则必须按此还原，不得挪给其他角色）：〖主角 '+_meN+'〗 '+_mseg.join(', '));
+      }
+    }catch(_e2){}
+
     return out.length ? ('\n【角色长相/IP参考】\n'+out.join('\n')) : '';
   }catch(e){ return ''; }
 }
@@ -15623,9 +15802,15 @@ async function cdForumGenPostImg(p){
         var sys=_cfImgPromptGet(_cg,_sty) || ((_sty==='mirror')?CF_IMG_PROMPT_MIRROR:CF_IMG_PROMPT_BIHUA);
         // [生图审判] 强制「先思考≥70字，想清要画什么，再往下设计、最后才写TAG」——治"总是崩坏"根因：AI 没想清就急着写 tag
         sys = String(sys||'') + String.fromCharCode(10) + String.fromCharCode(10) +
-          '【铁律·先思考再下笔(全流程最优先，第一步必须做)】拿到帖子后，先别急着列清单、更别急着写 TAG。先把这张图到底要画什么"想清楚"：在脑中过一遍——画面里都有谁、谁在做什么动作、什么场景地点、什么光线氛围、什么镜头角度、整体什么气氛。然后【用不少于70个字的中文，把这张图要画什么完整写出来】（要具体到人物/动作/场景/镜头/光影，像在心里把它画出来一样），这段思考【画面思考】必须单独成段、写在最前面、字数必须充分。想清楚之后，才允许进入后面的必画清单、画面设计、英文 TAG 提炼。严禁不思考就直接输出 TAG。'
+          '【铁律·先思考再下笔(全流程最优先，第一步必须做)】拿到帖子后，先别急着列清单、更别急着写 TAG。先把这张图到底要画什么"想清楚"：在脑中过一遍——画面里都有谁、谁在做什么动作、什么场景地点、什么光线氛围、什么镜头角度、整体什么气氛。然后【用不少于30个字的中文，把这张图要画什么讲清楚】（要具体到人物/动作/场景/镜头/光影，像在心里把它画出来一样），这段思考【画面思考】必须单独成段、写在最前面。讲清楚即可，宁可精炼，严禁为了凑字数灌水空话。想清楚之后，才允许进入后面的必画清单、画面设计、英文 TAG 提炼。严禁不思考就直接输出 TAG。'
           + String.fromCharCode(10) + String.fromCharCode(10) +
-          '【输出格式铁律(严格遵守)】① 全文绝不使用任何 markdown 语法——禁止 **（星号加粗）、##（井号标题）、`（反引号）、#、-、>、| 等符号做格式；② 画面设计写中文时不要加序号点、不要装饰符，直接正常段落写出每一维内容；③ 最后提炼英文 TAG 时，【必须用全角括号【TAG】单独起一行开头】，下一行开始写纯英文、逗号分隔的标签串(TAG)，不要写"TAG:"、不要写"**TAG**"、不要加任何星号或标题符；④ TAG 内禁止出现中文，禁止出现 `**`、`*`、`#`、数字序号、行号；⑤ 示例规范结尾：\n【TAG】\nanime style, cel shading, thick anime paint, detailed, a young man xxxxxx, ...(纯英文逗号)' + String.fromCharCode(10) + String.fromCharCode(10) + '【男性颜值铁律(画面里的男性角色必须精致俊美)】画面中出现的每一位男性角色，不管是不是主角，都必须画成精致俊美、帅气养眼的形象——五官立体精致、轮廓英俊、眼神有神、身形挺拔修长好看；严格禁止任何丑陋、肥胖、粗犷、邋遢、油腻、糙汉、驼背佝偻、满脸横肉的男性形象。若帖子里明确写了某角色长相(如 格里菲斯白发俊美贵族 这种外貌参考)，必须严格按该设定还原且保持俊美感；没写长相的男性角色，也一律按『精致美型少年/青年』的帅法补全，绝不画成普通路人大叔或壮汉。此铁律优先级最高，覆盖所有男角色的外形刻画。' + String.fromCharCode(10) + String.fromCharCode(10) + '【TAG输出质量铁律(英文TAG串的最终质检,前三步都做完、画面已想清之后才允许输出TAG)】 ① 同一个英文标签或单词绝不允许重复出现两次以上,每个语义只写一次,例如 masterpiece 这类质量词全串只保留一个,绝不允许 masterpiece 出现两次; ② 严禁输出与画面主题、人物设定相矛盾的用词,当正向设定是精致纤细美少年、优雅高贵、俊美等形象时,整个输出(包括负面提示词方向)里也禁止再出现 瘦弱/skinny、娇小/petite、粗壮、笨重、胖子、丑、邋遢 这类自相冲突的词; ③ 画面主角或核心人物的专属标签(人名、长发、衣服、武器、关键场景等)必须放在英文TAG串最前面的显著位置,把 masterpiece、best quality、high quality、detailed 这类通用质量垫底词统一放到TAG串的最后,并且这些通用质量词每个只保留一个,不要堆叠铺开; ④ 只输出已想清楚、确定要画的标签,TAG宁少勿滥、宁精勿杂,不堆砌与画面无关的冗余细节。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·空间关系与画面秩序(画面里所有角色、物件、背景都必须符合)】 ① 主体与陪衬的空间占比:画面主角必须在构图中占合理且突出的比例,近景或中景时主体约占画面1/4到1/2的视觉重心,配角、背景人物、道具按与主角的远近与主次正确缩放,近大远小、紧贴透视,严禁主角小得看不清、或配角或背景道具大到反客为主;多人同框时人物之间有正确的前后层次与间距,谁靠前谁靠后、谁大谁小都要有物理逻辑。 ② 空间方位必须成立:同一画面里的物与人都处于同一个可信空间,桌子/墙面/地面/门窗的视平线与地平线一致,物体不悬浮、不叠穿、不缺一个维度,人物的脚要踩在地上或踏在正确的支撑物上。 ③ 背景纵深合理:背景要真正成画而不是空白或廉价贴图,房间就要有墙/窗/家具/光源的方向性,街道就要有纵深透视、远近建筑与天际线,室外要有地面承接落影;背景元素与前景主体处于同一透视体系,近实远虚。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·动作姿态与人体物理(画面里所有人物必须符合)】 ① 关节与骨骼合理:任何站/坐/倚/走/跑/弯腰/抬手/转头/跷腿等姿态,都符合真实人体关节的可动范围与承力方式,脊柱能弯的幅度、肩膀手臂的连带、膝盖脚踝的承重都成立,不出现反关节、断臂、错位、折叠扭曲的肢体,双手不重影、不多指。 ② 动作要像正在发生而不是摆拍僵尸:要有重心、有惯性、有受力,站立知道重心在两条腿的承重,坐着手放在该放的位置,迈步时另一只脚有预备,抱着东西身体重心倾向托物的一侧,动作落点与表情情绪一致;手部动作(握/抬/指/扶/抱/持)与它所接触的物或人对应严丝合缝,不悬空对着空气抓。 ③ 表情与姿态连贯:某情绪下身体语言整体一致,低头认错配收肩、愤怒配握拳绷身、疲惫配肩塌眼垂,情绪和动作不能各演各的。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·镜头语言与画面张力(导演级要求,每张图都要主动设计,不得忽略)】 ① 站位与空间张力:不只要物理站得合理,更要站得有戏——主动用距离与朝向制造关系张力,对峙就错开而立、留出剑拔弩张的间距,亲密就贴近相依互为背景,孤独就让主体矗在空旷中央四周留白,仰视或俯视制造权力与气势差;多人与多物件之间寻找对角线或三角站位让画面有层次与动势,而非一字排开;主体与陪衬之间要有视线、动作、身位上的呼应,让画面看起来有故事正在发生,而不是合影摆拍。 ② 眼神戏:每个出镜且占据叙事位置的角色,眼神都要活且有焦点——明确在想什么、在看什么(屏幕/远方/对方/镜头外某方向),并带着此刻的情绪(对峙的锐利、暧昧的含情、低落的失焦、决绝的坚定);多人时眼神之间要有交流关系(对视、错开、偷瞄、追视),用眼神传递关系与潜台词。 ③ 动作张力:把动作定格在最有故事感的那一瞬(刚要转身的瞬间、手悬停在按键上、刀锋举起一半、身体前倾的刹那),拒绝四平八稳的站桩;让肢体有动态趋势——重心前倾、衣摆扬起、发丝飘动、发力处肌肉紧绷,即便静态也要有下一秒就要动的势能;姿势有曲线与平衡,身体各部位形成连贯有韵律的剪影,忌讳笔直僵硬。 ④ 光影张力:主动设计光的方向、强弱、色温、明暗对比来托戏——恶意或紧张用硬光加暗角加冷调,温情或治愈用柔光加暖调加光晕,孤独用大面积留暗加单点微光;用主光把主角从背景里揪出来(边缘光、轮廓光、聚光),配角与背景落暗,眼睛要有清晰的高光点显有神;整体亮部、中间调、暗部分明,拒绝一盏平光全部照亮。 ⑤ 导演总纲:你是一位有镜头语言的动漫导演,不只是把元素画齐,更要让画面自己说话——用站位、眼神、动作、光影讲出帖子的情绪与冲突;每张图都主动构思这些层次,宁可多想一层,也不要平铺直叙、不要交差式应付。';
+          '【输出格式铁律(严格遵守)】① 全文绝不使用任何 markdown 语法——禁止 **（星号加粗）、##（井号标题）、`（反引号）、#、-、>、| 等符号做格式；② 画面设计写中文时不要加序号点、不要装饰符，直接正常段落写出每一维内容；③ 最后提炼英文 TAG 时，【必须用全角括号【TAG】单独起一行开头】，下一行开始写纯英文、逗号分隔的标签串(TAG)，不要写"TAG:"、不要写"**TAG**"、不要加任何星号或标题符；④ TAG 内禁止出现中文，禁止出现 `**`、`*`、`#`、数字序号、行号；⑤ 示例规范结尾：\n【TAG】\nanime style, cel shading, thick anime paint, detailed, a young man xxxxxx, ...(纯英文逗号)' + String.fromCharCode(10) + String.fromCharCode(10) + '【男性颜值铁律(画面里的男性角色必须精致俊美)】画面中出现的每一位男性角色，不管是不是主角，都必须画成精致俊美、帅气养眼的形象——五官立体精致、轮廓英俊、眼神有神、身形挺拔修长好看；严格禁止任何丑陋、肥胖、粗犷、邋遢、油腻、糙汉、驼背佝偻、满脸横肉的男性形象。若帖子里明确写了某角色长相(如 格里菲斯白发俊美贵族 这种外貌参考)，必须严格按该设定还原且保持俊美感；没写长相的男性角色，也一律按『精致美型少年/青年』的帅法补全，绝不画成普通路人大叔或壮汉。此铁律优先级最高，覆盖所有男角色的外形刻画。' + String.fromCharCode(10) + String.fromCharCode(10) + '【TAG输出质量铁律(英文TAG串的最终质检,前三步都做完、画面已想清之后才允许输出TAG)】 ① 同一个英文标签或单词绝不允许重复出现两次以上,每个语义只写一次,例如 masterpiece 这类质量词全串只保留一个,绝不允许 masterpiece 出现两次; ② 严禁输出与画面主题、人物设定相矛盾的用词,当正向设定是精致纤细美少年、优雅高贵、俊美等形象时,整个输出(包括负面提示词方向)里也禁止再出现 瘦弱/skinny、娇小/petite、粗壮、笨重、胖子、丑、邋遢 这类自相冲突的词; ③ 画面主角或核心人物的专属标签(人名、长发、衣服、武器、关键场景等)必须放在英文TAG串最前面的显著位置,把 masterpiece、best quality、high quality、detailed 这类通用质量垫底词统一放到TAG串的最后,并且这些通用质量词每个只保留一个,不要堆叠铺开; ④ 只输出已想清楚、确定要画的标签,TAG宁少勿滥、宁精勿杂,不堆砌与画面无关的冗余细节。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·空间关系与画面秩序(画面里所有角色、物件、背景都必须符合)】 ① 主体与陪衬的空间占比:画面主角必须在构图中占合理且突出的比例,近景或中景时主体约占画面1/4到1/2的视觉重心,配角、背景人物、道具按与主角的远近与主次正确缩放,近大远小、紧贴透视,严禁主角小得看不清、或配角或背景道具大到反客为主;多人同框时人物之间有正确的前后层次与间距,谁靠前谁靠后、谁大谁小都要有物理逻辑。 ② 空间方位必须成立:同一画面里的物与人都处于同一个可信空间,桌子/墙面/地面/门窗的视平线与地平线一致,物体不悬浮、不叠穿、不缺一个维度,人物的脚要踩在地上或踏在正确的支撑物上。 ③ 背景纵深合理:背景要真正成画而不是空白或廉价贴图,房间就要有墙/窗/家具/光源的方向性,街道就要有纵深透视、远近建筑与天际线,室外要有地面承接落影;背景元素与前景主体处于同一透视体系,近实远虚。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·动作姿态与人体物理(画面里所有人物必须符合)】 ① 关节与骨骼合理:任何站/坐/倚/走/跑/弯腰/抬手/转头/跷腿等姿态,都符合真实人体关节的可动范围与承力方式,脊柱能弯的幅度、肩膀手臂的连带、膝盖脚踝的承重都成立,不出现反关节、断臂、错位、折叠扭曲的肢体,双手不重影、不多指。 ② 动作要像正在发生而不是摆拍僵尸:要有重心、有惯性、有受力,站立知道重心在两条腿的承重,坐着手放在该放的位置,迈步时另一只脚有预备,抱着东西身体重心倾向托物的一侧,动作落点与表情情绪一致;手部动作(握/抬/指/扶/抱/持)与它所接触的物或人对应严丝合缝,不悬空对着空气抓。 ③ 表情与姿态连贯:某情绪下身体语言整体一致,低头认错配收肩、愤怒配握拳绷身、疲惫配肩塌眼垂,情绪和动作不能各演各的。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·镜头语言与画面张力(导演级要求,每张图都要主动设计,不得忽略)】 ① 站位与空间张力:不只要物理站得合理,更要站得有戏——主动用距离与朝向制造关系张力,对峙就错开而立、留出剑拔弩张的间距,亲密就贴近相依互为背景,孤独就让主体矗在空旷中央四周留白,仰视或俯视制造权力与气势差;多人与多物件之间寻找对角线或三角站位让画面有层次与动势,而非一字排开;主体与陪衬之间要有视线、动作、身位上的呼应,让画面看起来有故事正在发生,而不是合影摆拍。 ② 眼神戏:每个出镜且占据叙事位置的角色,眼神都要活且有焦点——明确在想什么、在看什么(屏幕/远方/对方/镜头外某方向),并带着此刻的情绪(对峙的锐利、暧昧的含情、低落的失焦、决绝的坚定);多人时眼神之间要有交流关系(对视、错开、偷瞄、追视),用眼神传递关系与潜台词。 ③ 动作张力:把动作定格在最有故事感的那一瞬(刚要转身的瞬间、手悬停在按键上、刀锋举起一半、身体前倾的刹那),拒绝四平八稳的站桩;让肢体有动态趋势——重心前倾、衣摆扬起、发丝飘动、发力处肌肉紧绷,即便静态也要有下一秒就要动的势能;姿势有曲线与平衡,身体各部位形成连贯有韵律的剪影,忌讳笔直僵硬。 ④ 光影张力:主动设计光的方向、强弱、色温、明暗对比来托戏——恶意或紧张用硬光加暗角加冷调,温情或治愈用柔光加暖调加光晕,孤独用大面积留暗加单点微光;用主光把主角从背景里揪出来(边缘光、轮廓光、聚光),配角与背景落暗,眼睛要有清晰的高光点显有神;整体亮部、中间调、暗部分明,拒绝一盏平光全部照亮。 ⑤ 导演总纲:你是一位有镜头语言的动漫导演,不只是把元素画齐,更要让画面自己说话——用站位、眼神、动作、光影讲出帖子的情绪与冲突;每张图都主动构思这些层次,宁可多想一层,也不要平铺直叙、不要交差式应付。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·透视与镜头焦点(每张图先定视角再看透视,治视觉偏移/前后错乱)】 ① 先定镜头再画:落笔前先定清楚本图的镜头视角与焦点——焦平面上的主体是谁、镜头朝哪个方向看、画面中心在哪里;画面里所有元素都必须围绕这套镜头关系展开它们的透视与前后。 ② 单点透视逻辑:远离镜头的物按比例缩小并向画面深处收拢,近镜头的物放大且有细节,地平线一致、视线向纵深延伸,严禁该大的画小、该小的画大、前后颠倒、轮廓跑位。 ③ 禁止散乱:同一帧里不要出现两套互相冲突的透视,不要把隔着距离的东西摞在同一层。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·景深分层(治人物全挤中间/无前后)】 画面必须有清晰的前景、中景、背景三层,逐层交代每个人与物处在哪一层:前景贴近镜头占大,中景是主体叙事区,背景往纵深远放;人物不要全挤在同一层——有人靠前占大、有人退后占小,彼此有真实的空间纵深与前后遮挡关系,前面的人或物局部挡住后面的人,而不是所有人贴在同一平面一字排开。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·物品与结构立体完整(治马车骨架丢失/物品结构乱/无立体感)】 画面里的大件物品与复杂物件(马车、车架、家具、建筑、机械、书架、剑盾等)必须是结构完整、立体成立的:该有的部件都在、透视统一、前后与承重关系正确,轮子/车身/车架/辕木相互衔接正确,不是一堆零件乱堆、不是半截结构凭空丢失;多部件物体要有明确的前后、连接、承重关系,哪个托着哪个、哪个连哪个,符合该物体的现实结构与受力逻辑;物品要与画面中的人物保持正确的相对尺度与位置——人坐在车上就坐在车板上,人握剑刃就手掌扣住柄,人站马车旁边就脚落地,人与物在同一地面或平面上,不悬浮、不叠穿、不穿模。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·衣物与物品细节(每件都要画出实物厚度,不得简笔带过)】 衣服:除款式、颜色外,还要写清穿法、层次与褶皱走向,并随动作变化——衣摆因动作扬起、褶皱贴着身体发力处、斗篷垂落或飘动、袖子因抬手露出手腕、腰带扣好护甲服帖;装饰按角色身份合理搭配。 物品:写清形制、结构、材质与细节,让它们有实物厚度而不像简笔画——马车的木梁纹与铁箍、剑的护手与刀身、盾的把手与破痕、杯盏的口沿反光,该有的质感和用途感都要在。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·镜头可见性与画面范围(治穿帮:从背面画了脸/正面画了背/SFW漏裸)】 选定的镜头视角决定哪些能入画:从背后或back view只看得到背面——后脑、背部、肩胛、臀部、腿背,严禁写正面五官(眼睛鼻子嘴)与胸腹正面; from-behind时严禁写eyes/face/chest/expression,至多角色回头时才能写looking back; 正面(front view)才看得到眼睛鼻子嘴与胸腹正面,但看不到背与臀; 侧面/profile只看得到一侧眼睛耳朵与侧身轮廓,不能同时写两侧眼睛与完整正背。 穿衣场景(SFW)严禁写裸体类tag——bare back/bare shoulders/nude/naked/nipples一律禁,否则衣服穿不上; 画面范围只保留本视角真正可见的元素,构图造成的遮挡(被手遮、被衣物遮、被前景挡住)的那部分要主动排除,不要再画。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·人体接触与物理力学(治悬浮/不落实/形变失真)】 每个角色都要有明确的重力与接触感:站立双脚踩实地面(feet planted/grounded),坐姿臀部压在椅面床面,倚靠有支撑点,躺着身体贴地或贴床; 严禁凭空悬浮、脚陷地里、身体悬空悬椅。 身体的物理形变要真实:重物承托、肌肉受力拉扯、抱物时重心倾向托物侧、挥手抬臂带动肩背、发力处肌肉紧绷; 被按压/挤压处的皮肤与衣衫要有对应的凹陷、褶皱、形变,而不是两块形状互不接触的色块。 接触的表达要双向配对并且量化:单人到位(脚踩地/手有支撑/背靠墙)至少交代清楚着地点与支撑点; 双人接触(拥抱/牵手/触碰)要有接触点、接触方式、以及身体因接触产生的贴近或形变,不许两人形状上隔着空气、标签上却写hugging。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·肢体注册与手部状态(治手抓空气/关节乱/手指错位)】 画面里每个主要角色都要在画面设计里把六样说清:头部朝向与倾角、躯干朝向与弯曲、左手在做什么、右手在做什么、双腿姿态、双脚踩在哪; 手部必须有明确状态——空手(握拳/摊开/自然下垂/指尖搭在某处)、持物(握着/托着/扣住某物、手在剑柄/杯沿/衣摆上)、支撑(按墙/按桌/撑地)、 与人接触(相握/轻搭/揽住/触及对方某处);严禁手悬空对着空气抓、或手指动作与所持所触之物对不上。 肢体各段朝向要协调:头部/躯干/髋部朝向偏差不超过合理范围, 禁止 正面脸配从后的腿、坐姿上身配站姿腿、躺倒却在走跑、头朝左身朝右腿朝前 这类自相矛盾组合; 手指严格在合理数内、不重影、不粘连、不错位,多指与断指绝不出现。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·服装分层与色彩锁定(治衣服结构乱/颜色模糊)】 服装必须写清构成与配色,拒绝模糊笼统:不要裸写dress/armor/clothes/outfit, 要标明颜色+款式+材质,如 深红丝绸长裙(red silk dress)、蓝甲连体衣(blue armored bodysuit)、白棉衬衫配黑百褶裙(white cotton blouse, black pleated skirt); 有多层服装的按 外衣/内衣/袜子/鞋子 逐层写色与形,穿法清楚、层次分明; 装饰与附件按角色身份合理(腰带、徽记、护甲、披风、靴子)并落色到位; 衣物会随动作与受力变化:衣摆被风吹起或抬起、褶皱顺身体发力处走、斗篷垂落或飘动、袖口因抬手露出手腕—— 衣物与身体有真实的贴合与遮挡关系,而不是浮在身体表面的一层色膜。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·微表情与情绪神态(治脸僵/无表情细节)】 画面里每个有叙事位置的角色都要有鲜活的表情,不能是一张平板脸: 眼睛带情绪与视线方向(盯着某物/看向对方/失焦/微眯/垂目)并给眼神高光; 嘴部形态配合情绪(紧抿/微张/咬牙切齿/嘴角上扬/咬着下唇); 面庞整体气色随情绪变化(脸颊泛红/苍白/涨红/紧绷/松弛疲惫), 眉与额随情绪动(蹙眉/扬眉/额角青筋); 表情必须与身体姿态、当下剧情保持一致——蓄力的坚毅、崩溃的失焦、温柔的浅笑都要由眼神+嘴+肌肉一起构成,不许情绪和脸各演各的。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·微环境与空气感(治画面干瘪、无氛围)】 画面不能是一张干巴巴的摆拍照,要注入空气与氛围,至少做到一项: 风(wind):发丝飘动/衣摆翻飞/旗帜猎猎(har blowing),让静态画面有动态; 光(light):体积光/耶谢尔光束/丁达尔光/逆光轮廓/镜头光晕(god rays, volumetric lighting, rim light, lens flare),让光有方向有质感; 湿(moisture):汗水/雨滴/水珠/湿发/水汽(sweat, rain, water droplets, steam),体现环境湿度; 热(heat):热浪/蒸汽/脸颊泛红(heat haze, steam rising); 环境要有人味与环境细节:房间像住过、街道有纵深与生活痕迹、背景不是空白或纯色贴图,光源方向、空间纵深、远近层次都要立得住。'
+          + String.fromCharCode(10) + String.fromCharCode(10) +
+          '【铁律·多角色身份隔离与动作主语(治分不清谁是谁/拥抱没写谁抱谁/外貌随机分配)】画面里只要有 2 个及以上角色，必须做到：① 角色的外貌特征一律按角色归属来写——参考里给的每段〖角色 X〗标签只属于角色X，把【角色名】作为主语/人名标签紧跟其后，例如 Griffith (Berserk), silver long hair, sharp eyes, ...，然后另起继续写 Li Wei (original character), black hair, pale skin, vacant eyes, ...；严禁把不同角色的外貌特征平铺混在一串不加区分，严禁把A的发色/眼睛/服装画到B身上。② 所有动作、表情、姿态、接触、拥抱、握手、搭肩都必须写清【谁对谁、哪只手/哪个部位在谁身上】，主语必须是具体角色名，禁止写这种没写清楚是谁抱谁的裸标签；正确示例：Griffith embracing Li Wei from behind, Griffith arms around Li Wei waist, Griffith chin resting on Li Wei shoulder, Li Wei standing still。③ 角色间的关系与距离也要写清（谁在前谁在后、谁靠谁、谁被谁搂住）。'
+          + String.fromCharCode(10) + String.fromCharCode(10) +
+          '【铁律·画质词节制(治质量词堆太多反而裂画)】英文TAG串里的通用堆栈质量词——masterpiece、best quality、high quality、highly detailed、extremely detailed、sharp focus、ultra detailed、8k、8k uhd、absurdres——整个TAG串最多保留 2 个，宁缺毋滥；把它们放在TAG串最末尾垫底，前面的篇幅全部留给真正描述画面与人物的具体内容。禁止为了凑长度堆叠一整排质量词。'
+          + String.fromCharCode(10) + String.fromCharCode(10) +
+          '【铁律·双人接触的成对表达(治两人隔着空气说 hugging)】当画面存在两人及以上的接近与接触（拥抱/牵手/依偎/搂腰/贴脸/围观推挤等），必须在画面设计里写清双方身体的实际接触点与姿态——A的哪只手放在B的哪里、B的身体朝向与重心如何回应A，两人要有真实的贴合或遮挡，而不是两张隔着空气、标签上却写hugging/cuddle的错位构图。';
 
         var usr='帖子标题：'+(p.title||'')+'\n帖子正文：'+(p.text||'')+'\n帖子作者：'+(p.auth||'')+(p.replies&&p.replies.length?('\n部分评论：'+p.replies.slice(0,3).map(function(x){return x.from+':'+(x.content||'');}).join(' | ')):'')+_cfPullAppearanceForPost(p);
         prompt=await cdForumApiComplete([{role:'system',content:sys},{role:'user',content:usr}]);
@@ -15654,7 +15839,7 @@ async function cdForumGenPostImg(p){
           _final=_en;
           if(!_final || _final.length<4){ _final=_cdForumFallbackPrompt(String(p.title||'')+' '+(p.text||'')); }
         }
-        prompt=_cfForumTidyTags(_final).slice(0,4000);
+        prompt=_cfForumTidyTags(_final).slice(0,1400);
         // [生图审判·埋点] 按段分成多条独立日志，每条各一段，避免大JSON糊成一团：
         //   ①[提示词]我们发给AI的system提示词  ②[发送内容]帖子usr  ③[AI思考+画图TAG]AI原始返回(含思考/必画清单/九维) + 最终提取的英文TAG
         try{ if(typeof cdAddLog==='function'){
@@ -15911,6 +16096,29 @@ function saveImgToGallery(key){
       try{ if(typeof toastr==='function') toastr.success('已触发保存到手机'); }catch(_e){ }
     }catch(_e){ try{ if(typeof toastr==='function') toastr.error('[图] 保存失败'); }catch(_e2){ } }
   });
+}
+/* 帖子「重新生成图」：用该帖子当前这张图已存的生图标签(TAG)重新生成一张，不调用LLM再构思；新图挂同帖 */
+async function regenPostImg(p, i, done){
+  try{
+    if(typeof done!=='function') done=function(){};
+    if(!p || !p.imgKey){ done(); return; }
+    var rec=await cdForumImgGet(p.imgKey);
+    if(!rec || !String(rec.prompt||'').trim()){ try{ if(typeof toastr==='function') toastr.warning('该图未保存生图标签(旧图)，无法用原TAG重新生成'); }catch(e){} done(); return; }
+    var _pr=String(rec.prompt).trim(), _neg=String(rec.neg||''), _add=String(rec.add||'');
+    var img=await cdForumGenerateImage(_pr, _neg, _add);
+    if(!img || !img.dataUrl){ try{ if(typeof toastr==='function') toastr.error('重新生成失败(模型未返回图片)'); }catch(e){} done(); return; }
+    // 【覆盖】改用原 imgKey 覆盖式写入：IndexedDB put 同 key 直接覆盖旧图，图库不新增、帖子图片被直接换新
+    await cdForumImgAdd({ key:p.imgKey, dataUrl:img.dataUrl, blob:img.blob||null,
+      title:rec.title||p.title||'', author:rec.author||p.auth||'', text:String(rec.text||'').slice(0,40), time:Date.now(),
+      postKey:p.pid||('__'+(p.auth||'')+'|'+(p.title||'')), prompt:_pr.slice(0,4000),
+      neg:String(_neg).slice(0,1500), add:String(_add).slice(0,600),
+      style:rec.style||'', styleName:rec.styleName||'' });
+    p.img=p.img||true; _cfPostsCache=POSTS; cdForumPersist();
+    try{ var _iw=R&&R.querySelector?R.querySelector('#cfPostImg'):null; if(_iw){ _iw.src=img.dataUrl; } }catch(_e){}
+    openPost(i);
+    try{ if(typeof toastr==='function') toastr.success('已重新生成并覆盖原图'); }catch(e){}
+    done();
+  }catch(e){ cdWarn('[regen] 重新生成失败', e); try{ if(typeof toastr==='function') toastr.error('重新生成失败'); }catch(e2){} done(); }
 }
 /* 删除：图库删一条，并把帖子列表里引用该 imgKey 的帖子清空（帖子退化文字框） */
 function delImgLib(key){
@@ -16205,7 +16413,11 @@ async function cdForumSummarizeMemories(role){
   }catch(e){ cdWarn('[论坛] 总结记忆失败', e); return null; }
 }
 
-/* AI 一键生成角色外貌：贴合原作/IP；成功写回 role.appearance 返回描述文本 */
+/* AI 一键生成角色外貌：贴合原作/IP。返回 {appearance:文字外貌, appTags:{upper,lower,face,hair,special}} 。
+ *   · appearance：中文文字描述（向下兼容旧字段）
+ *   · appTags：5 类英文生图 TAG（上半身/下半身/脸部/头发/特殊特征），供帖子生图直接取用，可在管理面板折叠编辑 */
+var _cfAPPTAGS_KEYS=['upper','lower','face','hair','special'];
+var _cfAPPTAGS_LABEL={upper:'上半身',lower:'下半身',face:'脸部',hair:'头发',special:'特殊特征'};
 async function _cfGenAppearance(role){
   if(!role) return '';
   if(!cdForumApiReady()) return '';
@@ -16224,22 +16436,41 @@ async function _cfGenAppearance(role){
         _peers=carr.filter(function(c){return (c.name||c.n)!==nm;}).slice(0,8).map(function(c){return (c.name||c.n)+((c.appearance)?('：'+c.appearance):'');}).join('；'); }
     }catch(e){}
     var srcLine=_sc||_wsrc||'（未知，按名字与世界气质判断；若是知名角色请还原原作形象）';
-    var prompt='你是动漫/游戏角色「外貌设定师」。根据角色已知信息，为TA写一段【外貌长相】描述，让人一看名字就知道这角色长什么样。\n\n'
+    var prompt='你是动漫/游戏角色「外貌设定师」。根据角色已知信息，为TA打造：①一段中文文字外貌描述；②一套可直接喂给生图模型的英文 TAG（按身体部位分类）。\n\n'
       +'角色名：'+nm+'\n所属世界：'+(_w||'未知')+'\n世界来源/IP：'+srcLine+'\n'
       +'性格：'+(role.personality||'')+'\n与主角关系：'+(role.stage||'')+'\n对主角的评价：'+(role.judge||'')
       +(_peers?('\n同世界其他角色外貌参考：'+_peers):'')+'\n\n'
-      +'【要求】\n'
-      +'- 一段中文自然描写的【外貌】：发色、发型、五官、身形、穿着、气场/气质，信息密、有画面感，两三句即可，别长篇。\n'
+      +'【要求·文字】\n'
+      +'- appearance：一段中文自然描写的【外貌】：发色、发型、五官、身形、穿着、气场/气质，信息密、有画面感，两三句即可，别长篇。\n'
       +'- 若该角色是知名的原作/IP 角色（如火影忍者、刀剑神域、Fate等），外貌必须严格贴合原作经典形象，不允许凭空篡改或画成别的人。\n'
-      +'- 只说外貌长相，不写经历、不写心情。\n'
-      +'直接输出外貌描述文本，不要 JSON、不要多余前缀。';
-    var msgs=[{role:'system',content:prompt},{role:'user',content:'为角色生成外貌。'}];
+      +'- 只说外貌长相，不写经历、不写心情。\n\n'
+      +'【要求·英文TAG】（appTags）\n'
+      +'把外貌拆成 5 类，每类给出 2~8 个英文生图标签（仅英文、逗号分隔，不要中文、不要序号）：\n'
+      +'- upper（上半身）：体型、肩膀、胸背、手臂、腰腹等上半身特征；\n'
+      +'- lower（下半身）：腿、臀、脚、鞋袜等下本身特征；\n'
+      +'- face（脸部）：脸型、五官、眼睛、眉毛、鼻子、嘴唇、下巴等；\n'
+      +'- hair（头发）：发色、发型、长度、发质等；\n'
+      +'- special（特殊特征）：纹身、伤疤、角、尾巴、耳饰、特征配饰、瞳色特异等最具辨识度的一点；\n'
+      +'若某类没有明显特征，填""空串即可。所有 TAG 要具体、可生图（如 blue eyes, long white straight hair），不要笼统空泛。\n\n'
+      +'【输出格式】只输出一个 JSON 对象，禁止 markdown 代码块、禁止多余解释，形如：\n'
+      +'{\"appearance\":\"中文外貌描述\",\"appTags\":{\"upper\":\"...\",\"lower\":\"...\",\"face\":\"...\",\"hair\":\"...\",\"special\":\"...\"}}';
+    var msgs=[{role:'system',content:prompt},{role:'user',content:'为角色生成外貌与生图TAG。'}];
     var text=await cdForumApiComplete(msgs);
     text=String(text||'').trim();
+    var appearance='', appTags=(function(){ var t={}; for(var i=0;i<_cfAPPTAGS_KEYS.length;i++) t[_cfAPPTAGS_KEYS[i]]=''; return t; })();
     var o=cdForumExtractJSON(text);
-    if(o && (o.appearance||o.appearance_desc||o.desc)) return String(o.appearance||o.appearance_desc||o.desc).trim();
-    return text;
-  }catch(e){ cdWarn('[论坛] 生成外貌失败', e); return ''; }
+    if(o){
+      appearance=String(o.appearance||o.appearance_desc||o.desc||'').trim();
+      if(o.appTags && typeof o.appTags==='object'){
+        for(var k2=0;k2<_cfAPPTAGS_KEYS.length;k2++){ var k=_cfAPPTAGS_KEYS[k2]; if(o.appTags[k]&&String(o.appTags[k])) appTags[k]=String(o.appTags[k]).trim(); }
+      }
+    }
+    if(!appearance){ // 纯文字回退：把整段当作 appearance 兜底
+      var txt=String(text).replace(/```[\s\S]*?```/g,'').replace(/```/g,'').trim();
+      try{ var _j=JSON.parse(txt); if(_j&&typeof _j==='object'&&_j.appearance){ appearance=String(_j.appearance).trim(); if(_j.appTags){ for(var k3=0;k3<_cfAPPTAGS_KEYS.length;k3++){ var kk=_cfAPPTAGS_KEYS[k3]; if(_j.appTags[kk]) appTags[kk]=String(_j.appTags[kk]).trim(); } } } }catch(_e){ appearance=appearance||txt; }
+    }
+    return { appearance:appearance||text, appTags:appTags };
+  }catch(e){ cdWarn('[论坛] 生成外貌失败', e); return { appearance:'', appTags:null }; }
 }
 
 /* ------------------------------------------------------------
