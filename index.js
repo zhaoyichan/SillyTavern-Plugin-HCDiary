@@ -14407,8 +14407,8 @@ function _cfMountV2(){
       var w1=R.querySelector('#cfImgW'); if(w1) w1.value=g.width||832;
       var h1=R.querySelector('#cfImgH'); if(h1) h1.value=g.height||1216;
       var cd1=R.querySelector('#cfImgCacheDays'); if(cd1) cd1.value=(typeof g.cacheDays==='number')?g.cacheDays:1;
-      var st2=R.querySelector('#cfImgStyle'); if(st2){ try{ _cfRebuildStyleSelect(g, st2); }catch(_ee){} st2.value=g.style||'bihua'; }
-      var sy2=R.querySelector('#cfImgSys'); if(sy2){ sy2.value=_cfImgPromptGet(g, g.style||'bihua'); }
+      var st2=R.querySelector('#cfImgStyle'); if(st2){ try{ _cfRebuildStyleSelect(g, st2); }catch(_ee){} st2.value=g.style||'fanart'; }
+      var sy2=R.querySelector('#cfImgSys'); if(sy2){ sy2.value=_cfImgPromptGet(g, g.style||'fanart'); }
       var dl2=R.querySelector('#cfImgStyleDel'); if(dl2){ dl2.style.display=(String(g.style||'').indexOf('cust_')===0)?'':'none'; }
       // 首次进入：若已配置 url+key，自动拉一次模型列表
       if(g.source!=='off' && g.url && String(g.url).trim() && g.key && String(g.key).trim()){
@@ -14429,7 +14429,7 @@ function _cfMountV2(){
     var w1=R.querySelector('#cfImgW'); if(w1) g.width=parseInt(w1.value,10)||832;
     var h1=R.querySelector('#cfImgH'); if(h1) g.height=parseInt(h1.value,10)||1216;
     var cd1=R.querySelector('#cfImgCacheDays'); if(cd1) g.cacheDays=Math.max(0, parseInt(cd1.value,10)||1);
-    var st3=R.querySelector('#cfImgStyle'); if(st3) g.style=st3.value||'bihua';
+    var st3=R.querySelector('#cfImgStyle'); if(st3) g.style=st3.value||'fanart';
     var sy3=R.querySelector('#cfImgSys'); if(sy3){ _cfImgPromptSet(g, g.style, sy3.value||''); }
     _cfCfgCache=cdForumCfg();
     if(persist) cdForumPersist();
@@ -14462,7 +14462,7 @@ cdBindOnce(R.querySelector('#cfImgStyle'),function(){
     try{
       var g=syncImgCfgFromUI(false);
       var sy2=R.querySelector('#cfImgSys'); if(!sy2) return;
-      var _s2=(this&&this.value)||'bihua';
+      var _s2=(this&&this.value)||'fanart';
       g.style=_s2;
       sy2.value=_cfImgPromptGet(g,_s2);
       var dl2=R.querySelector('#cfImgStyleDel'); if(dl2) dl2.style.display=(String(_s2).indexOf('cust_')===0)?'':'none';
@@ -14472,7 +14472,7 @@ cdBindOnce(R.querySelector('#cfImgStyle'),function(){
   cdBindOnce(R.querySelector('#cfImgSysReset'),function(){
     try{
       var g=syncImgCfgFromUI(false);
-      var _s2=g.style||'bihua';
+      var _s2=g.style||'fanart';
       _cfImgPromptSet(g,_s2,'');
       var sy2=R.querySelector('#cfImgSys'); if(sy2) sy2.value=_cfImgPromptGet(g,_s2);
       cdForumPersist();
@@ -14482,7 +14482,7 @@ cdBindOnce(R.querySelector('#cfImgStyle'),function(){
   cdBindOnce(R.querySelector('#cfImgSysSave'),function(){
     try{
       var g=syncImgCfgFromUI(false);
-      var _s2=g.style||'bihua';
+      var _s2=g.style||'fanart';
       var sy2=R.querySelector('#cfImgSys'); if(!sy2) return;
       var _txt=String(sy2.value||'').trim();
       var _meta=_cfImgStyleMeta(g,_s2);
@@ -14493,7 +14493,7 @@ cdBindOnce(R.querySelector('#cfImgStyle'),function(){
     }catch(_e3){}
   });
   /* [C] 风格自定义：新增(＋) / 删除(✕) / 导入 */
-  function _cfImgApplyStyleSel(g){ try{ var st=R.querySelector('#cfImgStyle'); if(st){ _cfRebuildStyleSelect(g, st); st.value=g.style||'bihua'; } }catch(_e){} try{ var sy=R.querySelector('#cfImgSys'); if(sy) sy.value=_cfImgPromptGet(g, g.style||'bihua'); }catch(_e){} var dl=R.querySelector('#cfImgStyleDel'); if(dl) dl.style.display=(String(g.style||'').indexOf('cust_')===0)?'':'none'; }
+  function _cfImgApplyStyleSel(g){ try{ var st=R.querySelector('#cfImgStyle'); if(st){ _cfRebuildStyleSelect(g, st); st.value=g.style||'fanart'; } }catch(_e){} try{ var sy=R.querySelector('#cfImgSys'); if(sy) sy.value=_cfImgPromptGet(g, g.style||'fanart'); }catch(_e){} var dl=R.querySelector('#cfImgStyleDel'); if(dl) dl.style.display=(String(g.style||'').indexOf('cust_')===0)?'':'none'; }
   cdBindOnce(R.querySelector('#cfImgStyleAdd'),function(){
     try{
       var g=cdForumImgCfg();
@@ -15151,7 +15151,7 @@ async function cdForumFetchChatModels(url0, key0){
 }
 function cdForumImgCfg(){
   var c=cdForumCfg();
-  if(!c.img){ c.img={ source:'off', url:'', key:'', model:'nai-diffusion-3', style:'bihua', stylePromptBihua:'', stylePromptMirror:'', customStyles:[], addPrompt:CF_DEFAULT_IMG_ADD, negPrompt:CF_DEFAULT_IMG_NEG, width:832, height:1216, cacheDays:1 }; _cfCfgCache=c; if(typeof cdForumPersist==='function') cdForumPersist(); }
+  if(!c.img){ c.img={ source:'off', url:'', key:'', model:'nai-diffusion-3', style:'fanart', stylePromptBihua:'', stylePromptMirror:'', customStyles:[], addPrompt:CF_DEFAULT_IMG_ADD, negPrompt:CF_DEFAULT_IMG_NEG, width:832, height:1216, cacheDays:1 }; _cfCfgCache=c; if(typeof cdForumPersist==='function') cdForumPersist(); }
   return c.img;
 }
 /* [C] 风格辅助：内置 bihua/mirror + 用户自定义 customStyles 的统一读写 */
@@ -15189,7 +15189,7 @@ function _cfImgStyleName(g, style){
 }
 function _cfRebuildStyleSelect(g, sel){
   if(!sel) return;
-  var cur=sel.value||g.style||'bihua';
+  var cur=sel.value||g.style||'fanart';
   sel.innerHTML='';
   var op1=document.createElement('option'); op1.value='bihua'; op1.textContent='必画清单·忠于帖子'; sel.appendChild(op1);
   var op2=document.createElement('option'); op2.value='mirror'; op2.textContent='对镜自拍·情绪氛围'; sel.appendChild(op2);
@@ -15567,7 +15567,7 @@ async function cdForumGenPostImg(p){
     // ① 文字模型读帖 → 先理解帖子,再按九维展开>=1000字中文画面设计,最后提炼英文TAG串
     try{
       if(cdForumApiReady()){
-        var _sty=(_cg&&_cg.style)||'bihua';
+        var _sty=(_cg&&_cg.style)||'fanart';
         var sys=_cfImgPromptGet(_cg,_sty) || ((_sty==='mirror')?CF_IMG_PROMPT_MIRROR:CF_IMG_PROMPT_BIHUA);
 
         var usr='帖子标题：'+(p.title||'')+'\n帖子正文：'+(p.text||'')+'\n帖子作者：'+(p.auth||'')+(p.replies&&p.replies.length?('\n部分评论：'+p.replies.slice(0,3).map(function(x){return x.from+':'+(x.content||'');}).join(' | ')):'')+_cfPullAppearanceForPost(p);
