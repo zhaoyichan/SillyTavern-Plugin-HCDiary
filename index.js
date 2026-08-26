@@ -15152,7 +15152,7 @@ async function cdForumFetchChatModels(url0, key0){
 }
 function cdForumImgCfg(){
   var c=cdForumCfg();
-  if(!c.img){ c.img={ source:'off', url:'', key:'', model:'nai-diffusion-3', style:'fanart', stylePromptBihua:'', stylePromptMirror:'', customStyles:[], addPrompt:CF_DEFAULT_IMG_ADD, negPrompt:CF_DEFAULT_IMG_NEG, width:832, height:1216, cacheDays:1 }; _cfCfgCache=c; if(typeof cdForumPersist==='function') cdForumPersist(); }
+  if(!c.img){ c.img={ source:'off', url:'', key:'', model:'nai-diffusion-3', style:'fanart', stylePromptBihua:'', stylePromptMirror:'', customStyles:[], addPrompt:'', negPrompt:'', width:832, height:1216, cacheDays:1 }; _cfCfgCache=c; if(typeof cdForumPersist==='function') cdForumPersist(); }
   return c.img;
 }
 /* [C] 风格辅助：内置 bihua/mirror + 用户自定义 customStyles 的统一读写 */
