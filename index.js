@@ -2520,9 +2520,10 @@ async function cdBuildDiaryInjectionText() {
           tl.push(`角色名: ${name}|` + _cf.map((f) => `${f}:${ch[f] || ''}`).join('|'));
         });
         _lf.forEach((k) => {
-          if (ltLower[k]) tl.push(k + ': ' + ltLower[k].split('\n').map((l) => l.trim()).filter(Boolean).join('；'));
+          if (ltLower[k]) { var _ls = ltLower[k].split('\n').map((l) => l.trim()).filter(Boolean); if (_ls.length) tl.push(k + '\n- ' + _ls.join('\n- ')); }
         });
-        tableTxt = '[当前表格现状]\n' + tl.join('\n');
+        // [注入更多] 状态表注入更完整：每一类（地点/角色行/履历）各自清晰分段；履历保留多行，不压成一行；附引导说明让AI明白这是已记录的当前剧情状态
+        tableTxt = '【剧情状态表·当前】(这是插件已记录的当前剧情状态，供你参考世界/角色现状，回复时贴合这些状态来推进)\n' + tl.join('\n');
       }
       lt = ltInstr ? (ltInstr + (tableTxt ? '\n\n' + tableTxt : '')) : (tableTxt || '');
     } catch (e) {}
@@ -2911,7 +2912,7 @@ function cdAddLog(level, message, detail) {
       time: new Date().toLocaleString(),
       level: level,
       message: String(message || ''),
-      detail: detail !== undefined ? JSON.stringify(detail, null, 2).slice(0, 500) : '',
+      detail: detail !== undefined ? JSON.stringify(detail, null, 2).slice(0, 8000) : '',
     };
     logs.push(entry);
     // 保留最近500条
@@ -15483,9 +15484,16 @@ async function cdForumGenerateImage(prompt, neg, add){
   var input=String(prompt||'');
   if(add && String(add).trim()) input += ', '+String(add).trim();
   // 硬性防崩坏负面约束：无论用户自定义与否都强制追加（字体崩坏/多指/器官错乱/五官/肢体等）
-  var HARD_NEG='bad anatomy, bad hands, bad face, bad proportions, malformed limbs, deformed body, mutated hands, fused fingers, extra fingers, missing fingers, deformed fingers, six fingers, glued fingers, extra hands, twisted body, lowres, low quality, text, letters, typography, words, captions, logo, watermark, signature, internal organs, exposed organs, visible intestines, viscera, gore, mutilation, deformed face, distorted face, ugly, twisted facial features, crossed eyes, extra eyes, bad eyes, empty eyes, deformed ear, mutant, mutation, deformity, grotesque, jpeg artifacts, blurry, out of focus';
+  var HARD_NEG='bad anatomy, bad hands, bad face, bad proportions, malformed limbs, deformed body, mutated hands, fused fingers, extra fingers, missing fingers, deformed fingers, six fingers, glued fingers, extra hands, twisted body, lowres, low quality, text, letters, typography, words, captions, logo, watermark, signature, internal organs, exposed organs, visible intestines, viscera, gore, mutilation, deformed face, distorted face, ugly, twisted facial features, crossed eyes, extra eyes, bad eyes, empty eyes, deformed ear, mutant, mutation, deformity, grotesque, jpeg artifacts, blurry, out of focus, ugly man, fat man, obese man, overweight man, muscular brutish man, rough ugly old man, bald man, unshaven ragged man, hairy rugged man, plain homely man, crude man, primitive caveman look';
   var _negAll=String(neg||'') ? (String(neg)+', '+HARD_NEG) : HARD_NEG;
   var body={ input:input, model:g.model||'nai-diffusion-3', parameters:{ negative_prompt:_negAll, width:parseInt(g.width,10)||832, height:parseInt(g.height,10)||1216, steps:28, guidance_scale:7, seed:0, smea:false, n_samples:1 } };
+  // [生图审判·底层埋点] 所有生图必经：记录最终真实喂给生图模型的 prompt 与负面词（含HARD_NEG合并后）
+  try{ if(typeof cdAddLog==='function'){
+    cdAddLog('info', '[生图·底层请求] 模型:'+String(body.model||'')+' 尺寸:'+(body.parameters?body.parameters.width+'x'+body.parameters.height:''), {
+      promptFinal: String(input||'').slice(0,4000),
+      negFinal: String(_negAll||'').slice(0,2000)
+    });
+  } }catch(_le){}
   try{
     var res=await fetch(base+(base.indexOf('/ai')>=0?'':'/ai')+'/generate-image', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+g.key }, body:JSON.stringify(body) });
     if(!res.ok){ var err=''; try{ err=await res.text(); }catch(e2){} cdWarn('[生图] HTTP '+res.status+': '+String(err).slice(0,200)); return null; }
@@ -15532,11 +15540,44 @@ async function cdForumImgForPost(p){
     var img=await cdForumGenerateImage(_use, g.negPrompt||'', g.addPrompt||'');
     if(!img || !img.dataUrl) return null;
     var key='img_'+Date.now()+'_'+Math.floor(Math.random()*1e6);
-    await cdForumImgAdd({ key:key, dataUrl:img.dataUrl, title:p.title||'', author:p.auth||'', text:String(p.text||'').slice(0,40), time:Date.now(), postKey:(p.pid||('__'+(p.auth||'')+'|'+(p.title||''))) });
+    await cdForumImgAdd({ key:key, dataUrl:img.dataUrl, title:p.title||'', author:p.auth||'', text:String(p.text||'').slice(0,40), time:Date.now(), postKey:(p.pid||('__'+(p.auth||'')+'|'+(p.title||''))) ,
+      prompt: String(_use||'').slice(0,4000),
+      neg: String(g&&g.negPrompt||'').slice(0,1500),
+      style: g.style||'',
+      styleName: (typeof _cfImgStyleName==='function'?_cfImgStyleName(g,g.style||''):'')
+    });
+    // [生图审判·埋点] 自动发帖/直生生图的最终词
+    try{ if(typeof cdAddLog==='function'){
+      cdAddLog('info', '[生图·脚本直生] 作者:'+(p.auth||'')+' 帖子:'+String(p.title||'').slice(0,24), {
+        style: g.style||'', styleName: (typeof _cfImgStyleName==='function'?_cfImgStyleName(g,g.style||''):''),
+        desc: String(desc||'').slice(0,600),
+        use: String(_use||'').slice(0,600),
+        tagFinal: String(img&&img.dataUrl?'(见图)':''),
+        neg: String(g&&g.negPrompt||'').slice(0,1500)
+      });
+    } }catch(_le){}
     return key;
   }catch(e){ cdWarn('[生图] 入图库失败', e); return null; }
 }
 /* 从帖子文字识别角色，挖出世界书/角色库里的长相+IP，供图像生成参考 */
+/* [生图·TAG去重兜底(B)] 把提取到的英文TAG串按逗号拆开,去空、去重复、去首尾噪声,再以「, 」重拼。
+ * 即便AI输出里带了重复语义或冗余噪声,也能在此保底,避免重复标稀释权重。保留标签原有顺序。 */
+function _cfForumTidyTags(str){
+  try{
+    var parts=String(str||'').split(',');
+    var seen={}; var out=[]; var i;
+    for(i=0;i<parts.length;i++){
+      var t=String(parts[i]||'').replace(/\s+/g,' ').trim();
+      if(!t) continue;
+      var lo=t.toLowerCase();
+      if(seen[lo]) continue;      /* 去 重复标签(忽略大小写) */
+      seen[lo]=1;
+      out.push(t);
+    }
+    return out.join(', ');
+  }catch(e){ return String(str||''); }
+}
+
 function _cfPullAppearanceForPost(p){
   try{
     var text=String((p&&(p.title||''))+' '+(p&&(p.text||''))).replace(/<[^>]*>/g,' ');
@@ -15580,41 +15621,86 @@ async function cdForumGenPostImg(p){
       if(cdForumApiReady()){
         var _sty=(_cg&&_cg.style)||'fanart';
         var sys=_cfImgPromptGet(_cg,_sty) || ((_sty==='mirror')?CF_IMG_PROMPT_MIRROR:CF_IMG_PROMPT_BIHUA);
+        // [生图审判] 强制「先思考≥70字，想清要画什么，再往下设计、最后才写TAG」——治"总是崩坏"根因：AI 没想清就急着写 tag
+        sys = String(sys||'') + String.fromCharCode(10) + String.fromCharCode(10) +
+          '【铁律·先思考再下笔(全流程最优先，第一步必须做)】拿到帖子后，先别急着列清单、更别急着写 TAG。先把这张图到底要画什么"想清楚"：在脑中过一遍——画面里都有谁、谁在做什么动作、什么场景地点、什么光线氛围、什么镜头角度、整体什么气氛。然后【用不少于70个字的中文，把这张图要画什么完整写出来】（要具体到人物/动作/场景/镜头/光影，像在心里把它画出来一样），这段思考【画面思考】必须单独成段、写在最前面、字数必须充分。想清楚之后，才允许进入后面的必画清单、画面设计、英文 TAG 提炼。严禁不思考就直接输出 TAG。'
+          + String.fromCharCode(10) + String.fromCharCode(10) +
+          '【输出格式铁律(严格遵守)】① 全文绝不使用任何 markdown 语法——禁止 **（星号加粗）、##（井号标题）、`（反引号）、#、-、>、| 等符号做格式；② 画面设计写中文时不要加序号点、不要装饰符，直接正常段落写出每一维内容；③ 最后提炼英文 TAG 时，【必须用全角括号【TAG】单独起一行开头】，下一行开始写纯英文、逗号分隔的标签串(TAG)，不要写"TAG:"、不要写"**TAG**"、不要加任何星号或标题符；④ TAG 内禁止出现中文，禁止出现 `**`、`*`、`#`、数字序号、行号；⑤ 示例规范结尾：\n【TAG】\nanime style, cel shading, thick anime paint, detailed, a young man xxxxxx, ...(纯英文逗号)' + String.fromCharCode(10) + String.fromCharCode(10) + '【男性颜值铁律(画面里的男性角色必须精致俊美)】画面中出现的每一位男性角色，不管是不是主角，都必须画成精致俊美、帅气养眼的形象——五官立体精致、轮廓英俊、眼神有神、身形挺拔修长好看；严格禁止任何丑陋、肥胖、粗犷、邋遢、油腻、糙汉、驼背佝偻、满脸横肉的男性形象。若帖子里明确写了某角色长相(如 格里菲斯白发俊美贵族 这种外貌参考)，必须严格按该设定还原且保持俊美感；没写长相的男性角色，也一律按『精致美型少年/青年』的帅法补全，绝不画成普通路人大叔或壮汉。此铁律优先级最高，覆盖所有男角色的外形刻画。' + String.fromCharCode(10) + String.fromCharCode(10) + '【TAG输出质量铁律(英文TAG串的最终质检,前三步都做完、画面已想清之后才允许输出TAG)】 ① 同一个英文标签或单词绝不允许重复出现两次以上,每个语义只写一次,例如 masterpiece 这类质量词全串只保留一个,绝不允许 masterpiece 出现两次; ② 严禁输出与画面主题、人物设定相矛盾的用词,当正向设定是精致纤细美少年、优雅高贵、俊美等形象时,整个输出(包括负面提示词方向)里也禁止再出现 瘦弱/skinny、娇小/petite、粗壮、笨重、胖子、丑、邋遢 这类自相冲突的词; ③ 画面主角或核心人物的专属标签(人名、长发、衣服、武器、关键场景等)必须放在英文TAG串最前面的显著位置,把 masterpiece、best quality、high quality、detailed 这类通用质量垫底词统一放到TAG串的最后,并且这些通用质量词每个只保留一个,不要堆叠铺开; ④ 只输出已想清楚、确定要画的标签,TAG宁少勿滥、宁精勿杂,不堆砌与画面无关的冗余细节。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·空间关系与画面秩序(画面里所有角色、物件、背景都必须符合)】 ① 主体与陪衬的空间占比:画面主角必须在构图中占合理且突出的比例,近景或中景时主体约占画面1/4到1/2的视觉重心,配角、背景人物、道具按与主角的远近与主次正确缩放,近大远小、紧贴透视,严禁主角小得看不清、或配角或背景道具大到反客为主;多人同框时人物之间有正确的前后层次与间距,谁靠前谁靠后、谁大谁小都要有物理逻辑。 ② 空间方位必须成立:同一画面里的物与人都处于同一个可信空间,桌子/墙面/地面/门窗的视平线与地平线一致,物体不悬浮、不叠穿、不缺一个维度,人物的脚要踩在地上或踏在正确的支撑物上。 ③ 背景纵深合理:背景要真正成画而不是空白或廉价贴图,房间就要有墙/窗/家具/光源的方向性,街道就要有纵深透视、远近建筑与天际线,室外要有地面承接落影;背景元素与前景主体处于同一透视体系,近实远虚。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·动作姿态与人体物理(画面里所有人物必须符合)】 ① 关节与骨骼合理:任何站/坐/倚/走/跑/弯腰/抬手/转头/跷腿等姿态,都符合真实人体关节的可动范围与承力方式,脊柱能弯的幅度、肩膀手臂的连带、膝盖脚踝的承重都成立,不出现反关节、断臂、错位、折叠扭曲的肢体,双手不重影、不多指。 ② 动作要像正在发生而不是摆拍僵尸:要有重心、有惯性、有受力,站立知道重心在两条腿的承重,坐着手放在该放的位置,迈步时另一只脚有预备,抱着东西身体重心倾向托物的一侧,动作落点与表情情绪一致;手部动作(握/抬/指/扶/抱/持)与它所接触的物或人对应严丝合缝,不悬空对着空气抓。 ③ 表情与姿态连贯:某情绪下身体语言整体一致,低头认错配收肩、愤怒配握拳绷身、疲惫配肩塌眼垂,情绪和动作不能各演各的。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·镜头语言与画面张力(导演级要求,每张图都要主动设计,不得忽略)】 ① 站位与空间张力:不只要物理站得合理,更要站得有戏——主动用距离与朝向制造关系张力,对峙就错开而立、留出剑拔弩张的间距,亲密就贴近相依互为背景,孤独就让主体矗在空旷中央四周留白,仰视或俯视制造权力与气势差;多人与多物件之间寻找对角线或三角站位让画面有层次与动势,而非一字排开;主体与陪衬之间要有视线、动作、身位上的呼应,让画面看起来有故事正在发生,而不是合影摆拍。 ② 眼神戏:每个出镜且占据叙事位置的角色,眼神都要活且有焦点——明确在想什么、在看什么(屏幕/远方/对方/镜头外某方向),并带着此刻的情绪(对峙的锐利、暧昧的含情、低落的失焦、决绝的坚定);多人时眼神之间要有交流关系(对视、错开、偷瞄、追视),用眼神传递关系与潜台词。 ③ 动作张力:把动作定格在最有故事感的那一瞬(刚要转身的瞬间、手悬停在按键上、刀锋举起一半、身体前倾的刹那),拒绝四平八稳的站桩;让肢体有动态趋势——重心前倾、衣摆扬起、发丝飘动、发力处肌肉紧绷,即便静态也要有下一秒就要动的势能;姿势有曲线与平衡,身体各部位形成连贯有韵律的剪影,忌讳笔直僵硬。 ④ 光影张力:主动设计光的方向、强弱、色温、明暗对比来托戏——恶意或紧张用硬光加暗角加冷调,温情或治愈用柔光加暖调加光晕,孤独用大面积留暗加单点微光;用主光把主角从背景里揪出来(边缘光、轮廓光、聚光),配角与背景落暗,眼睛要有清晰的高光点显有神;整体亮部、中间调、暗部分明,拒绝一盏平光全部照亮。 ⑤ 导演总纲:你是一位有镜头语言的动漫导演,不只是把元素画齐,更要让画面自己说话——用站位、眼神、动作、光影讲出帖子的情绪与冲突;每张图都主动构思这些层次,宁可多想一层,也不要平铺直叙、不要交差式应付。';
 
         var usr='帖子标题：'+(p.title||'')+'\n帖子正文：'+(p.text||'')+'\n帖子作者：'+(p.auth||'')+(p.replies&&p.replies.length?('\n部分评论：'+p.replies.slice(0,3).map(function(x){return x.from+':'+(x.content||'');}).join(' | ')):'')+_cfPullAppearanceForPost(p);
         prompt=await cdForumApiComplete([{role:'system',content:sys},{role:'user',content:usr}]);
         prompt=String(prompt||'').trim();
         var _aiRaw=prompt;
-        // 只取【TAG】之后的英文标签串作生图 prompt;没有则用全文;放开长度到 4000
-        var _tm=prompt.match(/【TAG】([\s\S]*)$/);
+        // [生图审判·提取加固] 只取 TAG 之后的英文标签串作生图 prompt；兼容 AI 各种不规范标记（【TAG】/ **TAG**: / TAG: / Tags: 等），放开长度到 4000
+        var _tmVars=[
+          /【TAG】([\s\S]*)$/,
+          /\*\*TAG\*\*\s*[:：]?\s*([\s\S]*)$/i,
+          /[\s\n]TAG\s*[:：]\s*([\s\S]*)$/i,
+          /Tags?\s*[:：]\s*([\s\S]*)$/i,
+          /生图标签\s*[:：]\s*([\s\S]*)$/i
+        ];
+        var _tm=null;
+        for(var _ti=0;_ti<_tmVars.length;_ti++){ var _tg=_tmVars[_ti].exec(prompt); if(_tg){ _tm=_tg; break; } }
         var _final;
-        if(_tm){ _final=_tm[1].trim(); }
+        if(_tm){ _final=String(_tm[1]||'').trim(); }
         else {
-          // 兜底：AI 没按规范输出【TAG】时，只保留英文片段，丢弃中文长叙述，避免喂给生图模型出鬼图
-          var _en=prompt.replace(/[^\x00-\x7F]+/g,' ').replace(/\s+/g,' ').trim();
+          // 兜底：AI 没按规范输出 TAG 时，先去掉 markdown/序号/星号噪声，再只留真正可用的英文标签，丢弃中文叙述，避免喂给生图模型出鬼图
+          var _en=prompt
+            .replace(/\n{2,}/g,'\n')
+            .replace(/[#*`_~>|\-]{1,}/g,' ')          // 去 markdown / 星号 / 画线噪声
+            .replace(/^\s*\d+[\.、:]\s*/gm,' ')   // 去 序号行
+            .replace(/[^\x00-\x7F]+/g,' ')           // 去中文
+            .replace(/\s+/g,' ').trim();
           _final=_en;
           if(!_final || _final.length<4){ _final=_cdForumFallbackPrompt(String(p.title||'')+' '+(p.text||'')); }
         }
-        prompt=_final.slice(0,4000);
+        prompt=_cfForumTidyTags(_final).slice(0,4000);
+        // [生图审判·埋点] 按段分成多条独立日志，每条各一段，避免大JSON糊成一团：
+        //   ①[提示词]我们发给AI的system提示词  ②[发送内容]帖子usr  ③[AI思考+画图TAG]AI原始返回(含思考/必画清单/九维) + 最终提取的英文TAG
+        try{ if(typeof cdAddLog==='function'){
+          var _sNm=(typeof _cfImgStyleName==='function'?_cfImgStyleName(_cg,_sty):_sty);
+          cdAddLog('info', '[生图·帖详情·提示词] 作者:'+(p.auth||'')+' 帖子:'+String(p.title||'').slice(0,24)+' [风格:'+_sty+'/'+_sNm+']', { sys: String(sys||'').slice(0,8000) });
+          cdAddLog('info', '[生图·帖详情·发送内容] 帖子:'+String(p.title||'').slice(0,24), { usr: String(usr||'').slice(0,4000) });
+          cdAddLog('info', '[生图·帖详情·AI思考+画图TAG] 帖子:'+String(p.title||'').slice(0,24), { aiRaw: String(_aiRaw||'').slice(0,8000), tagFinal: String(prompt||'').slice(0,4000) });
+          // [生图·诊断] 固化主人最关心的三个判断证据：①是否发了帖子内容(usr) ②是否带上角色外貌/IP参考 ③AI是否先有≥70字【画面思考】再写TAG
+          var _appBlk=(String(usr||'').match(/【角色长相[\s\S]*$/)||[''])[0]||'';
+          var _hasTk=String(_aiRaw||'').indexOf('【画面思考】')>=0;
+          var _tkLen=0;
+          if(!_hasTk){ try{ var _tm2=_aiRaw.match(/【画面思考】([\s\S]*?)(?=【必画清单|【画面设计|【TAG|$)/); if(_tm2) _tkLen=String(_tm2[1]||'').replace(/\s/g,'').length; }catch(_e3){} }
+          cdAddLog('info', '[生图·帖详情·诊断] 帖子:'+String(p.title||'').slice(0,24), {
+            usrLen: String(usr||'').length,
+            usrHasPost: String(usr||'').indexOf('帖子正文：')>=0,
+            hasAppearance: _appBlk.length>0,
+            appearanceBlock: _appBlk.slice(0,1600),
+            hasThink: _hasTk,
+            thinkLen: _tkLen,            // AI【画面思考】段字数（去空白）；0 表示没输出思考段或没抓到
+            finalFirst200: String(prompt||'').slice(0,200)
+          });
+        } }catch(_le){}
       }
     }catch(e){ cdWarn('[图] 生成画面prompt失败', e); }
-    // ② 兜底:LLM 失败/为空时用内置类型模板(离线可判)
+    // ② 兜底:LLM 失败/为空时用内置类型模板(离线可判)；兜底会带当前画风的 tag 词，避免换风格却出固定厚涂
     if(!prompt || /^[\s。.]*$/.test(prompt)){
       var kw=String((p.title||'')+' '+(p.text||''));
-      prompt=_cdForumFallbackPrompt(kw);
+      prompt=_cdForumFallbackPrompt(kw, _cg, _sty);
     }
-    // ③ 生图（正面追加词/负面词自动并入）
+    // ③ 生图（正面追加词/负面词自动并入）；记录最终喂给生图模型的词，供「看图页查看TAG」与日志诊断
     var g=cdForumImgCfg();
     var img=await cdForumGenerateImage(prompt, g&&g.negPrompt||'', g&&g.addPrompt||'');
     if(!img || !img.dataUrl) return { sub:'生图失败（模型未返回图片）' };
-    // ④ 入库并返回 key
+    // ④ 入库并返回 key；图上带 生图TAG/负面词/风格名 等审判信息（供看图页弹窗展示）
     var key='img_'+Date.now()+'_'+Math.floor(Math.random()*1e6);
-    await cdForumImgAdd({ key:key, dataUrl:img.dataUrl, title:p.title||'', author:p.auth||'', text:String(p.text||'').slice(0,40), time:Date.now(), postKey:(p.pid||('__'+(p.auth||'')+'|'+(p.title||''))) });
+    await cdForumImgAdd({ key:key, dataUrl:img.dataUrl, title:p.title||'', author:p.auth||'', text:String(p.text||'').slice(0,40), time:Date.now(), postKey:(p.pid||('__'+(p.auth||'')+'|'+(p.title||''))) ,
+      prompt: String(prompt||'').slice(0,4000),
+      neg: String(g&&g.negPrompt||'').slice(0,1500),
+      style: _sty||'',
+      styleName: (typeof _cfImgStyleName==='function'?_cfImgStyleName(_cg,_sty||''):'')
+    });
     return { key:key };
   }catch(e){ cdWarn('[图] cdForumGenPostImg失败', e); return { sub:'图像生成出错' }; }
 }
 /* 内置兜底：LLM 不可用时按正文关键词粗判类型，套固定画风镜头模板 */
-function _cdForumFallbackPrompt(kw){
+function _cdForumFallbackPrompt(kw, g, style){
   var t='';
   if(/吐|骂|骂|挂|阴阳|开团|撕|战|撞|喷|嘲|betray|troll/i.test(kw)) t='hiding behind a wall corner, secretly filming the target who does not know he is being photographed, foreground close-up of the wall edge, the person in the distance caught off guard, documentary spy shot';
   else if(/同人|cp|couple|磕|发糖|甜|告白|暧昧|恋爱|恋情/i.test(kw)) t='two lovers in one frame, one slightly turning back, the other leaning close, eye contact, warm glowing lighting, soft bokeh, romantic sweet atmosphere';
@@ -15624,7 +15710,17 @@ function _cdForumFallbackPrompt(kw){
   else if(/生活|日常|自拍|到家|今天|起床|懒|不想动|平平淡淡|随缘/i.test(kw)) t='first-person selfie, holding up phone toward a mirror, seeing own tired real face and the raised phone edge, messy casual daily background, slight handheld blur, like a spontaneous life photo';
   else if(/晒|成就|新|买|到手|开箱|炫耀|骄傲|der|凡尔赛/i.test(kw)) t='extreme close-up showing off an achievement or new item, raised in front of the camera, bright clear details, prideful mood';
   else t='a storytelling scene based on the post topic, cinematic composition, moody atmosphere, strong visual narrative';
-  return t+', anime style, cel shading, thick anime paint, detailed';
+  // [生图审判·画风跟随] 兜底也要尊重当前所选画风：画风库(jojo/fanart等)按对应tag词，自定义取自定义词，否则默认动漫厚涂
+  var _styTag='anime style, cel shading, thick anime paint, detailed';
+  try{
+    var _s0=String(style||'')||(g&&g.style)||'';
+    if(_s0 && typeof _cfImgStylePrompt==='function'){
+      var _m=_cfImgStylePrompt(_s0);
+      if(_m && _m.length>10){ var _tag=String((_cfImgStyleEntry&&_cfImgStyleEntry(_s0)&&_cfImgStyleEntry(_s0).tag)||''); if(_tag) _styTag=_tag; }
+    }
+    if(_s0 && _s0.indexOf('cust_')===0 && g && g.customStyles && typeof _cfImgPromptGet==='function'){ var _cp=_cfImgPromptGet(g,_s0); if(_cp && _cp.length>10) _styTag=_cp; }
+  }catch(_e){}
+  return t+', '+_styTag;
 }
 
 /* 给帖子处理"真图 or 文字描述"的统一入口：
@@ -15758,7 +15854,16 @@ function openImgView(key){
       var ts=(t&&!isNaN(t))?(t.getFullYear())+'-'+((t.getMonth()+1)<10?'0':'')+(t.getMonth()+1)+'-'+(t.getDate()<10?'0':'')+t.getDate()+' '+(t.getHours()<10?'0':'')+t.getHours()+':'+(t.getMinutes()<10?'0':'')+t.getMinutes():'';
       info.innerHTML='<div style="margin-top:7px;"><b>'+esc0(rec.title||'（无标题）')+'</b></div>'
         +'<div>作者：'+esc0(rec.author||'')+(ts?' · '+ts:'')+'</div>'
-        +'<div>配文：'+esc0(rec.text||'')+'</div>';
+        +'<div>配文：'+esc0(rec.text||'')+'</div>'
+        +'<div style="margin-top:8px;padding-top:7px;border-top:1px solid #eef0f1;line-height:1.6;">'
+        +'<div style="font-size:8.5px;color:#7a4a8a;font-weight:700;">生图标签 <span style="color:#b0a0b8;font-weight:400;">· '+(esc0(rec.styleName||(rec.style||'未记录')))+'</span></div>'
+        + ((rec.prompt && String(rec.prompt).trim())
+            ? ('<div style="font-size:8.5px;color:#3a4148;margin-top:3px;max-height:120px;overflow-y:auto;word-break:break-all;white-space:pre-wrap;">'+esc0(rec.prompt)+'</div>')
+            : '<div style="font-size:8.5px;color:#b0a0b8;margin-top:3px;">该图未保存生图标签（旧图）。新生成的图在「日志」里可查完整TAG。</div>')
+        + (rec.neg && String(rec.neg).trim()
+            ? ('<div style="font-size:8px;color:#9aa1a7;margin-top:4px;max-height:80px;overflow-y:auto;word-break:break-all;white-space:pre-wrap;">负向：'+esc0(String(rec.neg).slice(0,800))+'</div>')
+            : '<div style="font-size:8px;color:#c0c4c9;margin-top:4px;">负向：默认(内置20+防崩坏词)</div>')
+        +'</div>';
     }
   }).catch(function(){ try{ if(typeof toastr==='function') toastr.error('[图] 图片读取失败'); }catch(_e){ } closeImgView(); });
 }
