@@ -13541,6 +13541,8 @@ function _cfMountV2(){
   }
 
   // ===== 帖子多选：入口 + 操作条 =====
+  // 日志按钮兜底：document 级事件委托，确保点击一定触发 openImgTell（即使 cdBindOnce 绑定失效）
+  try{ if(!window.__cfItDeleg){ window.__cfItDeleg=true; document.addEventListener('click',function(ev){ var t=ev&&ev.target; if(!t) return; var el=t.closest?t.closest('#imgTellQ'):null; if(el && typeof openImgTell==='function'){ ev.stopPropagation(); openImgTell(); } }); } }catch(_e){}
   cdBindOnce(R.querySelector('#imgTellQ'), function(){
     try{ if(typeof cdAddLog==='function') cdAddLog('info','[论坛] 日志胶囊被点击'); }catch(e){}
     openImgTell();
@@ -15004,7 +15006,7 @@ function cdForumCfg(){
  * ============================================================ */
 /* 默认画师串/正面追加 与 负面提示词（用户 preset；仅在首次创建 img 配置时作为初始值，不覆盖已保存值） */
 var CF_DEFAULT_IMG_ADD = "best quality, amazing quality, very aesthetic, absurdres, man，Single-person shot, focusing on the person being penetrated during sex，chest and abs，bl，Korean comic style.A handsome face.Powerful, visually striking pornographic scenes，Focus on the bottom。";
-var CF_DEFAULT_IMG_NEG = "Low resolution, words, signatures, watermarks, vague, ugly, twisted facial features, redundant fingers, missing fingers, deformed fingers, glued fingers, redundant toes, missing toes, deformed toes, glued toes, poor human structure, dark yellow skin, blurred edges, dim eyes, eyes without highlights, yellow skin, dark gray,Ugly, wrong human body structure，Pubic hair, fetal hair,underwear ，Naughty, skinny build, petite";
+var CF_DEFAULT_IMG_NEG = "lowres, low quality, worst quality, bad anatomy, bad hands, bad face, bad proportions, malformed limbs, deformed body, mutated hands, extra limbs, fused fingers, extra fingers, missing fingers, deformed fingers, six fingers, glued fingers, extra hands, wrong number of fingers, malformed hand, misshapen hand, deformed limbs, fused limbs, missing arms, extra arms, twisted body, contorted posture, broken spine, disconnected limbs, ambiguous depth, blurred edges, out of focus, jpeg artifacts, compression artifacts, noise, grain, overexposed, text, letters, typography, words, captions, subtitles, logo, watermark, signature, barcode, writing on skin, tiled pattern, internal organs, exposed organs, visible intestines, viscera, gore, mutilation, dismemberment, body horror, grotesque anatomy, misplaced organs, deformed face, distorted face, asymmetric face, ugly, twisted facial features, crossed eyes, extra eyes, missing eyes, bad eyes, empty eyes, no pupils, dead eyes, vague, low detail, dark yellow skin, yellow skin, blurred face, deformed ear, extra ear, missing ear, poor shading, flat lighting, weird, mutant, mutation, deformity, disfigured, grotesque, pubic hair, fetal hair, underwear";
 
 /* 两套画面系统提示词(可被设置面板里的「风格」切换/编辑):必画清单版 vs 对镜自拍版 */
 var CF_IMG_PROMPT_BIHUA=[
@@ -15509,7 +15511,11 @@ async function cdForumGenerateImage(prompt, neg, add){
   var base=String(g.url||'').replace(/\/+$/,'').replace(/\/generate-image$/,'').replace(/\/ai\/generate-image$/,'');
   var input=String(prompt||'');
   if(add && String(add).trim()) input += ', '+String(add).trim();
-  var body={ input:input, model:g.model||'nai-diffusion-3', parameters:{ negative_prompt:String(neg||''), width:parseInt(g.width,10)||832, height:parseInt(g.height,10)||1216, steps:28, guidance_scale:7, seed:0, smea:false, n_samples:1 } };
+  // 硬性防崩坏负面约束：无论用户自定义与否都强制追加（字体崩坏/多指/器官错乱/五官/肢体等）
+  var HARD_NEG='bad anatomy, bad hands, bad face, bad proportions, malformed limbs, deformed body, mutated hands, fused fingers, extra fingers, missing fingers, deformed fingers, six fingers, glued fingers, extra hands, twisted body, lowres, low quality, text, letters, typography, words, captions, logo, watermark, signature, internal organs, exposed organs, visible intestines, viscera, gore, mutilation, deformed face, distorted face, ugly, twisted facial features, crossed eyes, extra eyes, bad eyes, empty eyes, deformed ear, mutant, mutation, deformity, grotesque, jpeg artifacts, blurry, out of focus';
+  var _negAll=String(neg||'') ? (String(neg)+', '+HARD_NEG) : HARD_NEG;
+  try{ _cdImgTellPush({time:Date.now(), title:'(底层生图请求)', sys:'', usr:'', aiRaw:'', promptFinal:input, negFinal:_negAll}); }catch(_e4){}
+  var body={ input:input, model:g.model||'nai-diffusion-3', parameters:{ negative_prompt:_negAll, width:parseInt(g.width,10)||832, height:parseInt(g.height,10)||1216, steps:28, guidance_scale:7, seed:0, smea:false, n_samples:1 } };
   try{
     var res=await fetch(base+(base.indexOf('/ai')>=0?'':'/ai')+'/generate-image', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+g.key }, body:JSON.stringify(body) });
     if(!res.ok){ var err=''; try{ err=await res.text(); }catch(e2){} cdWarn('[生图] HTTP '+res.status+': '+String(err).slice(0,200)); return null; }
@@ -15701,6 +15707,7 @@ function _cdImgTellRender(R){
       h.push('<div class="itl-sec"><svg viewBox="0 0 24 24"><path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M8 9h8M8 13h5"/></svg>发送给 AI 的 user 请求</div><div class="itl-box">'+prc(r.usr||'',500)+'</div>');
       h.push('<div class="itl-sec"><svg viewBox="0 0 24 24"><path d="M2 12s3-6 10-6 10 6 10 6-3 6-10 6-10-6-10-6z"/><circle cx="12" cy="12" r="3"/></svg>AI 返回原文</div><div class="itl-box">'+prc(r.aiRaw||'',1300)+'</div>');
       h.push('<div class="itl-sec"><svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>最终生图词</div><div class="itl-box final">'+prc(r.promptFinal||'',1300)+'</div>');
+      if(r && r.negFinal!==undefined){ h.push('<div class="itl-sec"><svg viewBox="0 0 24 24"><path d="M18 6l2 2-12 12H6v-2z"/></svg>最终负面词</div><div class="itl-box">'+prc(r.negFinal||'',1300)+'</div>'); }
       h.push('</div>');
     });
     body.innerHTML=h.join('');
