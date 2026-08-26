@@ -12019,6 +12019,19 @@ const CD_FORUM_CSS = `/* ===== 基调：米白藏青（日）/ 深藏青午夜�
   #cd-forum-overlay .cd-diary-book.locked .cd-db-steal{position:absolute;inset:0;background:rgba(22,38,59,.10);display:flex;align-items:center;justify-content:center;z-index:2;}
   #cd-forum-overlay .cd-diary-book.locked .cd-db-steal svg{width:15px;height:15px;fill:none;stroke:#fff;stroke-width:2;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));}
 
+  /* ===== 生图日志面板 #panelImgTell ===== */
+  #cd-forum-overlay .itl-card{background:var(--c-card);border:1px solid var(--c-line);border-radius:10px;padding:10px 11px;margin-bottom:9px;box-shadow:0 1px 4px rgba(0,0,0,.03);}
+  #cd-forum-overlay .itl-head{display:flex;align-items:center;gap:7px;font-size:10px;color:var(--c-txt3);margin-bottom:7px;}
+  #cd-forum-overlay .itl-head b{color:var(--c-txt);font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  #cd-forum-overlay .itl-tag{font-size:8px;color:#fff;background:#5a9e6f;padding:1px 6px;border-radius:5px;flex-shrink:0;}
+  #cd-forum-overlay .itl-tag.warn{background:#c46a5a;}
+  #cd-forum-overlay .itl-sec{font-size:8.5px;font-weight:700;color:var(--c-accent);margin:6px 0 3px;display:flex;align-items:center;gap:4px;}
+  #cd-forum-overlay .itl-sec svg{width:9px;height:9px;fill:none;stroke:currentColor;stroke-width:2;flex-shrink:0;}
+  #cd-forum-overlay .itl-box{background:var(--c-sub);border:1px solid var(--c-line);border-radius:7px;padding:7px 9px;font-size:9.5px;color:var(--c-txt2);line-height:1.6;white-space:pre-wrap;word-break:break-all;max-height:150px;overflow-y:auto;}
+  #cd-forum-overlay .itl-box.final{background:#eef4ee;border-color:#cfe0d0;color:#2f4a30;}
+  #cd-forum-overlay .itl-empty{text-align:center;color:var(--c-txt3);font-size:10.5px;padding:40px 12px;line-height:1.8;}
+  #cd-forum-overlay .itl-empty svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.5;margin-bottom:6px;}
+
 `;
 
 const CD_FORUM_HTML = `<div id="cdForumRoot">
@@ -12132,6 +12145,7 @@ const CD_FORUM_HTML = `<div id="cdForumRoot">
       <span class="tc on" id="injectQ"><svg viewBox="0 0 24 24" style="width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>注入:开</span>
       <span class="tc" id="setQ"><svg viewBox="0 0 24 24" style="width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>设置</span>
       <span class="tc" id="multiQ" title="勾选帖子批量删除"><svg viewBox="0 0 24 24" style="width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 12l2 2 4-4"/></svg>多选</span>
+      <span class="tc" id="imgTellQ" title="查看近期的生图/提示词日志"><svg viewBox="0 0 24 24" style="width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:2"><path d="M4 4h16v12H7l-3 3z"/><path d="M8 9h8M8 13h5"/></svg>日志</span>
       <span class="tsep"></span>
     </div>
 
@@ -12471,6 +12485,16 @@ const CD_FORUM_HTML = `<div id="cdForumRoot">
       <span class="cf-btn-mini" id="imgLibClearAll" style="margin-left:auto;color:#c84632;border-color:#e0b8ae;background:#fdf0ec;">清空</span>
     </div>
     <div class="pn-body" id="imgLibBody"></div>
+  </div>
+
+  <!-- ===== 生图日志面板 ===== -->
+  <div class="panel" id="panelImgTell">
+    <div class="pn-bar">
+      <div class="pn-back" data-close="panelImgTell" id="imgTellBack"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></div>
+      <div class="pn-t">生图日志 · 最近 50 次</div>
+      <span class="cf-btn-mini" id="imgTellClr" style="margin-left:auto;color:#c84632;border-color:#e0b8ae;background:#fdf0ec;">清空</span>
+    </div>
+    <div class="pn-body" id="imgTellBody"></div>
   </div>
 
   <!-- ===== 看图页（点帖子图/图库图弹出·小号居中，可删除/保存到相册） ===== -->
@@ -13517,6 +13541,10 @@ function _cfMountV2(){
   }
 
   // ===== 帖子多选：入口 + 操作条 =====
+  cdBindOnce(R.querySelector('#imgTellQ'), function(){
+    try{ if(typeof cdAddLog==='function') cdAddLog('info','[论坛] 日志胶囊被点击'); }catch(e){}
+    openImgTell();
+  });
   cdBindOnce(R.querySelector('#multiQ'), function(){
     multiMode=!multiMode; multiSel={}; paintMulti(); renderFeed();
     if(multiMode) try{ if(typeof toastr==='function') toastr.info('已进入多选：点帖子勾选，可批量删除'); }catch(e){}
@@ -15518,7 +15546,15 @@ async function cdForumImgForPost(p){
     var g=cdForumImgCfg();
     var desc=(p.imgDesc||'').trim() || String(p.text||'').slice(0,60);
     if(!desc) return null;
-    var img=await cdForumGenerateImage(desc, g.negPrompt||'', g.addPrompt||'');
+    // 中文清洗兜底：imgDesc/帖子文本常为中文，直接喂生图模型会出鬼图，只保留英文片段；空则回退内置模板
+    var _use=desc;
+    var _hasCn=/[\u4e00-\u9fff]/.test(desc);
+    if(_hasCn){
+      var _en=desc.replace(/[^\x00-\x7F]+/g,' ').replace(/\s+/g,' ').trim();
+      _use=_en.length>=4 ? _en : String(p.text||'').slice(0,80);
+    }
+    var img=await cdForumGenerateImage(_use, g.negPrompt||'', g.addPrompt||'');
+    try{ _cdImgTellPush({time:Date.now(), title:p.title||'', sys:'(本路为脚本直生生图，无 LLM 提示词，使用帖子图片描述)', usr:'', aiRaw:'', promptFinal:_use}); }catch(_e3){}
     if(!img || !img.dataUrl) return null;
     var key='img_'+Date.now()+'_'+Math.floor(Math.random()*1e6);
     await cdForumImgAdd({ key:key, dataUrl:img.dataUrl, title:p.title||'', author:p.auth||'', text:String(p.text||'').slice(0,40), time:Date.now(), postKey:(p.pid||('__'+(p.auth||'')+'|'+(p.title||''))) });
@@ -15573,9 +15609,19 @@ async function cdForumGenPostImg(p){
         var usr='帖子标题：'+(p.title||'')+'\n帖子正文：'+(p.text||'')+'\n帖子作者：'+(p.auth||'')+(p.replies&&p.replies.length?('\n部分评论：'+p.replies.slice(0,3).map(function(x){return x.from+':'+(x.content||'');}).join(' | ')):'')+_cfPullAppearanceForPost(p);
         prompt=await cdForumApiComplete([{role:'system',content:sys},{role:'user',content:usr}]);
         prompt=String(prompt||'').trim();
+        var _aiRaw=prompt;
         // 只取【TAG】之后的英文标签串作生图 prompt;没有则用全文;放开长度到 4000
-        var _tm=prompt.match(/&#x3010;TAG&#x3011;([\s\S]*)$/);
-        prompt=(_tm?_tm[1]:prompt).trim().slice(0,4000);
+        var _tm=prompt.match(/【TAG】([\s\S]*)$/);
+        var _final;
+        if(_tm){ _final=_tm[1].trim(); }
+        else {
+          // 兜底：AI 没按规范输出【TAG】时，只保留英文片段，丢弃中文长叙述，避免喂给生图模型出鬼图
+          var _en=prompt.replace(/[^\x00-\x7F]+/g,' ').replace(/\s+/g,' ').trim();
+          _final=_en;
+          if(!_final || _final.length<4){ _final=_cdForumFallbackPrompt(String(p.title||'')+' '+(p.text||'')); }
+        }
+        prompt=_final.slice(0,4000);
+        try{ _cdImgTellPush({time:Date.now(), title:p.title||'', sys:sys, usr:usr, aiRaw:_aiRaw, promptFinal:prompt}); }catch(_e3){}
       }
     }catch(e){ cdWarn('[图] 生成画面prompt失败', e); }
     // ② 兜底:LLM 失败/为空时用内置类型模板(离线可判)
@@ -15624,6 +15670,59 @@ async function cdForumEnsureImg(p){
     }
     return null;
   }catch(e){ cdWarn('[图] cdForumEnsureImg失败', e); return null; }
+}
+
+/* ============================================================
+ * 生图日志（每次生图：发送给 AI 的提示词 / AI 返回原文 / 最终生图词）
+ * —— 存 localStorage；入口 = 工具区「日志」胶囊；面板 #panelImgTell
+ * ============================================================ */
+function _cdImgTellList(){ try{ var raw=localStorage.getItem('cd-forum-imglog'); var a=raw?JSON.parse(raw):[]; return Array.isArray(a)?a:[]; }catch(e){ return []; } }
+function _cdImgTellPush(rec){ try{ var a=_cdImgTellList(); if(rec&&rec.aiRaw===undefined) rec.aiRaw=''; a.unshift(rec); if(a.length>50) a=a.slice(0,50); try{ localStorage.setItem('cd-forum-imglog', JSON.stringify(a)); }catch(_e2){} return a; }catch(e){ return []; } }
+function _cdImgTellClr(){ try{ localStorage.removeItem('cd-forum-imglog'); }catch(e){} }
+function _cdImgTellTime(t){ try{ var d=new Date(t||Date.now()); function p2(n){return (n<10?'0':'')+n;} return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())+' '+p2(d.getHours())+':'+p2(d.getMinutes())+':'+p2(d.getSeconds()); }catch(e){ return ''; } }
+function _cdImgTellRender(R){
+  try{
+    var body=(R?R.querySelector('#imgTellBody'):document.getElementById('imgTellBody'));
+    if(!body) return;
+    var a=_cdImgTellList();
+    if(!a.length){
+      body.innerHTML='<div class="itl-empty"><svg viewBox="0 0 24 24"><path d="M4 4h16v12H7l-3 3z"/><path d="M8 9h8M8 13h5"/></svg><br>还没有生图日志。<br>在帖子详情点「图像生成」，或发带图帖 / 自动发帖触发真图后，这里会显示每次发送给 AI 的提示词、AI 返回原文、最终生图词。</div>';
+      return;
+    }
+    var h=[];
+    a.forEach(function(r,i){
+      var prc = function(x,mx){ x=String(x||''); return x.length>mx? x.slice(0,mx)+'…' : x; };
+      var warn = /[\u4e00-\u9fff]/.test(r.promptFinal||'');
+      h.push('<div class="itl-card">');
+      h.push('<div class="itl-head"><b>'+prc(r.title||'（无标题）',30)+'</b><span class="itl-tag'+(warn?' warn':'')+'">'+(warn?'含中文':'OK')+'</span><span>'+_cdImgTellTime(r.time)+'</span></div>');
+      h.push('<div class="itl-sec"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>发送给 AI 的 system 提示词</div><div class="itl-box">'+prc(r.sys||'',900)+'</div>');
+      h.push('<div class="itl-sec"><svg viewBox="0 0 24 24"><path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M8 9h8M8 13h5"/></svg>发送给 AI 的 user 请求</div><div class="itl-box">'+prc(r.usr||'',500)+'</div>');
+      h.push('<div class="itl-sec"><svg viewBox="0 0 24 24"><path d="M2 12s3-6 10-6 10 6 10 6-3 6-10 6-10-6-10-6z"/><circle cx="12" cy="12" r="3"/></svg>AI 返回原文</div><div class="itl-box">'+prc(r.aiRaw||'',1300)+'</div>');
+      h.push('<div class="itl-sec"><svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>最终生图词</div><div class="itl-box final">'+prc(r.promptFinal||'',1300)+'</div>');
+      h.push('</div>');
+    });
+    body.innerHTML=h.join('');
+  }catch(e){ cdWarn('[日志] 渲染失败', e); }
+}
+function openImgTell(){
+  try{
+    var R=_cfRoot;
+    var pn=R?R.querySelector('#panelImgTell'):document.getElementById('panelImgTell');
+    if(!pn) return;
+    var clr=pn.querySelector('#imgTellClr');
+    if(clr && !clr.__itB){ clr.__itB=1; clr.addEventListener('click',function(){ _cdImgTellClr(); _cdImgTellRender(R); try{ if(typeof toastr==='function') toastr.info('生图日志已清空'); }catch(e){} }); }
+    // 返回箭头：直接退回主页 feed，关闭所有面板与遮罩（与图库一致）
+    function _imgTellExit(){
+      var _fl=(R?R.querySelector('#fl'):document.getElementById('fl'));
+      try{ if(_fl) _fl.style.display='flex'; }catch(_e){}
+      try{ var roots=R?[R]:[document.getElementById('cd-forum-overlay')]; roots.forEach(function(r0){ if(r0) (r0.querySelectorAll?r0.querySelectorAll('.panel.open'):[]).forEach(function(x){ x.classList.remove('open'); }); }); }catch(_e){}
+      try{ var _m=document.getElementById('cfImgViewMask'); if(_m) _m.style.display='none'; }catch(_e){}
+    }
+    var _bk=R?R.querySelector('#imgTellBack'):document.getElementById('imgTellBack');
+    if(_bk && !_bk.__itExitB){ _bk.__itExitB=true; _bk.addEventListener('click',function(ev){ ev.stopPropagation(); _imgTellExit(); }); }
+    _cfImgShowPanel(R, pn);
+    _cdImgTellRender(R);
+  }catch(e){ cdWarn('[日志] openImgTell失败', e); }
 }
 
 /* ============================================================
