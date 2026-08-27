@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.9.0';
+const PLUGIN_VERSION = '2.9.1';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -12043,8 +12043,28 @@ const CD_FORUM_HTML = `<div id="cdForumRoot">
     <!-- ◈ 创作区：总结剧情 + NPC 生成发帖 -->
     <div class="crea">
       <div class="crea-row">
-        <div class="c1 save" id="cfHeroSlot" style="justify-content:center;"><svg viewBox="0 0 24 24" style="width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span>总结剧情</span></div>
+        <div class="c1 save" id="cfHeroSlot" style="justify-content:center;"><svg viewBox="0 0 24 24" style="width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span>总结当前剧情</span><span id="heroFoldArrow" style="margin-left:auto;font-size:9px;color:var(--c-accent-bg);transition:transform .18s;">▾</span></div>
         <div class="c1 gen" id="genFoldHead"><svg viewBox="0 0 24 24" style="width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>NPC 生成发帖<span id="genFoldArrow" style="margin-left:auto;font-size:9px;color:var(--c-txt3);transition:transform .18s;">▸</span></div>
+      </div>
+    </div>
+    <div class="genpanel" id="heroSumPanel" style="display:none;padding:9px 11px;border-bottom:1px solid #e8ebec;background:#f7f8f9;flex-shrink:0;">
+      <!-- 剧情档案总结方式 -->
+      <div class="cf-block" style="padding-top:0;">
+        <div class="cf-sec">剧情档案总结方式</div>
+        <div class="cf-row">
+          <span class="cf-lbl">方式</span>
+          <select id="cfSummarizeMode" class="cf-num" style="width:190px;">
+            <option value="recent">详细版 · 档案+最近对话</option>
+            <option value="archive">直读通道 · 仅读剧情档案</option>
+          </select>
+        </div>
+        <div class="cf-row" id="cfSummarizeRecentRow">
+          <span class="cf-lbl">模式一读取最近</span>
+          <input class="cf-num" id="cfSummarizeRecentCount" type="number" min="1" max="50" value="10">
+          <span class="cf-lbl">条对话</span>
+        </div>
+        <div style="font-size:8.5px;color:var(--c-txt3);opacity:.75;line-height:1.6;">模式二（仅读档案）：首次点击时生成标题和概览，之后只要档案更新就自动同步读取，不重复调用 LLM。切换别处聊天也能读到这个世界之前的档案。</div>
+        <button class="cf-btn-main" id="heroSumGo" style="margin-top:7px;"><svg viewBox="0 0 24 24" style="width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>开始总结 / 刷新档案通道</button>
       </div>
     </div>
     <div class="genpanel" id="genPanel" style="display:none;padding:9px 11px;border-bottom:1px solid #e8ebec;background:#f7f8f9;flex-shrink:0;">
@@ -12957,7 +12977,7 @@ const CD_FORUM_PROMPT_SUMMARIZE = `你是「世界档案编纂官」，把一段
      "image": "外人眼里主角是个啥人"
   },
   "characters": [
-     {"name":"角色名","personality":"性子(2~4词或一句)","appearance":"外貌长相(仅主要人物：发色/五官/身形/穿着/气场，并结合原作设定；配角路人填"")","stage":"跟主角啥关系","fav":"好感-100~100明确数字","judge":"角色对主角的一句话(TA本人语气)","keyLine":"关键台词(若有记忆点台词才填)"}
+     {"name":"角色名","personality":"性子(2~4词或一句)","appearance":"外貌长相(仅主要人物：发色/五官/身形/穿着/气场，并结合原作设定；配角路人留空))","stage":"跟主角啥关系","fav":"好感-100~100明确数字","judge":"角色对主角的一句话(TA本人语气)","keyLine":"关键台词(若有记忆点台词才填)"}
   ]
 }
 
@@ -12971,6 +12991,17 @@ const CD_FORUM_PROMPT_SUMMARIZE = `你是「世界档案编纂官」，把一段
 - keyLine：只保留真正有记忆点、推动剧情的台词，没有就不填。
 
 【说人话】话要说人话、像聊天别像汇报，但文字精炼、不注水。严禁"分析/数据/机械/虚拟/评估/综合/百分之/百分比/统计/模型/参数/综上所述"这类机器词。`;
+
+/* 模式二：首次建立档案直读通道时，仅生成标题与世界观概览 */
+const CD_FORUM_PROMPT_ARCHIVE_TITLE = `你是「世界档案归档员」。请根据下面的完整剧情档案，为这个世界生成一个有辨识度的标题和一段简短的世界观概览。
+
+严格只输出 JSON，不要输出任何解释：
+{
+  "title": "世界标题（8~20字，不能叫世界1）",
+  "overview": "世界观概览（2~5句话，说明时代、环境、势力和正在发生的核心事情）"
+}
+
+要求：标题有故事感；概览要依据档案里的具体内容，不要泛泛而谈；不要编造档案没有依据的重大设定。`;
 
 const CD_FORUM_PROMPT_POSTS = `这是一个能跨世界串门的中文互联网论坛（贴吧/校园论坛/超话评论区那种）。不同世界的角色都能上来：互相看得见对方世界发生的事、能互相搭话、能跑到别人世界帖子里插一脚、能吐槽别的世界、能因好奇去围观别的世界。
 
@@ -13202,58 +13233,76 @@ function cfGetRecentChat(n){
   }catch(e){ cdWarn('[论坛] 读取当前聊天失败', e); return ''; }
 }
 
-/* ① 总结当前剧情 → 世界档案（喂最近楼层） */
+/* 辅助：为模式二档案通道生成稳定指纹 */
+function cdForumArchiveFingerprint(s){
+  s=String(s||'');
+  var h=0;
+  for(var i=0;i<s.length;i++) h=((h<<5)-h+s.charCodeAt(i))|0;
+  return 'h'+(h>>>0).toString(36);
+}
+
+/* ① 总结当前剧情 → 世界档案（模式一压缩 / 模式二档案直读通道） */
 async function cdForumGenerateWorld(){
-  var ctx = SillyTavern.getContext();
-  var chat = (ctx && Array.isArray(ctx.chat)) ? ctx.chat : [];
-  if(!chat.length) return null;
-  // 1) 近期对话（最近 20 条非系统）
-  var lines=[];
-  for(var i=chat.length-1;i>=0 && lines.length<20;i--){
-    var m=chat[i];
-    if(!m || m.is_system) continue;
-    var who = m.is_user ? '@USER@' : (m.name||'角色');
-    var body = (m.mes || m.content || '').replace(/<[^>]*>/g,'').trim();
-    if(!body) continue;
-    lines.unshift(who+'：'+body.slice(0,600));
-  }
-  // 2) 主角完整履历（剧情档案 archive + 填表履历：累积的所有经历，跨世界不割裂）
-  var histTxt='（暂无存档履历）';
+  var cfg=cdForumCfg()||{};
+  var mode=cfg.summarizeMode==='archive'?'archive':'recent';
+  var data=null, ar=null, histTxt='（暂无存档履历）';
   try{
-    var data = await cdGetData();
-    var ar = data && data.archive;
+    data=await cdGetData();
+    ar=data&&data.archive;
     if(ar){
       var parts=[];
-      var s1=ar.mainline||'', s2=ar.sideline||'', s3=ar.states||'', s4=ar.unresolved||'';
-      if(s1) parts.push('【主线】'+String(s1));
-      if(s2) parts.push('【支线】'+String(s2));
-      if(s3) parts.push('【当前状态】'+String(s3));
-      if(s4) parts.push('【未解决】'+String(s4));
-      if(Array.isArray(ar.items)&&ar.items.length) parts.push('【重要物品】'+ar.items.map(function(it){return (it.time?('['+it.time+']'):'')+(it.desc||'');}).join(' / '));
-      if(ar.custom && typeof ar.custom==='object'){
-        Object.keys(ar.custom).forEach(function(k){ var arr=ar.custom[k]||[]; if(arr.length) parts.push('【'+k+'】'+arr.map(function(it){return (it.time?('['+it.time+']'):'')+(it.desc||'');}).join(' / ')); });
-      }
-      // 填表履历：主角经历事情（每件事带时间地点）
+      if(ar.mainline) parts.push('【主线】'+String(ar.mainline));
+      if(ar.sideline) parts.push('【支线】'+String(ar.sideline));
+      if(ar.states) parts.push('【当前状态】'+String(ar.states));
+      if(ar.unresolved) parts.push('【未解决】'+String(ar.unresolved));
+      if(Array.isArray(ar.items)&&ar.items.length) parts.push('【重要物品】'+ar.items.map(function(it){return (it&&it.time?'['+it.time+']':'')+(it&&it.desc||'');}).join(' / '));
+      if(ar.custom&&typeof ar.custom==='object') Object.keys(ar.custom).forEach(function(k){ var arr=ar.custom[k]||[]; if(arr.length) parts.push('【'+k+'】'+arr.map(function(it){return (it&&it.time?'['+it.time+']':'')+(it&&it.desc||'');}).join(' / ')); });
       try{
-        var ltd = (data&&data.liveTableData)||[];
-        var expArr=[];
-        (ltd||[]).forEach(function(t){ var lo=(t&&t.lower)||{}; Object.keys(lo).forEach(function(k){ if(k.indexOf('经历')>=0||k.indexOf('履历')>=0||k.indexOf('事情')>=0){ var v=lo[k]; if(v&&String(v).trim()) expArr.push(String(v).trim()); } }); });
-        if(expArr.length) parts.push('【主角完整经历（履历）】'+expArr.join('；'));
+        var ltd=data&&data.liveTableData||[], exp=[];
+        ltd.forEach(function(t){ var lo=t&&t.lower||{}; Object.keys(lo).forEach(function(k){ if(k.indexOf('经历')>=0||k.indexOf('履历')>=0||k.indexOf('事情')>=0){ var v=lo[k]; if(v&&String(v).trim()) exp.push(String(v).trim()); } }); });
+        if(exp.length) parts.push('【主角完整经历（履历）】'+exp.join('；'));
       }catch(e){}
       if(parts.length) histTxt=parts.join('\n\n');
     }
-  }catch(e){ cdWarn('[论坛] 读取存档履历失败', e); }
-  var prompt = CD_FORUM_PROMPT_SUMMARIZE.replace(/@USER@/g, '{user}');
-  var userContent = '【本场剧情对话记录】\n'+lines.join('\n---\n')+'\n\n【主角从前的完整经历（剧情档案·履历）】\n'+histTxt+'\n\n请结合【近期对话】和【主角完整履历】一起总结这个世界。要注意：主角的过往经历也是这个世界档案的一部分，别只写眼前的当下——要把主角一路走来经历过的重要事也记进世界档案，确保跨世界/跨时间不割裂。';
-  var msgs = [ { role:'system', content: prompt }, { role:'user', content: userContent } ];
-  try{
-    var text = await cdForumApiComplete(msgs);
-    var obj = cdForumExtractJSON(text);
-    if(!obj || !obj.name) return null;
-    return obj;
-  }catch(e){ cdWarn('[论坛] 总结世界观失败', e); return null; }
-}
+  }catch(e){ cdWarn('[论坛] 读取存档履历失败',e); }
 
+  if(mode==='archive'){
+    var idx=cfg.archiveIndex||null;
+    var fp=cdForumArchiveFingerprint(histTxt);
+    if(!idx||!idx.title){
+      if(histTxt==='（暂无存档履历）'){ try{ toastr.info('暂无剧情档案，请先积累剧情档案'); }catch(e){} return null; }
+      if(!cdForumApiReady()) return null;
+      try{
+        var p2=CD_FORUM_PROMPT_ARCHIVE_TITLE.replace(/@USER@/g,'{user}');
+        var t2=await cdForumApiComplete([{role:'system',content:p2},{role:'user',content:'【完整剧情档案】\n'+histTxt+'\n\n请只生成标题和世界观概览。'}]);
+        var o2=cdForumExtractJSON(t2);
+        if(!o2||!o2.title) return null;
+        var worlds0=cdForumGetWorlds()||[];
+        var number=1;
+        worlds0.forEach(function(w){ var id=String(w&&w._archiveId||''); var m=id.match(/^世界-(\\d+)$/); if(m) number=Math.max(number,parseInt(m[1],10)+1); });
+        idx={id:'世界-'+String(number).padStart(2,'0'),title:String(o2.title).trim(),overview:String(o2.overview||'').trim(),fingerprint:fp,version:1,updatedAt:Date.now()};
+        cfg.archiveIndex=idx; _cfCfgCache=cfg; cdForumPersist();
+      }catch(e){ cdWarn('[论坛] 直读通道首次建立失败',e); return null; }
+    }
+    if(idx.fingerprint!==fp){ idx.fingerprint=fp; idx.version=(idx.version||1)+1; idx.updatedAt=Date.now(); cfg.archiveIndex=idx; _cfCfgCache=cfg; cdForumPersist(); }
+    return {name:idx.title,source:'直读通道',tagline:idx.overview,detail:idx.overview,vibe:'',chapter:'',tags:['直读通道'],snap:'',protagonist:{who:'',actions:'',impact:'',image:''},characters:[],_archiveMode:true,_archiveId:idx.id,_archiveIndex:{id:idx.id,title:idx.title,overview:idx.overview,version:idx.version||1},_archiveText:histTxt,_archiveData:ar||{}};
+  }
+
+  var ctx=SillyTavern.getContext(), chat=ctx&&Array.isArray(ctx.chat)?ctx.chat:[];
+  if(!chat.length) return null;
+  var n=Math.max(1,Math.min(50,parseInt(cfg.summarizeRecentCount,10)||10)), lines=[];
+  for(var i=chat.length-1;i>=0&&lines.length<n;i--){
+    var m=chat[i]; if(!m||m.is_system) continue;
+    var body=(m.mes||m.content||'').replace(/<[^>]*>/g,'').trim(); if(!body) continue;
+    lines.unshift((m.is_user?'@USER@':(m.name||'角色'))+'：'+body);
+  }
+  var prompt=CD_FORUM_PROMPT_SUMMARIZE.replace(/@USER@/g,'{user}');
+  var content='【本场剧情对话记录（最近'+n+'条，原文全量）】\n'+lines.join('\n---\n')+'\n\n【完整剧情档案·履历】\n'+histTxt+'\n\n请结合两部分总结，具体事件不要遗漏。';
+  try{
+    var text=await cdForumApiComplete([{role:'system',content:prompt},{role:'user',content:content}]);
+    var obj=cdForumExtractJSON(text); return obj&&obj.name?obj:null;
+  }catch(e){ cdWarn('[论坛] 总结世界观失败',e); return null; }
+}
 /* ② 生成帖子（喂世界档案 + 类型 + 条数） */
 async function cdForumGeneratePosts(worlds, types, n, customPrompt, erotica){
   if(!cdForumApiReady()) return [];
@@ -13734,6 +13783,13 @@ function _cfMountV2(){
       try{
       WORLDS.forEach(function(w,i){
       var d=document.createElement('div'); d.className='wcard'; d.style.marginBottom='9px';
+      if(w._archiveMode){
+        var _id=w._archiveId||(w._archiveIndex&&w._archiveIndex.id)||('世界-'+(i+1));
+        var _title=w.name||(w._archiveIndex&&w._archiveIndex.title)||'未命名';
+        var _overview=w.detail||w.tagline||(w._archiveIndex&&w._archiveIndex.overview)||'';
+        d.innerHTML='<div class="wcard-h"><span class="nm">'+esc(_id)+'</span><span class="dt">直读通道</span></div><div style="padding:7px 12px;"><div style="font-size:11px;font-weight:700;color:#2f3941;margin-bottom:4px;">'+esc(_title)+'</div><div style="font-size:9.5px;color:#5a6167;line-height:1.7;white-space:pre-wrap;">'+(esc(_overview)||'（暂无概览）')+'</div><div style="margin-top:6px;font-size:8px;color:#8b9298;">完整剧情保留在底层档案，通道直接读取。</div></div>';
+        wb.appendChild(d); return;
+      }
       var vibes=(w.vibe&&w.vibe.length)?(Array.isArray(w.vibe)?w.vibe.join(' · '):w.vibe):'';
       var dInner='<div class="wcard-h"><span class="nm">'+esc(w.name||('世界'+(i+1)))+'</span><span class="dt">'+(w.chapter?esc(w.chapter):'')+'</span></div>';
       // 详细世界写照
@@ -13928,6 +13984,34 @@ function _cfMountV2(){
       WORLDS.forEach(function(w,i){
         var d=document.createElement('div');
         d.style.cssText='box-sizing:border-box;background:#fff;border:1px solid #e7e9eb;border-radius:12px;padding:10px 12px;margin-bottom:9px;';
+        if(w._archiveMode){
+          var _arcId=w._archiveId||(w._archiveIndex&&w._archiveIndex.id)||('世界-'+(i+1));
+          var _arcTitle=w.name||(w._archiveIndex&&w._archiveIndex.title)||'未命名';
+          var _arcOverview=w.detail||w.tagline||(w._archiveIndex&&w._archiveIndex.overview)||'';
+          var _arcVer=(w._archiveIndex&&w._archiveIndex.version)||1;
+          d.innerHTML='<div style="display:flex;align-items:center;gap:10px;">'+
+            '<div style="width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#eef7fb,#d6e8f0);color:#3f6d84;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;flex-direction:column;line-height:1.2;"><span style="font-size:8px;">通道</span><span>'+esc0(_arcId)+'</span></div>'+
+            '<div style="min-width:0;flex:1;">'+
+              '<div class="arc-title-edit" data-i="'+i+'" style="font-size:12.5px;font-weight:700;color:#2f3941;cursor:pointer;">'+esc0(_arcTitle)+'<span style="font-size:8px;color:#8b9298;margin-left:5px;">✏</span></div>'+
+              '<div style="font-size:8px;color:#9aa1a7;margin-top:2px;">v'+_arcVer+' · 直读通道</div>'+
+            '</div>'+
+          '</div>';
+          if(_arcOverview) html+='<div style="font-size:9.5px;color:#5a6167;line-height:1.7;margin-top:6px;white-space:pre-wrap;">'+esc0(_arcOverview)+'</div>';
+          html+='<div style="margin-top:6px;font-size:8.5px;color:#8b9298;line-height:1.5;">底层档案通过通道直读，完整剧情不在管理界面铺开。切换聊天后依然可读取。</div>';
+          d.innerHTML=html;
+          wl.appendChild(d);
+          var te=d.querySelector('.arc-title-edit');
+          if(te) te.addEventListener('click',function(){
+            var cur=prompt('修改世界标题：', _arcTitle);
+            if(cur===null) return;
+            cur=String(cur).trim(); if(!cur){ toastr.info('标题不能为空'); return; }
+            w.name=cur;
+            var _c=cdForumCfg()||{}; if(_c.archiveIndex){ _c.archiveIndex.title=cur; }
+            _cfCfgCache=_c; cdForumPersist(); fillManagePanel();
+            toastr.success('标题已更新：'+cur);
+          });
+          return;
+        }
         var tags=(w.tags&&w.tags.length)?w.tags.join(' · '):'';
         var vibes=(w.vibe&&w.vibe.length)?(Array.isArray(w.vibe)?w.vibe.join(' · '):w.vibe):'';
         var pro=w.protagonist;
@@ -14763,6 +14847,24 @@ cdBindOnce(R.querySelector('#cfImgStyle'),function(){
   var eroInp=R.querySelector('#cfErotica');
   if(eroInp){ eroInp.checked=!!cfg.erotica; eroInp.addEventListener('change',function(){ var c=cdForumCfg(); c.erotica=!!eroInp.checked; _cfCfgCache=c; cdForumPersist(); cfg.erotica=!!eroInp.checked; }); }
 
+  // ===== 世界档案总结方式：模式一可自定义最近对话条数 =====
+  var sumModeEl=R.querySelector('#cfSummarizeMode'), sumCountEl=R.querySelector('#cfSummarizeRecentCount'), sumRecentRow=R.querySelector('#cfSummarizeRecentRow');
+  function paintSummarizeCfg(){
+    var sm=(cfg.summarizeMode==='archive')?'archive':'recent';
+    if(sumModeEl) sumModeEl.value=sm;
+    if(sumCountEl) sumCountEl.value=Math.max(1,Math.min(50,parseInt(cfg.summarizeRecentCount,10)||10));
+    if(sumRecentRow) sumRecentRow.style.display=sm==='archive'?'none':'flex';
+  }
+  if(sumModeEl) sumModeEl.addEventListener('change',function(){
+    var c=cdForumCfg(); c.summarizeMode=sumModeEl.value==='archive'?'archive':'recent';
+    _cfCfgCache=c; cfg=c; cdForumPersist(); paintSummarizeCfg();
+  });
+  if(sumCountEl) sumCountEl.addEventListener('change',function(){
+    var c=cdForumCfg(); var n=parseInt(sumCountEl.value,10)||10; n=Math.max(1,Math.min(50,n));
+    c.summarizeRecentCount=n; sumCountEl.value=n; _cfCfgCache=c; cfg=c; cdForumPersist();
+  });
+  paintSummarizeCfg();
+
   // ===== 提示词编辑 =====
   var box=R.querySelector('#genPromptBox'); var hint=R.querySelector('#genPromptHint');
   if(box){ box.value=customPrompt || defaultForumPrompt(); }
@@ -15068,9 +15170,9 @@ function cdForumCfg(){
   try{
     var raw=localStorage.getItem('cd-forum-cfg');
     var c=null; if(raw){ try{c=JSON.parse(raw);}catch(e){} }
-    if(!c) c={ repCount:6, autoEvery:5, customPrompt:'', mode:'auto', erotica:false, homeName:'', bio:'', inject:true, chatFeed:true, chatCount:5, autoGen:true, selTypes:[], api:{} };
+    if(!c) c={ repCount:6, autoEvery:5, customPrompt:'', mode:'auto', erotica:false, homeName:'', bio:'', inject:true, chatFeed:true, chatCount:5, autoGen:true, selTypes:[], api:{}, summarizeMode:'recent', summarizeRecentCount:10, archiveIndex:null };
     _cfCfgCache=c; return c;
-  }catch(e){ if(_cfCfgCache) return _cfCfgCache; return { repCount:6, autoEvery:5, customPrompt:'', mode:'auto', erotica:false, homeName:'', bio:'', inject:true, chatFeed:true, chatCount:5, autoGen:true, selTypes:[] }; }
+  }catch(e){ if(_cfCfgCache) return _cfCfgCache; return { repCount:6, autoEvery:5, customPrompt:'', mode:'auto', erotica:false, homeName:'', bio:'', inject:true, chatFeed:true, chatCount:5, autoGen:true, selTypes:[], summarizeMode:'recent', summarizeRecentCount:10, archiveIndex:null }; }
 }
 
 /* ============================================================
@@ -16179,26 +16281,49 @@ function _cfAddHeroEntries(R){
     hero.id='cfHeroSum';
     hero.className='c1 save'; hero.style.justifyContent='center';
     hero.innerHTML='<svg viewBox="0 0 24 24" style="width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span style="font-size:10.5px;font-weight:800;">总结当前剧情</span>';
+    // hero 按钮点击 = 展开/收起「剧情档案总结方式」折叠条
+    var _heroPanel=R.querySelector('#heroSumPanel');
+    var _heroArrow=R.querySelector('#heroFoldArrow');
     hero.addEventListener('click', function(){
+      if(!_heroPanel){ try{ toastr.error('找不到总结方式面板'); }catch(e){} return; }
+      var _open=_heroPanel.style.display!=='none';
+      _heroPanel.style.display=_open?'none':'block';
+      if(_heroArrow) _heroArrow.style.transform=_open?'':'rotate(180deg)';
+      // 打开时把 genPanel（NPC生成）收起，避免两面板重叠
+      var _gp=R.querySelector('#genPanel');
+      if(!_open && _gp) _gp.style.display='none';
+    });
+    // 执行「总结 / 刷新档案通道」
+    function doForumSummarize(me){
       if(!cdForumApiReady()){ toastr.error('尚未配置论坛 API（设置→论坛→接口/Key，或留空复用主插件）'); return; }
-      var me=this; me.style.opacity='0.6';
+      me.style.opacity='0.6';
       cdForumGenerateWorld().then(function(world){
         me.style.opacity='';
         if(world){
-          // 取当前聊天标识：同聊天→覆盖重名（人物盖人/剧情盖剧情/异名保留）；不同聊天→追加新世界
           var _ctx=null; try{ _ctx=SillyTavern.getContext&&SillyTavern.getContext(); }catch(e){}
           var _curChat = (_ctx&&(_ctx.chatId||_ctx.chat_id)) || (_ctx&&_ctx.characterId) || '';
           var WORLDS=cdForumGetWorlds();
+          if(world._archiveMode){
+            var _ai=-1;
+            for(var i=0;i<WORLDS.length;i++){ if(WORLDS[i]&&(WORLDS[i]._archiveMode||WORLDS[i].source==='直读通道')){ _ai=i; break; } }
+            if(_ai<0 && _curChat){ for(var i2=0;i2<WORLDS.length;i2++){ if(WORLDS[i2]&&WORLDS[i2].chatId===_curChat){ _ai=i2; break; } } }
+            if(_ai>=0 && WORLDS[_ai]){
+              var old=WORLDS[_ai];
+              ['name','tagline','detail','_archiveId','_archiveText','_archiveData','_archiveIndex'].forEach(function(k){ if(world[k]!==undefined) old[k]=world[k]; });
+              old._archiveMode=true; old.source='直读通道'; if(_curChat) old.chatId=_curChat;
+            } else { world.chatId=_curChat; WORLDS.unshift(world); }
+            _cfWorldsCache=WORLDS; cdForumPersist(); _cfMountV2();
+            toastr.success('已刷新档案通道：'+(world.name||'通道世界'));
+            return;
+          }
           var wrIdx=-1;
           if(_curChat){ for(var wi=0;wi<WORLDS.length;wi++){ var cid=WORLDS[wi]&&WORLDS[wi].chatId; if(cid && cid===_curChat){ wrIdx=wi; break; } } }
           if(wrIdx>=0&&WORLDS[wrIdx]){
-            // === 覆盖：剧情字段覆盖，人物按名覆盖、异名保留 ===
             var old=WORLDS[wrIdx], nu=world;
             ['tagline','detail','vibe','chapter','tags','snap'].forEach(function(k){ if(nu[k]!==undefined) old[k]=nu[k]; });
             if(nu.protagonist) old.protagonist=nu.protagonist;
             old.name=nu.name||old.name;
             old.chatId=_curChat;
-            // 人物合并：新增同名覆盖，异名保留
             var merged=(old.characters&&old.characters.length)?old.characters.slice():[];
             (nu.characters||[]).forEach(function(nc){
               var nm=String((nc&&nc.name)||'').trim(); if(!nm) return;
@@ -16206,13 +16331,11 @@ function _cfAddHeroEntries(R){
               if(hit){ Object.keys(nc).forEach(function(k){ hit[k]=nc[k]; }); } else merged.push(nc);
             });
             old.characters=merged;
-            // 更新 roster：同名角色覆盖
             var R2=cdForumGetRoster();
             merged.forEach(function(rl){ if(rl&&rl.name){ var rr=R2.find(function(x){return (x.n||x.name)===rl.name;}); if(rr){ rr.w=old.name; rr.personality=rl.personality||rr.personality; rr.f=parseInt(rl.fav,10)||rr.f; rr.stage=rl.stage||rr.stage; rr.judge=rl.judge||rr.judge; if(rl.keyLine) rr.keyLine=rl.keyLine; } else { R2.push({n:rl.name,w:old.name,personality:rl.personality||'',f:parseInt(rl.fav,10)||0,stage:rl.stage||'',judge:rl.judge||''}); } } });
             _cfWorldsCache=WORLDS; _cfRosterCache=R2; cdForumPersist(); _cfMountV2();
             toastr.success('已覆盖世界档案：'+old.name+'（同聊天·人物剧情刷新）');
           } else {
-            // === 追加新世界（不同聊天） ===
             world.chatId=_curChat;
             WORLDS.unshift(world);
             var R3=cdForumGetRoster();
@@ -16223,7 +16346,10 @@ function _cfAddHeroEntries(R){
           }
         } else toastr.error('总结失败，请查看日志');
       });
-    });
+    }
+    var _sumGo=R.querySelector('#heroSumGo');
+    if(_sumGo) _sumGo.addEventListener('click', function(){ doForumSummarize(hero); });
+
     var _slot=R.querySelector('#cfHeroSlot');
     if(_slot && _slot.parentNode){ _slot.parentNode.replaceChild(hero, _slot); }
     else { var boardLine=R.querySelector('#boardLine'); if(boardLine) fl.insertBefore(hero, boardLine.nextSibling); else fl.insertBefore(hero, fl.firstChild.nextSibling); }
