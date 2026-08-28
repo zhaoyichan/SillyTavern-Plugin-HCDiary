@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.9.2';
+const PLUGIN_VERSION = '2.9.3';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -407,6 +407,7 @@ function emptyData() {
       mainline:  '',   // 主线摘要
       sideline:  '',   // 支线摘要
       states:    '',   // 重要状态变化
+      locations: [],      // 旅程地图地点时序（AI 直接输出的「地点」字段，按剧情顺序追加；不填表）
       unresolved:'',   // 未解决事项
       items: [],       // 物品记录 [{ time, desc }]（获得/失去/使用的重要物品，按追加顺序，保持楼层顺序）
       custom: {},      // 用户自定义剧情追踪项 { key: [{ time, desc }] }（key 来自设置 customFields）
@@ -971,7 +972,7 @@ const ARCHIVE_SYSTEM = [
   '',
   '输出目标与格式：',
   '请严格按以下字段输出纯文本，每个字段一段文字，不编号不列表。',
-  '注意：字段标签必须原样输出为"主线：""支线：""重要状态变化：""未解决事项："，不要加任何前缀。',
+  '注意：字段标签必须原样输出为"主线：""支线：""重要状态变化：""未解决事项：""地点："，不要加任何前缀。',
   '其中「主线」「支线」是追加式（只补新内容），「重要状态变化」「未解决事项」是覆盖式（输出当前最新全貌）。',
   '',
   '主线（追加式，只输出本次新增楼层的新进展，带时间标记，不要重复已有内容）：',
@@ -982,7 +983,11 @@ const ARCHIVE_SYSTEM = [
   '',
   '重要状态变化（覆盖式，输出"当前仍然有效"的角色状态汇总，而非累积历史）：',
   '（已被后续剧情推翻/缓解的旧状态不要重复列出；没有当前有效状态则输出"无"。）',
-  '（输出两段：先「主角：」行，再各角色行。主角用固定词"主角"作行首，格式：主角：身体…；资源…；处境…；任务…【时间】。其他每个角色一行「角色名：状态」，如「方见春：身体痊愈，衣着白裙，持有玉佩，对主角好感 60【时间】"。每个角色必须涵盖：①身体状况/伤病 ②当前衣着 ③持有/获得的物品 ④对主角(用户)的好感度与态度。只写本次剧情里出现变化或当前仍有效的；已有且未变化的可简写。每行末尾以【时间标记】标注该状态最近一次变化时间。）',
+  '（严格按下面的固定分格格式输出，用 | 分隔不同维度、一格一值，禁止把多个维度混在同一个值里。每行 = 一个对象（主角/环境/某个角色），以换行分隔：）',
+  '- 主角行格式（覆盖式）：主角：身体【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】',
+  '- 环境行格式（覆盖式，输出当前环境现状，非历史）：环境：布局【…】| 温度天气【…】| 钱财【…】| 身体状态【…】',
+  '- 其他每个角色一行（覆盖式）：角色名：身体【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】',
+  '各维度内容：身体=伤病/体力/健康；地址=当前所在地点的核心地名（主角必须直接写清实际位置，只写地名，不写"抵达/身处"等动作词与冗长修饰）；资产=钱/物品/持有物；穿着=衣服穿戴；好感=对主角(用户)的好感度数值与态度；备注=不易归类的其它当前状态。已变化才更新该格，未变化的可保留或留空，不要用“无”填满所有格。好感度必须带数字与负号（负好感带-）。每行末尾以【时间标记】标注该状态最近一次变化时间，如【第3天 傍晚】。当前位置规则：主角的「地址」必须写清当前实际所在地点），',
   '',
   '当前位置规则（地图/行程准确性关键，必须严格遵守）：',
   '1. 在「主角」行的「处境」中，必须明确写出主角【当前所在地点】，使用偏正结构名词短语（如"处身于雪原边缘的酒馆""身处灯火通明的王城大厅"），并确保该地点是此次剧情里【实际移动/停留】的位置。',
@@ -1001,6 +1006,11 @@ const ARCHIVE_SYSTEM = [
   '',
   '未解决事项（覆盖式，只列出"尚未解决"的事项与长期伏笔，已解决的不要列出）：',
   '（包含：长期伏笔、未揭晓的谜团、未兑现的承诺、跨楼层的悬而未决线索。每条以【时间标记】标注该事项产生的时间；已解决/已放弃/不再相关的不要列出。）',
+  '',
+  '地点（追加式，地图用：只输出本次剧情新增出现/移动到的地点，按剧情先后顺序一行一个，直接写核心地名，如"贫民窟垃圾山""半塌危楼阁楼""南区佣兵集散地"；本次未移动则输出"无"）：',
+  '（用下面的专属标记包裹地点，与其他字段完全独立；地点一行一个，只写核心地名，不写比喻/回忆/梦境场景，不带时间标记前缀）：',
+  '<<<LOCATIONS>>>',
+  '<<<LOCATIONS_END>>>',
   '',
   '最后，单独输出以下两个覆盖式总结字段（用来更新整体概览，不是追列事件）：',
   '剧情总览：用一段80-120字、语言精炼的连贯文字，概述当前整体剧情发展到哪一步、主要局势与各线关系，覆盖式（只描述当前阶段的最新综合情况，勿加编号）。',
@@ -1034,7 +1044,7 @@ const ARCHIVE_SYSTEM_FULL = [
   '',
   '输出目标与格式：',
   '请严格按以下字段输出纯文本，每个字段一段文字，不编号不列表。',
-  '注意：字段标签必须原样输出为"主线：""支线：""重要状态变化：""未解决事项："，不要加任何前缀。',
+  '注意：字段标签必须原样输出为"主线：""支线：""重要状态变化：""未解决事项：""地点："，不要加任何前缀。',
   '「主线」「支线」按时间顺序【完整】列出这段剧情的全部进展；「重要状态变化」「未解决事项」「剧情总览」「章回标题」输出当前最新全貌。',
   '',
   '主线（完整式：把从剧情开始到当前的【全部】主线事件按时间先后完整列出，带时间标记，多个事件用换行分隔）：',
@@ -1045,7 +1055,11 @@ const ARCHIVE_SYSTEM_FULL = [
   '',
   '重要状态变化（覆盖式，输出"当前仍然有效"的角色状态汇总，而非累积历史）：',
   '（已被后续剧情推翻/缓解的旧状态不要重复列出；没有当前有效状态则输出"无"。）',
-  '（输出两段：先「主角：」行，再各角色行。主角用固定词"主角"作行首，格式：主角：身体…；资源…；处境…；任务…【时间】。其他每个角色一行「角色名：状态」，如「方见春：身体痊愈，衣着白裙，持有玉佩，对主角好感 60【时间】"。每个角色必须涵盖：①身体状况/伤病 ②当前衣着 ③持有/获得的物品 ④对主角(用户)的好感度与态度。只写当前仍有效的；每行末尾以【时间标记】标注该状态最近一次变化时间。）',
+  '（严格按下面的固定分格格式输出，用 | 分隔不同维度、一格一值，禁止把多个维度混在同一个值里。每行 = 一个对象（主角/环境/某个角色），以换行分隔：）',
+  '- 主角行格式（覆盖式）：主角：身体【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】',
+  '- 环境行格式（覆盖式，输出当前环境现状，非历史）：环境：布局【…】| 温度天气【…】| 钱财【…】| 身体状态【…】',
+  '- 其他每个角色一行（覆盖式）：角色名：身体【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】',
+  '各维度内容：身体=伤病/体力/健康；地址=当前所在地点的核心地名（主角必须直接写清实际位置，只写地名，不写"抵达/身处"等动作词与冗长修饰）；资产=钱/物品/持有物；穿着=衣服穿戴；好感=对主角(用户)的好感度数值与态度；备注=不易归类的其它当前状态。已变化才更新该格，未变化的可保留或留空，不要用“无”填满所有格。好感度必须带数字与负号（负好感带-）。每行末尾以【时间标记】标注该状态最近一次变化时间，如【第3天 傍晚】。当前位置规则：主角的「地址」必须写清当前实际所在地点），',
   '',
   '当前位置规则（地图/行程准确性关键，必须严格遵守）：',
   '1. 在「主角」行的「处境」中，必须明确写出主角【当前所在地点】，使用偏正结构名词短语（如"处身于雪原边缘的酒馆""身处灯火通明的王城大厅"），并确保该地点是此次剧情里【实际移动/停留】的位置。',
@@ -1063,6 +1077,11 @@ const ARCHIVE_SYSTEM_FULL = [
   '',
   '未解决事项（覆盖式，只列出"尚未解决"的事项与长期伏笔，已解决的不要列出）：',
   '（包含：长期伏笔、未揭晓的谜团、未兑现的承诺、跨楼层的悬而未决线索。每条以【时间标记】标注该事项产生的时间；已解决/已放弃/不再相关的不要列出。）',
+  '',
+  '地点（追加式，地图用：只输出本次剧情新增出现/移动到的地点，按剧情先后顺序一行一个，直接写核心地名，如"贫民窟垃圾山""半塌危楼阁楼""南区佣兵集散地"；本次未移动则输出"无"）：',
+  '（用下面的专属标记包裹地点，与其他字段完全独立；地点一行一个，只写核心地名，不写比喻/回忆/梦境场景，不带时间标记前缀）：',
+  '<<<LOCATIONS>>>',
+  '<<<LOCATIONS_END>>>',
   '',
   '最后，单独输出以下两个覆盖式总结字段（用来更新整体概览，不是追列事件）：',
   '剧情总览：用一段80-120字、语言精炼的连贯文字，概述当前整体剧情发展到哪一步、主要局势与各线关系，覆盖式（只描述当前阶段的最新综合情况，勿加编号）。',
@@ -1205,7 +1224,13 @@ function parseItemsText(text) {
 
 /** 解析剧情档案的字段（主线/支线/重要状态变化/未解决事项 + 用户自定义追踪项） */
 function parseArchiveJson(text, customDefs) {
-  const raw = String(text || '').trim();
+  let raw = String(text || '').trim();
+  let _locRaw = '';
+  const _locM = String(raw).match(/<<<LOCATIONS>>>([\s\S]*?)<<<LOCATIONS_END>>>/);
+  if (_locM) {
+    _locRaw = _locM[1];
+    raw = String(raw).replace(/<<<LOCATIONS>>>[\s\S]*?<<<LOCATIONS_END>>>/, '');
+  }
   const defs = Array.isArray(customDefs) ? customDefs : [];
   // 全部字段标签：内置四个 + 每个自定义项的 label
   const builtin = ['主线', '支线', '重要状态变化', '未解决事项', '剧情总览', '章回标题'];
@@ -1239,6 +1264,7 @@ function parseArchiveJson(text, customDefs) {
   const sideline   = parts['支线'] || '';
   const states     = parts['重要状态变化'] || '';
   const unresolved = parts['未解决事项'] || '';
+  const locations   = String(_locRaw || '').split('\n').map(function(s){return String(s).replace(/【[^】]*】/g,'').trim();}).filter(function(s){return s && s !== '无' && s !== '无。' && !/^[(（]/.test(s);});
   // 自定义字段（同样按时间标记解析成数组）
   const custom = {};
   for (const d of defs) {
@@ -1248,7 +1274,7 @@ function parseArchiveJson(text, customDefs) {
   }
   const title = (parts['章回标题'] || '').split('\n').filter(Boolean)[0] || '';
   const lead  = (parts['剧情总览'] || '').split('\n').filter(Boolean).join('\n').trim();
-  return { mainline, sideline, states, unresolved, items: [], custom, title, lead };
+  return { mainline, sideline, states, unresolved, locations, items: [], custom, title, lead };
 }
 
 function cdBuildRelationPrompt(windowFloors, data, _s) {
@@ -2461,6 +2487,8 @@ let cdBrowseLoadMore = {};   // 浏览界面每个角色已显示(懒加载)的�
 let cdBusyLabel = '';   // 当前占用锁的任务名
 let cdBusyAt = 0;        // 占用锁开始时间戳
 let cdPending = false;  // 当锁住时又收到触发信号, 标记"完成后再跑一轮"
+let _cdLastAutoTriggerAt = 0;    // 自动触发防抖：上次 cdOnMessageReceived 实际开始处理的时间戳
+let _cdLastAutoTriggerLen = -1;  // 自动触发防抖：上次处理时的 chat.length（判断是否同一批消息双事件）
 
 /**
  * 执行一次日记 + 关系生成。
@@ -4550,6 +4578,26 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
     return;
   }
 
+  // ★ 幂等短路（治重复总结根因：同一批楼层被我重复发给 AI）
+  //   无论 extraFloors 还是 cdGetNewFloors 取到的批次，只要某条 message_id 已在 processedFloors，
+  //   说明早已处理过，绝不再发第二次请求。全部已处理则直接 return。
+  if (data && Array.isArray(data.processedFloors) && data.processedFloors.length) {
+    const _pfDone = {};
+    for (const _p of data.processedFloors) _pfDone[Number(_p)] = true;
+    const _notDone = windowFloors.filter(function (w) { return w && typeof w.message_id === 'number' && !_pfDone[w.message_id]; });
+    if (!_notDone.length) {
+      cdLog('cdRunDiary: 本批楼层已在 processedFloors，跳过（防重复总结）', {批次: windowFloors.map(function(w){return w.message_id;})});
+      cdAddLog('info', '本批楼层已处理过，跳过（防重复总结）');
+      if (manual && !silent) toastr.info('这批楼层已处理过，跳过');
+      return;
+    }
+    // 只处理尚未处理的子集（防止批次里混入已处理楼层）
+    if (_notDone.length !== windowFloors.length) {
+      cdLog('cdRunDiary: 批次中部分楼层已处理，仅取未处理子集', {原: windowFloors.length, 未处理: _notDone.length});
+      windowFloors = _notDone;
+    }
+  }
+
   cdAddLog('info', '开始写日记', {楼层数: windowFloors.length, 起始楼层: windowFloors[0].message_id, 结束楼层: windowFloors[windowFloors.length-1].message_id});
 
   if (windowFloors.length > (s.maxWindowFloors || 40))
@@ -4801,6 +4849,13 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
           if (arc.mainline)   data.archive.mainline   = _appendIfNew(data.archive.mainline,   arc.mainline);
           if (arc.sideline)   data.archive.sideline   = _appendIfNew(data.archive.sideline,   arc.sideline);
           if (arc.states !== undefined)     data.archive.states     = _mergeStatesByRole((data.archive && data.archive.states) || '', arc.states);
+          if (Array.isArray(arc.locations) && arc.locations.length) {
+            if (!Array.isArray(data.archive.locations)) data.archive.locations = [];
+            for (const _lp of arc.locations) {
+              const _ls = String(_lp || '').trim();
+              if (_ls && !data.archive.locations.some(function(x){ return String(x).trim() === _ls; })) data.archive.locations.push(_ls);
+            }
+          }
           if (arc.unresolved !== undefined) data.archive.unresolved = _overwriteKeepMissed((data.archive && data.archive.unresolved) || '', arc.unresolved);
           // 自定义追踪项（默认追加式数组；开启 overwrite 的项每轮只保留最新）
           if (arc.custom && Object.keys(arc.custom).length) {
@@ -4973,6 +5028,27 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
           cdLog('聊天通知发送失败（不影响日记）:', e.message);
         }
       }
+    } else {
+      // ★ 三路全部未成功（AI 返回空 / 解析为空，非异常）时回滚 FIX-1 预锁定的游标：
+      //   避免"游标已推进到末尾但楼层实际没写进档案"导致【有新增楼层却显示全已总结、不再总结】的"锁过头吞楼层"。
+      try {
+        if (typeof window !== 'undefined' && window.__cdLockedBatch && Array.isArray(window.__cdLockedBatch) && window.__cdLockedBatch.length) {
+          const _d3 = await cdGetData();
+          let _rm3 = false;
+          if (Array.isArray(_d3.processedFloors)) {
+            for (const _mid of window.__cdLockedBatch) {
+              const _ix = _d3.processedFloors.indexOf(_mid);
+              if (_ix >= 0) { _d3.processedFloors.splice(_ix, 1); _rm3 = true; }
+            }
+          }
+          if (_rm3) {
+            _d3.lastFloor = Math.max(-1, (_d3.lastFloor ?? -1) - 1);
+            await cdSaveData(_d3);
+            cdAddLog('info', '[FIX-空结果] 本批三路均未成功，回滚游标，楼层可重试', {批次: window.__cdLockedBatch, lastFloor: _d3.lastFloor});
+          }
+          window.__cdLockedBatch = null;
+        }
+      } catch (e3) { cdWarn('FIX-空结果 回滚失败', e3); }
     }
   } catch (e) {
     // ★ FIX-2 失败回滚：本批锁定若未最终成功（崩溃/异常），从 processedFloors 移除，重新暴露给下次重试，避免楼层永久丢失
@@ -5024,6 +5100,18 @@ async function cdOnMessageReceived() {
   const chat = _cdGetChat();
   const currentLen = chat.length;
   if (currentLen < 1) return;
+
+  // ★ 防抖节流（治"双事件同时触发同一批消息"导致的重复总结）
+  //   插件同时监听 MESSAGE_RECEIVED 与 CHARACTER_MESSAGE_RENDERED 两个 ST 事件，
+  //   同一条消息到来会几乎同时触发两次。若 2 秒内再次触发且 chat.length 未变化
+  //   （即同一批消息），直接跳过，避免把同一批楼层喂给 AI 两次。
+  const _now = Date.now();
+  if (_now - _cdLastAutoTriggerAt < 2000 && currentLen === _cdLastAutoTriggerLen) {
+    cdLog('cdOnMessageReceived: 双事件防抖，跳过（同一批消息重复触发）', {chatLen: currentLen, 距上次: (_now - _cdLastAutoTriggerAt) + 'ms'});
+    return;
+  }
+  _cdLastAutoTriggerAt = _now;
+  _cdLastAutoTriggerLen = currentLen;
 
   const data = await cdGetData();
 
@@ -5091,28 +5179,16 @@ async function cdOnMessageReceived() {
 
   const lastProcessed = windowFloors[windowFloors.length - 1].message_id;
   cdAddLog('info', '自动触发(锚点偏移)', {本批AI楼层: windowFloors.length, 起点: windowFloors[0].message_id, 终点: lastProcessed, 偏移: offset, 新增AI: totalNew, 基线: baseline});
-  // ★ FIX-1 抓取即锁定 + FIX-3 三游标对齐：选定本批后立即写入 processedFloors 并保存，防崩溃/切走导致旧消息复发重复总结
+    // ★ FIX-1(修复版) 拉取即锁定：只在内存记录本批待处理(__cdLockedBatch)，不提前推游标/不落盘，避免“游标推了但档案未写”(全已总结但档案为空)
+  let __lockIds = [];
   try {
-    if (windowFloors && windowFloors.length && data) {
-      if (!Array.isArray(data.processedFloors)) data.processedFloors = [];
-      const _batchIds = [];
-      let _maxMid = (typeof data.lastFloor === 'number') ? data.lastFloor : -1;
+    if (windowFloors && windowFloors.length) {
       for (const _wf of windowFloors) {
-        if (!_wf || typeof _wf.message_id !== 'number' || _wf.message_id < 0) continue;
-        _batchIds.push(_wf.message_id);
-        if (_wf.message_id > _maxMid) _maxMid = _wf.message_id;
-        if (data.processedFloors.indexOf(_wf.message_id) < 0) data.processedFloors.push(_wf.message_id);
+        if (_wf && typeof _wf.message_id == 'number' && _wf.message_id >= 0) __lockIds.push(_wf.message_id);
       }
-      if (_maxMid > (data.lastFloor ?? -1)) data.lastFloor = _maxMid;
-      const _curLen = chat.length;
-      if (_curLen > (data._lastDiaryChatLength ?? 0)) data._lastDiaryChatLength = _curLen;
-      if (_curLen > (data._baselineChatLength ?? -1)) data._baselineChatLength = _curLen;
-      if (data.processedFloors.length > 2000) data.processedFloors = data.processedFloors.slice(-2000);
-      if (typeof window !== 'undefined') window.__cdLockedBatch = _batchIds;
-      await cdSaveData(data);
-      cdAddLog('info', '[锁定] 本批已预锁定，防旧消息复发', {批次: _batchIds, lastFloor: data.lastFloor});
+      if (__lockIds.length && typeof window !== 'undefined') window.__cdLockedBatch = __lockIds;
     }
-  } catch (e) { cdWarn('FIX1 抓取锁定失败', e); }
+  } catch (e) { cdWarn('FIX1 内存锁定失败', e); }
   await cdRunDiary({ manual: false, silent: true, extraFloors: windowFloors });
 }
 
@@ -7450,6 +7526,12 @@ async function cdRenderGraph() {
       '.cd-st-map-title{font-size:11px;font-weight:700;color:#6b4a1b;display:flex;align-items:center;gap:6px;margin-bottom:6px}',
       '.cd-st-map-body{width:100%}',
       '.cd-st-map-note{display:flex;justify-content:space-between;align-items:center;margin-top:4px;font-size:9px;color:#8b7355}',
+      '.cd-st-env{border:1px solid #dcc9a4;border-radius:8px;background:#faf6ec;padding:9px 11px;margin-bottom:10px}',
+      '.cd-st-env-title{font-size:11px;font-weight:700;color:#6b4a1b;display:flex;align-items:center;gap:6px;margin-bottom:6px}',
+      '.cd-st-env-grid{display:flex;flex-direction:column;gap:5px}',
+      '.cd-st-env-item{display:flex;gap:8px;font-size:10.5px;line-height:1.5}',
+      '.cd-st-env-item .k{color:#9a7a45;font-weight:700;width:52px;flex-shrink:0}',
+      '.cd-st-env-item .v{color:#4a3a2a;flex:1}',
       '.cd-st-section-title{font-size:11px;font-weight:700;color:#9a7a45;letter-spacing:.5px;display:flex;align-items:center;gap:5px;margin:4px 0 7px}',
       '.cd-st-role{border:1px solid #e6dcc6;border-radius:7px;padding:9px 11px;background:#fff;margin-bottom:7px}',
       '.cd-st-role-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}',
@@ -7484,9 +7566,30 @@ async function cdRenderGraph() {
   } catch (e) {}
 
   // ===== 解析状态文本 → 主角 + 角色 =====
-  const prot = { 身体: '', 资源: '', 处境: '', 任务: '' };
-  const roles = []; // { name, text, fav }
+  const prot = { 身体: '', 地址: '', 资产: '', 穿着: '', 好感: '', 备注: '' };
+  const env = { 布局: '', 温度天气: '', 钱财: '', 身体状态: '' };
+  const roles = []; // { name, grid:{}, text, fav }
   let protFound = false;
+
+  // 用于解析 "属性\uff1a值" 或 "属性【值】" 的|分格段
+  const parseGrid = (bodyStr) => {
+    const grid = {};
+    const segs = String(bodyStr || '').split(/[|｜；;]/).map(s => s.trim()).filter(Boolean);
+    for (const seg of segs) {
+      // 优先：格名【值】形式；值到第一个 】 为止，再剔除末尾独立时间标记（如 【第三天 清晨】）
+      const m2 = seg.match(/^([^【：:]{1,12})【([^】]*)】(.*)$/);
+      if (m2) {
+        let val = String(m2[2] || '').trim();
+        val = val.replace(/【[^】]*】\s*$/, '').trim();
+        if (String(m2[1]).trim() && val) grid[m2[1].trim()] = val;
+        continue;
+      }
+      // 其次：格名：值 形式
+      const m1 = seg.match(/^([^：:【]{1,12})[：:]\s*(.*)$/);
+      if (m1 && String(m1[1]).trim() && String(m1[2]).trim()) grid[m1[1].trim()] = m1[2].trim();
+    }
+    return grid;
+  };
 
   if (statesText && String(statesText).trim()) {
     const lines = String(statesText).split('\n').map(s => s.trim()).filter(Boolean);
@@ -7495,22 +7598,41 @@ async function cdRenderGraph() {
       if (!cm) continue;
       const name = cm[1].trim();
       const body = cm[2] || '';
+      if (name === '环境' || name === '环境状态' || name === '当前环境') {
+        const g = parseGrid(body);
+        if (g['布局'] || g['环境布局']) env['布局'] = g['布局'] || g['环境布局'] || '';
+        if (g['温度天气'] || g['温度'] || g['天气']) env['温度天气'] = g['温度天气'] || g['温度'] || g['天气'] || '';
+        if (g['钱财'] || g['钱'] || g['金钱']) env['钱财'] = g['钱财'] || g['钱'] || g['金钱'] || '';
+        if (g['身体状态'] || g['体力']) env['身体状态'] = g['身体状态'] || g['体力'] || '';
+        continue;
+      }
       if (name === '主角' || name === '用户' || name === 'player' || (protName !== '主角' && name === protName)) {
-        // 主角：解析 身体/资源/处境/任务（用分号或中文逗号切）
         protFound = true;
-        const segs = body.split(/[；;]/).map(s => s.trim()).filter(Boolean);
-        for (const seg of segs) {
-          const kv = seg.match(/^(身体|资源|处境|任务|状况|状态)[：:]\s*(.*)/);
-          if (kv) { prot[kv[1] === '状况' || kv[1] === '状态' ? '身体' : kv[1]] = kv[2]; }
-          else if (prot['身体']) { prot['身体'] += '；' + seg; }
-          else { prot['身体'] = seg; }
+        if (/\|/.test(body)) {
+          const g = parseGrid(body);
+          prot['身体'] = g['身体'] || ''; prot['地址'] = g['地址'] || g['所在地'] || ''; prot['资产'] = g['资产'] || ''; prot['穿着'] = g['穿着'] || g['衣着'] || ''; prot['好感'] = g['好感'] || ''; prot['备注'] = g['备注'] || '';
+        } else {
+          const segs = body.split(/[；;]/).map(s => s.trim()).filter(Boolean);
+          for (const seg of segs) {
+            const kv = seg.match(/^(身体|资源|处境|任务|状况|状态|地址|资产|穿着|衣着|好感|备注)[：:]\s*(.*)/);
+            if (kv) {
+              const kk = kv[1];
+              if (kk === '状况' || kk === '状态') prot['身体'] = kv[2];
+              else if (kk === '资源') prot['资产'] = kv[2];
+              else if (kk === '处境') prot['地址'] = kv[2];
+              else if (kk === '衣着') prot['穿着'] = kv[2];
+              else prot[kk] = kv[2];
+            } else if (prot['备注']) { prot['备注'] += '；' + seg; }
+            else { prot['备注'] = seg; }
+          }
         }
       } else {
-        // 角色：提取好感数值（支持负数，如「好感 -3」→ -3，避免负号被吞成 3）
         let fav = null;
         const fm = body.match(/好感[^\d]{0,4}(-?\d{1,3})/);
         if (fm) fav = parseInt(fm[1], 10);
-        roles.push({ name, text: body.replace(/\(\d+\)|\s*【[^】]*】\s*$/g, '').trim(), fav });
+        let grid7 = {};
+        if (/\|/.test(body)) grid7 = parseGrid(body);
+        roles.push({ name, grid: grid7, text: body.replace(/\(\d+\)|\s*【[^】]*】\s*$/g, '').trim(), fav });
       }
     }
   }
@@ -7546,125 +7668,126 @@ async function cdRenderGraph() {
     return `<span class="cd-st-favpill ${cls}">${iconSvg} 好感 ${fav}</span>`;
   };
 
-  // ===== 地点统计（用于地图 B：环形散点）=====
-  // ★ 精确模式：以「填表采集的当前位置(liveTableData[0].location)」为锚点，
-  //   从位置快照(liveTableSnapshots)提取真实踏足过的地点轨迹；仅当填表未开/无数据时，
-  //   才降级到剧情档案里「位移动词语境」中的地点（排除比喻/记忆/背景叙述）。
-  let _curLoc = (Array.isArray(data.liveTableData) && data.liveTableData[0] && data.liveTableData[0].location) || '';
-  // ★ 补充：从剧情档案「主角处境」提取当前位置（填表未开时的锚点；仅取最近一次出现的位置）
-  if (!_curLoc) {
-    try {
-      const stText = (arc && arc.states) || '';
-      const protLine = stText.split('\n').map(s => s.trim()).find(l => /^主角[：:]/.test(l) || /^我[：:]/.test(l));
-      if (protLine) {
-        const segs = String(protLine).split(/[；;]/);
-        for (let si = segs.length - 1; si >= 0; si--) {
-          const seg = segs[si];
-          const m = seg.match(/处境[：:]\s*([^；;]+)/);
-          if (m) {
-            const locPhrase = m[1].trim();
-            // 提取短语中的地点名词（去掉修饰词/方位词，取核心地点词）
-            const locWord = (() => {
-              // 正向匹配第一个出现的已知地点词尾（不用 \u 转义的长正则，避免转义破坏）
-              const locTerms = ['训练场', '地下室', '客栈', '驿站', '酒馆', '城墙', '大厅', '街道', '村庄', '城堡', '洞穴', '神殿', '祭坛', '港口', '渡口', '森林', '草原', '平原', '沙漠', '废墟', '密室', '花园', '庭院', '监狱', '地牢', '广场', '集市', '教堂', '墓地', '悬崖', '宫殿', '仓库', '厨房', '浴室', '阳台', '屋顶', '走廊', '门口', '瀑布', '沼泽', '王座厅', '海湾', '海峡', '半岛', '池塘', '溪流', '山峰', '山谷', '河流', '湖泊', '海洋', '城门', '镇', '村', '寨', '塔', '堡', '洞', '山', '河', '湖', '海', '岛', '林', '井', '泉', '池', '塘', '溪', '桥', '寺', '庙', '观', '阁', '亭', '楼', '宫', '殿'];
-              const phrase = String(locPhrase || '');
-              for (const t of locTerms) {
-                const idx = phrase.indexOf(t);
-                if (idx !== -1) {
-                  // 取地点词结尾往前最多 6 字作为地点名（含形容词/方位修饰）
-                  const start = Math.max(0, idx - 6);
-                  const name = phrase.slice(start, idx + t.length);
-                  // 过滤明显的非地点语境（比喻/心理/感叹）
-                  if (/像|如同|仿佛|梦|回忆|记忆|听说|传闻/.test(phrase.slice(0, idx))) continue;
-                  return name;
-                }
-              }
-              return null;
-            })();
-            if (locWord) { _curLoc = locWord; break; }
-            // 兜底：取整段作为地点描述
-            else if (locPhrase.length >= 2 && locPhrase.length <= 12) { _curLoc = locPhrase; break; }
-          }
-        }
-      }
-    } catch (e) {}
-  }
-  const locSet = [];
-  const seen = {};
-  const addLoc = (name) => {
-    const l = String(name || '').trim();
-    if (!l || l === '未知' || l === '未知地点' || l === '无' || l.length > 14) return;
-    const k = l.toLowerCase();
-    if (!seen[k]) { seen[k] = true; locSet.push(l); }
-  };
-  // ① 位置历史快照（按时间顺序，去重保留）
-  try {
-    const snaps = Array.isArray(data.liveTableSnapshots) ? data.liveTableSnapshots : [];
-    for (const snap of snaps) {
-      const loc = snap && snap.table && snap.table.location;
-      if (loc) addLoc(loc);
-    }
-  } catch (e) {}
-  // ② 当前地点（必须在列表中，最末位 = 当前位置）
-  if (_curLoc) addLoc(_curLoc);
-  // ③ 降级兜底：剧情档案中的「位移动词语境」地点（前往/来到/到达/进入/离开/抵达/返回/穿过/走进/回到/赶往/撤到）
-  if (locSet.length === 0) {
-    const movePattern = /(?:前往|来到|到达|进入|抵达|返回|穿过|走进|回到|赶往|撤到|逃到|搬进|进驻|路过|途经|离开|出了|进了|朝着|赶往|落脚|驻扎|停驻|躲在|藏在)[^\s，。；：、]{0,12}?(森林|酒馆|城墙|房间|大厅|街道|村庄|塔楼|城堡|洞穴|神殿|祭坛|港口|渡口|桥|山|谷|河|湖|海|沙漠|废墟|密室|花园|庭院|监狱|地牢|王座厅|广场|市场|军营|训练场|教堂|墓地|悬崖|宫殿|仓库|厨房|浴室|阳台|屋顶|地下室|走廊|门口|井|泉|亭|阁|寺|庙|洞|坑|池塘|溪流|瀑布|平原|草原|沼泽|岛|半岛|海峡|海湾|城|镇|客栈|驿站)/g;
-    const allText = [arc.mainline, arc.sideline, arc.states, arc.unresolved].filter(Boolean).join('\n');
-    let lm;
-    while ((lm = movePattern.exec(allText)) !== null) {
-      const loc = lm[1] || lm[2];
-      if (loc) addLoc(loc);
-    }
-    if (_curLoc) addLoc(_curLoc); // 当前位置兜底
-  }
-  const locs = locSet.slice(-10); // 最多展示最近 10 个地点
-
-  // ===== 动态地图 B：环形散点 =====
+  // ===== 旅程地图：地点来自 AI 直接输出的「地点」字段（剧情档案 arc.locations，追加式时序）=====
+  // ★ 铁律：除非用户主动说明使用填表，否则地图数据一律来自剧情档案(arc)，绝不从填表(liveTableData/liveTableSnapshots)取。
+  //   地点由 AI 在剧情档案里直接输出（见 ARCHIVE_SYSTEM 的「地点」字段），插件直接读取完整地名，不做正则截取。
+  // v3：标准阿基米德螺旋，抖动=0（主人要求规整规律），连线沿螺旋参数曲线密集采样+贝塞尔平滑 → 圆润无折角。
+  const mapLocs = (Array.isArray(arc.locations) ? arc.locations : []).map(function(s){ return String(s).trim(); }).filter(Boolean);
+  // 当前位置：主角「地址」格（AI 直接写的核心地名）；无则取地点序列末尾
+  const _curLoc = String(prot['地址'] || '').trim() || mapLocs[mapLocs.length - 1] || '';
+  // 最多展示最近 12 个地点（核心地名）
+  const locs = mapLocs.slice(-12);
   let mapHtml = '';
   if (locs.length) {
-    const cx = 180, cy = 120;
+    const W = 360, H = 240, M = 26;
     const n = locs.length;
-    // 半径随数量增大
-    const R = 52 + Math.min(n, 14) * 3.2;
-    const parts = [];
-    const curKey = String(_curLoc || '').trim().toLowerCase() || String(locs[locs.length - 1] || '').trim().toLowerCase();
-    for (let i = 0; i < n; i++) {
-      const ang = -Math.PI / 2 + (i / Math.max(n, 1)) * 2 * Math.PI;
-      const x = cx + R * Math.cos(ang);
-      const y = cy + R * Math.sin(ang);
-      parts.push({ x, y, name: locs[i], isCur: String(locs[i] || '').trim().toLowerCase() === curKey });
+    const CX = W / 2, CY = H / 2;
+    const maxRadius = Math.min(W, H) * 0.42;
+    const totalRot = Math.PI * 2 * 3.2;         // 3.2 圈
+    // 标准阿基米德螺旋布点：角度随序号线性扫 totalRot，半径随序号线性放大，idx=0 在中心。抖动=0（规整规律不散乱）。
+    const pts = locs.map(function(name, idx){
+      const t = n === 1 ? 0 : (idx / n);
+      const angle = t * totalRot;
+      const r = t * maxRadius;
+      const x = Math.max(M, Math.min(W - M, CX + Math.cos(angle) * r));
+      const y = Math.max(M, Math.min(H - M, CY + Math.sin(angle) * r));
+      return { name: String(name), x: x, y: y, isCur: String(name).trim() === String(_curLoc).trim() };
+    });
+    // 圆润螺旋轨迹：沿标准阿基米德螺旋参数曲线密集采样，再用贝塞尔平滑连接 → 完整无折角的旋臂
+    const segs = Math.min(200, Math.max(30, n * 20));
+    const curve = [];
+    for (let i = 0; i <= segs; i++) {
+      const t = i / segs;
+      const a = t * totalRot;
+      const r = t * maxRadius;
+      curve.push({ x: CX + Math.cos(a) * r, y: CY + Math.sin(a) * r });
     }
-    // 连接线（按索引顺序）
-    let path = '';
-    for (let i = 0; i < parts.length - 1; i++) {
-      path += (i === 0 ? 'M' : 'L') + parts[i].x.toFixed(1) + ' ' + parts[i].y.toFixed(1) + ' ';
+    const smoothPath = function(pp){
+      if (pp.length < 2) return '';
+      let d = 'M' + pp[0].x.toFixed(1) + ' ' + pp[0].y.toFixed(1);
+      for (let i = 0; i < pp.length - 1; i++) {
+        const p0 = pp[Math.max(0, i - 1)], p1 = pp[i], p2 = pp[i + 1], p3 = pp[Math.min(pp.length - 1, i + 2)];
+        const c1x = p1.x + (p2.x - p0.x) / 6, c1y = p1.y + (p2.y - p0.y) / 6;
+        const c2x = p2.x - (p3.x - p1.x) / 6, c2y = p2.y - (p3.y - p1.y) / 6;
+        d += 'C' + c1x.toFixed(1) + ' ' + c1y.toFixed(1) + ',' + c2x.toFixed(1) + ' ' + c2y.toFixed(1) + ',' + p2.x.toFixed(1) + ' ' + p2.y.toFixed(1);
+      }
+      return d;
+    };
+    const path = smoothPath(curve);
+    // 标签精选：只给 当前位置、起点、离当前最近的关键点 标字（其余点只画圆不标字，避免重叠）
+    const curIdx = pts.reduce(function(a, pt, i){ return pt.isCur ? i : a; }, -1);
+    const cIdx = curIdx < 0 ? pts.length - 1 : curIdx;   // 当前位置索引（未匹配取末站）
+    const keyCount = 3;   // 关键点数：离当前最近回溯的 N 站
+    const pick = [cIdx];                      // 当前位置优先
+    if (pick.indexOf(0) < 0) pick.push(0);    // 起点必标
+    for (let k = 1; k <= keyCount; k++) {     // 离当前最近回溯的关键点
+      const i = Math.max(0, cIdx - k);
+      if (i !== cIdx && pick.indexOf(i) < 0) pick.push(i);
     }
-    path += 'L' + parts[parts.length - 1].x.toFixed(1) + ' ' + parts[parts.length - 1].y.toFixed(1);
-    const nodeHtml = parts.map((p, i) => {
-      const sl = `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4" fill="${p.isCur ? '#8a6a3b' : '#a3804d'}"/>`;
-      const lbl = `<text x="${(p.x - 15).toFixed(1)}" y="${(p.y - 8).toFixed(1)}" font-size="${p.isCur ? 9.5 : 8.5}" font-weight="${p.isCur ? 700 : 600}" fill="${p.isCur ? '#8a6a3b' : '#4a3a2a'}" font-family="-apple-system,'Segoe UI',sans-serif">${escapeHtml(p.name)}</text>`;
-      return sl + lbl;
+    const _labelW = function(t){ return String(t || '').length * 8; } // 粗估标签宽度
+    const _placed = [];                       // 已放置的标签矩形，用于碰撞检测
+    const _collide = function(x, y, ww, hh){
+      for (let i = 0; i < _placed.length; i++){
+        const r = _placed[i];
+        if (x < r.r && (x + ww) > r.l && y < r.b && (y + hh) > r.t) return true;
+      }
+      return false;
+    };
+    const _labels = {};
+    // 安放优先级：当前位置(0) > 起点(1) > 关键点(2)，保证当前/起点一定有位
+    const _prio = pick.slice().sort(function(ai, bi){
+      const ar = (ai === cIdx ? 0 : (ai === 0 ? 1 : 2));
+      const br = (bi === cIdx ? 0 : (bi === 0 ? 1 : 2));
+      return ar - br;
+    });
+    _prio.forEach(function(idx){
+      const pt = pts[idx];
+      const fs = pt.isCur ? 9.5 : 8.5, fw = pt.isCur ? 700 : 600;
+      const col = pt.isCur ? '#8a6a3b' : '#4a3a2a';
+      const ww = _labelW(pt.name), ch = 7;
+      // 候选位：正上方居中优先，撞了依次上/下/左右微调让位
+      const tries = [
+        [pt.x - ww / 2, pt.y - ch - 2],
+        [pt.x - ww / 2, pt.y - ch - 9],
+        [pt.x - ww / 2, pt.y - ch + 7],
+        [pt.x - ww / 2 - 10, pt.y - ch - 2],
+        [pt.x - ww / 2 + 10, pt.y - ch - 2],
+        [pt.x - ww / 2 - 22, pt.y - ch],
+        [pt.x - ww / 2 + 22, pt.y - ch]
+      ];
+      let ok = null;
+      for (let t = 0; t < tries.length; t++){
+        let tx = tries[t][0], ty = tries[t][1];
+        tx = Math.max(2, Math.min(W - ww - 2, tx));
+        ty = Math.max(2, Math.min(H - ch - 2, ty));
+        if (!_collide(tx, ty, ww, ch)){ ok = [tx, ty]; break; }
+      }
+      if (ok === null) ok = [pt.x - ww / 2, pt.y - ch - 2];
+      _placed.push({ l: ok[0], t: ok[1], r: ok[0] + ww, b: ok[1] + ch });
+      _labels[idx] = '<text x="' + ok[0].toFixed(1) + '" y="' + (ok[1] + ch).toFixed(1) + '" font-size="' + fs + '" font-weight="' + fw + '" fill="' + col + '" text-anchor="middle" font-family="-apple-system,\'Segoe UI\',sans-serif">' + escapeHtml(pt.name) + '</text>';
+    });
+    // 所有节点画圆（起点实心 / 经过空心 / 当前位置实心+光圈），仅精选点叠加标签
+    const nodeHtml = pts.map(function(pt, i){
+      const r = pt.isCur ? 5 : 4;
+      const sl = '<circle cx="' + pt.x.toFixed(1) + '" cy="' + pt.y.toFixed(1) + '" r="' + r + '" fill="' + (pt.isCur ? '#8a6a3b' : '#a3804d') + '"/>';
+      const lb = pt.isCur ? '<circle cx="' + pt.x.toFixed(1) + '" cy="' + pt.y.toFixed(1) + '" r="9" fill="none" stroke="#8a6a3b" stroke-width="1" opacity=".3"/>' : '';
+      return sl + lb + (_labels[i] || '');
     }).join('');
     mapHtml = `
       <div class="cd-st-map">
-        <div class="cd-st-map-title"><i class="fa-regular fa-map"></i> 旅程地图 <span style="font-size: calc(0.55rem*var(--cd-fs,1));opacity:.5;font-weight:400;">动态散点自动布局</span></div>
+        <div class="cd-st-map-title"><i class="fa-regular fa-map"></i> 旅程地图 <span style="font-size: calc(0.55rem*var(--cd-fs,1));opacity:.5;font-weight:400;">阿基米德螺旋 · 精选标签+避让</span></div>
         <div class="cd-st-map-body">
           <svg viewBox="0 0 360 240" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block;">
-            <g stroke="#eadfc9" stroke-width="1" fill="none">
-              <circle cx="${cx}" cy="${cy}" r="${R}"/>
-              <path d="M0 ${cy} H360 M${cx} 0 V240"/>
-            </g>
-            <g stroke="#8a6a3b" stroke-width="1.3" fill="none" opacity=".55"><path d="${path}"/></g>
+            <g stroke="#8a6a3b" stroke-width="1.4" fill="none" opacity=".6"><path d="${path}" stroke-dasharray="5 4" stroke-linecap="round"/></g>
             <g fill="#a3804d" font-family="-apple-system,'Segoe UI',sans-serif" text-anchor="middle">${nodeHtml}</g>
           </svg>
-          <div class="cd-st-map-note"><span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#8a6a3b" stroke-width="2"><path d="M12 21s-7-5.2-7-11a7 7 0 0 1 14 0c0 5.8-7 11-7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg> 当前位置 · ${escapeHtml(_curLoc || locs[locs.length-1] || '未知')}</span><span>已踏足 ${locs.length} 处</span></div>
+          <div class="cd-st-map-note"><span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#8a6a3b" stroke-width="2"><path d="M12 21s-7-5.2-7-11a7 7 0 0 1 14 0c0 5.8-7 11-7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg> 当前位置 · ${escapeHtml(_curLoc || '未知')}</span><span>已踏足 ${locs.length} 处</span></div>
         </div>
       </div>`;
   }
-
   // ===== 主角状态卡 HTML =====
-  const protHas = prot['身体'] || prot['资源'] || prot['处境'] || prot['任务'];
+  const protKeys = ['身体','地址','资产','穿着','好感','备注'];
+  const protHas = protKeys.some(k => prot[k]);
   const protCard = `
     <div class="cd-st-prob">
       <div class="cd-st-pb-title">
@@ -7673,14 +7796,31 @@ async function cdRenderGraph() {
         <span style="font-size:calc(0.55rem*var(--cd-fs,1));opacity:.6;font-weight:400;">主角状态</span>
       </div>
       <div class="cd-st-pb-grid">
-        ${['身体','资源','处境','任务'].map(k => prot[k] ? `<div class="cd-st-pb-item"><span class="k">${k}</span><span class="v">${escapeHtml(prot[k])}</span></div>` : '').join('')}
+        ${protKeys.map(k => prot[k] ? `<div class="cd-st-pb-item"><span class="k">${k}</span><span class="v">${escapeHtml(prot[k])}</span></div>` : '').join('')}
         ${protHas ? '' : '<div class="cd-st-pb-empty">（暂无主角状态，写日记时 AI 会记录）</div>'}
       </div>
     </div>`;
 
+  // ===== 环境卡（地图下方）=====
+  const envKeys = ['布局','温度天气','钱财','身体状态'];
+  const envHas = envKeys.some(k => env[k] && String(env[k]).trim());
+  const envCard = envHas ? `
+    <div class="cd-st-env">
+      <div class="cd-st-env-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l3-8 3 8M3 11a3 3 0 0 0 6 0M3 11v9h6v-8M9 11V3h6v8M9 11a3 3 0 0 0 6 0M9 20h6m-6-8h6M15 11l3-8 3 8m-6 0a3 3 0 0 0 6 0m-6 0v9h6v-9"/></svg>
+        <span>环境</span>
+      </div>
+      <div class="cd-st-env-grid">
+        ${envKeys.map(k => env[k] && String(env[k]).trim() ? `<div class="cd-st-env-item"><span class="k">${k}</span><span class="v">${escapeHtml(env[k])}</span></div>` : '').join('')}
+      </div>
+    </div>` : '';
+
   // ===== 角色条例列表 HTML =====
   const roleHtml = roles.length ? roles.map((r, idx) => {
-    const fr = fieldRows(r.text);
+    const haveGrid = r.grid && Object.keys(r.grid).length;
+    const g = haveGrid ? r.grid : {};
+    const row = haveGrid ? g : fieldRows(r.text);
+    const renderRoleField = (k, v) => (v && String(v).trim()) ? `<div class="cd-st-field"><span class="k">${k}</span><span class="v">${escapeHtml(String(v).trim())}</span></div>` : '';
     return `
       <div class="cd-st-role">
         <div class="cd-st-role-head">
@@ -7688,9 +7828,12 @@ async function cdRenderGraph() {
           <span class="cd-st-role-right">${favPill(r.fav)}<span class="cd-st-present ${idx === roles.length-1 ? 'on' : 'off'}">${idx === roles.length-1 ? '在场' : '未出场'}</span></span>
         </div>
         <div class="cd-st-role-fields">
-          ${fr['物品'] ? `<div class="cd-st-field"><span class="k">物品</span><span class="v">${escapeHtml(fr['物品'])}</span></div>` : ''}
-          ${fr['外貌'] ? `<div class="cd-st-field"><span class="k">外貌</span><span class="v">${escapeHtml(fr['外貌'])}</span></div>` : ''}
-          ${fr['其他'] ? `<div class="cd-st-field"><span class="k">其他</span><span class="v">${escapeHtml(fr['其他'])}</span></div>` : ''}
+          ${renderRoleField('身体', row['身体'])}
+          ${renderRoleField('地址', row['地址'] || row['处境'])}
+          ${renderRoleField('资产', row['资产'] || row['资源'])}
+          ${renderRoleField('穿着', row['穿着'] || row['衣着'])}
+          ${renderRoleField('好感', row['好感'])}
+          ${renderRoleField('备注', row['备注'] || row['其他'])}
         </div>
       </div>`;
   }).join('') : '<div class="cd-empty"><p>暂无角色状态</p><p class="cd-empty-sub">写日记时 AI 会记录各角色的状态与好感</p></div>';
@@ -7698,6 +7841,7 @@ async function cdRenderGraph() {
   $('#cd-content').html(
     protCard +
     mapHtml +
+    envCard +
     `<div class="cd-st-section-title"><i class="fa-regular fa-people-group"></i> 角色状态</div>` +
     roleHtml
   );
@@ -7776,26 +7920,37 @@ async function cdRenderArchive() {
     </details>
   ` : '';
 
-  // 从四个字段中提取所有带【时间标记】的事件
+  // 从四个字段中提取事件，按 AI 追加顺序平铺（不按时间排序）
+  // 规则：带【时间】的行开启一个时间块，其后的非【时间】行合并进该块（保持整块完整）；
+  //       游离的无【时间】行独立成条，绝不缝进时间块（避免"续行缝错内容"导致的排布混乱）。
   function extractTimelineItems(text, category, icon) {
     if (!text) return [];
     const items = [];
-    // 按换行分割，找以【开头的事件
     const lines = text.split('\n');
-    let currentTime = '';
+    let cur = null;            // 当前正在累积的条目
+    let hasTimeBlock = false;  // 当前累积块是否由【时间】行开启
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
-      // 匹配【时间标记】
       const timeMatch = trimmed.match(/^【([^】]+)】\s*(.*)/);
       if (timeMatch) {
-        currentTime = timeMatch[1];
-        items.push({ time: currentTime, content: timeMatch[2], category, icon });
-      } else if (currentTime && trimmed.length > 5) {
-        // 续上一行
-        if (items.length) items[items.length - 1].content += ' ' + trimmed;
+        // 新的时间块
+        if (cur) items.push(cur);
+        const t = timeMatch[1].trim();
+        const c = timeMatch[2].trim();
+        cur = { time: t, content: c || trimmed, category, icon };
+        hasTimeBlock = true;
+      } else if (cur && hasTimeBlock) {
+        // 紧跟时间块之后的续行 → 合并进当前块（保持整块完整）
+        cur.content += ' ' + trimmed;
+      } else {
+        // 游离行（无时间块）：独立成条，且不再被并入任何时间块
+        if (cur) { items.push(cur); cur = null; }
+        items.push({ time: '', content: trimmed, category, icon });
+        hasTimeBlock = false;
       }
     }
+    if (cur) items.push(cur);
     return items;
   }
 
@@ -10123,6 +10278,14 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
     {
+    version: 'v2.9.3',
+    date: '2026-08-28',
+    items: [
+      '旅程地图重构: 数据源=剧情档案(arc.locations, AI直接输出专属LOCATIONS标记)绝不用填表; 布局=标准阿基米德螺旋(抖动=0规整), 轨迹沿螺旋参数曲线密集采样+贝塞尔平滑=圆润无折角; 标签精选(只标当前位置/起点/离当前最近3个关键点)+碰撞避让(正上方优先, 撞了上下左右微调), 保证当前/起点一定有标签且不越界、无重叠',
+      '状态页「没有分格」修复: parseGrid 误删【值】导致分格全空(只值末尾独立时间标记被误删)',
+    ],
+  },
+  {
     version: 'v2.9.2',
     date: '2026-08-28',
     items: [
@@ -10512,7 +10675,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.9.2 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.9.3 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
@@ -13390,6 +13553,7 @@ const CD_FORUM_PROMPT_POSTS = `这是一个能跨世界串门的中文互联网�
     "world":"发帖角色所属世界",
     "title":"帖名，抓眼球，可用网络热梗/反讽/悬念/擦边梗，像真实论坛标题",
     "text":"帖子正文，极度口语化、有人味有情绪，允许注水/开车/卖惨/抬杠/玩梗，要说人话",
+    "imgTag":"配图用英文生图标签（纯英文、逗号分隔，描写画面里的人物性别/外貌/动作/场景/氛围；若画面含主角请标明性别与长相，如 young man, male, black hair, sleepy eyes, classroom, ...；给空字符串""则本条不配图）",
     "tag":"一个版块小标签，如 求助/吐槽/八卦/开车/悬赏",
     "replies":[
        {"from":"跟帖人ID/角色名","world":"跟帖人所在世界","content":"紧扣楼主主题的真实回复，有认同/反驳/调侃/补刀/歪楼/应景吐槽/拱火，要有来回，像真实盖楼"},
@@ -13731,6 +13895,8 @@ async function cdForumGeneratePosts(worlds, types, n, customPrompt, erotica){
         replies: aiReplies,
         img: wantImg,
         imgDesc: '',
+        // ★ AI 发帖时顺带输出的配图英文生图标签（从 JSON 的 imgTag 取，纯英文；带图帖直接用，不再拿中文帖子硬凑）
+        imgTag: String((p&&p.imgTag)||'').replace(/[^\x00-\x7F]+/g,' ').replace(/\s+/g,' ').trim(),
         pid: 'p_'+Date.now()+'_'+Math.floor(Math.random()*1e5),
         imgUrl: '',
         imgKey: ''
@@ -16024,7 +16190,7 @@ async function cdForumTestImage(){
   }catch(e){ throw (e&&e.message)?e:new Error('生图测试失败'); }
 }
 /* ---------- 真图生成（NovelAI 协议，官方 + 第三方） ---------- */
-async function cdForumGenerateImage(prompt, neg, add){
+async function cdForumGenerateImage(prompt, neg, add, allowLongTags){
   var g=cdForumImgReady(); if(!g) return null;
   var base=String(g.url||'').replace(/\/+$/,'').replace(/\/generate-image$/,'').replace(/\/ai\/generate-image$/,'');
   // ===== 分层提示词管线（优先级A）：质量词去重合并 + 冲突检测 + 有序拼接 =====
@@ -16056,7 +16222,10 @@ async function cdForumGenerateImage(prompt, neg, add){
     for(var di=0;di<dirty.length;di++){ if(lo.indexOf(dirty[di])>=0) return true; }
     if(/\./.test(lo)) return true;
     if(/[;:；|]/.test(lo)) return true;
-    if(lo.indexOf(' ')>=0 && lo.split(' ').length>6) return true;
+    // ★ 修复"脚本直生图不配文"：AI 发帖时生成的 imgTag 是完整英文画面描述（多为长句、逗号分隔的语义片段），
+    //   会被下方"超过6个单词判脏丢弃"误杀（如 "looking down at a thin young man moving heavy crates" 被整段丢掉）。
+    //   仅当 allowLongTags=true（脚本直生传入 AI 完整描述）时，跳过该 6 词上限误杀；保留中文/色情/符号过滤不受影响。
+    if(!allowLongTags && lo.indexOf(' ')>=0 && lo.split(' ').length>6) return true;
     return false;
   }
   // 1) 把 AI TAG 与用户 add 各自拆开，先判断 AI TAG 的人数/风格倾向
@@ -16160,7 +16329,9 @@ async function cdForumImgForPost(p){
   if(!p || !cdForumImgReady()) return null;
   try{
     var g=cdForumImgCfg();
-    var desc=(p.imgDesc||'').trim() || String(p.text||'').slice(0,60);
+    // ★ 优先用 AI 发帖时顺带输出的英文生图标签(imgTag)——它已是纯英文、含性别/外貌/场景，直接可用，不再拿中文帖子硬凑清洗成"@"。
+    var desc=(p&&p.imgTag && String(p.imgTag).trim()) ? String(p.imgTag).trim()
+            : ((p.imgDesc||'').trim() || String(p.text||'').slice(0,60));
     if(!desc) return null;
     // 中文清洗兜底：imgDesc/帖子文本常为中文，直接喂生图模型会出鬼图，只保留英文片段；空则回退内置模板
     var _use=desc;
@@ -16171,7 +16342,14 @@ async function cdForumImgForPost(p){
     }
     /* 统一收口：去中文/去噪声/保留角色段/质量词限2 + 限长，脚本直生同样走兜底防污染 */
     _use=_cfForumTidyTags(String(_use||'')).slice(0,1400);
-    var img=await cdForumGenerateImage(_use, g.negPrompt||'', g.addPrompt||'');
+    // ★ 堵"@"空词兜底：清洗后若只剩占位符/空，则用内置模板，绝不再拿空词喂生图模型（否则模型自由发挥→性别错乱）
+    var _cleanCheck=String(_use||'').replace(/[@#*_~`\s]/g,'').trim();
+    if(!_cleanCheck || _cleanCheck==='@'){
+      var _fb=_cdForumFallbackPrompt(String((p&&p.title)||'')+' '+(String((p&&p.text)||'').slice(0,60)), g, g&&g.style||'fanart');
+      _use=_cfForumTidyTags(String(_fb||'')).slice(0,1400);
+      cdAddLog('info', '[生图·脚本直生] 生图词为空/占位，已回退内置模板', {origUse: String(_use||'').slice(0,80), fallback: String(_fb||'').slice(0,80)});
+    }
+    var img=await cdForumGenerateImage(_use, g.negPrompt||'', g.addPrompt||'', true); // 第4参 allowLongTags=true：脚本直生传 AI 完整英文描述，跳过6词上限误杀
     if(!img || !img.dataUrl) return null;
     var key='img_'+Date.now()+'_'+Math.floor(Math.random()*1e6);
     await cdForumImgAdd({ key:key, dataUrl:img.dataUrl, title:p.title||'', author:p.auth||'', text:String(p.text||'').slice(0,40), time:Date.now(), postKey:(p.pid||('__'+(p.auth||'')+'|'+(p.title||''))) ,
