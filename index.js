@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.9.3';
+const PLUGIN_VERSION = '2.9.4';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -231,6 +231,7 @@ const DEFAULT_SETTINGS = {
   autoCompressThreshold : 30,    // 累计多少条事件触发压缩（count 模式）
   autoCompressSize : 2000,       // 累计多少字触发压缩（size 模式，含自定义追踪项）
   customFields : [],             // 用户自定义剧情追踪项定义 [{ key, label, desc }]
+  injectMemo   : true,          // [v2.9.3] 备忘录注入开关：状态界面手动写的备忘录是否在对话时注入给AI
   archiveMode   : 'append',   // 'append' | 'vector' 剧情档案模式
   diaryMode     : 'append',   // 'append' | 'vector' 角色日记模式
   vectorTopK    : 5,          // 向量检索召回条数
@@ -419,6 +420,7 @@ function emptyData() {
     diaryVectors: [],  // 角色日记向量库 [{ id, role, text, vector }]
     liveTableData: [], // 填表功能：当前聊天的填表值 [{ defId, upper:{}, lower:{} }]
     liveTableSnapshots: [], // 填表数据自动快照 [{ mid, time, table }]
+    memo: '',          // [v2.9.3] 用户备忘录：状态界面手动填写，对话时注入给AI，空串=未填写
   };
 }
 
@@ -1479,12 +1481,28 @@ async function cdCompressArchive(data, s, isAuto) {
 - 主角的核心目标、身份设定 —— 必须保留。
 - 跨越多个时间段的因果链（谁导致了什么、埋下了什么）—— 必须保留。
 - 【时间标记】必须原样保留：每条事件都要带上它原本的【时间】标记（如【第3日】【深夜】【第二章】【某月某日】等），不得删除或合并时间标记。不得把带【时间】的条目改写成无时间标记的连续叙述。
+- 若原文包含【地点】字段或 <<<LOCATIONS>>>…<<<LOCATIONS_END>>> 地点标记段，必须原样保留这些地点序列，不得删除或改写核心地名。
+
+【格式铁律（与自动写档案完全一致，压缩时也必须遵守，禁止破坏现有格式）】：
+1. 重要状态变化（states）必须保持固定分格格式，用 | 分隔不同维度、一格一值，禁止把多个维度混在同一个值里。每行 = 一个对象（主角/环境/某个角色），以换行分隔：
+   - 主角行：主角：身体【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】
+   - 环境行：环境：布局【…】| 温度天气【…】| 钱财【…】| 身体状态【…】
+   - 其他角色行：角色名：身体【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】
+   压缩时保持这些分格与维度不丢失；已变化才更新该格，未变化保留或留空，不要用“无”填满所有格。
+2. 好感度数值铁律（必须严格遵守，压缩时不可破坏）：
+   - 好感度必须以数字单独写出（如“对主角好感 62”或“对主角好感 -90”），禁止用“好感大幅提升”“好感下降”等模糊表述。
+   - 负好感必须带负号（-），如“对主角好感 -90”，绝不可写成正值或绝对值；覆盖式汇总时已有负好感必须原样带负号保留。
+   - 压缩只是精简表述，不得擅自更改好感数值本身；数值必须与压缩前的连续衔接。
+3. 覆盖式与追加式语义保持：主线/支线为追加式（保留已发生的全部进展）；重要状态变化/未解决事项为覆盖式（保留当前仍然有效的最新全貌）。
+4. 若原文状态行末尾带【时间标记】（如【第3天 傍晚】），必须保留该时间标记标注状态最近变化时间。
+
 请严格按以下分段输出，每段以【标题】开头，标题保持原样，不得改动标题文字：
 - 【主线】…（每条事件仍以【时间】开头，一条一行）
 - 【支线】…（每条事件仍以【时间】开头，一条一行）
-- 【重要状态变化】…（每条事件仍以【时间】开头，一条一行）
+- 【重要状态变化】…（每条事件仍以【时间】开头，一条一行；并按上面的分格格式保留各角色/主角/环境状态行）
 - 【未解决事项】…（每条事件仍以【时间】开头，一条一行）
 - 其余自定义追踪项：按原标题原样输出【标题】段落。
+- 【地点】（若原文存在则原样输出，用 <<<LOCATIONS>>>…<<<LOCATIONS_END>>> 包裹，一行一个核心地名）
 无内容的分段可省略。只输出压缩后的文本，不要任何解释。`;
 
   const res = await cdWithTimeout(cdApiComplete([
@@ -2608,6 +2626,13 @@ async function cdBuildDiaryInjectionText() {
       }
     }
     
+    // ====== 用户备忘录（状态界面手动填写，对话时注入给AI，最高优先级放最前）======
+    if (s.injectMemo !== false && data.memo && String(data.memo).trim()) {
+      blocks.unshift(String(data.memo).trim());
+      blocks.unshift('以下是用户主动手动记录的备忘录，必须严格遵守并体现在回复中：');
+      blocks.unshift('[用户备忘录·最高优先级]');
+    }
+
     const base = blocks.join('\n');
     // ── 追加填表指令（含当前表格现状，作为记忆背景）──
     let lt = '';
@@ -2876,6 +2901,23 @@ function cdCustomSaveFields() {
   }
 }
 if (typeof window !== 'undefined') window.cdCustomSaveFields = cdCustomSaveFields;
+/** ★ 保存备忘录：读取状态界面 #cd-memo-input → data.memo → cdSaveData（对话时注入给AI） */
+async function cdSaveMemo() {
+  try {
+    const ta = document.getElementById('cd-memo-input');
+    const raw = (ta && ta.value != null) ? String(ta.value) : '';
+    const data = await cdGetData();
+    data.memo = raw;
+    await cdSaveData(data);
+    if (typeof cdAddLog === 'function') cdAddLog('info', '[备忘录] 已保存', { 长度: raw.length });
+    if (typeof toastr !== 'undefined') toastr.success(raw ? '备忘录已保存，将注入给AI' : '备忘录已清空');
+  } catch (e) {
+    if (typeof cdAddLog === 'function') cdAddLog('warn', '[备忘录] 保存失败: ' + (e && e.message));
+    if (typeof toastr !== 'undefined') toastr.error('备忘录保存失败: ' + (e && e.message));
+  }
+}
+if (typeof window !== 'undefined') window.cdSaveMemo = cdSaveMemo;
+
 
 function cdBuildLiveTableInjectText() {
   try {
@@ -3372,195 +3414,173 @@ async function cdCheckAutoTrigger() {
 }
 
 /**
- * ★ 隐藏已总结的旧楼层，只保留最新 N 条 AI 楼层可见
- * 参考隐藏助手思路：将旧楼层的 is_system 设为 true，ST 会自动隐藏
+ * ★ 隐藏已总结的旧楼层，只保留最新 N 条可见（用户+AI 都算楼层）。
+ * 方案B：调用 ST 原生 /hide 指令（TauriTavern 原生渲染幽灵图标、可 /unhide 恢复、AI 跳过）。
+ * 保留的可见楼层数：keepCount（autoHideKeep，最新 N 条）。
  */
-async function cdHideOldFloors(keepCount) {
-  // ★ 隐藏模式: 'b'=只设 is_hidden 让 ST 原生屏蔽(AI跳过,界面留幽灵图标,可恢复) | 'a'=再额外做 DOM 隐藏(界面也彻底隐藏)
-  let _s0 = null; try { _s0 = (typeof cdGetSettings === 'function') ? cdGetSettings() : null; } catch (e) {}
-  const hideMode = (_s0 && _s0.autoHideMode) || 'b';
-  // ★ 注入隐藏兜底样式（display:none !important 防止被 ST 重渲染/内联样式覆盖）
+/** ========== 隐藏楼层·方案B（调用原生 /hide，TauriTavern 原生渲染幽灵图标、可 /unhide 恢复）========== */
+/** 合并升序下标数组为连续区间 [[start,end],...]（供原生 /hide N-N 批量使用） */
+function cdCoalesceRanges(sortedIdx) {
+  const out = [];
+  if (!Array.isArray(sortedIdx) || !sortedIdx.length) return out;
+  const arr = sortedIdx.slice().sort(function (a, b) { return a - b; });
+  let s = arr[0], e = arr[0];
+  for (let i = 1; i < arr.length; i++) {
+    if (arr[i] === e + 1) { e = arr[i]; continue; }
+    out.push([s, e]); s = arr[i]; e = arr[i];
+  }
+  out.push([s, e]);
+  return out;
+}
+/** 判断一条消息是否为「被HCDiary隐藏」的楼层（私有标记 extra.cd_hidden 区分，避免误伤原生系统消息） */
+function cdIsHCHidden(m) {
+  if (!m) return false;
+  if (m.is_hidden === true) return true;                 // 旧版 is_hidden 兼容
+  if (m.is_system === true && m.extra && m.extra.cd_hidden === true) return true;  // 方案B原生 is_system
+  return false;
+}
+/** 打/消 私有标记（区分来源：被HCDiary隐藏的才是 cd_hidden） */
+function cdSetHiddenMark(m, val) {
+  if (!m) return;
+  if (val) { try { m.extra = Object.assign({}, m.extra || {}, { cd_hidden: true }); } catch (e) {} }
+  else if (m.extra) { try { const e = Object.assign({}, m.extra); delete e.cd_hidden; m.extra = e; } catch (e) {} }
+}
+/**
+ * ★ 核心：调用 ST 原生 /hide 或 /unhide 指令批量隐藏/恢复楼层。
+ *   逐下标调用 /hide N（与 BaiBai 成功案例一致；TauriTavern 对区间 /hide A-B 支持存疑）。
+ *   调用带 { handleExecutionErrors: true, source } 选项，并检查 result.isError 判断是否真正生效；
+ *   未生效(API 不可用 / 报错)时回退「直接写 is_system + 更新 DOM is_system 属性 + saveChat + reload」。
+ * @param ctx  SillyTavern.getContext()
+ * @param ranges  [[start,end],...] 连续 chat 下标区间
+ * @param hide true=隐藏 false=恢复
+ * @returns {mode:'native'|'fallback'|'err', okCount:number, errCount:number, sample:{i,is_system,extra}[]}
+ */
+async function cdNativeHide(ctx, ranges, hide) {
   try {
-    if (!document.getElementById('cd-hidden-floor-style')) {
-      const st = document.createElement('style'); st.id = 'cd-hidden-floor-style';
-      st.textContent = '.mes.cd-hidden-floor,.mes[data-cd-hidden="1"]{display:none !important;visibility:hidden !important;height:0 !important;min-height:0 !important;padding:0 !important;margin:0 !important;overflow:hidden !important;border:none !important;}';
-      (document.head || document.documentElement).appendChild(st);
+    const chat = ctx && Array.isArray(ctx.chat) ? ctx.chat : [];
+    const exec = (ctx && typeof ctx.executeSlashCommandsWithOptions === 'function')
+      ? function (cmd, opts) { return ctx.executeSlashCommandsWithOptions(cmd, opts); } : null;
+    let nativeCount = 0, fallbackCount = 0;
+    const changed = [];
+    const cmdName = hide ? 'hide' : 'unhide';
+    for (let ri = 0; ri < ranges.length; ri++) {
+      const s = ranges[ri][0], e = ranges[ri][1];
+      for (let i = s; i <= e; i++) { const m = chat[i]; if (m) cdSetHiddenMark(m, hide); } // 预写私有标记
+      for (let i = s; i <= e; i++) {
+        const m = chat[i];
+        if (!m) continue;
+        let ok = false;
+        if (exec) {
+          try {
+            const r = await exec('/' + cmdName + ' ' + i, { handleExecutionErrors: true, source: 'character-diary' });
+            const isErr = r && (r.isError === true || r.error);
+            if (isErr) {
+              if (typeof cdAddLog === 'function') { try { cdAddLog('warn', '[隐藏·原生] ' + cmdName + ' ' + i + ' 报错', { err: (r.errorMessage || r.error) }); } catch (e2) {} }
+              ok = false;
+            } else {
+              ok = true; nativeCount++;
+            }
+          } catch (err) { ok = false; if (typeof cdAddLog === 'function') { try { cdAddLog('warn', '[隐藏·原生] ' + cmdName + ' ' + i + ' 异常', { err: err && err.message }); } catch (e2) {} } }
+        }
+        if (!ok) {
+          // 回退：直接写 is_system + 更新 DOM 属性
+          m.is_system = !!hide;
+          fallbackCount++;
+          try { const $b = $('.mes[mesid="' + i + '"]'); if ($b.length) $b.attr('is_system', String(!!hide)); } catch (err) {}
+        }
+        if (changed.length < 5) changed.push({ i: i, is_system: !!m.is_system, extra: (m.extra || {}) });
+      }
     }
-  } catch (e) {}
+    // 落盘（无论原生/回退都补一次 save，确保持久化；原生 /hide 内部通常也会保存）
+    try {
+      if (typeof ctx.saveChat === 'function') { await ctx.saveChat(); }
+      else if (typeof ctx.saveChatConditional === 'function') { await ctx.saveChatConditional(); }
+    } catch (err) {}
+    // 刷新界面让 ST 原生按 is_system 渲染幽灵图标
+    if (ctx && typeof ctx.reloadCurrentChat === 'function') {
+      try { ctx.reloadCurrentChat(); } catch (err) {}
+    }
+    if (typeof cdAddLog === 'function') { try { cdAddLog('info', '[隐藏·原生] 执行结果', { 原生: nativeCount, 回退: fallbackCount, 样本: JSON.stringify(changed) }); } catch (e2) {} }
+    const mode = (exec && nativeCount > 0) ? 'native' : 'fallback';
+    return { mode: mode, okCount: nativeCount, errCount: fallbackCount, sample: changed };
+  } catch (e) {
+    if (typeof cdAddLog === 'function') { try { cdAddLog('error', '[隐藏·原生] cdNativeHide 异常', { err: e && e.message }); } catch (e2) {} }
+    return { mode: 'err', okCount: 0, errCount: 0, sample: [] };
+  }
+}
+/** 供各隐藏入口复用：把「要隐藏的下标集合」按原生 /hide 执行，返回 {count, mode} */
+async function cdNativeHideSet(ctx, toHide, keepCount, label) {
+  const ranges = cdCoalesceRanges(toHide);
+  if (!ranges.length) return { count: 0, mode: 'none', okCount: 0 };
+  const res = await cdNativeHide(ctx, ranges, true);
+  if (typeof cdAddLog === 'function') { try { cdAddLog('info', '[隐藏·原生] ' + (label || ''), { 区间: JSON.stringify(ranges), 条数: toHide.length, 模式: res.mode, 原生OK: res.okCount, 回退: res.errCount, 保留: keepCount }); } catch (e2) {} }
+  return { count: toHide.length, mode: res.mode, okCount: res.okCount, errCount: res.errCount };
+}
+async function cdHideOldFloors(keepCount) {
+  let _s0 = null; try { _s0 = (typeof cdGetSettings === 'function') ? cdGetSettings() : null; } catch (e) {}
   const ctx = SillyTavern.getContext();
-  if (!ctx || !Array.isArray(ctx.chat)) { try { cdAddLog && cdAddLog('warn', '[隐藏诊断] ctx/chat 无效，无法隐藏'); } catch (e) {} return; }
+  if (!ctx || !Array.isArray(ctx.chat)) { try { cdAddLog && cdAddLog('warn', '[隐藏] ctx/chat 无效，无法隐藏'); } catch (e) {} return; }
   const chat = ctx.chat;
-  if (!chat.length) { try { cdAddLog && cdAddLog('warn', '[隐藏诊断] chat 为空'); } catch (e) {} return; }
-  cdAddLog('info', '[隐藏诊断] 进入 cdHideOldFloors', { 模式: hideMode, keepCount, chat条数: chat.length });
-
-  // 从后往前找「可见的」 keepCount 条楼层（用户和 AI 都算，仅非 system、非 is_hidden）
+  if (!chat.length) { try { cdAddLog && cdAddLog('warn', '[隐藏] chat 为空'); } catch (e) {} return; }
+  keepCount = Math.max(1, parseInt(keepCount, 10) || 5);
+  cdAddLog('info', '[隐藏] 进入 cdHideOldFloors', { 保留: keepCount, chat条数: chat.length });
+  // 从后往前找「可见的」 keepCount 条楼层（用户+AI都算；排除原生系统消息 与 已被HCDiary隐藏的）
   let found = 0;
   let visibleStart = chat.length;
   for (let i = chat.length - 1; i >= 0; i--) {
     const m = chat[i];
-    // 可见即：不是 system 通知、未被隐藏（用户和 AI 都要保留/隐藏）
-    const visible = m && !m.is_system && !m.is_hidden && !m.hidden;
-    if (visible) {
-      found++;
-      if (found >= keepCount) {
-        visibleStart = i;
-        break;
-      }
-    }
+    if (!m || m.is_system || cdIsHCHidden(m)) continue;   // 原生系统消息 / 已隐藏 不算可见
+    found++;
+    if (found >= keepCount) { visibleStart = i; break; }
   }
-  // 如果可见楼层总数不足 keepCount，不隐藏
-  cdAddLog('info', '[隐藏诊断] 扫描可见楼层', { 保留条数: keepCount, 可见楼层数: found, 起始下标: visibleStart, chat条数: chat.length });
-  if (found < keepCount) { cdAddLog('info', '[隐藏诊断] 可见楼层不足 keepCount，不隐藏', { 可见: found, 需要: keepCount }); return; }
-
-  // 标记 visibleStart 之前的楼层（用户和 AI）为 is_hidden（数据层面持久化标记）
+  cdAddLog('info', '[隐藏] 扫描可见楼层', { 保留条数: keepCount, 可见楼层数: found, 起始下标: visibleStart });
+  if (found < keepCount) { cdAddLog('info', '[隐藏] 可见楼层不足 keepCount，不隐藏', { 可见: found, 需要: keepCount }); return; }
+  // 收集 visibleStart 之前所有「有正文且未被隐藏」的楼层下标（用户+AI）
   const toHide = [];
   for (let i = 0; i < visibleStart; i++) {
     const m = chat[i];
-    if (m && !m.is_hidden) {
-      m.is_hidden = true;
-      toHide.push(i);
-    }
+    if (m && m.mes && String(m.mes).trim() && !cdIsHCHidden(m)) toHide.push(i);
   }
-
-  if (toHide.length === 0) { cdAddLog('info', '[隐藏诊断] 没有可隐藏的楼层（toHide 为空）'); return; }
-
-  // ★ 数据层：is_hidden=true 已设（AI 跳过 + 落盘），ST 原生会显示幽灵图标、不发送给 AI。
-  //   隐藏模式: B（默认）→ 界面保留(幽灵图标,可 /unhide 恢复)；A → 额外做 DOM 隐藏(界面也彻底隐藏)。
-  let domHidden = 0;
-  if (hideMode === 'a') {
-    // ★ 方案A：ST Tauri 移动版无"隐藏楼层"渲染能力，改用直接对已渲染 DOM 做视觉隐藏
-    //   - 视觉层：jQuery 隐藏对应 .mes 元素
-    // ★ 修复（v2.6.3）：Tauri 版 .mes 的 mesid 与 chat 下标存在偏移（诊断：DOM mesid 从 7 开始，
-    //   chat 下标从 0 开始，且首元素 mesid 为空串），不能用 mesid=下标 精确匹配。
-    //   改为「按 DOM 顺序与 chat 可见序列对齐」：遍历 .mes，用其 mesid 在 chat 中反查同一条消息，
-    //   命中 toHide 集合（按 chats 下标）即隐藏；同时用 CSS 类 + display 双保险。
-    try {
-      const hideIdxSet = {};
-      toHide.forEach((i) => { hideIdxSet[i] = true; });
-      const resolveMesIdx = ($el) => {
-        const mid = String($el.attr('mesid') || $el.attr('data-mesid') || '').trim();
-        if (mid !== '' && /^\d+$/.test(mid)) return parseInt(mid, 10);
-        return -1;
-      };
-      const $allMes = $('.mes');
-      const renderedIdx = [];
-      for (let i = 0; i < chat.length; i++) {
-        const m = chat[i];
-        if (m && !m.is_hidden && !m.is_system) renderedIdx.push(i);
-      }
-      let pos = 0;
-      $allMes.each(function () {
-        const $el = $(this);
-        let idx = resolveMesIdx($el);
-        if (idx < 0) { idx = renderedIdx[pos] !== undefined ? renderedIdx[pos] : -1; }
-        pos++;
-        if (idx >= 0 && hideIdxSet[idx]) {
-          $el.addClass('cd-hidden-floor').attr('data-cd-hidden', '1');
-          $el.hide();
-          domHidden++;
-        }
-      });
-      if (domHidden < toHide.length) {
-        $allMes.each(function () {
-          const $el = $(this);
-          if ($el.hasClass('cd-hidden-floor')) return;
-          const txt = String($el.find('.mes_text').first().text() || $el.text() || '').trim().slice(0, 80);
-          if (!txt) return;
-          for (const idx of toHide) {
-            const m = chat[idx];
-            if (!m || !m.mes) continue;
-            if (String(m.mes).slice(0, 80) === txt) {
-              $el.addClass('cd-hidden-floor').attr('data-cd-hidden', '1');
-              $el.hide();
-              domHidden++;
-              break;
-            }
-          }
-        });
-      }
-    } catch (e) {
-      cdLog('cdHideOldFloors: DOM hide 异常', e ? e.message : e);
-    }
-  }
-
-  // 落盘（保证 is_hidden 标记持久化）
-  let savedFlag = '未尝试';
-  try {
-    if (typeof ctx.saveChat === 'function') { try { await ctx.saveChat(); savedFlag = 'ok'; } catch (e) { savedFlag = 'saveFail:' + (e && e.message); } }
-    else if (typeof ctx.saveChatConditional === 'function') { try { await ctx.saveChatConditional(); savedFlag = 'ok_conditional'; } catch (e) { savedFlag = 'condFail:' + (e && e.message); } }
-    else savedFlag = '无saveChat';
-  } catch (e) {
-    savedFlag = 'saveErr:' + (e && e.message);
-  }
-
-  // B 模式：标 is_hidden 后刷新界面，让 ST 原生显示幽灵图标（AI 跳过、界面可见、可恢复）
-  if (hideMode === 'b' && ctx && typeof ctx.reloadCurrentChat === 'function') {
-    try { ctx.reloadCurrentChat(); cdAddLog('info', '[隐藏] 已刷新界面显示幽灵图标'); } catch (e) { cdLog('隐藏后刷新界面失败', e ? e.message : e); }
-  }
-
-  cdAddLog('info', '[隐藏] 完成', { 隐藏条数: toHide.length, DOM已隐藏: domHidden, 落盘: savedFlag, 保留最新: keepCount, 模式: hideMode });
-  cdLog('cdHideOldFloors: 隐藏了', toHide.length, '条楼层，DOM隐藏', domHidden, '条，保留最新', keepCount, '条');
+  if (!toHide.length) { cdAddLog('info', '[隐藏] 没有可隐藏的楼层'); return; }
+  // ★ 方案B：调用原生 /hide
+  const res = await cdNativeHideSet(ctx, toHide, keepCount, 'cdHideOldFloors');
+  cdAddLog('info', '[隐藏] 完成', { 隐藏条数: res.count, 模式: res.mode, 保留最新: keepCount });
+  cdLog('cdHideOldFloors: 隐藏了', res.count, '条楼层(原生方式:', res.mode, ')，保留最新', keepCount, '条');
+  if (typeof ctx.emit === 'function') { try { ctx.emit('chat_updated', {}); } catch (e) {} }
 }
 
-/** ★ 补隐藏：渲染后把已标记 is_hidden 的楼层在 DOM 上再次 .hide()（用于切换聊天/刷新后补齐视觉隐藏） */
+/** ★ 补隐藏：把已被HCDiary标记隐藏的楼层在 DOM 上做视觉处理（A模式彻底隐藏界面）。
+ *  B模式(默认)由 ST 原生渲染幽灵图标，无需 DOM 干预，本函数仅 A 模式生效。 */
 function cdReapplyHiddenFloors() {
   try {
-    // ★ 隐藏模式：B（默认）由 ST 原生渲染幽灵图标，无需 DOM 补隐藏；仅 A 模式（界面也隐藏）才补
     let _s2 = null; try { _s2 = (typeof cdGetSettings === 'function') ? cdGetSettings() : null; } catch (e) {}
     const _hideMode2 = (_s2 && _s2.autoHideMode) || 'b';
     if (_hideMode2 !== 'a') return;
     const ctx = SillyTavern.getContext();
     if (!ctx || !Array.isArray(ctx.chat)) return;
-    let n = 0;
     const chat = ctx.chat;
-    const hideIdxSet = {};
-    for (let i = 0; i < chat.length; i++) {
-      const m = chat[i];
-      if (m && m.is_hidden === true) hideIdxSet[i] = true;
-    }
-    if (Object.keys(hideIdxSet).length === 0) return;
-    // 与 cdHideOldFloors 相同的对齐逻辑：mesid + DOM 顺序 + 内容指纹三重匹配
-    const $allMes = $('.mes');
+    // 收集「被HCDiary隐藏」的楼层下标（is_system+cd_hidden 或 is_hidden）
+    const hideSet = {};
+    for (let i = 0; i < chat.length; i++) { const m = chat[i]; if (m && cdIsHCHidden(m)) hideSet[i] = true; }
+    if (!Object.keys(hideSet).length) return;
+    let n = 0;
     const resolveMesIdx = ($el) => {
       const mid = String($el.attr('mesid') || $el.attr('data-mesid') || '').trim();
       if (mid !== '' && /^\d+$/.test(mid)) return parseInt(mid, 10);
       return -1;
     };
-    const renderedIdx = [];
-    for (let i = 0; i < chat.length; i++) { const m2 = chat[i]; if (m2 && !m2.is_hidden && !m2.is_system) renderedIdx.push(i); }
+    const $allMes = $('.mes');
     let pos = 0;
+    // 对齐：系统幽灵(is_system=true)交给原生，这里只对需要彻底隐藏的已标记楼做 display:none
     $allMes.each(function () {
       const $el = $(this);
-      pos++; // 无条件按 DOM 元素顺序计数，避免 display:none 残留跳过导致后续错位
-      if ($el.css('display') === 'none') return;
+      pos++;
+      if ($el.css('display') === 'none' || $el.attr('is_system') === 'true') return;
       let idx = resolveMesIdx($el);
-      if (idx < 0) { idx = renderedIdx[pos-1] !== undefined ? renderedIdx[pos-1] : -1; }
-      if (idx >= 0 && hideIdxSet[idx]) {
-        $el.addClass('cd-hidden-floor').attr('data-cd-hidden', '1');
-        $el.hide();
-        n++;
-      }
+      if (idx < 0) idx = -1;
+      if (idx >= 0 && hideSet[idx]) { $el.addClass('cd-hidden-floor').attr('data-cd-hidden', '1'); $el.hide(); n++; }
     });
-    // 内容指纹兜底
-    if (Object.keys(hideIdxSet).length > n) {
-      $allMes.each(function () {
-        const $el = $(this);
-        if ($el.css('display') === 'none' || $el.hasClass('cd-hidden-floor')) return;
-        const txt = String($el.find('.mes_text').first().text() || $el.text() || '').trim().slice(0, 80);
-        if (!txt) return;
-        for (const idx of Object.keys(hideIdxSet)) {
-          const m = chat[parseInt(idx, 10)];
-          if (!m || !m.mes) continue;
-          if (String(m.mes).slice(0, 80) === txt) {
-            $el.addClass('cd-hidden-floor').attr('data-cd-hidden', '1');
-            $el.hide();
-            n++;
-            break;
-          }
-        }
-      });
-    }
-    if (n > 0) { cdAddLog('info', '[隐藏] 补隐藏', { DOM补隐藏条数: n }); cdLog('cdReapplyHiddenFloors: 补隐藏', n, '条'); }
+    if (n > 0) { cdAddLog('info', '[隐藏] A模式补隐藏', { DOM隐藏: n }); cdLog('cdReapplyHiddenFloors: A模式补隐藏', n, '条'); }
   } catch (e) {
     cdLog('cdReapplyHiddenFloors: 异常', e ? e.message : e);
   }
@@ -4394,11 +4414,15 @@ function cdTestDedupeModal() {
  * 即：最新 keepCount 条永不隐藏；更早的楼层里，凡是已总结(lastFloor/processedFloors)的都隐藏，未总结的保留。
  * 即时执行（供手动按钮/测试用），不依赖等写日记完成。
  */
+/**
+ * ★ 立即隐藏「已总结/已记录」的旧楼层，只保留最新 keepCount 条（用户+AI都算，有正文即楼层）。
+ * 方案B：调用原生 /hide。即时执行（供手动「立即隐藏」按钮/测试用）。
+ * @returns 隐藏条数
+ */
 async function cdHideRecordedKeepNewest(keepCount) {
   let _s = null; try { _s = (typeof cdGetSettings === 'function') ? cdGetSettings() : null; } catch (e) {}
-  const hideMode = (_s && _s.autoHideMode) || 'b';
   keepCount = Math.max(1, parseInt(keepCount, 10) || 5);
-  cdAddLog('info', '[隐藏·即时] 开始（保留最新N条，隐藏其余已总结旧楼层）', { 模式: hideMode, 保留: keepCount });
+  cdAddLog('info', '[隐藏·即时] 开始（调用原生 /hide，保留最新N条，隐藏其余已总结旧楼层）', { 保留: keepCount });
   const ctx = SillyTavern.getContext();
   if (!ctx || !Array.isArray(ctx.chat)) { cdAddLog('warn', '[隐藏·即时] 无ctx/chat'); return 0; }
   const chat = ctx.chat;
@@ -4408,57 +4432,39 @@ async function cdHideRecordedKeepNewest(keepCount) {
   const lastFloor = (typeof data.lastFloor === 'number') ? data.lastFloor : -1;
   const pfSet = {};
   (Array.isArray(data.processedFloors) ? data.processedFloors : []).forEach(function (x) { pfSet[x] = true; });
-
-  // 收集所有「楼层」下标（有正文即可，含用户动作旁白 is_system 的也算），从后往前保留最新 keepCount 条
+  // 收集所有「楼层」下标（有正文即可），从后往前保留最新 keepCount 条
   const floorIdx = [];
   for (let i = 0; i < chat.length; i++) { const m = chat[i]; if (m && m.mes && String(m.mes).trim()) floorIdx.push(i); }
   const keepSet = {};
-  for (let k = floorIdx.length - 1, n = 0; k >= 0 && n < keepCount; k--, n++) keepSet[floorIdx[k]] = true;
-
+  for (let k = floorIdx.length - 1, nn = 0; k >= 0 && nn < keepCount; k--, nn++) keepSet[floorIdx[k]] = true;
   const toHide = [];
   let keepCountActual = 0;
   for (let i = 0; i < chat.length; i++) {
     const m = chat[i];
-    if (!m || !(m.mes && String(m.mes).trim())) continue;   // 有正文才算楼层
-    if (keepSet[i]) { keepCountActual++; continue; }   // 最新 N 条永不隐藏
-    const rec = (i <= lastFloor) || !!pfSet[i];        // 已总结判定
-    if (rec && !m.is_hidden) { m.is_hidden = true; toHide.push(i); }
+    if (!m || !(m.mes && String(m.mes).trim())) continue;
+    if (keepSet[i]) { keepCountActual++; continue; }
+    const rec = (i <= lastFloor) || !!pfSet[i];
+    if (rec && !cdIsHCHidden(m)) toHide.push(i);
   }
-  cdAddLog('info', '[隐藏·即时] 扫描', { chat条数: chat.length, lastFloor, processed数: Object.keys(pfSet).length, 保留最新条数: keepCountActual, 待隐藏已总结: toHide.length });
+  cdAddLog('info', '[隐藏·即时] 扫描', { chat条数: chat.length, lastFloor, processed数: Object.keys(pfSet).length, 保留: keepCountActual, 待隐藏已总结: toHide.length });
   if (!toHide.length) { cdAddLog('info', '[隐藏·即时] 没有可隐藏的已总结旧楼层'); toastr.info('没有可隐藏的已总结旧楼层(最新' + keepCount + '条已保留)'); return 0; }
-  let saved = '未';
-  try { if (typeof ctx.saveChat === 'function') { await ctx.saveChat(); saved = 'ok'; } else if (typeof ctx.saveChatConditional === 'function') { await ctx.saveChatConditional(); saved = 'cond'; } } catch (e) { saved = 'err'; }
-  let domHidden = 0;
-  if (hideMode === 'a') {
-    try {
-      const hideIdxSet = {}; toHide.forEach(function (i) { hideIdxSet[i] = true; });
-      const resolveMesIdx = function ($el) { const mid = String($el.attr('mesid') || $el.attr('data-mesid') || '').trim(); if (mid !== '' && /^\d+$/.test(mid)) return parseInt(mid, 10); return -1; };
-      const $allMes = $('.mes');
-      const renderedIdx = [];
-      for (let i = 0; i < chat.length; i++) { const m2 = chat[i]; if (m2 && !m2.is_hidden && m2.mes && String(m2.mes).trim()) renderedIdx.push(i); }
-      let pos = 0;
-      $allMes.each(function () {
-        const $el = $(this); let idx = resolveMesIdx($el); if (idx < 0) { idx = renderedIdx[pos] !== undefined ? renderedIdx[pos] : -1; } pos++;
-        if (idx >= 0 && hideIdxSet[idx]) { $el.addClass('cd-hidden-floor').attr('data-cd-hidden', '1'); $el.hide(); domHidden++; }
-      });
-    } catch (e) { cdLog('cdHideRecordedKeepNewest: DOM hide 异常', e ? e.message : e); }
-  }
-  if (hideMode === 'b' && ctx && typeof ctx.reloadCurrentChat === 'function') {
-    try { ctx.reloadCurrentChat(); } catch (e) {}
-  }
-  cdAddLog('info', '[隐藏·即时] 完成', { 隐藏: toHide.length, DOM隐藏: domHidden, 落盘: saved });
-  toastr.success('已隐藏 ' + toHide.length + ' 条已总结旧楼层，保留最新 ' + keepCount + ' 条');
-  return toHide.length;
+  const res = await cdNativeHideSet(ctx, toHide, keepCount, 'cdHideRecordedKeepNewest');
+  cdAddLog('info', '[隐藏·即时] 完成(原生 /hide)', { 隐藏: res.count, 模式: res.mode });
+  toastr.success('已隐藏 ' + res.count + ' 条已总结旧楼层，保留最新 ' + keepCount + ' 条');
+  return res.count;
 }
 
 /**
  * ★ 立即隐藏所有「已记录」的旧楼层（基于 lastFloor / processedFloors 数据），用户+AI 都隐藏。
  * 即时执行（供手动按钮/测试用），不依赖等写日记完成。
  */
+/**
+ * ★ 立即隐藏所有「已记录（已写日记/补写）」的旧楼层（基于 lastFloor / processedFloors），用户+AI 都隐藏。
+ * 方案B：调用原生 /hide。即时执行（供手动按钮/测试用）。
+ * @returns 隐藏条数
+ */
 async function cdHideRecordedFloors() {
-  let _s = null; try { _s = (typeof cdGetSettings === 'function') ? cdGetSettings() : null; } catch (e) {}
-  const hideMode = (_s && _s.autoHideMode) || 'b';
-  cdAddLog('info', '[隐藏·即时] 开始（基于已记录数据隐藏）', { 模式: hideMode });
+  cdAddLog('info', '[隐藏·即时] 开始（基于已记录数据，调用原生 /hide）');
   const ctx = SillyTavern.getContext();
   if (!ctx || !Array.isArray(ctx.chat)) { cdAddLog('warn', '[隐藏·即时] 无ctx/chat'); return 0; }
   const chat = ctx.chat;
@@ -4469,63 +4475,48 @@ async function cdHideRecordedFloors() {
   const pfSet = {};
   (Array.isArray(data.processedFloors) ? data.processedFloors : []).forEach(function (x) { pfSet[x] = true; });
   const toHide = [];
-  const keepRec = [];
   for (let i = 0; i < chat.length; i++) {
     const m = chat[i];
-    if (!m || m.is_system) continue;
-    const rec = (i <= lastFloor) || !!pfSet[i];   // 已记录判定
-    if (rec && !m.is_hidden) { m.is_hidden = true; toHide.push(i); }
-    else if (!rec) keepRec.push(i);
+    if (!m) continue;
+    if (m.is_system) continue;   // 原生系统消息不处理
+    const rec = (i <= lastFloor) || !!pfSet[i];
+    if (rec && !cdIsHCHidden(m)) toHide.push(i);
   }
-  cdAddLog('info', '[隐藏·即时] 扫描', { chat条数: chat.length, lastFloor, processed数: Object.keys(pfSet).length, 已记录待隐藏: toHide.length, 未记录保留: keepRec.length });
+  cdAddLog('info', '[隐藏·即时] 扫描', { chat条数: chat.length, lastFloor, processed数: Object.keys(pfSet).length, 已记录待隐藏: toHide.length });
   if (!toHide.length) { cdAddLog('info', '[隐藏·即时] 没有已记录楼层可隐藏'); toastr.info('没有已记录(已写日记/补写)的旧楼层可隐藏'); return 0; }
-  let saved = '未';
-  try { if (typeof ctx.saveChat === 'function') { await ctx.saveChat(); saved = 'ok'; } else if (typeof ctx.saveChatConditional === 'function') { await ctx.saveChatConditional(); saved = 'cond'; } } catch (e) { saved = 'err'; }
-  let domHidden = 0;
-  if (hideMode === 'a') {
-    try {
-      const hideIdxSet = {}; toHide.forEach(function (i) { hideIdxSet[i] = true; });
-      const resolveMesIdx = function ($el) { const mid = String($el.attr('mesid') || $el.attr('data-mesid') || '').trim(); if (mid !== '' && /^\d+$/.test(mid)) return parseInt(mid, 10); return -1; };
-      const $allMes = $('.mes');
-      const renderedIdx = [];
-      for (let i = 0; i < chat.length; i++) { const m2 = chat[i]; if (m2 && !m2.is_hidden && m2.mes && String(m2.mes).trim()) renderedIdx.push(i); }
-      let pos = 0;
-      $allMes.each(function () {
-        const $el = $(this); let idx = resolveMesIdx($el); if (idx < 0) { idx = renderedIdx[pos] !== undefined ? renderedIdx[pos] : -1; } pos++;
-        if (idx >= 0 && hideIdxSet[idx]) { $el.addClass('cd-hidden-floor').attr('data-cd-hidden', '1'); $el.hide(); domHidden++; }
-      });
-    } catch (e) { cdLog('cdHideRecordedFloors: DOM hide 异常', e ? e.message : e); }
-  }
-  cdAddLog('info', '[隐藏·即时] 完成', { 隐藏条数: toHide.length, DOM隐藏: domHidden, 落盘: saved });
-  toastr.success('已即时隐藏 ' + toHide.length + ' 条已记录楼层(含用户)');
-  return toHide.length;
+  const res = await cdNativeHideSet(ctx, toHide, 0, 'cdHideRecordedFloors');
+  cdAddLog('info', '[隐藏·即时] 完成(原生 /hide)', { 隐藏条数: res.count, 模式: res.mode });
+  toastr.success('已即时隐藏 ' + res.count + ' 条已记录楼层(含用户)');
+  return res.count;
 }
 
 /**
  * ★ 一键显示所有被隐藏的楼层
  */
-function cdShowAllFloors() {
+/**
+ * ★ 一键显示所有被HCDiary隐藏的楼层：调用原生 /unhide 恢复（仅针对带 cd_hidden 标记或 is_hidden 的楼层）。
+ */
+async function cdShowAllFloors() {
   const ctx = SillyTavern.getContext();
   if (!ctx || !Array.isArray(ctx.chat)) return;
-  let count = 0;
-  for (let i = 0; i < ctx.chat.length; i++) {
-    const m = ctx.chat[i];
-    if (m && m.is_hidden === true && !m.is_user) {
-      // 只恢复被插件隐藏的 AI 楼层（保留真正的 system 消息）
-      m.is_hidden = false;
-      count++;
-    }
+  const chat = ctx.chat;
+  const toShow = [];
+  for (let i = 0; i < chat.length; i++) {
+    const m = chat[i];
+    if (m && cdIsHCHidden(m)) toShow.push(i);
   }
-  // ★ 方案A：DOM 层面恢复视觉显示（移除隐藏类/属性 + show）
-  try {
-    $('.mes.cd-hidden-floor').removeClass('cd-hidden-floor').attr('data-cd-hidden', null);
-    $('.mes').show();
-  } catch (e) {}
+  // 兼容旧 is_hidden 数据：直接清掉 is_hidden
+  for (const i of toShow) { const m = chat[i]; if (m) { m.is_hidden = false; } }
+  const ranges = cdCoalesceRanges(toShow.filter(function (i) { return chat[i] && chat[i].is_system; }));
+  if (ranges.length) {
+    await cdNativeHide(ctx, ranges, false);   // 原生 /unhide
+  }
+  // 视觉恢复
+  try { $('.mes.cd-hidden-floor').removeClass('cd-hidden-floor').attr('data-cd-hidden', null); $('.mes').show(); } catch (e) {}
   // 落盘
-  try {
-    if (typeof ctx.saveChat === 'function') { try { ctx.saveChat(); } catch (e) {} }
-  } catch (e) {}
-  cdLog('cdShowAllFloors: 恢复了', count, '条隐藏的楼层');
+  try { if (typeof ctx.saveChat === 'function') { await ctx.saveChat(); } } catch (e) {}
+  cdLog('cdShowAllFloors: 恢复了', toShow.length, '条隐藏的楼层');
+  if (typeof toastr !== 'undefined') toastr.success('已恢复 ' + toShow.length + ' 条隐藏楼层');
 }
 
 /** 当锁被占用时, 提示用户当前在执行什么任务(并显示已运行秒数) */
@@ -4579,9 +4570,10 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
   }
 
   // ★ 幂等短路（治重复总结根因：同一批楼层被我重复发给 AI）
-  //   无论 extraFloors 还是 cdGetNewFloors 取到的批次，只要某条 message_id 已在 processedFloors，
+  //   仅「自动触发」时生效：无论 extraFloors 还是 cdGetNewFloors 取到的批次，只要某条 message_id 已在 processedFloors，
   //   说明早已处理过，绝不再发第二次请求。全部已处理则直接 return。
-  if (data && Array.isArray(data.processedFloors) && data.processedFloors.length) {
+    //   ★ 手动补写（manual && extraFloors 非空）时【跳过短路】——即使区间内楼层已补写，也照常重新补写（主人需求：手动补写无视已补写）。
+  if (!(manual && Array.isArray(extraFloors) && extraFloors.length) && data && Array.isArray(data.processedFloors) && data.processedFloors.length) {
     const _pfDone = {};
     for (const _p of data.processedFloors) _pfDone[Number(_p)] = true;
     const _notDone = windowFloors.filter(function (w) { return w && typeof w.message_id === 'number' && !_pfDone[w.message_id]; });
@@ -7549,6 +7541,15 @@ async function cdRenderGraph() {
       '.cd-st-field{display:flex;font-size:10.5px;line-height:1.45;color:#6b5a48}',
       '.cd-st-field .k{width:40px;flex-shrink:0;color:#9a8a72;font-weight:600}',
       '.cd-st-field .v{flex:1;color:#4a3a2a}',
+      '.cd-st-memo{border:1px solid #dcc9a4;border-radius:8px;background:#faf6ec;margin-bottom:10px;overflow:hidden}',
+      '.cd-st-memo-head{font-size:11px;font-weight:700;color:#6b4a1b;display:flex;align-items:center;gap:6px;padding:8px 11px;cursor:pointer;user-select:none;list-style:none}',
+      '.cd-st-memo-head::-webkit-details-marker{display:none}',
+      '.cd-st-memo-head svg{flex-shrink:0}',
+      '.cd-st-memo-head .hint{font-weight:400;opacity:.5;font-size:9px;margin-left:auto;white-space:nowrap}',
+      '.cd-st-memo-body{padding:0 11px 11px;border-top:1px solid #eee2cc}',
+      '.cd-st-memo-body textarea{width:100%;box-sizing:border-box;padding:6px;font-size:10.5px;background:#fff;border:1px solid #e3d5b8;border-radius:6px;color:#3c2f1f;resize:vertical;line-height:1.5;margin-top:8px}',
+      '.cd-st-memo-body .save{margin-top:6px}',
+      '.cd-st-memo-hint{font-size:9px;color:#8b7355;margin:5px 0 0;line-height:1.5}',
     ].join('\n');
     document.head.appendChild(st);
   }
@@ -7815,7 +7816,22 @@ async function cdRenderGraph() {
       </div>
     </div>` : '';
 
-  // ===== 角色条例列表 HTML =====
+  
+  // ===== 备忘录（地图下方，默认折叠；手动填写，对话时注入给AI）=====
+  const memoCard = `
+    <details class="cd-st-memo" id="cd-memo-details">
+      <summary class="cd-st-memo-head">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        备忘录
+        <span class="hint">手动备注 · 保存后对话时发给AI</span>
+      </summary>
+      <div class="cd-st-memo-body">
+        <textarea id="cd-memo-input" rows="4" spellcheck="false" placeholder="在这里手动记录想告诉AI的内容（如：补充设定、临时安排、重点提醒、剧情备忘）...">${escapeHtml(data.memo || '')}</textarea>
+        <button type="button" class="cd-btn-primary save" onclick="cdSaveMemo()">保存备忘录</button>
+        <p class="cd-st-memo-hint">保存后，这段内容会在 AI 生成回复时注入给 AI，让 AI 记住并遵守。留空保存即清空。</p>
+      </div>
+    </details>`;
+// ===== 角色条例列表 HTML =====
   const roleHtml = roles.length ? roles.map((r, idx) => {
     const haveGrid = r.grid && Object.keys(r.grid).length;
     const g = haveGrid ? r.grid : {};
@@ -7841,6 +7857,7 @@ async function cdRenderGraph() {
   $('#cd-content').html(
     protCard +
     mapHtml +
+    memoCard +
     envCard +
     `<div class="cd-st-section-title"><i class="fa-regular fa-people-group"></i> 角色状态</div>` +
     roleHtml
@@ -9890,27 +9907,9 @@ async function cdRenderSettings() {
     $(this).closest('.cd-filter-tag-row').remove();
   });
 
-  // ★ 恢复所有隐藏楼层
+  // ★ 恢复所有隐藏楼层（方案B：原生 /unhide，见 cdShowAllFloors）
   $('#cd-btn-show-all-floors').off('click').on('click', function () {
-    try {
-      const chat = _cdGetChat();
-      let restored = 0;
-      for (let i = 0; i < chat.length; i++) {
-        if (chat[i] && chat[i].is_system === true) {
-          chat[i].is_system = false;
-          restored++;
-        }
-      }
-      if (restored > 0) {
-        const ctx = SillyTavern.getContext();
-        if (ctx?.emit) ctx.emit('chat_updated', {});
-        toastr.success(`已恢复 ${restored} 条隐藏楼层`);
-      } else {
-        toastr.info('没有隐藏的楼层需要恢复');
-      }
-    } catch (e) {
-      toastr.error('恢复失败: ' + e.message);
-    }
+    cdShowAllFloors();
   });
 
   // 界面字号滑杆（文档级委托，防重复绑定）
@@ -10278,6 +10277,16 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
     {
+    version: 'v2.9.4',
+    date: '2026-08-29',
+    items: [
+      '自动隐藏楼层改「方案B·调用原生 `/hide`/`/unhide`」: 修复 TauriTavern 上 is_hidden 不生效(楼层直接消失/无幽灵图标/无法恢复); 以私有标记 extra.cd_hidden 区分来源避免误伤原生系统消息; 逐下标 /hide N 调用+handleExecutionErrors+回退写 is_system+DOM属性, 原生渲染幽灵图标可 /unhide 恢复',
+      '压缩提示词(COMPRESS_PROMPT)对齐自动写档案(ARCHIVE_SYSTEM)格式铁律: 状态|分格/好感度带负号/覆盖式与追加式语义/时间标记保留/地点 LOCATIONS 保留, 修复压缩破坏状态分格与好感负号',
+      '状态界面新增「备忘录」: 地图下方默认折叠, 用户手动填写, 保存到 data.memo, 对话时注入给AI(最高优先级最前, injectMemo 开关默认开)',
+      '手动补写「无视已补写」: 手动补写(manual&&extraFloors)跳过幂等短路, 即使区间内含已补写楼层也照常重新补写(自动触发仍防重复)',
+    ],
+  },
+  {
     version: 'v2.9.3',
     date: '2026-08-28',
     items: [
@@ -10675,7 +10684,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.9.3 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.9.4 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
