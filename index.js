@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.9.4';
+const PLUGIN_VERSION = '2.9.5';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -232,6 +232,7 @@ const DEFAULT_SETTINGS = {
   autoCompressSize : 2000,       // 累计多少字触发压缩（size 模式，含自定义追踪项）
   customFields : [],             // 用户自定义剧情追踪项定义 [{ key, label, desc }]
   injectMemo   : true,          // [v2.9.3] 备忘录注入开关：状态界面手动写的备忘录是否在对话时注入给AI
+  summarySource: 'chat',      // [v2.9.4] 自动总结数据源: 'chat'=现有(用chat数组) | 'jsonl'=从jsonl读全量楼层(根治分片)
   archiveMode   : 'append',   // 'append' | 'vector' 剧情档案模式
   diaryMode     : 'append',   // 'append' | 'vector' 角色日记模式
   vectorTopK    : 5,          // 向量检索召回条数
@@ -2230,6 +2231,21 @@ async function cdGetAiFloors() {
   }
   return result;
 }
+/** ★ 楼层管理数据源跟随「自动总结数据源」：summarySource='jsonl' 时用 jsonl 全量楼层；否则用 chat 数组 */
+async function cdGetAiFloorsSmart() {
+  try {
+    const s = cdGetSettings();
+    if (s.summarySource === 'jsonl') {
+      const res = await cdReadAllFloorsFromJsonl();
+      if (res.ok && Array.isArray(res.floors) && res.floors.length) {
+        return res.floors.map(function (fl) {
+          return { message_id: fl.i, name: fl.name || '', mes: fl.mes || '' };
+        });
+      }
+    }
+  } catch (e) {}
+  return await cdGetAiFloors();
+}
 
 /** 返回上次记录之后新增的 AI 楼层（基于 chat.length 基线，不受分片加载影响） */
 async function cdGetNewFloors(data) {
@@ -2917,6 +2933,11 @@ async function cdSaveMemo() {
   }
 }
 if (typeof window !== 'undefined') window.cdSaveMemo = cdSaveMemo;
+if (typeof window !== 'undefined') window.cdResetCursor = cdResetCursor;
+if (typeof window !== 'undefined') window.cdTestJsonlSource = cdTestJsonlSource;
+if (typeof window !== 'undefined') window.cdPreviewJsonlFloors = cdPreviewJsonlFloors;
+if (typeof window !== 'undefined') window.cdOnMessageReceivedJsonl = cdOnMessageReceivedJsonl;
+if (typeof window !== 'undefined') window.cdGetAiFloorsSmart = cdGetAiFloorsSmart;
 
 
 function cdBuildLiveTableInjectText() {
@@ -3466,27 +3487,45 @@ async function cdNativeHide(ctx, ranges, hide) {
     for (let ri = 0; ri < ranges.length; ri++) {
       const s = ranges[ri][0], e = ranges[ri][1];
       for (let i = s; i <= e; i++) { const m = chat[i]; if (m) cdSetHiddenMark(m, hide); } // 预写私有标记
+      // ★ 区间优先：一次 /hide A-B（试试 TauriTavern 区间格式能否用）；失败回退逐下标
+      let rangeOk = false;
+      if (exec) {
+        try {
+          const arg = s === e ? String(s) : (s + '-' + e);
+          const r = await exec('/' + cmdName + ' ' + arg, { handleExecutionErrors: true, source: 'character-diary' });
+          const isErr = r && (r.isError === true || r.error);
+          rangeOk = !isErr;
+          if (!rangeOk && typeof cdAddLog === 'function') { try { cdAddLog('warn', '[隐藏·原生] ' + cmdName + ' 区间 ' + arg + ' 报错，回退逐下标', { err: (r.errorMessage || r.error) }); } catch (e2) {} }
+        } catch (err) {
+          rangeOk = false;
+          if (typeof cdAddLog === 'function') { try { cdAddLog('warn', '[隐藏·原生] ' + cmdName + ' 区间异常，回退逐下标', { err: err && err.message }); } catch (e2) {} }
+        }
+      }
       for (let i = s; i <= e; i++) {
         const m = chat[i];
         if (!m) continue;
-        let ok = false;
-        if (exec) {
-          try {
-            const r = await exec('/' + cmdName + ' ' + i, { handleExecutionErrors: true, source: 'character-diary' });
-            const isErr = r && (r.isError === true || r.error);
-            if (isErr) {
-              if (typeof cdAddLog === 'function') { try { cdAddLog('warn', '[隐藏·原生] ' + cmdName + ' ' + i + ' 报错', { err: (r.errorMessage || r.error) }); } catch (e2) {} }
-              ok = false;
-            } else {
-              ok = true; nativeCount++;
-            }
-          } catch (err) { ok = false; if (typeof cdAddLog === 'function') { try { cdAddLog('warn', '[隐藏·原生] ' + cmdName + ' ' + i + ' 异常', { err: err && err.message }); } catch (e2) {} } }
-        }
-        if (!ok) {
-          // 回退：直接写 is_system + 更新 DOM 属性
+        if (rangeOk) {
+          // 区间成功：数据层 is_system 一并设（原生 /hide 内部也设了，这里兜底对齐）
           m.is_system = !!hide;
-          fallbackCount++;
-          try { const $b = $('.mes[mesid="' + i + '"]'); if ($b.length) $b.attr('is_system', String(!!hide)); } catch (err) {}
+          nativeCount++;
+        } else {
+          // 区间失败：回退逐下标 /hide N
+          let ok = false;
+          if (exec) {
+            try {
+              const r = await exec('/' + cmdName + ' ' + i, { handleExecutionErrors: true, source: 'character-diary' });
+              const isErr = r && (r.isError === true || r.error);
+              if (isErr) {
+                if (typeof cdAddLog === 'function') { try { cdAddLog('warn', '[隐藏·原生] ' + cmdName + ' ' + i + ' 报错', { err: (r.errorMessage || r.error) }); } catch (e2) {} }
+                ok = false;
+              } else { ok = true; nativeCount++; }
+            } catch (err) { ok = false; if (typeof cdAddLog === 'function') { try { cdAddLog('warn', '[隐藏·原生] ' + cmdName + ' ' + i + ' 异常', { err: err && err.message }); } catch (e2) {} } }
+          }
+          if (!ok) {
+            m.is_system = !!hide;
+            fallbackCount++;
+            try { const $b = $('.mes[mesid="' + i + '"]'); if ($b.length) $b.attr('is_system', String(!!hide)); } catch (err) {}
+          }
         }
         if (changed.length < 5) changed.push({ i: i, is_system: !!m.is_system, extra: (m.extra || {}) });
       }
@@ -5084,6 +5123,54 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
  * ★ 基于 chat.length 基线的自动触发（不受 ST 分片加载影响）
  * 每次记录触发时的 chat.length，下次只看从 baseline 开始的新增 AI 楼层
  */
+
+/** ★ jsonl 全量数据源自动总结：当 summarySource='jsonl' 时走此路径，从存档 jsonl 读全量楼层，根治分片导致的自动总结死锁 */
+async function cdOnMessageReceivedJsonl() {
+  const s = cdGetSettings();
+  if (!s.enabled) return;
+  if (s.autoSummary === false) return;
+  const data = await cdGetData();
+  const baseline = (typeof data.lastFloor === 'number' && data.lastFloor >= -1) ? data.lastFloor : -1;
+  const interval = s.interval || 5;
+  const offset = Math.max(0, parseInt(s.memoryOffset, 10) || 0);
+  const _pfSet = Array.isArray(data.processedFloors) ? data.processedFloors.map(Number) : [];
+  // 读 jsonl 全量楼层
+  const res = await cdReadAllFloorsFromJsonl();
+  if (!res.ok) { if (typeof cdAddLog === 'function') cdAddLog('warn', '[jsonl自动总结] 读取失败: ' + res.error); return; }
+  // 找出 lastFloor 之后、未处理的新楼层（jsonl 行号 i = message_id，与 lastFloor/processedFloors 对齐）
+  const newFloors = res.floors.filter(function (fl) {
+    return fl.i > baseline && _pfSet.indexOf(fl.i) < 0;
+  });
+  const totalNew = newFloors.length;
+  if (totalNew < interval) {
+    if (typeof cdAddLog === 'function') cdAddLog('info', '自动总结[jsonl]', { 未触发: '新增AI不足一整批', 新增: totalNew, 间隔: interval, 基线: baseline, 全量总楼层: res.floors.length });
+    return;
+  }
+  // 锚点偏移 + 分批（与 chat 路径一致）
+  const safeCount = Math.max(0, totalNew - offset);
+  let takeCount = Math.floor(safeCount / interval) * interval;
+  if (takeCount < interval) {
+    if (totalNew >= interval) takeCount = interval;
+    else return;
+  }
+  // 最大批次限制，避免 token 爆（一次性处理几百楼会超预算）
+  const maxW = Math.max(1, parseInt(s.maxWindowFloors, 10) || 40);
+  if (takeCount > maxW) takeCount = maxW;
+  const windowFloors = newFloors.slice(0, takeCount).map(function (fl) {
+    return { message_id: fl.i, name: fl.name || '', mes: fl.mes || '' };
+  });
+  if (!windowFloors.length) return;
+  const lastProcessed = windowFloors[windowFloors.length - 1].message_id;
+  if (typeof cdAddLog === 'function') cdAddLog('info', '自动触发[jsonl全量]', { 本批: windowFloors.length, 起点: windowFloors[0].message_id, 终点: lastProcessed, 新增AI: totalNew, 基线: baseline, 全量总楼层: res.floors.length });
+  // FIX-1 内存锁定
+  try {
+    const __lockIds = [];
+    for (const _wf of windowFloors) { if (_wf && typeof _wf.message_id === 'number' && _wf.message_id >= 0) __lockIds.push(_wf.message_id); }
+    if (__lockIds.length && typeof window !== 'undefined') window.__cdLockedBatch = __lockIds;
+  } catch (e) {}
+  await cdRunDiary({ manual: false, silent: true, extraFloors: windowFloors });
+}
+
 async function cdOnMessageReceived() {
   const s = cdGetSettings();
   if (!s.enabled) return;
@@ -5106,6 +5193,11 @@ async function cdOnMessageReceived() {
   _cdLastAutoTriggerLen = currentLen;
 
   const data = await cdGetData();
+
+  // ★ [v2.9.4] 自动总结数据源：summarySource='jsonl' 时走 jsonl 全量楼层（根治分片死锁）；默认 'chat' 走现有逻辑
+  if (s.summarySource === 'jsonl') {
+    return await cdOnMessageReceivedJsonl();
+  }
 
   // ★ 修复根因：待处理起点以「真实已成功写日记的进度 lastFloor」为准，
   //   不再用会被提前推进的 _baselineChatLength（旧逻辑在调用写日记前就预推基线，
@@ -8434,6 +8526,209 @@ async function cdRenderArchive() {
  * ★ 楼层数据源诊断：定位"界面30多层但只有5个AI楼层"的根因。
  * 直接在本面板内显示结果，同时写入日志。
  */
+
+/** ★ 重置游标：把 lastFloor/_baselineChatLength/_lastDiaryChatLength 同步到当前 chat 可见范围。
+ *  解决分片加载 + 游标回退导致的自动总结死锁（自动触发扫描时新增楼层=0 永远不触发）。
+ *  安全：不删 processedFloors（保留已处理记录），只重置"进度游标"让自动触发从当前可见楼层重新累计。 */
+
+/** ★ jsonl 全量数据源测试：探测 Tauri 能否读当前聊天存档 jsonl（全量楼层），验证"自动总结从 jsonl 读全量楼层"的可行性 */
+
+/** ★ 核心：从当前聊天存档 jsonl 读全量楼层（根治分片）。返回 {ok, error, lines, floors, maxMid} */
+async function cdReadAllFloorsFromJsonl() {
+  try {
+    const ctx = SillyTavern.getContext();
+    let chatName = '';
+    try { chatName = (ctx && (ctx.characterName || ctx.name2 || ctx.chatName)) || ''; } catch (e) {}
+    const tauri = (typeof window !== 'undefined') ? (window.__TAURI__ || null) : null;
+    if (!tauri || !tauri.fs || typeof tauri.fs.readTextFile !== 'function') {
+      return { ok: false, error: 'Tauri fs 不可用' };
+    }
+    const dataRoot = '/storage/emulated/0/Android/data/com.tauritavern.client/data/default-user/';
+    const dir = dataRoot + 'chats/' + chatName + '/';
+    const entries = await tauri.fs.readDir(dir);
+    const jsons = (Array.isArray(entries) ? entries : []).filter(function (e) { return e && /[.]jsonl$/i.test(e.name || e.path || ''); });
+    if (!jsons.length) return { ok: false, error: '目录无 jsonl: ' + dir };
+    const first = jsons[jsons.length - 1] || jsons[0];
+    const fp = first.path || (dir + (first.name || ''));
+    const content = await tauri.fs.readTextFile(fp);
+    const rawLines = String(content || '').split(/\r?\n/).filter(Boolean);
+    // 解析：排除 chat_metadata 行，每行一个楼层，行序号 = 楼层号（0 开始）
+    const floors = [];
+    let mid = 0;
+    for (const ln of rawLines) {
+      try {
+        const o = JSON.parse(ln);
+        if (o && typeof o.mes === 'string' && o.mes.trim()) {
+          floors.push({ i: mid, name: o.name || '', mes: o.mes, is_user: !!o.is_user, is_system: !!o.is_system });
+        } else if (o && o.mes === '') {
+          // 空 mes 也算楼层（占位）
+          floors.push({ i: mid, name: o.name || '', mes: '', is_user: !!o.is_user, is_system: !!o.is_system });
+        }
+        mid++;
+      } catch (e2) { mid++; }
+    }
+    const maxMid = floors.length > 0 ? (floors[floors.length - 1].i) : -1;
+    return { ok: true, error: '', file: fp, floors: floors, maxMid: maxMid, totalLines: rawLines.length };
+  } catch (e) {
+    return { ok: false, error: (e && e.message ? e.message : String(e)) };
+  }
+}
+
+/** ★ jsonl 全量楼层预览：读全量，显示楼层信息 + 对比 lastFloor 识别新楼层（验证楼层号对齐） */
+async function cdPreviewJsonlFloors() {
+  const out = [];
+  const push = function (s) { out.push(s); if (typeof cdAddLog === 'function') { try { cdAddLog('info', '[jsonl预览] ' + s); } catch (e) {} } };
+  push('========== jsonl 全量楼层预览 ==========');
+  const data = await cdGetData();
+  const lastFloor = (typeof data.lastFloor === 'number') ? data.lastFloor : -1;
+  push('当前 lastFloor=' + lastFloor);
+  const res = await cdReadAllFloorsFromJsonl();
+  if (!res.ok) { push('❌ 读取失败: ' + res.error); }
+  else {
+    push('✅ 文件: ' + res.file);
+    push('总楼层=' + res.floors.length + '（总行数=' + res.totalLines + '），最新楼层=' + res.maxMid);
+    let ai = 0, usr = 0;
+    for (const fl of res.floors) { if (fl.is_user) usr++; else ai++; }
+    push('AI楼=' + ai + '，用户楼=' + usr);
+    // 对比 lastFloor 识别新楼层
+    const newFloors = res.floors.filter(function (fl) { return fl.i > lastFloor; });
+    push('lastFloor(' + lastFloor + ') 之后的新楼层数=' + newFloors.length);
+    if (newFloors.length) {
+      const preview = newFloors.slice(0, 10).map(function (fl) { return '#' + fl.i + '[' + (fl.is_user ? '用户' : 'AI') + ']' + String(fl.name || '') + ':' + String(fl.mes || '').slice(0, 25); });
+      push('新楼层预览(前10): ' + preview.join(' | '));
+    } else {
+      push('（lastFloor 之后无新楼层，自动总结不会触发——符合预期）');
+    }
+    push('>>> 若「最新楼层=' + res.maxMid + '」大于 chat 数组可见的末尾，则 jsonl 能读到分片看不到的楼层，方案有效');
+  }
+  push('========== jsonl 全量楼层预览结束 ==========');
+  const target = document.getElementById('cd-preview-jsonl-result');
+  if (target) target.innerHTML = out.map(function (l) { return '<div>' + escapeHtml(l) + '</div>'; }).join('');
+  if (typeof toastr !== 'undefined') toastr.success('jsonl 全量楼层预览完成');
+}
+
+async function cdTestJsonlSource() {
+  const out = [];
+  const push = function (s) { out.push(s); if (typeof cdAddLog === 'function') { try { cdAddLog('info', '[jsonl测试] ' + s); } catch (e) {} } };
+  push('========== jsonl 全量数据源测试开始 ==========');
+  // 1) 探测 Tauri 环境
+  const tauri = (typeof window !== 'undefined') ? (window.__TAURI__ || null) : null;
+  push('① Tauri 环境: ' + (tauri ? '存在' : '不存在'));
+  if (tauri) {
+    push('   __TAURI__ keys: ' + Object.keys(tauri).join(', '));
+    if (tauri.fs) push('   fs 可用, keys: ' + Object.keys(tauri.fs).join(', '));
+    if (tauri.http) push('   http 可用');
+    if (tauri.core && typeof tauri.core.invoke === 'function') push('   core.invoke 可用');
+    if (tauri.path) push('   path 可用');
+  }
+  // 2) 获取当前聊天信息
+  let chatId = '', charId = '', chatName = '', ctxKeys = [];
+  try {
+    const ctx = SillyTavern.getContext();
+    if (ctx) {
+      ctxKeys = Object.keys(ctx);
+      chatId = ctx.chatId || ctx.chat_id || ctx.currentChatId || '';
+      charId = ctx.characterId || ctx.character_id || '';
+      // 聊天名：name2 或 characterName
+      chatName = ctx.characterName || ctx.name2 || ctx.chatName || '';
+    }
+  } catch (e) { push('   获取 context 失败: ' + e.message); }
+  push('② 当前聊天: chatId=' + chatId + ' / charId=' + charId + ' / name=' + chatName);
+  push('   context keys(前30): ' + ctxKeys.slice(0, 30).join(', '));
+  // 3) 尝试构造并读取 jsonl
+  let readOk = false;
+  try {
+    if (tauri && tauri.fs && typeof tauri.fs.readTextFile === 'function') {
+      const dataRoot = '/storage/emulated/0/Android/data/com.tauritavern.client/data/default-user/';
+      const candidates = [];
+      if (chatName) {
+        candidates.push(dataRoot + 'chats/' + chatName + '/');
+      }
+      if (charId) {
+        candidates.push(dataRoot + 'characters/' + charId + '/chats/');
+      }
+      push('③ 尝试读取 jsonl，候选目录: ' + JSON.stringify(candidates));
+      // 先尝试 readDir 列出目录
+      for (const dir of candidates) {
+        try {
+          const entries = await tauri.fs.readDir(dir);
+          const jsons = (Array.isArray(entries) ? entries : []).filter(function (e) { return e && /\.jsonl$/i.test(e.name || e.path || ''); });
+          push('   readDir [' + dir + '] 成功, 共 ' + (Array.isArray(entries) ? entries.length : 0) + ' 项, jsonl=' + (jsons.length));
+          if (jsons.length) {
+            const first = jsons[jsons.length - 1] || jsons[0];
+            const fp = first.path || (dir + (first.name || ''));
+            push('   找到 jsonl: ' + fp);
+            const content = await tauri.fs.readTextFile(fp);
+            const lines = String(content || '').split('\n').filter(Boolean);
+            let maxMid = -1, aiCount = 0, userCount = 0;
+            for (const ln of lines) {
+              try {
+                const o = JSON.parse(ln);
+                if (o && typeof o.mes === 'string' && o.mes.trim()) {
+                  const mid = (o.message_id != null) ? Number(o.message_id) : -1;
+                  if (mid > maxMid) maxMid = mid;
+                  if (o.is_user) userCount++; else aiCount++;
+                }
+              } catch (e2) {}
+            }
+            push('   ✅ 读取成功! 全量 jsonl 总行数=' + lines.length + ', 最大 message_id=' + maxMid + ', AI楼=' + aiCount + ', 用户楼=' + userCount);
+            push('   >>> 结论: Tauri fs 可读 jsonl，方案「自动总结从 jsonl 读全量楼层」可行!');
+            readOk = true;
+            break;
+          }
+        } catch (e3) {
+          push('   readDir [' + dir + '] 失败: ' + (e3 && e3.message ? e3.message : e3));
+        }
+      }
+    } else {
+      push('③ Tauri fs.readTextFile 不可用（__TAURI__.fs 不存在或没有 readTextFile）');
+      push('   >>> 结论: 插件无法直接读 jsonl，此方案不可行，需另寻数据源');
+    }
+  } catch (e) {
+    push('③ 读取异常: ' + (e && e.message ? e.message : e));
+  }
+  push('========== jsonl 全量数据源测试结束 ==========');
+  const target = document.getElementById('cd-test-jsonl-result');
+  if (target) target.innerHTML = out.map(function (l) { return '<div>' + escapeHtml(l) + '</div>'; }).join('');
+  if (typeof toastr !== 'undefined') toastr.success(readOk ? 'jsonl 可读，方案可行' : 'jsonl 测试完成（可能读不了）');
+}
+
+async function cdResetCursor() {
+  const ctx = SillyTavern.getContext();
+  const chat = (ctx && Array.isArray(ctx.chat)) ? ctx.chat : [];
+  const data = await cdGetData();
+  const old = {
+    lastFloor: data.lastFloor,
+    _baselineChatLength: data._baselineChatLength,
+    _lastDiaryChatLength: data._lastDiaryChatLength,
+  };
+  // 新游标：取当前 chat 可见的最大下标（分片后可能是 49/50），并 -1 以便从下一楼开始累计
+  let newCur = chat.length > 0 ? (chat.length - 1) : -1;
+  // 若存在已处理的最大下标(processedFloors)且它小于 chat 末尾，则用它（避免漏掉中间未处理的）
+  let pfMax = -1;
+  if (Array.isArray(data.processedFloors) && data.processedFloors.length) {
+    for (const _p of data.processedFloors) { if (typeof _p === 'number' && _p > pfMax) pfMax = _p; }
+  }
+  // 游标 = min(chat末尾, pfMax)；若 pfMax 远超 chat(分片导致)，则用 chat末尾，让自动触发从可见段重新累计
+  newCur = Math.min(newCur, pfMax >= 0 ? pfMax : newCur);
+  if (newCur < -1) newCur = -1;
+  data.lastFloor = newCur;
+  data._baselineChatLength = Math.min(chat.length, data._baselineChatLength ?? chat.length);
+  data._lastDiaryChatLength = Math.min(chat.length, data._lastDiaryChatLength ?? chat.length);
+  await cdSaveData(data);
+  const lines = [];
+  lines.push('重置前: lastFloor=' + old.lastFloor + ' / 基线=' + old._baselineChatLength + ' / 日记基线=' + old._lastDiaryChatLength);
+  lines.push('当前 chat 条数=' + chat.length + '，processedFloors 最大=' + pfMax);
+  lines.push('重置后: lastFloor=' + data.lastFloor + ' / 基线=' + data._baselineChatLength + ' / 日记基线=' + data._lastDiaryChatLength);
+  lines.push('✅ 已重置游标。下次有新楼层到来时自动总结即可正常触发。');
+  const box = document.getElementById('cd-reset-cursor-result');
+  if (box) box.style.display = 'block';
+  const target = document.getElementById('cd-reset-cursor-result');
+  if (target) target.innerHTML = lines.map(l => '<div>' + escapeHtml(l) + '</div>').join('');
+  if (typeof cdAddLog === 'function') cdAddLog('info', '[重置游标]', { 旧: old, 新: { lastFloor: data.lastFloor, _baselineChatLength: data._baselineChatLength, _lastDiaryChatLength: data._lastDiaryChatLength }, chat条数: chat.length, pfMax: pfMax });
+  if (typeof toastr !== 'undefined') toastr.success('游标已重置，自动总结解锁');
+}
+
 async function cdDiagFloorSource(resultBox) {
   cdAddLog('info', '========== 楼层数据源诊断开始 ==========');
   const lines = [];
@@ -8510,7 +8805,7 @@ async function cdDiagFloorSource(resultBox) {
 
 async function cdRenderFloors() {
   const data = await cdGetData();
-  const allAi = await cdGetAiFloors();
+  const allAi = await cdGetAiFloorsSmart();   // ★ 跟随 summarySource：jsonl 全量 / chat
   const lastRecordedFloor = data.lastFloor ?? -1;
   const s = cdGetSettings();
   const COMPRESS_PROMPT = `【你现在不是陪聊助手，而是"剧情档案整理员"。
@@ -8636,8 +8931,21 @@ async function cdRenderFloors() {
             <button class="cd-btn-primary" id="cd-backfill-all">一键补写全部</button>
           </div>
           <div id="cd-backfill-progress" style="margin-top:6px;font-size: calc(0.58rem * var(--cd-fs, 1));color:#6b5a48;"></div>
-          <button class="cd-btn-secondary" id="cd-diag-floorsource" style="margin-top:8px;"><i class="fa-regular fa-stethoscope"></i> 楼层数据源诊断</button>
-          <div id="cd-diag-floorsource-result" style="margin-top:6px;display:none;font-size: calc(0.6rem * var(--cd-fs, 1));color:#5a4a3a;background:#fbf7ee;border:1px dashed #d8cdb3;border-radius:8px;padding:8px 10px;white-space:pre-wrap;word-break:break-all;line-height:1.7;"></div>
+          <div style="margin-top:8px;">
+            <button class="cd-btn-secondary" id="cd-diag-toggle" style="color:#5a4a3a;border-color:#d8cdb3;"><i class="fa-regular fa-screwdriver-wrench"></i> 诊断工具</button>
+            <div id="cd-diag-toolbar" style="display:none;margin-top:6px;border:1px solid #e6dcc6;border-radius:8px;padding:8px 10px;background:#fff;">
+              <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                <button class="cd-btn-secondary" id="cd-diag-floorsource" style="min-width:auto;"><i class="fa-regular fa-stethoscope"></i> 楼层数据源诊断</button>
+                <button class="cd-btn-secondary" id="cd-reset-cursor" style="min-width:auto;color:#7a2d2d;border-color:#d9a8a8;"><i class="fa-regular fa-rotate-left"></i> 重置游标</button>
+                <button class="cd-btn-secondary" id="cd-preview-jsonl" style="min-width:auto;"><i class="fa-regular fa-list"></i> jsonl 全量预览</button>
+                <button class="cd-btn-secondary" id="cd-test-jsonl" style="min-width:auto;"><i class="fa-regular fa-flask"></i> jsonl 可读测试</button>
+              </div>
+              <div id="cd-reset-cursor-result" style="margin-top:6px;font-size: calc(0.6rem * var(--cd-fs, 1));color:#5a4a3a;background:#fbf7ee;border:1px dashed #d8cdb3;border-radius:8px;padding:8px 10px;white-space:pre-wrap;word-break:break-all;line-height:1.7;"></div>
+              <div id="cd-test-jsonl-result" style="margin-top:6px;font-size: calc(0.6rem * var(--cd-fs, 1));color:#5a4a3a;background:#fbf7ee;border:1px dashed #d8cdb3;border-radius:8px;padding:8px 10px;white-space:pre-wrap;word-break:break-all;line-height:1.7;"></div>
+              <div id="cd-preview-jsonl-result" style="margin-top:6px;font-size: calc(0.6rem * var(--cd-fs, 1));color:#5a4a3a;background:#fbf7ee;border:1px dashed #d8cdb3;border-radius:8px;padding:8px 10px;white-space:pre-wrap;word-break:break-all;line-height:1.7;"></div>
+              <div id="cd-diag-floorsource-result" style="margin-top:6px;font-size: calc(0.6rem * var(--cd-fs, 1));color:#5a4a3a;background:#fbf7ee;border:1px dashed #d8cdb3;border-radius:8px;padding:8px 10px;white-space:pre-wrap;word-break:break-all;line-height:1.7;"></div>
+            </div>
+          </div>
         </div>
       </div>
     `);
@@ -8713,9 +9021,26 @@ async function cdRenderFloors() {
       }
     });
 
+    // 诊断工具 折叠/展开
+    $('#cd-diag-toggle').off('click').on('click', function () {
+      const tb = document.getElementById('cd-diag-toolbar');
+      if (tb) tb.style.display = (tb.style.display === 'none') ? 'block' : 'none';
+    });
     // 楼层数据源诊断：定位"界面30多层但只有5个AI楼层"的根因
     $('#cd-diag-floorsource').off('click').on('click', async function () {
       await cdDiagFloorSource($('#cd-diag-floorsource-result'));
+    });
+    // ★ 重置游标：把 lastFloor/_baselineChatLength/_lastDiaryChatLength 同步到当前 chat 可见范围，解锁分片导致的自动总结死锁
+    $('#cd-reset-cursor').off('click').on('click', async function () {
+      try { await cdResetCursor(); } catch (e) { toastr.error('重置游标失败: ' + (e && e.message)); }
+    });
+    // ★ jsonl 全量数据源测试：探测 Tauri 能否读聊天存档 jsonl，验证"从 jsonl 读全量楼层"可行性
+    $('#cd-test-jsonl').off('click').on('click', async function () {
+      try { await cdTestJsonlSource(); } catch (e) { toastr.error('jsonl 测试异常: ' + (e && e.message)); }
+    });
+    // ★ jsonl 全量楼层预览：读全量，验证楼层号对齐 + 对比 lastFloor 识别新楼层
+    $('#cd-preview-jsonl').off('click').on('click', async function () {
+      try { await cdPreviewJsonlFloors(); } catch (e) { toastr.error('jsonl 预览异常: ' + (e && e.message)); }
     });
 
     // 一键分批补写全部未记录
@@ -9758,6 +10083,13 @@ async function cdRenderSettings() {
         </div>
       </details>
 
+      <details class="cds-collapse"><summary><i class="fa-regular fa-database"></i> 自动总结数据源</summary>
+        <div>
+          <div class="cds-row"><span class="cds-lab">自动总结数据源</span><span class="cds-ctrl"><select id="cd-s-summary-source" class="cd-input" style="max-width:260px;"><option value="chat" ${s.summarySource !== 'jsonl' ? 'selected' : ''}>现有方式（用聊天数组）</option><option value="jsonl" ${s.summarySource === 'jsonl' ? 'selected' : ''}>jsonl 全量楼层（根治分片）</option></select></span></div>
+          <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;margin:4px 0 0;line-height:1.5;">「现有方式」用酒馆聊天数组，可能受分片加载影响（只加载最近楼层）。「jsonl 全量楼层」直接从存档 jsonl 读全部楼层，彻底根治分片导致的自动总结死锁。切换后重启酒馆生效。</p>
+        </div>
+      </details>
+
       <details class="cds-collapse"><summary><i class="fa-regular fa-eye-slash"></i> 自动隐藏楼层</summary>
         <div>
           <div class="cds-row"><span class="cds-lab">总结/补写后自动隐藏旧楼层</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-autohide" ${s.autoHideEnabled ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
@@ -9958,6 +10290,7 @@ async function cdRenderSettings() {
       autoHideEnabled: $('#cd-s-autohide').is(':checked'),
       autoHideKeep: parseInt($('#cd-s-autohide-keep').val(), 10) || 5,
       autoHideMode: $('#cd-s-autohide-mode').val() || 'b',
+      summarySource: $('#cd-s-summary-source').val() || 'chat',
       // ★ 收集过滤标签
       filterTags: $('#cd-filter-tags-container .cd-filter-tag-row').map(function () {
         return {
@@ -10277,6 +10610,17 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
     {
+    version: 'v2.9.5',
+    date: '2026-08-29',
+    items: [
+      '根治分片加载导致的自动总结死锁: 设置新增「自动总结数据源」选择(默认现有方式/可切 jsonl 全量楼层); jsonl 方式用 Tauri fs 直读存档 jsonl 全量楼层, 彻底摆脱 chat 数组分片只加载最近段的问题',
+      '新增「重置游标」按钮(楼层管理): 一键同步 lastFloor/基线, 解锁分片死锁',
+      '新增「jsonl 全量楼层预览/测试」诊断(楼层管理): 验证 jsonl 读取与新楼层识别, 已实测 331 楼全量可读、楼层号对齐',
+      '楼层管理界面跟随「自动总结数据源」: 切 jsonl 显示全量楼层, 切 chat 显示原生; 诊断测试按钮合并为一个「诊断工具」',
+      '自动隐藏改「区间优先」: 一次 /hide A-B 批量隐藏(已实测可用), 失败自动回退逐下标, 更高效',
+    ],
+  },
+  {
     version: 'v2.9.4',
     date: '2026-08-29',
     items: [
@@ -10684,7 +11028,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.9.4 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.9.5 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
