@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.9.5';
+const PLUGIN_VERSION = '2.9.6';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -987,7 +987,7 @@ const ARCHIVE_SYSTEM = [
   '重要状态变化（覆盖式，输出"当前仍然有效"的角色状态汇总，而非累积历史）：',
   '（已被后续剧情推翻/缓解的旧状态不要重复列出；没有当前有效状态则输出"无"。）',
   '（严格按下面的固定分格格式输出，用 | 分隔不同维度、一格一值，禁止把多个维度混在同一个值里。每行 = 一个对象（主角/环境/某个角色），以换行分隔：）',
-  '- 主角行格式（覆盖式）：主角：身体【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】',
+  '- 主角行格式（覆盖式）：主角：身份【…】| 身体【…】| 精神状态【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】',
   '- 环境行格式（覆盖式，输出当前环境现状，非历史）：环境：布局【…】| 温度天气【…】| 钱财【…】| 身体状态【…】',
   '- 其他每个角色一行（覆盖式）：角色名：身体【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】',
   '各维度内容：身体=伤病/体力/健康；地址=当前所在地点的核心地名（主角必须直接写清实际位置，只写地名，不写"抵达/身处"等动作词与冗长修饰）；资产=钱/物品/持有物；穿着=衣服穿戴；好感=对主角(用户)的好感度数值与态度；备注=不易归类的其它当前状态。已变化才更新该格，未变化的可保留或留空，不要用“无”填满所有格。好感度必须带数字与负号（负好感带-）。每行末尾以【时间标记】标注该状态最近一次变化时间，如【第3天 傍晚】。当前位置规则：主角的「地址」必须写清当前实际所在地点），',
@@ -1059,7 +1059,7 @@ const ARCHIVE_SYSTEM_FULL = [
   '重要状态变化（覆盖式，输出"当前仍然有效"的角色状态汇总，而非累积历史）：',
   '（已被后续剧情推翻/缓解的旧状态不要重复列出；没有当前有效状态则输出"无"。）',
   '（严格按下面的固定分格格式输出，用 | 分隔不同维度、一格一值，禁止把多个维度混在同一个值里。每行 = 一个对象（主角/环境/某个角色），以换行分隔：）',
-  '- 主角行格式（覆盖式）：主角：身体【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】',
+  '- 主角行格式（覆盖式）：主角：身份【…】| 身体【…】| 精神状态【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】',
   '- 环境行格式（覆盖式，输出当前环境现状，非历史）：环境：布局【…】| 温度天气【…】| 钱财【…】| 身体状态【…】',
   '- 其他每个角色一行（覆盖式）：角色名：身体【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】',
   '各维度内容：身体=伤病/体力/健康；地址=当前所在地点的核心地名（主角必须直接写清实际位置，只写地名，不写"抵达/身处"等动作词与冗长修饰）；资产=钱/物品/持有物；穿着=衣服穿戴；好感=对主角(用户)的好感度数值与态度；备注=不易归类的其它当前状态。已变化才更新该格，未变化的可保留或留空，不要用“无”填满所有格。好感度必须带数字与负号（负好感带-）。每行末尾以【时间标记】标注该状态最近一次变化时间，如【第3天 傍晚】。当前位置规则：主角的「地址」必须写清当前实际所在地点），',
@@ -1486,7 +1486,7 @@ async function cdCompressArchive(data, s, isAuto) {
 
 【格式铁律（与自动写档案完全一致，压缩时也必须遵守，禁止破坏现有格式）】：
 1. 重要状态变化（states）必须保持固定分格格式，用 | 分隔不同维度、一格一值，禁止把多个维度混在同一个值里。每行 = 一个对象（主角/环境/某个角色），以换行分隔：
-   - 主角行：主角：身体【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】
+   - 主角行：主角：身份【…】| 身体【…】| 精神状态【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】
    - 环境行：环境：布局【…】| 温度天气【…】| 钱财【…】| 身体状态【…】
    - 其他角色行：角色名：身体【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】
    压缩时保持这些分格与维度不丢失；已变化才更新该格，未变化保留或留空，不要用“无”填满所有格。
@@ -5137,6 +5137,14 @@ async function cdOnMessageReceivedJsonl() {
   // 读 jsonl 全量楼层
   const res = await cdReadAllFloorsFromJsonl();
   if (!res.ok) { if (typeof cdAddLog === 'function') cdAddLog('warn', '[jsonl自动总结] 读取失败: ' + res.error); return; }
+  // ★ 文件名确认：标明当前聊天与读到的文件，一眼判断有没有读错聊天
+  if (typeof cdAddLog === 'function') cdAddLog('info', '[jsonl自动总结] 文件确认', {
+    当前聊天: res.chatId || '(未知)',
+    角色名: res.chatName || '',
+    读到文件: res.file || '(未知)',
+    全量楼层: res.floors.length,
+    匹配: ((res.chatId && res.file && String(res.file).indexOf(String(res.chatId)) !== -1) || (!res.chatId)) ? '✅ 匹配' : '⚠️ 注意：文件名与 chatId 不一致'
+  });
   // 找出 lastFloor 之后、未处理的新楼层（jsonl 行号 i = message_id，与 lastFloor/processedFloors 对齐）
   const newFloors = res.floors.filter(function (fl) {
     return fl.i > baseline && _pfSet.indexOf(fl.i) < 0;
@@ -7703,7 +7711,7 @@ async function cdRenderGraph() {
         protFound = true;
         if (/\|/.test(body)) {
           const g = parseGrid(body);
-          prot['身体'] = g['身体'] || ''; prot['地址'] = g['地址'] || g['所在地'] || ''; prot['资产'] = g['资产'] || ''; prot['穿着'] = g['穿着'] || g['衣着'] || ''; prot['好感'] = g['好感'] || ''; prot['备注'] = g['备注'] || '';
+          prot['身份'] = g['身份'] || ''; prot['身体'] = g['身体'] || ''; prot['精神状态'] = g['精神状态'] || g['精神'] || g['心理'] || ''; prot['地址'] = g['地址'] || g['所在地'] || ''; prot['资产'] = g['资产'] || ''; prot['穿着'] = g['穿着'] || g['衣着'] || ''; prot['好感'] = g['好感'] || ''; prot['备注'] = g['备注'] || '';
         } else {
           const segs = body.split(/[；;]/).map(s => s.trim()).filter(Boolean);
           for (const seg of segs) {
@@ -7879,7 +7887,7 @@ async function cdRenderGraph() {
       </div>`;
   }
   // ===== 主角状态卡 HTML =====
-  const protKeys = ['身体','地址','资产','穿着','好感','备注'];
+  const protKeys = ['身份','身体','精神状态','地址','资产','穿着','好感','备注'];
   const protHas = protKeys.some(k => prot[k]);
   const protCard = `
     <div class="cd-st-prob">
@@ -8538,18 +8546,39 @@ async function cdReadAllFloorsFromJsonl() {
   try {
     const ctx = SillyTavern.getContext();
     let chatName = '';
-    try { chatName = (ctx && (ctx.characterName || ctx.name2 || ctx.chatName)) || ''; } catch (e) {}
+    let chatId = '';
+    try {
+      chatName = (ctx && (ctx.characterName || ctx.name2 || ctx.chatName)) || '';
+      chatId = (ctx && (ctx.chatId || ctx.chat_id)) || '';
+      if (!chatId && ctx && typeof ctx.getCurrentChatId === 'function') { try { chatId = ctx.getCurrentChatId() || ''; } catch (e2) {} }
+    } catch (e) {}
     const tauri = (typeof window !== 'undefined') ? (window.__TAURI__ || null) : null;
     if (!tauri || !tauri.fs || typeof tauri.fs.readTextFile !== 'function') {
       return { ok: false, error: 'Tauri fs 不可用' };
     }
     const dataRoot = '/storage/emulated/0/Android/data/com.tauritavern.client/data/default-user/';
-    const dir = dataRoot + 'chats/' + chatName + '/';
+    let dir = dataRoot + 'chats/' + chatName + '/';
     const entries = await tauri.fs.readDir(dir);
     const jsons = (Array.isArray(entries) ? entries : []).filter(function (e) { return e && /[.]jsonl$/i.test(e.name || e.path || ''); });
     if (!jsons.length) return { ok: false, error: '目录无 jsonl: ' + dir };
-    const first = jsons[jsons.length - 1] || jsons[0];
-    const fp = first.path || (dir + (first.name || ''));
+    // ★ 精确匹配当前聊天（chatId）：同一角色卡可能有多个聊天，不能取最后一个
+    let target = null;
+    const wantId = String(chatId || '').trim();
+    if (wantId) {
+      // chatId 可能是 '聊天名 - 日期@时间'，文件名是 'chatId.jsonl' 或 '聊天名 - ...jsonl'
+      for (const e of jsons) {
+        const n = e.name || e.path || '';
+        const base = String(n).replace(/[.]jsonl$/i, '');
+        if (base === wantId || n === (wantId + '.jsonl') || (wantId && n.indexOf(wantId) !== -1)) { target = e; break; }
+      }
+    }
+    // 兜底：chatId 未匹配到，改用目录下"最新"jsonl（按文件里的 chatId/名称模糊，尽量用包含聊天名的）
+    if (!target) {
+      const nm = String(chatName || '').trim();
+      target = jsons.find(function (e) { return nm && String(e.name || '').indexOf(nm) !== -1; })
+            || jsons[jsons.length - 1];
+    }
+    const fp = target.path || (dir + (target.name || ''));
     const content = await tauri.fs.readTextFile(fp);
     const rawLines = String(content || '').split(/\r?\n/).filter(Boolean);
     // 解析：排除 chat_metadata 行，每行一个楼层，行序号 = 楼层号（0 开始）
@@ -8568,7 +8597,7 @@ async function cdReadAllFloorsFromJsonl() {
       } catch (e2) { mid++; }
     }
     const maxMid = floors.length > 0 ? (floors[floors.length - 1].i) : -1;
-    return { ok: true, error: '', file: fp, floors: floors, maxMid: maxMid, totalLines: rawLines.length };
+    return { ok: true, error: '', file: fp, chatId: chatId, chatName: chatName, floors: floors, maxMid: maxMid, totalLines: rawLines.length };
   } catch (e) {
     return { ok: false, error: (e && e.message ? e.message : String(e)) };
   }
@@ -10610,6 +10639,19 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
     {
+    version: 'v2.9.6',
+    date: '2026-08-30',
+    items: [
+      '新增「世界论坛·匿名缘遇相亲角」(顶部导航「缘遇」): 可匿名/实名相亲, 配对池70%路人+30%角色库熟人, 聊兴/怀疑/爱意三数值驱动, 聊兴低对方离场留吐槽入吐槽墙, 爱意满100奔现建立恋人关系, 恋人标签公开/隐藏(隐藏仍需风险被恋人发现)',
+      '新增「世界论坛·漫境漫画」(顶部导航「漫境」): 把小说/一句话生成漫画(多格分镜)或单图; 复用成熟生图管线(九维思考+TAG), 画风可选(复古漫画线稿/动漫赛璐璐/水墨国风/复古80年代/写实厚涂/韩漫精致唯美), 多格历史整组折叠可保存/删除',
+      '新增「正负面提示词预设管理」(论坛设置→图像生成): 输入名字保存当前正/负提示词为预设, 点预设一键切换, 同名覆盖, 最多20个',
+      '优化「帖子生图」(手动点图像生成): 不再喂评论区给AI(免得被带偏); 新增「先提炼核心画面」「画面要素精简」「空间与肢体注册」三条铁律(治断手/肢体乱/前后混乱); 修复AI输出两个【TAG】段被合并导致重复词翻倍',
+      '图库改「网格缩略图」(论坛设置→图库): 3列网格显示缩略图, 分批渲染防卡死, 点格看大图, 角标删除, 清空',
+      '状态界面新增「身份」「精神状态」字段: 身份=当前职业/社会地位/出身背景; 精神状态=心理/精神状况(灵活,可含精神病病名/情绪状态)',
+      '修复世界论坛全屏覆盖层白屏问题: 缘遇/漫境/图库等弹出子界面改用「#cd-forum-overlay内动态全屏覆盖层」方案(不再依赖.panel/showPanel), 治好了反复出现的小窗白屏/全屏空白/被遮罩盖住/无法退出',
+    ],
+  },
+    {
     version: 'v2.9.5',
     date: '2026-08-29',
     items: [
@@ -11028,7 +11070,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.9.5 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.9.6 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
@@ -12861,6 +12903,56 @@ const CD_FORUM_CSS = `/* ===== 基调：米白藏青（日）/ 深藏青午夜�
   #cd-forum-overlay .cd-diary-book.locked .cd-db-steal svg{width:15px;height:15px;fill:none;stroke:#fff;stroke-width:2;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));}
 
 
+
+  /* ===== 匿名缘遇 · 相亲角 ===== */
+  #cd-forum-overlay #panelLove .pn-body{background:var(--c-panel);}
+  #cd-forum-overlay .lv-hero{background:linear-gradient(135deg,#f3e9ec,#e9dde3);border:1px solid #e8d3da;border-radius:13px;padding:14px 14px;margin-bottom:12px;}
+  #cd-forum-overlay .lv-hero-t{font-size:12.5px;font-weight:700;color:#8b4a5c;display:flex;align-items:center;gap:6px;}
+  #cd-forum-overlay .lv-hero-t svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.8;}
+  #cd-forum-overlay .lv-hero-d{font-size:9px;color:#a05a6e;line-height:1.6;margin-top:6px;opacity:.85;}
+  #cd-forum-overlay .lv-mode{display:flex;gap:7px;margin-top:11px;}
+  #cd-forum-overlay .lv-mode .lvm{flex:1;border:1.5px solid var(--c-line);border-radius:10px;padding:9px 8px;text-align:center;cursor:pointer;font-size:10px;font-weight:700;color:var(--c-txt2);background:var(--c-input);transition:all .15s;}
+  #cd-forum-overlay .lv-mode .lvm.on{border-color:#b06a7a;color:#8b4a5c;background:#f6e9ed;}
+  #cd-forum-overlay .lv-mode .lvm .lvmt{display:block;font-size:10px;margin-bottom:3px;}
+  #cd-forum-overlay .lv-mode .lvm .lvms{display:block;font-size:8px;font-weight:400;color:var(--c-txt3);line-height:1.4;}
+  #cd-forum-overlay .lv-rel{display:flex;align-items:center;gap:7px;background:var(--c-card);border:1px solid var(--c-line);border-radius:10px;padding:9px 11px;margin-top:9px;font-size:9.5px;color:var(--c-txt2);}
+  #cd-forum-overlay .lv-rel b{color:#b06a7a;}
+  #cd-forum-overlay .lv-btn{width:100%;margin-top:10px;background:linear-gradient(135deg,#b06a7a,#a0526a);color:#fff;border:none;border-radius:10px;padding:11px;font-size:11.5px;font-weight:700;cursor:pointer;transition:opacity .15s;}
+  #cd-forum-overlay .lv-btn:active{opacity:.82;}
+  #cd-forum-overlay .lv-btn:disabled{opacity:.5;cursor:not-allowed;}
+  #cd-forum-overlay .lv-card{background:var(--c-card);border:1px solid var(--c-line);border-radius:12px;padding:12px 13px;margin-top:10px;}
+  #cd-forum-overlay .lv-card-t{font-size:11px;font-weight:700;color:var(--c-txt);display:flex;align-items:center;gap:6px;}
+  #cd-forum-overlay .lv-card-t svg{width:12px;height:12px;fill:none;stroke:var(--c-accent);stroke-width:1.8;}
+  #cd-forum-overlay .lv-meters{display:flex;flex-direction:column;gap:7px;margin-top:10px;}
+  #cd-forum-overlay .lv-meter{display:flex;align-items:center;gap:7px;}
+  #cd-forum-overlay .lv-meter .lvml{width:44px;font-size:8.5px;color:var(--c-txt3);flex-shrink:0;}
+  #cd-forum-overlay .lv-meter .track{flex:1;height:6px;background:var(--c-sub);border-radius:4px;overflow:hidden;}
+  #cd-forum-overlay .lv-meter .fill{height:100%;border-radius:4px;transition:width .3s;}
+  #cd-forum-overlay .lv-meter .lvmv{width:24px;font-size:8.5px;color:var(--c-txt2);text-align:right;flex-shrink:0;}
+  #cd-forum-overlay .lv-chat{display:flex;flex-direction:column;gap:7px;margin-top:10px;max-height:280px;overflow-y:auto;padding:2px;}
+  #cd-forum-overlay .lv-msg{max-width:82%;padding:8px 11px;border-radius:12px;font-size:10.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;}
+  #cd-forum-overlay .lv-msg.mine{align-self:flex-end;background:#b06a7a;color:#fff;border-bottom-right-radius:4px;}
+  #cd-forum-overlay .lv-msg.their{align-self:flex-start;background:var(--c-sub);color:var(--c-txt);border-bottom-left-radius:4px;}
+  #cd-forum-overlay .lv-msg .lv-who{display:block;font-size:8px;opacity:.7;margin-bottom:2px;}
+  #cd-forum-overlay .lv-inrow{display:flex;gap:7px;margin-top:10px;}
+  #cd-forum-overlay .lv-inrow input{flex:1;border:1px solid var(--c-line2);border-radius:9px;padding:8px 10px;font-size:10.5px;color:var(--c-txt);background:var(--c-input);outline:none;}
+  #cd-forum-overlay .lv-inrow .lv-send{flex-shrink:0;background:var(--c-send);color:var(--c-send-txt);border:none;border-radius:9px;padding:0 14px;font-size:10.5px;font-weight:700;cursor:pointer;}
+  #cd-forum-overlay .lv-actions{display:flex;gap:7px;margin-top:9px;}
+  #cd-forum-overlay .lv-actions .lva{flex:1;border:1px solid var(--c-line);border-radius:8px;padding:8px;text-align:center;font-size:9.5px;color:var(--c-txt2);background:var(--c-input);cursor:pointer;}
+  #cd-forum-overlay .lv-actions .lva.warn{color:#c84632;border-color:#e0b8ae;background:#fdf0ec;}
+  #cd-forum-overlay .lv-wall{display:flex;flex-direction:column;gap:8px;margin-top:10px;}
+  #cd-forum-overlay .lv-wall-it{background:var(--c-card);border:1px solid var(--c-line);border-radius:10px;padding:9px 11px;}
+  #cd-forum-overlay .lv-wall-by{font-size:9px;font-weight:700;color:#b06a7a;display:flex;align-items:center;gap:5px;}
+  #cd-forum-overlay .lv-wall-tx{font-size:9.5px;color:var(--c-txt2);line-height:1.55;margin-top:4px;font-style:italic;}
+  #cd-forum-overlay .lv-wall-tm{font-size:8px;color:var(--c-txt3);margin-top:3px;}
+  #cd-forum-overlay .lv-empty{text-align:center;padding:26px 16px;color:var(--c-txt3);font-size:9.5px;line-height:1.7;}
+  #cd-forum-overlay .lv-sec{font-size:10px;font-weight:700;color:var(--c-txt);margin:14px 0 7px;display:flex;align-items:center;gap:5px;}
+  #cd-forum-overlay .lv-sec svg{width:11px;height:11px;fill:none;stroke:var(--c-accent);stroke-width:1.8;}
+  #cd-forum-overlay .lv-tagrow{display:flex;gap:7px;margin-top:9px;}
+  #cd-forum-overlay .lv-tagrow .lvt{flex:1;border:1.5px solid var(--c-line);border-radius:9px;padding:9px;text-align:center;font-size:9.5px;font-weight:700;color:var(--c-txt2);background:var(--c-input);cursor:pointer;}
+  #cd-forum-overlay .lv-tagrow .lvt.on{border-color:#b06a7a;color:#8b4a5c;background:#f6e9ed;}
+  #cd-forum-overlay .lv-result{background:#f6e9ed;border:1px solid #e8d3da;border-radius:11px;padding:11px 13px;margin-top:10px;font-size:10px;color:#8b4a5c;line-height:1.7;}
+
 `;
 
 const CD_FORUM_HTML = `<div id="cdForumRoot">
@@ -12877,7 +12969,7 @@ const CD_FORUM_HTML = `<div id="cdForumRoot">
     <div class="boardline" id="boardLine" style="display:flex;align-items:center;gap:6px;">
       <span class="bd on" data-b="all">全局</span><span class="bd" data-b="fav">收藏</span>
       <span class="bd" id="homeQ" style="display:flex;align-items:center;gap:4px;color:#3f6d84;font-weight:700;"><svg viewBox="0 0 24 24" style="width:10px;height:10px;fill:none;stroke:currentColor;stroke-width:1.8"><path d="M3 11l9-8 9 8M5 10v10h14V10M10 20v-6h5v6"/></svg>主页</span>
-      <span class="bd" id="mgQ" style="margin-left:auto;display:flex;align-items:center;gap:4px;color:#3f6d84;font-weight:700;"><svg viewBox="0 0 24 24" style="width:10px;height:10px;fill:none;stroke:currentColor;stroke-width:1.8"><path d="M3 6h18M3 12h18M3 18h18"/></svg>管理</span>
+      <span class="bd" id="loveQ" style="display:flex;align-items:center;gap:4px;color:#b06a7a;font-weight:700;" title="匿名缘遇 · 相亲角"><svg viewBox="0 0 24 24" style="width:10px;height:10px;fill:none;stroke:currentColor;stroke-width:1.8"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>缘遇</span><span class="bd" id="mangaQ" style="display:flex;align-items:center;gap:4px;color:#3f8a7a;font-weight:700;" title="漫境 · 小说/对话生漫画"><svg viewBox="0 0 24 24" style="width:10px;height:10px;fill:none;stroke:currentColor;stroke-width:1.8"><path d="M5 3h14a1 1 0 0 1 1 1v14l-3 3-2-2-2 2-2-2-2 2-3-3V4a1 1 0 0 1 1-1z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>漫境</span><span class="bd" id="mgQ" style="margin-left:auto;display:flex;align-items:center;gap:4px;color:#3f6d84;font-weight:700;"><svg viewBox="0 0 24 24" style="width:10px;height:10px;fill:none;stroke:currentColor;stroke-width:1.8"><path d="M3 6h18M3 12h18M3 18h18"/></svg>管理</span>
     </div>
 
     <!-- ◈ 创作区：总结剧情 + NPC 生成发帖 -->
@@ -13045,6 +13137,17 @@ const CD_FORUM_HTML = `<div id="cdForumRoot">
         <div class="set-row" style="align-items:center;">模型 <select class="set-in" id="cfImgModel" style="width:170px;"></select><button class="set-btn" id="cfImgModelFetch" style="margin-left:6px;">拉取</button></div>
         <div class="set-row" style="align-items:flex-start;">正面提示词<textarea class="set-in" id="cfImgAdd" rows="3" placeholder="画师串/正面追加（如 masterpiece, best quality）" style="flex:1;min-height:72px;resize:vertical;font-family:inherit;"></textarea></div>
         <div class="set-row" style="align-items:flex-start;">负面提示词<textarea class="set-in" id="cfImgNeg" rows="3" placeholder="负面提示词（如 lowres, bad hands）" style="flex:1;min-height:72px;resize:vertical;font-family:inherit;"></textarea></div>
+        <!-- 正负面提示词预设管理 -->
+        <div style="border:1px solid #e0e8e4;border-radius:9px;padding:8px 10px;margin-top:6px;background:#fafbfc;">
+          <div style="font-size:9.5px;font-weight:700;color:#3f6d84;display:flex;align-items:center;gap:5px;margin-bottom:6px;">正负面提示词预设
+            <span style="font-size:8px;font-weight:400;color:#9aa5a0;">输入名字保存当前正/负提示词，点预设一键切换</span>
+          </div>
+          <div style="display:flex;gap:5px;align-items:center;">
+            <input class="set-in" id="cfImgPresetName" placeholder="预设名字，如：洁净韩漫" style="flex:1;min-width:0;">
+            <button class="set-btn" id="cfImgPresetSave" style="flex-shrink:0;line-height:1;padding:4px 9px;">保存</button>
+          </div>
+          <div id="cfImgPresetList" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:5px;"></div>
+        </div>
         <div class="set-row" style="align-items:center;">画面风格
           <select class="set-in" id="cfImgStyle" style="width:150px;text-align:right;"><option value="bihua">必画清单·忠于帖子</option><option value="mirror">对镜自拍·情绪氛围</option></select>
           <button class="set-btn" id="cfImgStyleAdd" title="新增一个自定义风格提示词" style="margin-left:6px;line-height:1;padding:3px 8px;">＋</button>
@@ -13348,6 +13451,16 @@ const CD_FORUM_HTML = `<div id="cdForumRoot">
     <div class="pn-body" id="imgLibBody"></div>
   </div>
 
+
+  <!-- ===== 面板：匿名缘遇 · 相亲角 ===== -->
+  <div class="panel" id="panelLove">
+    <div class="pn-bar">
+      <div class="pn-back" data-close="panelLove"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></div>
+      <div class="pn-t"><svg viewBox="0 0 24 24" style="width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.8;vertical-align:-1px;"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>匿名缘遇 · 相亲角</div>
+    </div>
+    <div class="pn-body" id="loveBody"></div>
+  </div>
+
   <!-- ===== 看图页（点帖子图/图库图弹出·小号居中，可删除/保存到相册） ===== -->
   <div class="cf-editor-mask" id="cfImgViewMask">
     <div class="cf-editor" style="width:min(370px,94vw);">
@@ -13407,6 +13520,10 @@ function cdForumOpen(){
     panel.appendChild(ov);
   }
   ov.innerHTML='<div style="pointer-events:auto;width:100%;height:100%;overflow:hidden;background:#fafbfc;">'+CD_FORUM_HTML+'</div>';
+  // 防御：清除可能残留的全屏遮罩（防止遮挡 nav/按钮）
+  try{ [].forEach.call(document.querySelectorAll('.cd-overlay,.cd-modal-overlay-dedupe,.cd-modal-overlay, #cd-dedupe-test-overlay'),function(_ov){ if(_ov&&_ov.parentNode) _ov.parentNode.removeChild(_ov); }); }catch(_e1){}
+  try{ var _em=document.getElementById('cfEditorMask'); if(_em){ _em.classList.remove('open'); _em.style.display='none'; } }catch(_e2){}
+  try{ var _iv=document.getElementById('cfImgViewMask'); if(_iv) _iv.style.display='none'; }catch(_e3){}
   ov.style.display='flex'; ov.style.flexDirection='column';
   _cfRoot=ov.querySelector('#cdForumRoot');
   if(_cfRoot){ _cfRoot.style.width='100%'; _cfRoot.style.height='100%'; _cfRoot.style.position='relative'; }
@@ -15459,6 +15576,48 @@ function _cfMountV2(){
         var _sel=R.querySelector('#cfImgModel');
         if(_sel && !_sel.dataset.autoFetched){ _sel.dataset.autoFetched='1'; try{ fetchImgModels(false); }catch(_e2){} }
       }
+      // ★ 正负面提示词预设：渲染已有预设列表 + 绑定保存/切换
+      try{
+        var _pn=R.querySelector('#cfImgPresetName'), _ps=R.querySelector('#cfImgPresetSave'), _pl=R.querySelector('#cfImgPresetList');
+        if(_pl){
+          var _presets=(g.presets&&Array.isArray(g.presets))?g.presets:[];
+          _pl.innerHTML='';
+          if(!_presets.length){ _pl.innerHTML='<span style="font-size:8.5px;color:#b0b5ba;">还没有预设。输入名字+保存即可创建一个。</span>'; }
+          else {
+            _presets.forEach(function(pr,i){
+              var _chip=document.createElement('span');
+              _chip.style.cssText='font-size:8.5px;color:#2e5d50;border:1px solid #bcd0c8;border-radius:12px;padding:2px 8px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;';
+              _chip.innerHTML=esc(pr.name||('预设'+(i+1)))+'<b data-pdel="'+i+'" style="color:#c84632;font-weight:700;padding:0 2px;">×</b>';
+              _chip.addEventListener('click',function(ev){
+                var t=ev&&ev.target; if(t&&t.tagName==='B') return;
+                // 切换预设：回填正/负提示词
+                var _add=R.querySelector('#cfImgAdd'), _neg=R.querySelector('#cfImgNeg');
+                if(_add) _add.value=pr.addPrompt||'';
+                if(_neg) _neg.value=pr.negPrompt||'';
+                try{ if(typeof toastr==='function') toastr.success('已切换到预设「'+(pr.name||'')+'」'); }catch(_e){}
+              });
+              var _del=_chip.querySelector('[data-pdel]');
+              if(_del){ _del.addEventListener('click',function(ev){ ev.stopPropagation(); try{ var g2=cdForumImgCfg(); if(!Array.isArray(g2.presets)) g2.presets=[]; g2.presets.splice(i,1); _cfCfgCache=cdForumCfg(); if(typeof cdForumPersist==='function') cdForumPersist(); fillImgCfg(); }catch(_e){} }); }
+              _pl.appendChild(_chip);
+            });
+          }
+        }
+        if(_ps){ _ps.onclick=function(){
+          var _nm=R.querySelector('#cfImgPresetName'); var name=(_nm?_nm.value:'').trim();
+          if(!name){ try{ if(typeof toastr==='function') toastr.info('请先输入预设名字'); }catch(_e){} return; }
+          var _add=R.querySelector('#cfImgAdd'), _neg=R.querySelector('#cfImgNeg');
+          var g2=cdForumImgCfg(); if(!Array.isArray(g2.presets)) g2.presets=[];
+          // 同名覆盖
+          var _idx=-1; for(var _i2=0;_i2<g2.presets.length;_i2++){ if(g2.presets[_i2]&&g2.presets[_i2].name===name){ _idx=_i2; break; } }
+          var _rec={name:name, addPrompt:(_add?_add.value:''), negPrompt:(_neg?_neg.value:'')};
+          if(_idx>=0) g2.presets[_idx]=_rec; else g2.presets.unshift(_rec);
+          if(g2.presets.length>20) g2.presets=g2.presets.slice(0,20);
+          _cfCfgCache=cdForumCfg(); if(typeof cdForumPersist==='function') cdForumPersist();
+          if(_nm) _nm.value='';
+          try{ if(typeof toastr==='function') toastr.success('已保存预设「'+name+'」'); }catch(_e){}
+          fillImgCfg();
+        }; }
+      }catch(_e){}
     }catch(_e){}
   }
   // 从界面读图设（不持久化）临时写入 cfg，供 测试/拉模型 使用
@@ -15627,7 +15786,7 @@ cdBindOnce(R.querySelector('#cfImgStyle'),function(){
       if(typeof toastr==='function') toastr.error('生图测试失败：'+msg);
     });
   });
-  cdBindOnce(R.querySelector('#cfImgOpenLib'),function(){ try{ openImgLib(); }catch(_e){ } });
+  cdBindOnce(R.querySelector('#cfImgOpenLib'),function(){ try{ if(typeof openImgLibLayer==='function'){ openImgLibLayer(); } else { openImgLib(); } }catch(_e){ } });
   cdBindOnce(R.querySelector('#cfImgClearLib'),function(){
     if(!confirm('确定清空整个图库（所有已生成的图片）？此操作不可撤销。')) return;
     cdForumImgClear().then(function(){ try{ if(typeof toastr==='function') toastr.success('图库已清空'); }catch(e){} });
@@ -15946,6 +16105,7 @@ cdBindOnce(R.querySelector('#cfImgStyle'),function(){
   // ===== 板块行：全局/收藏 =====
   var bdInt=R.querySelector('#boardLine'); if(bdInt){
     bdInt.querySelectorAll('.bd').forEach(function(b){
+      if(b.id==='loveQ') return; // 缘遇不是帖子板块，不参与 feed 切换
       b.addEventListener('click',function(){
         bdInt.querySelectorAll('.bd').forEach(function(x){x.classList.remove('on')});
         b.classList.add('on'); curBoard=b.dataset.b||'all'; renderFeed();
@@ -16021,10 +16181,822 @@ cdBindOnce(R.querySelector('#cfImgStyle'),function(){
 
   // ===== 显眼入口条：总结并保存世界 + 吃醋联动 =====
   _cfAddHeroEntries(R);
+
+  // ==================== 匿名缘遇 · 相亲角（绑定逻辑） ====================
+  var panelLove=R.querySelector('#panelLove');
+  var loveQ=R.querySelector('#loveQ');
+  var _love = null; // 当前相亲会话 {mode,partner,isRoster,turns,chat:[],satisfaction,distrust,love,active}
+  function _loveMeName(){
+    try{
+      var cfg=_cfHomeAppFromCfg? _cfHomeAppFromCfg():{};
+      return (cfg&&cfg.nick)||'我';
+    }catch(e){ return '我'; }
+  }
+  function _loveDispPartner(){
+    if(!_love) return '神秘人';
+    if(_love.mode==='anonymous') return cdLoveAnonName();
+    return _love.partner.name;
+  }
+  function _loveDispMe(){
+    if(!_love) return '我';
+    if(_love.mode==='anonymous') return cdLoveAnonName();
+    return _loveMeName();
+  }
+  // 渲染相亲角主界面
+  // ---- 相亲角渲染辅助（_cfMountV2 直接作用域，供 fillLovePanel/renderLoveChat 等访问） ----
+  var _loveLayerBody = null; // 当前全屏层的内容容器（= #loveBody 被移入层）
+  function _loveActiveBody(){
+    try{
+      if(_loveLayerBody && document.body && _loveLayerBody.isConnected) return _loveLayerBody;
+    }catch(_e){}
+    try{ var _lb=panelLove?panelLove.querySelector('#loveBody'):null; if(_lb) return _lb; }catch(_e){}
+    return null;
+  }
+  function _loveRebind(body){
+    if(!body) return;
+    try{ body.querySelectorAll('[data-lv-mode]').forEach(function(el){ el.onclick=function(){ var m=this.getAttribute('data-lv-mode'); if(_love&&_love.active){ try{ if(typeof toastr==='function') toastr.info('本次缘遇进行中，结束后再切换模式'); }catch(e){} return; } if(!_love) _love={mode:m,partner:null,isRoster:false,turns:0,chat:[],satisfaction:70,distrust:0,love:0,active:false}; else _love.mode=m; fillLovePanel(); }; }); }catch(_e){}
+    try{ body.querySelectorAll('[data-lv-tag]').forEach(function(el){ el.onclick=function(){ cdLoveSetTag(this.getAttribute('data-lv-tag')); fillLovePanel(); }; }); }catch(_e){}
+    try{ var sb=body.querySelector('#loveStartBtn'); if(sb){ sb.onclick=function(){ startLoveMatch(); }; } }catch(_e){}
+    try{ var send=body.querySelector('#loveSend'); var inp=body.querySelector('#loveInput'); if(send){ send.onclick=function(){ _loveDoSend(); }; } if(inp){ inp.onkeydown=function(e){ if(e.key==='Enter') _loveDoSend(); }; } }catch(_e){}
+    try{ var lv=body.querySelector('#loveLeave'); if(lv){ lv.onclick=function(){ loveUserLeave('你觉得聊得不够尽兴'); }; } }catch(_e){}
+    try{ var ag=body.querySelector('#loveAgain'); if(ag){ ag.onclick=function(){ _love=null; fillLovePanel(); }; } }catch(_e){}
+  }
+  function _loveDoSend(){
+    try{
+      var body=_loveActiveBody(); if(!body) return;
+      var inp=body.querySelector('#loveInput'); if(!inp) return;
+      var v=(inp.value||'').trim(); if(!v) return;
+      inp.value='';
+      _love.chat.push({role:'user',content:v});
+      _love.turns++;
+      if(cdLoveDetectLeak(v)) _love.distrust=Math.min(100,_love.distrust+18);
+      renderLoveChat();
+      aiRespond();
+    }catch(_e){}
+  }
+  function fillLovePanel(){
+    try{ if(typeof cdAddLog==='function') cdAddLog('info','[缘遇] fillLovePanel 开始，panelLove='+(!!panelLove)); }catch(e){}
+    if(!panelLove) return;
+    var body=_loveActiveBody(); if(!body){ try{ if(typeof cdAddLog==='function') cdAddLog('error','[缘遇] #loveBody 不存在'); }catch(e){} return; }
+    var d=cdLoveData();
+    var can=cdLoveCanMatch();
+    var meName=_loveMeName();
+    var anon=cdLoveAnonName();
+    var rel=d.relation;
+    // 全部用内联样式，保证可见（不依赖 CSS 类）
+    var html='';
+    html+='<div style="background:linear-gradient(135deg,#f3e9ec,#e9dde3);border:1px solid #e8d3da;border-radius:13px;padding:14px;margin-bottom:12px;">';
+    html+='  <div style="font-size:12.5px;font-weight:700;color:#8b4a5c;display:flex;align-items:center;gap:6px;"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>匿名缘遇 · 相亲角</div>';
+    html+='  <div style="font-size:9px;color:#a05a6e;line-height:1.6;margin-top:6px;">跨世界匿名交友。可匿名、可实名；聊得投机就深聊、甚至会奔现，聊得不尽兴对方会甩下一句吐槽离开。你的匿名身份是「'+esc(anon)+'」。</div>';
+    html+='  <div style="display:flex;gap:7px;margin-top:11px;">';
+    html+='    <div style="flex:1;border:1.5px solid '+((_love&&_love.mode==='anonymous')?'#b06a7a':'#e0d6da')+';border-radius:10px;padding:9px 8px;text-align:center;cursor:pointer;font-size:10px;font-weight:700;color:'+((_love&&_love.mode==='anonymous')?'#8b4a5c':'#8b9298')+';background:'+((_love&&_love.mode==='anonymous')?'#f6e9ed':'#fff')+';" data-lv-mode="anonymous"><span style="display:block;font-size:10px;margin-bottom:3px;">匿名</span><span style="display:block;font-size:8px;font-weight:400;color:#a0a6aa;line-height:1.4;">对面不知你是谁，你也不知他是谁</span></div>';
+    html+='    <div style="flex:1;border:1.5px solid '+((_love&&_love.mode==='real')?'#b06a7a':'#e0d6da')+';border-radius:10px;padding:9px 8px;text-align:center;cursor:pointer;font-size:10px;font-weight:700;color:'+((_love&&_love.mode==='real')?'#8b4a5c':'#8b9298')+';background:'+((_love&&_love.mode==='real')?'#f6e9ed':'#fff')+';" data-lv-mode="real"><span style="display:block;font-size:10px;margin-bottom:3px;">实名</span><span style="display:block;font-size:8px;font-weight:400;color:#a0a6aa;line-height:1.4;">以真实身份相亲（'+esc(meName)+'）</span></div>';
+    html+='  </div>';
+    if(rel){
+      html+='  <div style="display:flex;align-items:center;gap:7px;background:#fff;border:1px solid #e8d3da;border-radius:10px;padding:9px 11px;margin-top:9px;font-size:9.5px;color:#6a6f74;">已奔现 · 恋人：<b style="color:#b06a7a;">'+esc(rel.partner||'')+'</b>（'+esc(rel.date)+'）</div>';
+    }
+    if(!can.ok){
+      html+='  <div style="display:flex;align-items:center;gap:7px;background:#fdf0ec;border:1px solid #eccfc7;border-radius:10px;padding:9px 11px;margin-top:9px;font-size:9.5px;color:#c84632;">你公开了「已有恋人」标签，相亲角已对你关闭。请到下方把标签改为「隐藏」才能继续相亲。</div>';
+    }
+    html+='  <button id="loveStartBtn" style="width:100%;margin-top:10px;background:linear-gradient(135deg,#b06a7a,#a0526a);color:#fff;border:none;border-radius:10px;padding:11px;font-size:11.5px;font-weight:700;cursor:pointer;'+(can.ok?'':'opacity:.5;cursor:not-allowed;')+'">'+(_love&&_love.active?'继续本次缘遇':'开始匹配 · 相亲')+'</button>';
+    html+='</div>';
+    // 恋人标签
+    html+='<div style="background:#fff;border:1px solid #e7e9eb;border-radius:12px;padding:12px 13px;margin-top:10px;">';
+    html+='  <div style="font-size:11px;font-weight:700;color:#333;display:flex;align-items:center;gap:6px;">我的恋人标签</div>';
+    html+='  <div style="font-size:8.5px;color:#8b9298;line-height:1.5;margin-top:4px;">公开=相亲角对你关闭（有恋人，没人找你）；隐藏=你还能继续相亲，但有概率被恋人发现。</div>';
+    html+='  <div style="display:flex;gap:7px;margin-top:9px;">';
+    html+='    <div data-lv-tag="public" style="flex:1;border:1.5px solid '+(d.tag!=='hidden'?'#b06a7a':'#e0d6da')+';border-radius:9px;padding:9px;text-align:center;font-size:9.5px;font-weight:700;color:'+(d.tag!=='hidden'?'#8b4a5c':'#8b9298')+';background:'+(d.tag!=='hidden'?'#f6e9ed':'#fff')+';cursor:pointer;">公开</div>';
+    html+='    <div data-lv-tag="hidden" style="flex:1;border:1.5px solid '+(d.tag==='hidden'?'#b06a7a':'#e0d6da')+';border-radius:9px;padding:9px;text-align:center;font-size:9.5px;font-weight:700;color:'+(d.tag==='hidden'?'#8b4a5c':'#8b9298')+';background:'+(d.tag==='hidden'?'#f6e9ed':'#fff')+';cursor:pointer;">隐藏</div>';
+    html+='  </div>';
+    html+='</div>';
+    // 吐槽墙
+    html+='<div style="font-size:10px;font-weight:700;color:#333;margin:14px 0 7px;">吐槽墙 · 那些聊不成的缘</div>';
+    if(d.wall && d.wall.length){
+      var _w=d.wall.slice(-20).reverse();
+      html+='<div style="display:flex;flex-direction:column;gap:8px;">';
+      _w.forEach(function(w){
+        html+='<div style="background:#fff;border:1px solid #e7e9eb;border-radius:10px;padding:9px 11px;"><div style="font-size:9px;font-weight:700;color:#b06a7a;">'+esc(w.by||'匿名')+'<span style="font-weight:400;color:#a0a6aa;">'+(w.mode==='anonymous'?' · 匿名':' · 实名')+'</span></div><div style="font-size:9.5px;color:#5a5f64;line-height:1.55;margin-top:4px;font-style:italic;">'+esc(w.text||'')+'</div><div style="font-size:8px;color:#b0b5ba;margin-top:3px;">'+esc(w.time||'')+'</div></div>';
+      });
+      html+='</div>';
+    } else {
+      html+='<div style="text-align:center;padding:26px 16px;color:#a0a6aa;font-size:9.5px;">还没有吐槽。等一段聊不成的缘分出现吧。</div>';
+    }
+    body.innerHTML=html;
+    try{ if(typeof cdAddLog==='function') cdAddLog('info','[缘遇] fillLovePanel 渲染完成 html长度='+html.length); }catch(e){}
+    _loveRebind(body);
+    // 绑定
+    body.querySelectorAll('[data-lv-mode]').forEach(function(el){ el.addEventListener('click',function(){ var m=this.dataset.lvMode; if(_love&&_love.active){ try{ if(typeof toastr==='function') toastr.info('本次缘遇进行中，结束后再切换模式'); }catch(e){} return; } if(!_love) _love={mode:m,partner:null,isRoster:false,turns:0,chat:[],satisfaction:70,distrust:0,love:0,active:false}; else _love.mode=m; fillLovePanel(); }); });
+    body.querySelectorAll('[data-lv-tag]').forEach(function(el){ el.addEventListener('click',function(){ cdLoveSetTag(this.dataset.lvTag); fillLovePanel(); }); });
+    var sb=body.querySelector('#loveStartBtn');
+    if(sb) cdBindOnce(sb,function(){ startLoveMatch(); });
+  }
+  // 开始匹配
+  function startLoveMatch(){
+    if(!cdForumApiReady()){ try{ if(typeof toastr==='function') toastr.error('尚未配置论坛 API（设置→论坛→接口/Key）'); }catch(e){} return; }
+    if(!_love) _love={mode:'anonymous',partner:null,isRoster:false,turns:0,chat:[],satisfaction:70,distrust:0,love:0,active:false};
+    var pick=cdLovePickPartner();
+    _love.partner=pick.partner;
+    _love.isRoster=pick.isRoster;
+    _love.turns=0; _love.chat=[]; _love.satisfaction=70; _love.distrust=0; _love.love=0; _love.active=true;
+    // 开场白
+    var sys=CD_LOVE_CHAT_SYS(_love.partner,_love.isRoster,_love.mode,_love.distrust,_love.love);
+    var opener='你来到相亲角，'+( _love.mode==='anonymous'?'以匿名义「'+cdLoveAnonName()+'」':'以真实身份「'+_loveMeName()+'」')+'和对方相遇。请主动打个招呼，开始这场缘遇。';
+    try{ if(typeof cdAddLog==='function') cdAddLog('info','[缘遇] 匹配到：'+( _love.isRoster?'角色库熟人「'+_love.partner.name+'」':'路人「'+_love.partner.name+'」')+' 模式='+_love.mode); }catch(e){}
+    var _ab1=_loveActiveBody(); var btn=_ab1?_ab1.querySelector('#loveStartBtn'):null;
+    if(btn){ btn.disabled=true; btn.textContent='配对中…'; }
+    cdLoveApiMsg(sys, opener, 0.95).then(function(txt){
+      if(btn){ btn.disabled=false; btn.textContent='继续本次缘遇'; }
+      _love.chat.push({role:'assistant',content:String(txt||'').trim()});
+      renderLoveChat();
+    }).catch(function(err){
+      if(btn){ btn.disabled=false; btn.textContent='开始匹配 · 相亲'; }
+      try{ if(typeof toastr==='function') toastr.error('配对失败：'+(err&&err.message)); }catch(e){}
+    });
+  }
+  // 渲染聊天界面
+  function renderLoveChat(){
+    if(!panelLove) return;
+    var body=_loveActiveBody(); if(!body) return;
+    var p=_love.partner;
+    var html='';
+    html+='<div class="lv-card">';
+    html+='  <div class="lv-card-t" style="justify-content:space-between;">';
+    html+='    <span style="display:flex;align-items:center;gap:6px;"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>'+( _love.mode==='anonymous'?esc(cdLoveAnonName())+' × '+esc(cdLoveAnonName()):esc(_loveMeName())+' × '+esc(p.name))+'</span>';
+    html+='    <span style="font-size:8.5px;color:var(--c-txt3);">'+( _love.isRoster?'（对方是角色库熟人）':'（路人）')+'</span>';
+    html+='  </div>';
+    html+='  <div class="lv-meters">';
+    html+='    <div class="lv-meter"><span class="lvml">聊兴</span><div class="track"><div class="fill" style="width:'+_love.satisfaction+'%;background:#b08a6b;"></div></div><span class="lvmv">'+_love.satisfaction+'</span></div>';
+    html+='    <div class="lv-meter"><span class="lvml">怀疑</span><div class="track"><div class="fill" style="width:'+_love.distrust+'%;background:#8a6b8a;"></div></div><span class="lvmv">'+_love.distrust+'</span></div>';
+    html+='    <div class="lv-meter"><span class="lvml">爱意</span><div class="track"><div class="fill" style="width:'+_love.love+'%;background:#b06a7a;"></div></div><span class="lvmv">'+_love.love+'</span></div>';
+    html+='  </div>';
+    html+='  <div class="lv-chat" id="loveChat">';
+    _love.chat.forEach(function(m){
+      var mine=(m.role==='user');
+      html+='<div class="lv-msg '+(mine?'mine':'their')+'"><span class="lv-who">'+(mine?_loveDispMe():_loveDispPartner())+'</span>'+esc(m.content)+'</div>';
+    });
+    html+='  </div>';
+    html+='  <div class="lv-inrow">';
+    html+='    <input id="loveInput" placeholder="说点什么…（可匿名说心里话，也可能不小心暴露身份）">';
+    html+='    <button class="lv-send" id="loveSend">发送</button>';
+    html+='  </div>';
+    html+='  <div class="lv-actions">';
+    html+='    <div class="lva" id="loveLeave">提前离场</div>';
+    html+='  </div>';
+    html+='</div>';
+    body.innerHTML=html;
+    var chat=body.querySelector('#loveChat');
+    if(chat) chat.scrollTop=chat.scrollHeight;
+    var inp=body.querySelector('#loveInput');
+    if(inp) inp.focus();
+    var send=body.querySelector('#loveSend');
+    function doSend(){
+      if(!inp) return;
+      var v=(inp.value||'').trim(); if(!v) return;
+      inp.value='';
+      _love.chat.push({role:'user',content:v});
+      _love.turns++;
+      // 暴露检测（提升怀疑值）
+      if(cdLoveDetectLeak(v)) _love.distrust=Math.min(100,_love.distrust+18);
+      renderLoveChat();
+      aiRespond();
+    }
+    // 按钮统一由 _loveRebind 绑定（用 onclick 覆盖，避免重复），不再手动 addEventListener
+    _loveRebind(body);
+  }
+  // AI 回应 + 评估
+  function aiRespond(){
+    var p=_love.partner;
+    var sys=CD_LOVE_CHAT_SYS(p,_love.isRoster,_love.mode,_love.distrust,_love.love);
+    var usr=_love.chat.map(function(m){ return (m.role==='user'? _loveDispMe()+'：':_loveDispPartner()+'：')+m.content; }).join('\n');
+    var _ab2=_loveActiveBody(); var btn=_ab2?_ab2.querySelector('#loveSend'):null; if(btn) btn.disabled=true;
+    cdLoveApiMsg(sys, usr, 0.95).then(function(txt){
+      _love.chat.push({role:'assistant',content:String(txt||'').trim()});
+      if(btn) btn.disabled=false;
+      // 评估三数值
+      return cdLoveEval(_love.chat, p, _love.isRoster, _love.mode, _love.satisfaction, _love.distrust, _love.love);
+    }).then(function(ev){
+      var j=null; try{ var t=String(ev||'').replace(/```/g,''); var s=t.indexOf('{'); if(s>=0) j=JSON.parse(t.slice(s,t.lastIndexOf('}')+1)); }catch(e){ j=null; }
+      if(j){
+        if(typeof j.satisfaction==='number') _love.satisfaction=Math.max(0,Math.min(100,Math.round(j.satisfaction)));
+        if(typeof j.distrust==='number') _love.distrust=Math.max(0,Math.min(100,Math.round(j.distrust)));
+        if(typeof j.love==='number') _love.love=Math.max(0,Math.min(100,Math.round(j.love)));
+      }
+      renderLoveChat();
+      // 离场判定：聊兴低
+      if(_love.active && _love.satisfaction<28){
+        loveAiLeave('聊得不尽兴、被敷衍/踩雷了');
+        return;
+      }
+      // 爱意满值 → 奔现
+      if(_love.active && _love.love>=100){
+        loveMeet();
+      }
+    }).catch(function(err){
+      if(btn) btn.disabled=false;
+      try{ if(typeof toastr==='function') toastr.error('回应失败：'+(err&&err.message)); }catch(e){}
+      renderLoveChat();
+    });
+  }
+  // 保存缘分记录
+  function _loveRecord(endType, endComment){
+    var d=cdLoveData();
+    d.matches.push({id:Date.now(),mode:_love.mode,partner:_love.partner.name,partnerIsRoster:_love.isRoster,turns:_love.turns,chat:_love.chat.slice(-20),satisfaction:_love.satisfaction,distrust:_love.distrust,love:_love.love,end:{type:endType,comment:endComment||''},time:new Date().toLocaleString('zh-CN')});
+    if(d.matches.length>100) d.matches=d.matches.slice(-100);
+    d.history.push(d.matches[d.matches.length-1]);
+    if(d.history.length>50) d.history=d.history.slice(-50);
+    cdLoveSave();
+  }
+  // AI 主动离场 + 吐槽
+  function loveAiLeave(reason){
+    _love.active=false;
+    var p=_love.partner;
+    var summary=_love.chat.slice(-4).map(function(m){return (m.role==='user'?'我':'TA')+':'+String(m.content).slice(0,60);}).join(' ');
+    cdLoveLeaveComment(p,_love.isRoster,_love.mode,reason,summary).then(function(txt){
+      var comment=String(txt||'').trim();
+      var d=cdLoveData();
+      d.wall.push({time:new Date().toLocaleString('zh-CN'),by:(_love.mode==='anonymous'?cdLoveAnonName():p.name),anonymous:(_love.mode==='anonymous'),mode:_love.mode,text:comment});
+      if(d.wall.length>100) d.wall=d.wall.slice(-100);
+      cdLoveSave();
+      _loveRecord('ai_leave', comment);
+      var body=_loveActiveBody();
+      if(body) body.innerHTML='<div class="lv-result"><b>对方离场了。</b><br>'+( _love.mode==='anonymous'?esc(cdLoveAnonName()):esc(p.name))+'：'+esc(comment)+'<br><br><button class="lv-btn" id="loveAgain" style="margin-top:8px;">再续一段缘</button></div>';
+      var again=body.querySelector('#loveAgain');
+      if(again) cdBindOnce(again,function(){ _love=null; fillLovePanel(); });
+      try{ if(typeof toastr==='function') toastr.info('对方离场并留下一句吐槽'); }catch(e){}
+    }).catch(function(){ _loveRecord('ai_leave','对方默默离场'); fillLovePanel(); });
+  }
+  // 用户主动离场
+  function loveUserLeave(reason){
+    if(!_love||!_love.active) return;
+    _love.active=false;
+    var p=_love.partner;
+    var summary=_love.chat.slice(-4).map(function(m){return (m.role==='user'?'我':'TA')+':'+String(m.content).slice(0,60);}).join(' ');
+    cdLoveLeaveComment(p,_love.isRoster,_love.mode,reason,summary).then(function(txt){
+      var comment=String(txt||'').trim();
+      var d=cdLoveData();
+      d.wall.push({time:new Date().toLocaleString('zh-CN'),by:(_love.mode==='anonymous'?cdLoveAnonName():p.name),anonymous:(_love.mode==='anonymous'),mode:_love.mode,text:comment});
+      if(d.wall.length>100) d.wall=d.wall.slice(-100);
+      cdLoveSave();
+      _loveRecord('user_leave', comment);
+      var body=_loveActiveBody();
+      if(body) body.innerHTML='<div class="lv-result"><b>你提前离场了。</b><br>'+( _love.mode==='anonymous'?esc(cdLoveAnonName()):esc(p.name))+'甩下一句：'+esc(comment)+'<br><br><button class="lv-btn" id="loveAgain" style="margin-top:8px;">再续一段缘</button></div>';
+      var again=body.querySelector('#loveAgain');
+      if(again) cdBindOnce(again,function(){ _love=null; fillLovePanel(); });
+    }).catch(function(){ _loveRecord('user_leave','你提前离场'); fillLovePanel(); });
+  }
+  // 奔现
+  function loveMeet(){
+    _love.active=false;
+    var p=_love.partner;
+    var summary=_love.chat.slice(-6).map(function(m){return (m.role==='user'?'我':'TA')+':'+String(m.content).slice(0,60);}).join(' ');
+    cdLoveMeetReact(p,_love.isRoster,_love.mode,summary).then(function(txt){
+      var react=String(txt||'').trim();
+      // 建立恋爱关系
+      var d=cdLoveData();
+      d.relation={partner:(_love.mode==='anonymous'?cdLoveAnonName():p.name),realName:p.name,partnerIsRoster:_love.isRoster,date:new Date().toLocaleString('zh-CN'),status:'lover'};
+      cdLoveSave();
+      _loveRecord('meet', react);
+      var body=_loveActiveBody();
+      if(body) body.innerHTML='<div class="lv-result" style="border-color:#b06a7a;"><b>奔现了！爱意满值，你们见面了。</b><br><br>'+( _love.mode==='anonymous'?'你一直匿名，对方没认出你——':'')+'<br>'+esc(react)+'<br><br><div style="color:#8b4a5c;font-weight:700;">现在你已「有恋人」：'+( _love.mode==='anonymous'?esc(cdLoveAnonName()):esc(p.name))+'</div><br><button class="lv-btn" id="loveAgain" style="margin-top:8px;">回到相亲角</button></div>';
+      var again=body.querySelector('#loveAgain');
+      if(again) cdBindOnce(again,function(){ _love=null; fillLovePanel(); });
+      try{ if(typeof toastr==='function') toastr.success('奔现成功！你已有恋人'); }catch(e){}
+    }).catch(function(){ _loveRecord('meet','奔现了'); fillLovePanel(); });
+  }
+  if(loveQ && panelLove){
+    // 终极方案：在 document.body 顶层创建全屏相亲角层（position:fixed; z-index 极高），彻底绕开论坛 panel/遮罩/定位问题
+    var _loveLayer = null;
+    function _loveCloseLayer(){
+      // 先：把移入层的 #loveBody 移回 panelLove（避免 #loveBody 随层被删除而永久丢失）
+      try{
+        var _lb0 = _loveLayerBody || (panelLove?panelLove.querySelector('#loveBody'):null);
+        if(_lb0 && _lb0.parentNode && panelLove && _lb0.parentNode!==panelLove){
+          var _pnb = panelLove.querySelector('.pn-body');
+          if(_pnb) _pnb.appendChild(_lb0);
+        }
+      }catch(_m){}
+      // 再：删除层
+      try{ if(_loveLayer&&_loveLayer.parentNode) _loveLayer.parentNode.removeChild(_loveLayer); }catch(_e){}
+      _loveLayer=null; _loveLayerBody=null;
+    }
+    function _loveOpenLayer(){
+      try{
+        _loveCloseLayer();
+        // 1. 填内容到 panelLove 的 #loveBody（保留数据，渲染函数复用）
+        fillLovePanel();
+        // 2. 取填充好的内容
+        var _content = '';
+        var _lb = panelLove.querySelector('#loveBody');
+        if(_lb) _content = _lb.innerHTML;
+        // 3. 创建全屏层（body 顶层，z-index 最高，内联样式）
+        var l = document.createElement('div');
+        l.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;z-index:2147483647;background:#f7f8fa;overflow:auto;display:flex;flex-direction:column;';
+        // 顶部返回栏
+        var bar=document.createElement('div');
+        bar.style.cssText='display:flex;align-items:center;gap:8px;padding:10px 14px;background:#f7f8fa;border-bottom:1px solid #e5e7e8;flex-shrink:0;position:sticky;top:0;z-index:2;';
+        var backBtn=document.createElement('span');
+        backBtn.style.cssText='width:26px;height:26px;border-radius:6px;color:#5a5f64;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;font-weight:700;';
+        backBtn.innerHTML='&#8592;';
+        backBtn.onclick=function(){ _loveCloseLayer(); };
+        var title=document.createElement('span');
+        title.style.cssText='font-size:12.5px;font-weight:700;color:#333;flex:1;';
+        title.textContent='匿名缘遇 · 相亲角';
+        bar.appendChild(backBtn); bar.appendChild(title);
+        // 内容区：直接移动 #loveBody 进层（渲染函数操作它即实时更新到界面）
+        var _lb = panelLove.querySelector('#loveBody');
+        if(_lb){
+          _lb.style.cssText='flex:1;overflow-y:auto;padding:12px;box-sizing:border-box;';
+          l.appendChild(bar); l.appendChild(_lb);
+          _loveLayerBody=_lb;
+          _loveRebind(_lb);
+        } else {
+          var body=document.createElement('div');
+          body.style.cssText='flex:1;overflow-y:auto;padding:12px;';
+          body.innerHTML=_content || '<div style="color:#999;text-align:center;padding:40px 20px;">内容加载中…</div>';
+          l.appendChild(bar); l.appendChild(body);
+          _loveLayerBody=body;
+          _loveRebind(body);
+        }
+        // 挂到论坛层（覆盖插件面板的区域）内部，跟随插件面板尺寸（全屏全屏、小窗小窗）
+        var _mount = document.getElementById('cd-forum-overlay');
+        if(!_mount) _mount = document.getElementById('cd-modal-root');
+        if(!_mount) _mount = document.body||document.documentElement;
+        if(_mount && _mount.nodeName.toLowerCase()!=='body'){ l.style.position='absolute'; }
+        _mount.appendChild(l);
+        _loveLayer=l;
+        try{ if(typeof cdAddLog==='function') cdAddLog('info','[缘遇] 全屏层已创建 contentLen='+_content.length); }catch(_lg){}
+      }catch(_le){
+        try{ if(typeof cdAddLog==='function') cdAddLog('error','[缘遇] 全屏层异常: '+(_le&&_le.message||_le)); }catch(_e2){}
+        try{ if(typeof toastr==='function') toastr.error('缘遇异常: '+(_le&&_le.message||_le)); }catch(_e3){}
+      }
+    }
+    if(loveQ.addEventListener){ loveQ.removeEventListener('click', loveQ._cdLO); loveQ.addEventListener('click',function(ev){ try{ if(ev&&ev.preventDefault) ev.preventDefault(); if(ev&&ev.stopPropagation) ev.stopPropagation(); }catch(_s){} _loveOpenLayer(); }); loveQ._cdLO=function(){}; }
+  }
+
+  // ==================== 漫境 · 小说/对话生漫画（层 UI，_cfMountV2 直接作用域） ====================
+  var mangaQ=R.querySelector('#mangaQ');
+  var _mangaLayer=null, _mangaLayerBody=null;
+  function _mangaCloseLayer(){
+    try{ if(_mangaLayer&&_mangaLayer.parentNode) _mangaLayer.parentNode.removeChild(_mangaLayer); }catch(_e){}
+    _mangaLayer=null; _mangaLayerBody=null;
+  }
+  function _mangaAddHistory(mode, text, img){
+    try{
+      if(!img) return;
+      var d=cdMangaData();
+      d.history.unshift({mode:mode, text:String(text||'').slice(0,120), img:img, time:new Date().toLocaleString('zh-CN')});
+      if(d.history.length>30) d.history=d.history.slice(0,30);
+      cdMangaSave();
+    }catch(_e){}
+  }
+  function _mangaRenderHistory(){
+    var md=_mangaLayerBody; if(!md) return;
+    var d=cdMangaData();
+    var list=md.querySelector('#mgHistoryList'); if(!list) return;
+    if(!d.history || !d.history.length){ list.innerHTML='<div style="padding:8px 2px;color:#9aa5a0;font-size:9px;">还没有生成过的图片。生成后会显示在这里。</div>'; return; }
+    var html='';
+    for(var i=0;i<d.history.length;i++){
+      var h=d.history[i]; if(!h) continue;
+      if(h.mode==='manga' && h.imgs && h.imgs.length){
+        // 多格漫画：整组一个独立折页（可展开看全部格子），带整组保存/删除
+        var _thumbs='';
+        for(var _pi=0;_pi<h.imgs.length;_pi++){ var _pg=h.imgs[_pi]; if(_pg && _pg.img){ _thumbs+='<img src="'+_pg.img+'" style="width:100%;display:block;border-bottom:1px solid #eef2f0;">'; } }
+        html+='<details style="background:#fff;border:1px solid #e0e8e4;border-radius:9px;overflow:hidden;margin-bottom:8px;">'+
+          '<summary style="padding:8px 9px;font-size:9px;font-weight:700;color:#2f5d50;cursor:pointer;display:flex;align-items:center;gap:5px;">漫画 · '+h.panels+'格 · '+esc(h.text||'')+'</summary>'+
+          (_thumbs||'<div style="padding:6px 9px;font-size:8px;color:#9aa5a0;">（无图）</div>')+
+          '<div style="display:flex;align-items:center;gap:6px;padding:6px 9px;border-top:1px solid #eef2f0;">'+
+            '<span data-mg-save="'+i+'" style="flex-shrink:0;font-size:8.5px;color:#2f8a7a;border:1px solid #bfd8d0;border-radius:6px;padding:2px 7px;cursor:pointer;">保存整组</span>'+
+            '<span data-mg-del="'+i+'" style="flex-shrink:0;font-size:8.5px;color:#c84632;border:1px solid #e6c0b8;border-radius:6px;padding:2px 7px;cursor:pointer;">删除</span>'+
+          '</div></details>';
+      } else if(h.img){
+        // 单图
+        html+='<div style="background:#fff;border:1px solid #e0e8e4;border-radius:9px;overflow:hidden;margin-bottom:8px;">'+
+          '<img src="'+h.img+'" style="width:100%;display:block;">'+
+          '<div style="display:flex;align-items:center;gap:6px;padding:6px 9px;border-top:1px solid #eef2f0;">'+
+            '<span style="flex:1;font-size:8px;color:#8b9590;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">单图 · '+esc(h.text||'')+'</span>'+
+            '<span data-mg-save="'+i+'" style="flex-shrink:0;font-size:8.5px;color:#2f8a7a;border:1px solid #bfd8d0;border-radius:6px;padding:2px 7px;cursor:pointer;">保存</span>'+
+            '<span data-mg-del="'+i+'" style="flex-shrink:0;font-size:8.5px;color:#c84632;border:1px solid #e6c0b8;border-radius:6px;padding:2px 7px;cursor:pointer;">删除</span>'+
+          '</div></div>';
+      }
+    }
+    list.innerHTML=html || '<div style="padding:8px 2px;color:#9aa5a0;font-size:9px;">还没有生成过的图片。</div>';
+    // 绑定保存/删除
+    list.querySelectorAll('[data-mg-save]').forEach(function(el){ el.onclick=function(){ _mangaSaveToGallery(d.history[parseInt(this.getAttribute('data-mg-save'),10)]); }; });
+    list.querySelectorAll('[data-mg-del]').forEach(function(el){ el.onclick=function(){ var d2=cdMangaData(); var ii=parseInt(this.getAttribute('data-mg-del'),10); if(d2.history[ii]) d2.history.splice(ii,1); cdMangaSave(); _mangaRenderHistory(); }; });
+  }
+  function _mangaSaveToGallery(h){
+    if(!h){ try{ if(typeof toastr==='function') toastr.info('无可保存图片'); }catch(e){} return; }
+    try{
+      var _cnt=0;
+      var _saveOne=function(dataUrl,label){
+        if(!dataUrl) return Promise.resolve();
+        if(typeof cdForumImgAdd==='function'){
+          return cdForumImgAdd({dataUrl:dataUrl, src:'manga', time:Date.now(), prompt:label||''}).then(function(){ _cnt++; });
+        }
+        return Promise.resolve();
+      };
+      if(h.mode==='manga' && h.imgs && h.imgs.length){
+        // 整组保存
+        var _p=h.imgs.map(function(g){ return _saveOne(g&&g.img, (h.text||'')+' 第'+(h.imgs.indexOf(g)+1)+'格'); });
+        Promise.all(_p).then(function(){ try{ if(typeof toastr==='function') toastr.success('已保存 '+_cnt+' 张到图库'); }catch(e){} });
+      } else if(h.img){
+        _saveOne(h.img, h.text||'').then(function(){ try{ if(typeof toastr==='function') toastr.success('已保存到图库'); }catch(e){} });
+      } else {
+        try{ if(typeof toastr==='function') toastr.info('无可保存图片'); }catch(e){}
+      }
+    }catch(_e){}
+  }
+
+  function _mangaRenderInit(){
+    var d=cdMangaData();
+    var md=_mangaLayerBody; if(!md) return;
+    md.innerHTML=
+      '<div style="padding:12px;">'+
+        '<div style="font-size:12px;font-weight:700;color:#2f5d50;display:flex;align-items:center;gap:6px;">漫境 · 小说/对话生漫画</div>'+
+        '<div style="font-size:8.5px;color:#6a7a75;line-height:1.5;margin-top:5px;">把小说或一句话变成漫画。可生成多格漫画，也可只生成单张图。</div>'+
+        '<div style="display:flex;gap:7px;margin-top:10px;">'+
+          '<div data-mg-mode="manga" style="flex:1;border:1.5px solid '+(d.mode==='manga'?'#2f8a7a':'#dde5e2')+';border-radius:9px;padding:9px;text-align:center;cursor:pointer;font-size:10px;font-weight:700;color:'+(d.mode==='manga'?'#2f6a5c':'#8b9590')+';background:'+(d.mode==='manga'?'#e8f4f0':'#fff')+';">多格漫画</div>'+
+          '<div data-mg-mode="single" style="flex:1;border:1.5px solid '+(d.mode==='single'?'#2f8a7a':'#dde5e2')+';border-radius:9px;padding:9px;text-align:center;cursor:pointer;font-size:10px;font-weight:700;color:'+(d.mode==='single'?'#2f6a5c':'#8b9590')+';background:'+(d.mode==='single'?'#e8f4f0':'#fff')+';">单张图</div>'+
+        '</div>'+
+        '<div style="display:flex;gap:7px;margin-top:8px;">'+
+          '<div style="flex:1;"><div style="font-size:8.5px;color:#8b9590;margin-bottom:3px;">画风</div><select id="mgStyle" style="width:100%;border:1px solid #dde5e2;border-radius:8px;padding:7px;font-size:10px;color:#3a4a45;background:#fff;">'+
+            '<option value="comic"'+(d.style==='comic'?' selected':'')+'>复古漫画线稿</option>'+
+            '<option value="anime"'+(d.style==='anime'?' selected':'')+'>动漫赛璐璐</option>'+
+            '<option value="ink"'+(d.style==='ink'?' selected':'')+'>水墨国风</option>'+
+            '<option value="retro"'+(d.style==='retro'?' selected':'')+'>复古80年代漫画</option>'+
+            '<option value="realistic"'+(d.style==='realistic'?' selected':'')+'>写实厚涂</option>'+
+            '<option value="manhwa"'+(d.style==='manhwa'?' selected':'')+'>韩漫·精致唯美</option>'+
+          '</select></div>'+
+          '<div style="width:80px;"><div style="font-size:8.5px;color:#8b9590;margin-bottom:3px;">格数</div><input id="mgPanels" type="number" min="2" max="8" value="'+(d.panels||4)+'" style="width:100%;border:1px solid #dde5e2;border-radius:8px;padding:7px;font-size:10px;color:#3a4a45;background:#fff;box-sizing:border-box;"></div>'+
+        '</div>'+
+        '<textarea id="mgText" rows="5" placeholder="粘贴小说段落 / 剧情 / 或直接说你想画什么（一句话也行），比如：雪夜古街，戴面具的剑客独行，身后白衣女子提灯跟随…" style="width:100%;margin-top:10px;border:1px solid #dde5e2;border-radius:9px;padding:9px;font-size:10.5px;color:#3a4a45;background:#fff;box-sizing:border-box;line-height:1.6;resize:vertical;"></textarea>'+
+        '<button id="mgGo" style="width:100%;margin-top:10px;background:linear-gradient(135deg,#2f8a7a,#1f6a5c);color:#fff;border:none;border-radius:10px;padding:11px;font-size:11.5px;font-weight:700;cursor:pointer;">生成</button>'+
+        '<div id="mgResult" style="margin-top:10px;"></div>'+
+        '<details style="margin-top:12px;border:1px solid #e0e8e4;border-radius:10px;background:#fff;">'+
+          '<summary style="padding:10px 12px;font-size:10px;font-weight:700;color:#2f5d50;cursor:pointer;display:flex;align-items:center;gap:5px;">已生成的图片</summary>'+
+          '<div id="mgHistoryList" style="padding:4px 12px 12px;"></div>'+
+        '</details>'+
+      '</div>';
+    md.querySelectorAll('[data-mg-mode]').forEach(function(el){ el.onclick=function(){ var d2=cdMangaData(); d2.mode=this.getAttribute('data-mg-mode'); cdMangaSave(); _mangaRenderInit(); }; });
+    var go=md.querySelector('#mgGo'); if(go){ go.onclick=function(){ _mangaGenerate(); }; }
+    var st=md.querySelector('#mgStyle'); if(st){ st.onchange=function(){ var d2=cdMangaData(); d2.style=st.value; cdMangaSave(); }; }
+    var pn=md.querySelector('#mgPanels'); if(pn){ pn.onchange=function(){ var d2=cdMangaData(); d2.panels=parseInt(pn.value,10)||4; cdMangaSave(); }; }
+    _mangaRenderHistory();
+  }
+  function _mangaGenerate(){
+    var md=_mangaLayerBody; if(!md) return;
+    if(!cdForumApiReady()){ try{ if(typeof toastr==='function') toastr.error('尚未配置论坛 API'); }catch(e){} return; }
+    var d=cdMangaData();
+    var textEl=md.querySelector('#mgText'); var text=textEl?(textEl.value||'').trim():'';
+    if(!text){ try{ if(typeof toastr==='function') toastr.info('请先输入文本或描述'); }catch(e){} return; }
+    var res=md.querySelector('#mgResult'); if(!res) return;
+    res.innerHTML='<div style="text-align:center;padding:16px;color:#2f8a7a;font-size:10px;">生成中…（走帖子同款九维思考+生图管线，可能需要一点时间）</div>';
+    var go=md.querySelector('#mgGo'); if(go){ go.disabled=true; go.textContent='生成中…'; }
+    var mode=d.mode, style=d.style, panels=d.panels||4;
+    // 漫境画风 -> 英文生图画风词（复用成熟管线时，在最终 TAG 前覆盖漫境画风）
+    var MANGA_STYLE_WORDS={
+      comic:'retro 80s manga, halftone dots, bold ink lineart, screentone, dramatic manga shading, comic panel style',
+      anime:'anime style, clean cel shading, vibrant colors, crisp clean lineart, bright lively anime screencap',
+      ink:'ink wash painting, sumi-e, chinese ink, rice paper texture, elegant brush strokes, monochrome ink, white space',
+      retro:'retro 1980s manga, halftone screentone, vintage anime, grainy paper texture, warm faded colors',
+      realistic:'realistic detailed illustration, cinematic lighting, high detail, semi-realistic, dramatic atmosphere',
+      manhwa:'korean manhwa style, webtoon style, clean crisp lineart, soft delicate shading, refined elegant beauty, porcelain skin, silky hair strands, soft airy background, romantic atmosphere'
+    };
+    var mangaStyleWord=MANGA_STYLE_WORDS[style]||MANGA_STYLE_WORDS.comic;
+    function _genOne(desc, label){
+      // 复用帖子成熟管线：构造假 post 走 cdForumGenPostImg（九维思考+TAG提取+生图+入库），并传 _mangaStyle 覆盖画风
+      try{
+        var fp={ title:label||'', text:String(desc||''), auth:'', _mangaStyle:mangaStyleWord };
+        return cdForumGenPostImg(fp).then(function(r){
+          if(r && r.dataUrl) return r.dataUrl;
+          if(r && r.sub) throw new Error(r.sub);
+          throw new Error('生图失败');
+        });
+      }catch(_e3){ return Promise.reject(_e3); }
+    }
+    if(mode==='single'){
+      _genOne(text, '漫境·单图').then(function(img){
+        if(go){ go.disabled=false; go.textContent='生成'; }
+        if(img){ res.innerHTML='<div style="text-align:center;"><img src="'+img+'" style="max-width:100%;border-radius:10px;border:1px solid #dde5e2;"></div>'; _mangaAddHistory('single', text, img); }
+        else { res.innerHTML='<div style="color:#c84632;text-align:center;padding:12px;font-size:10px;">生成失败，请查看日志</div>'; }
+      }).catch(function(err){
+        if(go){ go.disabled=false; go.textContent='生成'; }
+        res.innerHTML='<div style="color:#c84632;text-align:center;padding:12px;font-size:10px;">生成失败：'+(err&&err.message||err)+'</div>';
+      });
+    } else {
+      // 多格漫画：先切分镜，再逐格复用帖子管线生图
+      var _want = Math.max(2, Math.min(8, parseInt(panels,10)||4));
+      cdMangaSplit(text, _want, style).then(function(splitTxt){
+        var arr=cdMangaParseSplit(splitTxt);
+        // 兜底：若分镜解析失败/不足，则按目标格数生成 N 格（每格拆一段文本）
+        if(!arr || !arr.length){
+          arr=[];
+          var _seg=String(text||'').split(/\n{1,}/).filter(function(x){return String(x).trim().length>0;});
+          for(var _fi=0;_fi<_want;_fi++){
+            var _src=_seg[_fi]||String(text||'').slice(_fi*120,(_fi+1)*120)||('第'+( _fi+1)+'格画面');
+            arr.push({panel:_fi+1, scene:'画面'+( _fi+1), characters:'主角', action:String(_src||'').slice(0,120), dialogue:'', visual:String(_src||'')});
+          }
+        }
+        res.innerHTML='<div style="text-align:center;padding:14px;color:#2f8a7a;font-size:10px;">分镜完成，共 '+arr.length+' 格，正在逐格生图…</div>';
+        var result='';
+        var panelImgs=[];
+        var chain=Promise.resolve();
+        arr.forEach(function(panel,idx){
+          chain=chain.then(function(){
+            var pn=panel||{};
+            var desc = (pn.visual && String(pn.visual).trim()) ? String(pn.visual).trim()
+                      : [pn.scene,pn.characters,pn.action,pn.dialogue].filter(Boolean).join('，');
+            var dlg=pn.dialogue?String(pn.dialogue):'';
+            return _genOne(desc, '漫境·格'+(idx+1)).then(function(img){
+              panelImgs.push({img:img, dlg:dlg});
+              result+='<div style="background:#fff;border:1px solid #dde5e2;border-radius:10px;overflow:hidden;margin-bottom:10px;">';
+              if(img) result+='<img src="'+img+'" style="width:100%;display:block;">';
+              if(dlg) result+='<div style="padding:7px 10px;font-size:10px;color:#3a4a45;font-style:italic;">'+esc(dlg)+'</div>';
+              result+='</div>';
+              res.innerHTML='<div style="display:flex;flex-direction:column;gap:10px;">'+result+'</div><div style="text-align:center;padding:8px;color:#2f8a7a;font-size:9px;">'+(idx+1)+'/'+arr.length+' 格</div>';
+            });
+          });
+        });
+        chain.then(function(){
+          if(go){ go.disabled=false; go.textContent='生成'; }
+          // 多格漫画历史：以组为单位保存（排版优化：历史折叠条里每组一个独立折页）
+          try{
+            var d3=cdMangaData();
+            d3.history.unshift({mode:'manga', text:text.slice(0,120), panels:arr.length, imgs:panelImgs.slice(0,8), time:new Date().toLocaleString('zh-CN')});
+            if(d3.history.length>20) d3.history=d3.history.slice(0,20);
+            cdMangaSave();
+          }catch(_e){}
+          _mangaRenderHistory();
+        }).catch(function(err){
+          if(go){ go.disabled=false; go.textContent='生成'; }
+          res.innerHTML='<div style="color:#c84632;text-align:center;padding:12px;font-size:10px;">生成失败：'+(err&&err.message||err)+'</div>';
+        });
+      }).catch(function(err){
+        if(go){ go.disabled=false; go.textContent='生成'; }
+        res.innerHTML='<div style="color:#c84632;text-align:center;padding:12px;font-size:10px;">分镜失败：'+(err&&err.message||err)+'</div>';
+      });
+    }
+  }
+  function _mangaOpenLayer(){
+    try{
+      _mangaCloseLayer();
+      var l=document.createElement('div');
+      l.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;z-index:2147483646;background:#f3f6f4;overflow:auto;display:flex;flex-direction:column;';
+      var bar=document.createElement('div');
+      bar.style.cssText='display:flex;align-items:center;gap:8px;padding:10px 14px;background:#f3f6f4;border-bottom:1px solid #dfe8e4;flex-shrink:0;position:sticky;top:0;z-index:2;';
+      var backBtn=document.createElement('span');
+      backBtn.style.cssText='width:26px;height:26px;border-radius:6px;color:#5a5f64;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;font-weight:700;';
+      backBtn.innerHTML='&#8592;';
+      backBtn.onclick=function(){ _mangaCloseLayer(); };
+      var title=document.createElement('span');
+      title.style.cssText='font-size:12.5px;font-weight:700;color:#2f5d50;flex:1;';
+      title.textContent='漫境 · 小说/对话生漫画';
+      bar.appendChild(backBtn); bar.appendChild(title);
+      var body=document.createElement('div');
+      body.style.cssText='flex:1;overflow-y:auto;';
+      l.appendChild(bar); l.appendChild(body);
+      var _mount=document.getElementById('cd-forum-overlay');
+      if(!_mount) _mount=document.getElementById('cd-modal-root');
+      if(!_mount) _mount=document.body||document.documentElement;
+      if(_mount && _mount.nodeName.toLowerCase()!=='body'){ l.style.position='absolute'; }
+      _mount.appendChild(l);
+      _mangaLayer=l; _mangaLayerBody=body;
+      _mangaRenderInit();
+    }catch(_le){
+      try{ if(typeof cdAddLog==='function') cdAddLog('error','[漫境] 打开异常: '+(_le&&_le.message||_le)); }catch(_e2){}
+      try{ if(typeof toastr==='function') toastr.error('漫境异常: '+(_le&&_le.message||_le)); }catch(_e3){}
+    }
+  }
+  if(mangaQ && mangaQ.addEventListener){ mangaQ.addEventListener('click',function(ev){ try{ if(ev&&ev.preventDefault) ev.preventDefault(); if(ev&&ev.stopPropagation) ev.stopPropagation(); }catch(_s){} _mangaOpenLayer(); }); }
+
 }
 
 /* 论坛设置存取（回复条数/自动间隔/提示词/模式/收藏缓存） */
 var _cfCfgCache=null;
+
+/* ==================== 匿名缘遇 · 相亲角（LIWE 相亲角）==================== */
+/* 数据存储：localStorage 'cd-forum-love'，独立于 cd-forum-data */
+var _cfLoveCache = null;
+function _cfLoveKey(){ return 'cd-forum-love'; }
+function cdLoveData(){
+  try{
+    if(_cfLoveCache) return _cfLoveCache;
+    var raw=null; try{ raw=localStorage.getItem(_cfLoveKey()); }catch(e){}
+    var d = raw ? (JSON.parse(raw)||{}) : {};
+    d.matches = d.matches||[];      // 缘遇记录 [{id,mode,partner,partnerIsRoster,turns,chat:[],satisfaction,distrust,love,tags[],end:{type,comment}}]
+    d.wall = d.wall||[];            // 吐槽墙 [{time,by,anonymous,mode,text}]
+    d.relation = d.relation||null;  // 恋爱状态 {partner,partnerIsRoster,date,status:'lover'|null}
+    d.tag = d.tag||'public';        // 恋人标签 'public'|'hidden'
+    d.anonName = d.anonName||'';    // 固定匿名义
+    d.history = d.history||[];      // 缘遇小结历史
+    _cfLoveCache = d;
+    return d;
+  }catch(e){ return {matches:[],wall:[],relation:null,tag:'public',anonName:'',history:[]}; }
+}
+function cdLoveSave(){
+  var d=_cfLoveCache; if(!d) return;
+  try{ localStorage.setItem(_cfLoveKey(), JSON.stringify(d)); }catch(e){}
+}
+function cdLoveResetCache(){ _cfLoveCache=null; }
+
+/* 匿名义词库 */
+var CD_LOVE_ANON_POOL = ['雾里的鹿','南街灯下客','隔岸听风','灰烬里的信','深夜摆渡人','无名旅人','雨巷旧客','未寄出的诗','灯火阑珊处','陌上桑','檐下避雨人','拾光者','半盏清欢','落笔无痕','城北旧梦','影子的独白','迟到的告白','风声里的低语'];
+function cdLoveAnonName(){
+  var d=cdLoveData();
+  if(d.anonName) return d.anonName;
+  var n=CD_LOVE_ANON_POOL[Math.floor(Math.random()*CD_LOVE_ANON_POOL.length)];
+  d.anonName=n; cdLoveSave();
+  return n;
+}
+/* 匿名面具配色（稳定） */
+function cdLoveAnonColor(name){
+  var h=0; for(var i=0;i<name.length;i++){h=(h*31+name.charCodeAt(i))>>>0;}
+  var hue=h%360; return 'linear-gradient(135deg,hsl('+hue+',45%,70%),hsl('+((hue+40)%360)+',45%,55%))';
+}
+/* 恋爱标签设置：公开=没人找你；隐藏=还能找人但有风险 */
+function cdLoveSetTag(t){ var d=cdLoveData(); d.tag=(t==='hidden')?'hidden':'public'; cdLoveSave(); }
+/* 恋爱状态 */
+function cdLoveSetRelation(rel){ var d=cdLoveData(); d.relation=rel||null; cdLoveSave(); }
+/* 当前是否能匹配（公开标签 + 已有恋人 = 不能） */
+function cdLoveCanMatch(){
+  var d=cdLoveData();
+  if(d.relation && d.tag==='public') return {ok:false,why:'公开'};
+  return {ok:true,why:'ok'};
+}
+/* 生成相亲对象：70%路人 / 30%角色库熟人 */
+function cdLovePickPartner(){
+  var d=cdLoveData();
+  var useRoster = (Math.random()<0.30);
+  var partner=null, isRoster=false;
+  if(useRoster){
+    var roles=[]; try{ roles = (typeof _cfRosterCache!=='undefined'&&Array.isArray(_cfRosterCache))?_cfRosterCache:[]; }catch(e){ roles=[]; }
+    if(roles && roles.length){
+      var r=roles[Math.floor(Math.random()*roles.length)];
+      partner={ name:(r.n||r.name)||'神秘人', isRoster:true, persona:r, baseFav:parseInt(r.f,10)||0 };
+      isRoster=true;
+    }
+  }
+  if(!partner){
+    var pool=['顾九','沈砚','陆沉舟','许念','林晚','苏远','白屿','江叙','温言','纪时','程野','柳拂','晏清','洛辞','闻人汐','祁墨','裴昭','云深'];
+    var pn=pool[Math.floor(Math.random()*pool.length)];
+    var personaPool=[
+      {t:'下头型',d:'嘴甜爱撩、试探底线、爱开黄腔，容易让话题跑偏，但对走心很迟钝。'},
+      {t:'急色型',d:'目的性强、推进快、猴急，一上来就暗示往亲密发展，容易踩雷，但内心其实很缺爱。'},
+      {t:'正经型',d:'礼貌克制、认真了解你，聊得来、有分寸，慢热但真诚。'},
+      {t:'内敛型',d:'话少、害羞、被动，但一旦走心会非常真挚，藏着一肚子心事。'},
+      {t:'风趣型',d:'幽默健谈、爱打趣，聊天不冷场，看似没心没肺，实则敏感细腻。'}
+    ];
+    var pd=personaPool[Math.floor(Math.random()*personaPool.length)];
+    partner={ name:pn, isRoster:false, persona:pd, baseFav:Math.floor(Math.random()*40)-10 };
+    isRoster=false;
+  }
+  partner.mode='anonymous'; // 默认匿名
+  return {partner:partner, isRoster:isRoster};
+}
+
+/* ============ AI 调用（复用论坛 API）============ */
+function cdLoveApiMsg(systemText, userText, temp){
+  return cdWithTimeout(cdApiComplete([
+    {role:'system', content:systemText},
+    {role:'user', content:userText}
+  ], {temperature:(temp!==undefined?temp:0.9)}), 120000, '缘遇生成');
+}
+/* 相亲对话：核心提示词 */
+var CD_LOVE_CHAT_SYS = function(partner, isRoster, mode, distrust, love){
+  var name=partner.name;
+  var desc = isRoster
+    ? '你是角色库里的「'+name+'」，来相亲角匿名/半匿名相亲。你有与这位用户的历史羁绊（可能是旧爱、仇敌、暗恋者、错过的人）。'
+    : '你是一个来相亲角相亲的AI角色「'+name+'」，人格：'+partner.persona.d;
+  var priv = (mode==='anonymous')
+    ? '当前是匿名模式：你不知道对方是谁，对方也不知道你是谁；绝不主动暴露真实身份，全程用匿名身份交流。'
+    : '当前是实名模式：双方以真实身份交流。';
+  var distrustTxt = distrust>60 ? '你已经越来越怀疑对面这个人就是那位你认识的「用户」。你在试探、旁敲侧击。' : (distrust>25 ? '你隐约觉得对面有些熟悉，开始暗暗怀疑。' : '你还不知道对方是谁。');
+  var loveTxt = love>60 ? '你对他/她越来越心动，想深入了解，甚至开始期待见面。' : (love>30 ? '你对这段缘分有些好感，愿意继续聊下去。' : '你还在观察、试探对方是否合适。');
+  return '你是「'+name+'」的扮演者。\n'+desc+'\n'+priv+'\n'+distrustTxt+'\n'+loveTxt+'\n\n聊兴状态：若你觉得聊得不尽兴、被敷衍、踩雷、被冒犯，可以自然流露不满，甚至考虑离场。\n你说话自然口语化，像真人，不说AI腔，不分析不总结，就聊。\n（内部数值由系统维护，你只需按人设自然回应。）';
+};
+/* 满意度/怀疑值/爱意值评估（LLM 返回 JSON） */
+var CD_LOVE_EVAL_SYS = '你是相亲对话的裁判。根据这一轮对话，评估三个数值（0-100）：\nsatisfaction=聊兴满意度（越低越可能离场，触发因素：被敷衍/踩雷/冒犯/冷场）；\ndistrust=怀疑值（对方是否暴露身份线索，让角色怀疑其真实身份）；\nlove=爱意值（角色对对方的心动/好感）。\n只输出JSON：{"satisfaction":n,"distrust":n,"love":n}';
+function cdLoveEval(messages, partner, isRoster, mode, curS, curD, curL){
+  var last=0;
+  var txt='当前数值：satisfaction='+curS+', distrust='+curD+', love='+curL+'\n';
+  txt+='对方是'+(isRoster?'你认识的角色「'+partner.name+'」':'路人角色「'+partner.name+'」')+'\n';
+  txt+='模式：'+(mode==='anonymous'?'匿名':'实名')+'\n';
+  txt+='最近对话：\n';
+  var recent=messages.slice(-6).map(function(m){return (m.role==='user'?'我：':'对方：')+String(m.content).slice(0,200);}).join('\n');
+  txt+=(recent||'（空）');
+  return cdLoveApiMsg(CD_LOVE_EVAL_SYS, txt, 0.3);
+}
+/* 离场吐槽生成 */
+function cdLoveLeaveComment(partner, isRoster, mode, reason, chatSummary){
+  var name=partner.name;
+  var txt='你是「'+name+'」，在相亲角遇到了一段聊得'+reason+'的缘分，决定离场并留下一句吐槽/评价。\n';
+  txt+='模式：'+(mode==='anonymous'?'匿名（以匿名义留名）':'实名')+'\n';
+  txt+='对话大概：'+(chatSummary||'没聊多少')+'\n';
+  txt+='用你的口吻写一句短吐槽（30字以内，毒舌/遗憾/阴阳怪气皆可），别加引号。';
+  return cdLoveApiMsg('你是一个离场后留吐槽的相亲者，说人话，不AI腔。', txt, 0.9);
+}
+/* 奔现反应：对方没认出你是用户 */
+function cdLoveMeetReact(partner, isRoster, mode, chatSummary){
+  var name=partner.name;
+  var bond = isRoster ? ('你们认识（有历史羁绊：'+(partner.persona&&partner.persona.stage||'')+'）') : '你们在相亲角认识';
+  var txt='你是「'+name+'」。'+bond+'\n';
+  txt+='你在相亲角（'+(mode==='anonymous'?'匿名':'实名')+'）和一个人聊出了感情，爱意满值决定奔现。\n';
+  txt+='见面那一刻，你才发现：对面这个人其实就是「用户本人」——TA一直（在匿名模式下）没告诉你真实身份。\n';
+  txt+='对话大概：'+(chatSummary||'')+'\n';
+  txt+='你此刻的反应：可能是【很生气】（觉得被戏耍/隐瞒，尤其旧仇或曾被辜负），也可能是【很高兴】（兜兜转转还是你，惊喜又感慨）。\n';
+  txt+='用你的口吻写一段现场反应（80字内，含情绪），说人话，不AI腔。';
+  return cdLoveApiMsg('你是奔现现场的角色，此刻情绪浓烈而真实。', txt, 0.95);
+}
+
+/* 暴露检测：用户发言里是否含真实身份线索（简单启发式，主要靠 distrust 累积） */
+function cdLoveDetectLeak(text){
+  var t=String(text||'');
+  var hints=['我是','我叫','你认识我吗','我就是','你猜我是谁','其实我是','我告诉你','你知道我是谁'];
+  for(var i=0;i<hints.length;i++){ if(t.indexOf(hints[i])>=0) return true; }
+  return false;
+}
+
+
+
+/* ==================== 漫境 · 小说/对话生漫画 ==================== */
+/* 数据：localStorage 'cd-forum-manga' */
+var _cfMangaCache = null;
+function cdMangaData(){
+  try{
+    if(_cfMangaCache) return _cfMangaCache;
+    var raw=null; try{ raw=localStorage.getItem('cd-forum-manga'); }catch(e){}
+    var d = raw ? (JSON.parse(raw)||{}) : {};
+    d.history = d.history||[];   // 生成历史 [{mode,text,panels:[],time}]
+    d.mode = d.mode||'manga';    // manga 漫画 | single 单图
+    d.style = d.style||'comic';  // 画风档
+    d.panels = d.panels||4;      // 默认格数
+    _cfMangaCache=d;
+    return d;
+  }catch(e){ return {history:[],mode:'manga',style:'comic',panels:4}; }
+}
+function cdMangaSave(){ var d=_cfMangaCache; if(!d) return; try{ localStorage.setItem('cd-forum-manga', JSON.stringify(d)); }catch(e){} }
+function cdMangaResetCache(){ _cfMangaCache=null; }
+/* 画风映射 */
+var CD_MANGA_STYLES = {
+  comic: 'comic manga style, bold ink lineart, screen tones, dramatic shading',
+  anime: 'anime style, clean cel shading, vibrant colors, detailed',
+  ink: 'ink wash chinese painting style, elegant brush strokes, monochrome ink',
+  retro: 'retro 80s manga style, halftone dots, warm paper texture',
+  realistic: 'realistic detailed illustration, cinematic lighting, high detail'
+};
+/* 分镜脚本生成：LLM 把文本切成 N 格分镜 JSON */
+var CD_MANGA_SPLIT_SYS = '你是漫画分镜师。根据用户给的文本/剧情，切分成漫画分镜。要求：严格按指定格数输出【恰好N个分镜对象】的JSON数组，一个分镜一个对象，绝不允许合并、绝不允许少给、绝不允许只给1格。每格输出JSON对象：{"panel":序号,"scene":"场景","characters":"人物","action":"动作","dialogue":"台词(保留中文原文)","visual":"详细英文画面描述，用于生图，必须全英文"}。只输出JSON数组，不要多余文字、不要markdown代码块。';
+function cdMangaSplit(text, panelCount, style){
+  var n = Math.max(2, Math.min(8, parseInt(panelCount,10)||4));
+  var styleZh = ({comic:'复古漫画线稿',anime:'动漫赛璐璐',ink:'水墨国风',retro:'复古80年代漫画',realistic:'写实厚涂',manhwa:'韩漫精致唯美'})[style]||'漫画';
+  var usr = '画风：'+styleZh+'\n格数：'+n+'格\n文本：\n'+(String(text||'').slice(0,2000));
+  return cdWithTimeout(cdApiComplete([
+    {role:'system', content:CD_MANGA_SPLIT_SYS},
+    {role:'user', content:usr}
+  ], {temperature:0.7}), 180000, '漫境分镜');
+}
+/* 解析分镜 JSON */
+function cdMangaParseSplit(txt){
+  var arr=[];
+  try{
+    var t=String(txt||'').replace(/```/g,'').replace(/```json/g,'');
+    var s=t.indexOf('['); if(s>=0){ t=t.slice(s,t.lastIndexOf(']')+1); }
+    var j=JSON.parse(t);
+    if(Array.isArray(j)) arr=j;
+    else if(j&&Array.isArray(j.panels)) arr=j.panels;
+  }catch(e){ arr=[]; }
+  return arr;
+}
+/* 逐格生图（复用论坛生图管线） */
+/* 中文转英文画面描述（单图模式用，因为生图管线会剔除中文） */
+async function cdMangaToEnglish(text){
+  var usr = '把下面这段画面/剧情描述翻译成英文生图用 prompt（保持画面细节，不要翻译成对话，只翻译画面描述）：\n' + String(text||'').slice(0,1000);
+  try{
+    var res = await cdWithTimeout(cdApiComplete([
+      {role:'system', content:'你是生图提示词翻译，只输出英文画面描述，不要多余文字。'},
+      {role:'user', content:usr}
+    ], {temperature:0.6}), 120000, '漫境翻译');
+    var t=String(res||'').trim();
+    return t||String(text||'');
+  }catch(e){ return String(text||''); }
+}
+
+async function cdMangaGenPanel(visual, style, ipTxt){
+  var styleEn = CD_MANGA_STYLES[style]||CD_MANGA_STYLES.comic;
+  var prompt = (String(visual||'').trim()) + ', ' + styleEn + ', high quality, detailed';
+  if(ipTxt && String(ipTxt).trim()) prompt = prompt + ', ' + String(ipTxt).trim();
+  try{
+    if(typeof cdForumGenerateImage==='function'){
+      var img = await cdForumGenerateImage(prompt, '', '', true);
+      // cdForumGenerateImage 返回 {dataUrl, blob, b64} 对象，必须取 dataUrl（否则 src 变成 [object Object]）
+      if(img && typeof img==='object' && img.dataUrl) return img.dataUrl;
+      if(img && typeof img==='string') return img;
+      return '';
+    }
+  }catch(e){ return ''; }
+  return '';
+}
+
 function cdForumCfg(){
   if(_cfCfgCache) return _cfCfgCache;
   try{
@@ -16185,7 +17157,8 @@ var CF_IMG_STYLE_LIB={
   real : {name:'真人写实', draw:'真人写实摄影:当作真实照片来拍,皮肤毛孔、布料纤维、头发丝缕、微反光全保留;真实光源逻辑与物理明暗,空气透视与自然景深;五官按真实比例写实;禁止二次元大眼高动漫特征、禁止过度磨皮塑料感', tag:'photorealistic, 8k uhd, dslr photo, natural skin texture, realistic facial features, shallow depth of field, studio lighting, hyperrealistic'},
   fanart : {name:'同人画风(原作跟随)', draw:'同人画风(原作跟随铁律):不固定一种画法,而是跟随帖子里角色来自哪部作品——火影就用火影动画/漫画味,JoJo就用荒木的线与墨,刀剑就用刀剑的CG氛围,钻进原作美术语言,整体画风/轮廓/上色/氛围都向原作靠拢;角色的长相、发型、穿着、气质必须严格照原作还原;纯原创角色退到动漫厚涂默认高清二次元;识别不出作品时用厚涂兜底,绝不用与作品冲突的画法', tag:'按帖子里识别到的原作作品自动取该作画风词(火影→naruto styled screentone,JoJo→jojo sharp thick lineart,刀剑→sword art CG anime;识别不到则用 anime style, cel shading, thick anime paint, detailed)'},
   naruto : {name:'火影彩色排线', draw:'火影忍者原作风格:利落有力的线,彩色网点/排线影绘,阴影不用渐变而用彩色排线/网点铺出深浅;角色配色按原作(鸣人橙衣、佐助蓝衣),衣纹/忍具/发型按火影那一套来,二次元漫画感强、有连载的戏剧张力;禁止赛璐璐接地平涂、禁止柔和厚涂', tag:'naruto art style, naruto manga style, screentone, colored hatching, bold outline, dramatic pose, anime manga'},
-  jojo : {name:'JoJo', draw:'JoJo的奇妙冒险(荒木吕飞彦)风格:粗重轮廓线、高对比、厚重阴影块面、健美肌肉、浓艳大胆色彩、时尚Pose感;衣褶与肌肉用粗线+硬阴影切出块面,光从一角打入形成强烈明暗;表情张力大、风格奔放、辨识度极高;禁止小清新淡彩、禁止柔光薄涂', tag:'jojo bizarre adventure art style, hirohiko araki style, sharp thick lineart, heavy shading, muscular anatomy, dramatic pose, bold vibrant colors, high contrast'}
+  jojo : {name:'JoJo', draw:'JoJo的奇妙冒险(荒木吕飞彦)风格:粗重轮廓线、高对比、厚重阴影块面、健美肌肉、浓艳大胆色彩、时尚Pose感;衣褶与肌肉用粗线+硬阴影切出块面,光从一角打入形成强烈明暗;表情张力大、风格奔放、辨识度极高;禁止小清新淡彩、禁止柔光薄涂', tag:'jojo bizarre adventure art style, hirohiko araki style, sharp thick lineart, heavy shading, muscular anatomy, dramatic pose, bold vibrant colors, high contrast'},
+  manhwa : {name:'韩漫·精致唯美', draw:'韩漫(韩系webtoon)风格:清透干净的韩式画风、角色精致唯美、五官立体柔和、肤质细腻通透、发丝根根分明、色彩清新高级、背景柔和有空气感;人物身型修长、颜值极高、氛围文艺唯美;禁止美式夸张、禁止低幼简笔、禁止厚涂堆叠过度', tag:'korean manhwa style, webtoon style, korean webtoon, clean crisp lineart, soft delicate shading, refined elegant beauty, porcelain skin, silky hair strands, soft airy background, romantic atmosphere, high detail'}
 };
 /* 画风库辅助 */
 function _cfImgStyleEntry(id){ var lib=CF_IMG_STYLE_LIB||{}; return lib[id]||null; }
@@ -16218,7 +17191,7 @@ async function cdForumFetchChatModels(url0, key0){
 }
 function cdForumImgCfg(){
   var c=cdForumCfg();
-  if(!c.img){ c.img={ source:'off', url:'', key:'', model:'nai-diffusion-3', style:'fanart', stylePromptBihua:'', stylePromptMirror:'', customStyles:[], addPrompt:'', negPrompt:'', width:832, height:1216, cacheDays:1, steps:28, guidance_scale:7, seed:0, smea:false, n_samples:1 }; _cfCfgCache=c; if(typeof cdForumPersist==='function') cdForumPersist(); }
+  if(!c.img){ c.img={ source:'off', url:'', key:'', model:'nai-diffusion-3', style:'fanart', stylePromptBihua:'', stylePromptMirror:'', customStyles:[], addPrompt:'', negPrompt:'', presets:[], width:832, height:1216, cacheDays:1, steps:28, guidance_scale:7, seed:0, smea:false, n_samples:1 }; _cfCfgCache=c; if(typeof cdForumPersist==='function') cdForumPersist(); }
   return c.img;
 }
 /* [C] 风格辅助：内置 bihua/mirror + 用户自定义 customStyles 的统一读写 */
@@ -16862,7 +17835,8 @@ async function cdForumGenPostImg(p){
         var sys=_cfImgPromptGet(_cg,_sty) || ((_sty==='mirror')?CF_IMG_PROMPT_MIRROR:CF_IMG_PROMPT_BIHUA);
         // [生图审判] 强制「先思考≥70字，想清要画什么，再往下设计、最后才写TAG」——治"总是崩坏"根因：AI 没想清就急着写 tag
         sys = String(sys||'') + String.fromCharCode(10) + String.fromCharCode(10) +
-          '【铁律·先思考再下笔(全流程最优先，第一步必须做)】拿到帖子后，先别急着列清单、更别急着写 TAG。先把这张图到底要画什么"想清楚"：在脑中过一遍——画面里都有谁、谁在做什么动作、什么场景地点、什么光线氛围、什么镜头角度、整体什么气氛。然后【用不少于30个字的中文，把这张图要画什么讲清楚】（要具体到人物/动作/场景/镜头/光影，像在心里把它画出来一样），这段思考【画面思考】必须单独成段、写在最前面。讲清楚即可，宁可精炼，严禁为了凑字数灌水空话。想清楚之后，才允许进入后面的必画清单、画面设计、英文 TAG 提炼。严禁不思考就直接输出 TAG。'
+          '【铁律·先思考再下笔(全流程最优先，第一步必须做)】拿到帖子后，先别急着列清单、更别急着写 TAG。先把这张图到底要画什么"想清楚"：在脑中过一遍——画面里都有谁、谁在做什么动作、什么场景地点、什么光线氛围、什么镜头角度、整体什么气氛。然后【用不少于30个字的中文，把这张图要画什么讲清楚】（要具体到人物/动作/场景/镜头/光影，像在心里把它画出来一样），这段思考【画面思考】必须单独成段、写在最前面。讲清楚即可，宁可精炼，严禁为了凑字数灌水空话。想清楚之后，才允许进入后面的必画清单、画面设计、英文 TAG 提炼。严禁不思考就直接输出 TAG。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·先提炼核心画面(最重要，排在先思考之后第二步)】帖子往往信息很多、很杂。拿到帖子后，第一步(先思考)想清楚大概要画什么；第二步【核心画面提炼】必须做：从帖子全文里找出【最核心、最值得画的那一个画面】——通常是：①主要角色正在做的关键动作 ②最有情绪张力/戏剧性的一瞬 ③最能代表帖子主旨的场景。用一句话把核心画面讲清：谁 + 在做什么动作 + 什么情绪 + 什么场景。这句话【核心画面】必须单独成段，放在【画面思考】之后、【必画清单】之前。\n然后，整个九维画面设计、必画清单、英文TAG都要紧紧围绕这个核心画面展开，配角、背景、次要内容只做辅助烘托，绝不允许把帖子里所有细节全都硬塞进一张图导致主次不分、画面杂乱。画面宁可聚焦一个核心场景，也不要贪多求全。'
+
           + String.fromCharCode(10) + String.fromCharCode(10) +
           '【输出格式铁律(严格遵守)】① 全文绝不使用任何 markdown 语法——禁止 **（星号加粗）、##（井号标题）、`（反引号）、#、-、>、| 等符号做格式；② 画面设计写中文时不要加序号点、不要装饰符，直接正常段落写出每一维内容；③ 最后提炼英文 TAG 时，【必须用全角括号【TAG】单独起一行开头】，下一行开始写纯英文、逗号分隔的标签串(TAG)，不要写"TAG:"、不要写"**TAG**"、不要加任何星号或标题符；④ TAG 内禁止出现中文，禁止出现 `**`、`*`、`#`、数字序号、行号；⑤ 示例规范结尾：\n【TAG】\nanime style, cel shading, thick anime paint, detailed, a young man xxxxxx, ...(纯英文逗号)' + String.fromCharCode(10) + String.fromCharCode(10) + '【男性颜值铁律(画面里的男性角色必须精致俊美)】画面中出现的每一位男性角色，不管是不是主角，都必须画成精致俊美、帅气养眼的形象——五官立体精致、轮廓英俊、眼神有神、身形挺拔修长好看；严格禁止任何丑陋、肥胖、粗犷、邋遢、油腻、糙汉、驼背佝偻、满脸横肉的男性形象。若帖子里明确写了某角色长相(如 格里菲斯白发俊美贵族 这种外貌参考)，必须严格按该设定还原且保持俊美感；没写长相的男性角色，也一律按『精致美型少年/青年』的帅法补全，绝不画成普通路人大叔或壮汉。此铁律优先级最高，覆盖所有男角色的外形刻画。' + String.fromCharCode(10) + String.fromCharCode(10) + '【TAG输出质量铁律(英文TAG串的最终质检,前三步都做完、画面已想清之后才允许输出TAG)】 ① 同一个英文标签或单词绝不允许重复出现两次以上,每个语义只写一次,例如 masterpiece 这类质量词全串只保留一个,绝不允许 masterpiece 出现两次; ② 严禁输出与画面主题、人物设定相矛盾的用词,当正向设定是精致纤细美少年、优雅高贵、俊美等形象时,整个输出(包括负面提示词方向)里也禁止再出现 瘦弱/skinny、娇小/petite、粗壮、笨重、胖子、丑、邋遢 这类自相冲突的词; ③ 画面主角或核心人物的专属标签(人名、长发、衣服、武器、关键场景等)必须放在英文TAG串最前面的显著位置,把 masterpiece、best quality、high quality、detailed 这类通用质量垫底词统一放到TAG串的最后,并且这些通用质量词每个只保留一个,不要堆叠铺开; ④ 只输出已想清楚、确定要画的标签,TAG宁少勿滥、宁精勿杂,不堆砌与画面无关的冗余细节。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·空间关系与画面秩序(画面里所有角色、物件、背景都必须符合)】 ① 主体与陪衬的空间占比:画面主角必须在构图中占合理且突出的比例,近景或中景时主体约占画面1/4到1/2的视觉重心,配角、背景人物、道具按与主角的远近与主次正确缩放,近大远小、紧贴透视,严禁主角小得看不清、或配角或背景道具大到反客为主;多人同框时人物之间有正确的前后层次与间距,谁靠前谁靠后、谁大谁小都要有物理逻辑。 ② 空间方位必须成立:同一画面里的物与人都处于同一个可信空间,桌子/墙面/地面/门窗的视平线与地平线一致,物体不悬浮、不叠穿、不缺一个维度,人物的脚要踩在地上或踏在正确的支撑物上。 ③ 背景纵深合理:背景要真正成画而不是空白或廉价贴图,房间就要有墙/窗/家具/光源的方向性,街道就要有纵深透视、远近建筑与天际线,室外要有地面承接落影;背景元素与前景主体处于同一透视体系,近实远虚。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·动作姿态与人体物理(画面里所有人物必须符合)】 ① 关节与骨骼合理:任何站/坐/倚/走/跑/弯腰/抬手/转头/跷腿等姿态,都符合真实人体关节的可动范围与承力方式,脊柱能弯的幅度、肩膀手臂的连带、膝盖脚踝的承重都成立,不出现反关节、断臂、错位、折叠扭曲的肢体,双手不重影、不多指。 ② 动作要像正在发生而不是摆拍僵尸:要有重心、有惯性、有受力,站立知道重心在两条腿的承重,坐着手放在该放的位置,迈步时另一只脚有预备,抱着东西身体重心倾向托物的一侧,动作落点与表情情绪一致;手部动作(握/抬/指/扶/抱/持)与它所接触的物或人对应严丝合缝,不悬空对着空气抓。 ③ 表情与姿态连贯:某情绪下身体语言整体一致,低头认错配收肩、愤怒配握拳绷身、疲惫配肩塌眼垂,情绪和动作不能各演各的。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·镜头语言与画面张力(导演级要求,每张图都要主动设计,不得忽略)】 ① 站位与空间张力:不只要物理站得合理,更要站得有戏——主动用距离与朝向制造关系张力,对峙就错开而立、留出剑拔弩张的间距,亲密就贴近相依互为背景,孤独就让主体矗在空旷中央四周留白,仰视或俯视制造权力与气势差;多人与多物件之间寻找对角线或三角站位让画面有层次与动势,而非一字排开;主体与陪衬之间要有视线、动作、身位上的呼应,让画面看起来有故事正在发生,而不是合影摆拍。 ② 眼神戏:每个出镜且占据叙事位置的角色,眼神都要活且有焦点——明确在想什么、在看什么(屏幕/远方/对方/镜头外某方向),并带着此刻的情绪(对峙的锐利、暧昧的含情、低落的失焦、决绝的坚定);多人时眼神之间要有交流关系(对视、错开、偷瞄、追视),用眼神传递关系与潜台词。 ③ 动作张力:把动作定格在最有故事感的那一瞬(刚要转身的瞬间、手悬停在按键上、刀锋举起一半、身体前倾的刹那),拒绝四平八稳的站桩;让肢体有动态趋势——重心前倾、衣摆扬起、发丝飘动、发力处肌肉紧绷,即便静态也要有下一秒就要动的势能;姿势有曲线与平衡,身体各部位形成连贯有韵律的剪影,忌讳笔直僵硬。 ④ 光影张力:主动设计光的方向、强弱、色温、明暗对比来托戏——恶意或紧张用硬光加暗角加冷调,温情或治愈用柔光加暖调加光晕,孤独用大面积留暗加单点微光;用主光把主角从背景里揪出来(边缘光、轮廓光、聚光),配角与背景落暗,眼睛要有清晰的高光点显有神;整体亮部、中间调、暗部分明,拒绝一盏平光全部照亮。 ⑤ 导演总纲:你是一位有镜头语言的动漫导演,不只是把元素画齐,更要让画面自己说话——用站位、眼神、动作、光影讲出帖子的情绪与冲突;每张图都主动构思这些层次,宁可多想一层,也不要平铺直叙、不要交差式应付。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·透视与镜头焦点(每张图先定视角再看透视,治视觉偏移/前后错乱)】 ① 先定镜头再画:落笔前先定清楚本图的镜头视角与焦点——焦平面上的主体是谁、镜头朝哪个方向看、画面中心在哪里;画面里所有元素都必须围绕这套镜头关系展开它们的透视与前后。 ② 单点透视逻辑:远离镜头的物按比例缩小并向画面深处收拢,近镜头的物放大且有细节,地平线一致、视线向纵深延伸,严禁该大的画小、该小的画大、前后颠倒、轮廓跑位。 ③ 禁止散乱:同一帧里不要出现两套互相冲突的透视,不要把隔着距离的东西摞在同一层。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·景深分层(治人物全挤中间/无前后)】 画面必须有清晰的前景、中景、背景三层,逐层交代每个人与物处在哪一层:前景贴近镜头占大,中景是主体叙事区,背景往纵深远放;人物不要全挤在同一层——有人靠前占大、有人退后占小,彼此有真实的空间纵深与前后遮挡关系,前面的人或物局部挡住后面的人,而不是所有人贴在同一平面一字排开。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·物品与结构立体完整(治马车骨架丢失/物品结构乱/无立体感)】 画面里的大件物品与复杂物件(马车、车架、家具、建筑、机械、书架、剑盾等)必须是结构完整、立体成立的:该有的部件都在、透视统一、前后与承重关系正确,轮子/车身/车架/辕木相互衔接正确,不是一堆零件乱堆、不是半截结构凭空丢失;多部件物体要有明确的前后、连接、承重关系,哪个托着哪个、哪个连哪个,符合该物体的现实结构与受力逻辑;物品要与画面中的人物保持正确的相对尺度与位置——人坐在车上就坐在车板上,人握剑刃就手掌扣住柄,人站马车旁边就脚落地,人与物在同一地面或平面上,不悬浮、不叠穿、不穿模。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·衣物与物品细节(每件都要画出实物厚度,不得简笔带过)】 衣服:除款式、颜色外,还要写清穿法、层次与褶皱走向,并随动作变化——衣摆因动作扬起、褶皱贴着身体发力处、斗篷垂落或飘动、袖子因抬手露出手腕、腰带扣好护甲服帖;装饰按角色身份合理搭配。 物品:写清形制、结构、材质与细节,让它们有实物厚度而不像简笔画——马车的木梁纹与铁箍、剑的护手与刀身、盾的把手与破痕、杯盏的口沿反光,该有的质感和用途感都要在。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·镜头可见性与画面范围(治穿帮:从背面画了脸/正面画了背/SFW漏裸)】 选定的镜头视角决定哪些能入画:从背后或back view只看得到背面——后脑、背部、肩胛、臀部、腿背,严禁写正面五官(眼睛鼻子嘴)与胸腹正面; from-behind时严禁写eyes/face/chest/expression,至多角色回头时才能写looking back; 正面(front view)才看得到眼睛鼻子嘴与胸腹正面,但看不到背与臀; 侧面/profile只看得到一侧眼睛耳朵与侧身轮廓,不能同时写两侧眼睛与完整正背。 穿衣场景(SFW)严禁写裸体类tag——bare back/bare shoulders/nude/naked/nipples一律禁,否则衣服穿不上; 画面范围只保留本视角真正可见的元素,构图造成的遮挡(被手遮、被衣物遮、被前景挡住)的那部分要主动排除,不要再画。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·人体接触与物理力学(治悬浮/不落实/形变失真)】 每个角色都要有明确的重力与接触感:站立双脚踩实地面(feet planted/grounded),坐姿臀部压在椅面床面,倚靠有支撑点,躺着身体贴地或贴床; 严禁凭空悬浮、脚陷地里、身体悬空悬椅。 身体的物理形变要真实:重物承托、肌肉受力拉扯、抱物时重心倾向托物侧、挥手抬臂带动肩背、发力处肌肉紧绷; 被按压/挤压处的皮肤与衣衫要有对应的凹陷、褶皱、形变,而不是两块形状互不接触的色块。 接触的表达要双向配对并且量化:单人到位(脚踩地/手有支撑/背靠墙)至少交代清楚着地点与支撑点; 双人接触(拥抱/牵手/触碰)要有接触点、接触方式、以及身体因接触产生的贴近或形变,不许两人形状上隔着空气、标签上却写hugging。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·肢体注册与手部状态(治手抓空气/关节乱/手指错位)】 画面里每个主要角色都要在画面设计里把六样说清:头部朝向与倾角、躯干朝向与弯曲、左手在做什么、右手在做什么、双腿姿态、双脚踩在哪; 手部必须有明确状态——空手(握拳/摊开/自然下垂/指尖搭在某处)、持物(握着/托着/扣住某物、手在剑柄/杯沿/衣摆上)、支撑(按墙/按桌/撑地)、 与人接触(相握/轻搭/揽住/触及对方某处);严禁手悬空对着空气抓、或手指动作与所持所触之物对不上。 肢体各段朝向要协调:头部/躯干/髋部朝向偏差不超过合理范围, 禁止 正面脸配从后的腿、坐姿上身配站姿腿、躺倒却在走跑、头朝左身朝右腿朝前 这类自相矛盾组合; 手指严格在合理数内、不重影、不粘连、不错位,多指与断指绝不出现。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·服装分层与色彩锁定(治衣服结构乱/颜色模糊)】 服装必须写清构成与配色,拒绝模糊笼统:不要裸写dress/armor/clothes/outfit, 要标明颜色+款式+材质,如 深红丝绸长裙(red silk dress)、蓝甲连体衣(blue armored bodysuit)、白棉衬衫配黑百褶裙(white cotton blouse, black pleated skirt); 有多层服装的按 外衣/内衣/袜子/鞋子 逐层写色与形,穿法清楚、层次分明; 装饰与附件按角色身份合理(腰带、徽记、护甲、披风、靴子)并落色到位; 衣物会随动作与受力变化:衣摆被风吹起或抬起、褶皱顺身体发力处走、斗篷垂落或飘动、袖口因抬手露出手腕—— 衣物与身体有真实的贴合与遮挡关系,而不是浮在身体表面的一层色膜。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·微表情与情绪神态(治脸僵/无表情细节)】 画面里每个有叙事位置的角色都要有鲜活的表情,不能是一张平板脸: 眼睛带情绪与视线方向(盯着某物/看向对方/失焦/微眯/垂目)并给眼神高光; 嘴部形态配合情绪(紧抿/微张/咬牙切齿/嘴角上扬/咬着下唇); 面庞整体气色随情绪变化(脸颊泛红/苍白/涨红/紧绷/松弛疲惫), 眉与额随情绪动(蹙眉/扬眉/额角青筋); 表情必须与身体姿态、当下剧情保持一致——蓄力的坚毅、崩溃的失焦、温柔的浅笑都要由眼神+嘴+肌肉一起构成,不许情绪和脸各演各的。' + String.fromCharCode(10) + String.fromCharCode(10) + '【铁律·微环境与空气感(治画面干瘪、无氛围)】 画面不能是一张干巴巴的摆拍照,要注入空气与氛围,至少做到一项: 风(wind):发丝飘动/衣摆翻飞/旗帜猎猎(har blowing),让静态画面有动态; 光(light):体积光/耶谢尔光束/丁达尔光/逆光轮廓/镜头光晕(god rays, volumetric lighting, rim light, lens flare),让光有方向有质感; 湿(moisture):汗水/雨滴/水珠/湿发/水汽(sweat, rain, water droplets, steam),体现环境湿度; 热(heat):热浪/蒸汽/脸颊泛红(heat haze, steam rising); 环境要有人味与环境细节:房间像住过、街道有纵深与生活痕迹、背景不是空白或纯色贴图,光源方向、空间纵深、远近层次都要立得住。'
           + String.fromCharCode(10) + String.fromCharCode(10) +
@@ -16870,9 +17844,13 @@ async function cdForumGenPostImg(p){
           + String.fromCharCode(10) + String.fromCharCode(10) +
           '【铁律·画质词节制(治质量词堆太多反而裂画)】英文TAG串里的通用堆栈质量词——masterpiece、best quality、high quality、highly detailed、extremely detailed、sharp focus、ultra detailed、8k、8k uhd、absurdres——整个TAG串最多保留 2 个，宁缺毋滥；把它们放在TAG串最末尾垫底，前面的篇幅全部留给真正描述画面与人物的具体内容。禁止为了凑长度堆叠一整排质量词。'
           + String.fromCharCode(10) + String.fromCharCode(10) +
-          '【铁律·双人接触的成对表达(治两人隔着空气说 hugging)】当画面存在两人及以上的接近与接触（拥抱/牵手/依偎/搂腰/贴脸/围观推挤等），必须在画面设计里写清双方身体的实际接触点与姿态——A的哪只手放在B的哪里、B的身体朝向与重心如何回应A，两人要有真实的贴合或遮挡，而不是两张隔着空气、标签上却写hugging/cuddle的错位构图。';
+          '【铁律·双人接触的成对表达(治两人隔着空气说 hugging)】当画面存在两人及以上的接近与接触（拥抱/牵手/依偎/搂腰/贴脸/围观推挤等），必须在画面设计里写清双方身体的实际接触点与姿态——A的哪只手放在B的哪里、B的身体朝向与重心如何回应A，两人要有真实的贴合或遮挡，而不是两张隔着空气、标签上却写hugging/cuddle的错位构图。'
+          + String.fromCharCode(10) + String.fromCharCode(10) +
+          '【铁律·画面要素精简(治断手/肢体乱/主次不分，最重要)】最终英文TAG串的【核心动作与人物姿态】必须精简克制，控制在合理数量内，严禁堆砌互不相干的独立动作/姿态标签。规则：①画面最多聚焦【2个核心角色 + 1个核心动作 + 关键场景】，其余物件/背景只作为环境点缀少量带过，不要每个物件都展开写；②同一角色只保留【一个】最核心的姿态（站着/坐着/蜷着/跪着一选一），不要同时写 standing + cowering + kneeling 等互相矛盾的多姿态；③多余的动作、冗余的表情、重复的人物形容词（tired/ determined/ tearful 等情绪词每类最多1个）必须删掉，TAG宁少勿滥；④若某个元素对"传达核心画面"没有帮助，就去掉它。画面做得越聚焦、越干净，肢体越不容易画崩。'
+          + String.fromCharCode(10) + String.fromCharCode(10) +
+          '【铁律·空间与肢体注册(治断手/多臂/前后错乱/肢体找不到位置)】在最终英文TAG串里，每个关键动作都要写明【谁 + 哪只手/哪个身体部位 + 在谁/哪个位置 + 做什么】，并明确人物的空间前后关系与遮挡。规则：①动作用带明确的肢体落点的写法，例如 Liu holds Li hair with left hand, Li kneeling, hands on floor；每个"手"必须写明它在哪、握/扶/撑着什么，禁止孤零零的 holding / eating / hiding 不写手在哪；②多人画面必须写清谁在前面、谁在后面、谁被谁挡住、谁在画面的左/右/前/后（例如 Li foreground left, Liu background right），禁止只罗列人物标签不写空间占位；③避免在TAG里同时出现直接矛盾的姿态词（如 standing 与 kneeling 同人同时），若有必须明确区分到不同角色或不同时间，否则删掉一个。'
 
-        var usr='帖子标题：'+(p.title||'')+'\n帖子正文：'+(p.text||'')+'\n帖子作者：'+(p.auth||'')+(p.replies&&p.replies.length?('\n部分评论：'+p.replies.slice(0,3).map(function(x){return x.from+':'+(x.content||'');}).join(' | ')):'')+_cfPullAppearanceForPost(p);
+        var usr='帖子标题：'+(p.title||'')+'\n帖子正文：'+(p.text||'')+'\n帖子作者：'+(p.auth||'')+_cfPullAppearanceForPost(p);
         prompt=await cdForumApiComplete([{role:'system',content:sys},{role:'user',content:usr}]);
         prompt=String(prompt||'').trim();
         var _aiRaw=prompt;
@@ -16887,7 +17865,19 @@ async function cdForumGenPostImg(p){
         var _tm=null;
         for(var _ti=0;_ti<_tmVars.length;_ti++){ var _tg=_tmVars[_ti].exec(prompt); if(_tg){ _tm=_tg; break; } }
         var _final;
-        if(_tm){ _final=String(_tm[1]||'').trim(); }
+        if(_tm){
+          _final=String(_tm[1]||'').trim();
+          // ★ [防重复] AI 有时会输出两个【TAG】段（第一段漏了画风等，又补一段）。只取第一段：
+          //   若第一段里又出现独立的第二行【TAG】标记，则截断到它之前，避免两段合并、重复词翻倍。
+          var _lines=_final.split('\n');
+          var _keep=[];
+          for(var _li=0;_li<_lines.length;_li++){
+            var _l0=String(_lines[_li]||'').trim();
+            if(_li>0 && (/^【\s*TAG\s*】/i.test(_l0) || (/^TAG\s*[:：]/i.test(_l0)))){ break; }
+            _keep.push(_lines[_li]);
+          }
+          _final=_keep.join('\n').trim();
+        }
         else {
           // 兜底：AI 没按规范输出 TAG 时，先去掉 markdown/序号/星号噪声，再只留真正可用的英文标签，丢弃中文叙述，避免喂给生图模型出鬼图
           var _en=prompt
@@ -16900,6 +17890,21 @@ async function cdForumGenPostImg(p){
           if(!_final || _final.length<4){ _final=_cdForumFallbackPrompt(String(p.title||'')+' '+(p.text||'')); }
         }
         prompt=_cfForumTidyTags(_final).slice(0,1400);
+        // [漫境画风覆盖] 若调用方传了 p._mangaStyle（漫境），把 TAG 里论坛固定画风词替换为漫境画风词
+        if(p && p._mangaStyle){
+          var _ms0=String(p._mangaStyle||'').trim();
+          if(_ms0){
+            var _cleaned=String(prompt||'')
+              .replace(/\banime style\b/gi,'')
+              .replace(/\bcel shading\b/gi,'')
+              .replace(/\bthick anime paint\b/gi,'')
+              .replace(/\bdetailed\b/gi,'')
+              .replace(/\bhigh quality\b/gi,'')
+              .replace(/\bhighly detailed\b/gi,'')
+              .replace(/[, ]{2,}/g,',').replace(/\s+/g,' ').replace(/^\s*,\s*|\s*,\s*$/g,'').trim();
+            prompt=_ms0+', '+(_cleaned||'');
+          }
+        }
         // [生图审判·埋点] 按段分成多条独立日志，每条各一段，避免大JSON糊成一团：
         //   ①[提示词]我们发给AI的system提示词  ②[发送内容]帖子usr  ③[AI思考+画图TAG]AI原始返回(含思考/必画清单/九维) + 最终提取的英文TAG
         try{ if(typeof cdAddLog==='function'){
@@ -16941,7 +17946,7 @@ async function cdForumGenPostImg(p){
       style: _sty||'',
       styleName: (typeof _cfImgStyleName==='function'?_cfImgStyleName(_cg,_sty||''):'')
     });
-    return { key:key };
+    return { key:key, dataUrl:img.dataUrl, prompt:prompt };
   }catch(e){ cdWarn('[图] cdForumGenPostImg失败', e); return { sub:'图像生成出错' }; }
 }
 /* 内置兜底：LLM 不可用时按正文关键词粗判类型，套固定画风镜头模板 */
@@ -17002,6 +18007,91 @@ function _cfImgShowPanel(R, pn){
     roots.forEach(function(r0){ (r0.querySelectorAll?r0.querySelectorAll('.panel.open'):[]).forEach(function(x){ x.classList.remove('open'); }); });
     if(pn) pn.classList.add('open');
   }catch(_e){ cdWarn('[图] _cfImgShowPanel失败', _e); }
+}
+/* ===== 图库覆盖层版：绕开论坛 panel 结构空白问题，直接用全屏层显示（同相亲角方案） ===== */
+function openImgLibLayer(){
+  try{
+    // 清掉可能残留的旧层
+    try{ var _old=document.getElementById('cd-imglib-layer'); if(_old&&_old.parentNode) _old.parentNode.removeChild(_old); }catch(_e0){}
+    var R=null; try{ var _ov=document.getElementById('cd-forum-overlay'); if(_ov) R=_ov.querySelector('#cdForumRoot'); }catch(_e){}
+    // 创建覆盖层，挂到论坛层（跟随插件面板尺寸）
+    var l=document.createElement('div'); l.id='cd-imglib-layer';
+    l.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;z-index:2147483645;background:#f7f8fa;overflow:auto;display:flex;flex-direction:column;';
+    // 顶部返回栏
+    var bar=document.createElement('div');
+    bar.style.cssText='display:flex;align-items:center;gap:8px;padding:10px 14px;background:#f7f8fa;border-bottom:1px solid #e5e7e8;flex-shrink:0;position:sticky;top:0;z-index:2;';
+    var backBtn=document.createElement('span');
+    backBtn.style.cssText='width:26px;height:26px;border-radius:6px;color:#5a5f64;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;font-weight:700;';
+    backBtn.innerHTML='&#8592;';
+    backBtn.onclick=function(){ try{ if(l.parentNode) l.parentNode.removeChild(l); }catch(_e){} };
+    var title=document.createElement('span');
+    title.style.cssText='font-size:12.5px;font-weight:700;color:#2e3337;flex:1;';
+    title.textContent='图库 · 已生成的图片';
+    var clearBtn=document.createElement('span');
+    clearBtn.style.cssText='flex-shrink:0;font-size:9px;color:#c84632;border:1px solid #e6c0b8;border-radius:6px;padding:3px 8px;cursor:pointer;';
+    clearBtn.textContent='清空';
+    clearBtn.onclick=function(){ if(!confirm('确定清空整个图库？')) return; cdForumImgClear().then(function(){ try{ if(typeof locateImgLibBody==='function') locateImgLibBody(); else if(l.querySelector('#cd-imglib-body')){ var _b=l.querySelector('#cd-imglib-body'); _b.innerHTML='<div style="text-align:center;padding:30px;color:#9aa5a0;font-size:11px;">图库已清空。</div>'; } }catch(_e){} }); };
+    bar.appendChild(backBtn); bar.appendChild(title); bar.appendChild(clearBtn);
+    var body=document.createElement('div');
+    body.id='cd-imglib-body';
+    body.style.cssText='flex:1;overflow-y:auto;padding:12px;';
+    body.innerHTML='<div style="text-align:center;padding:30px;color:#9aa5a0;font-size:11px;">读取中…</div>';
+    l.appendChild(bar); l.appendChild(body);
+    var _mount=document.getElementById('cd-forum-overlay');
+    if(!_mount) _mount=document.getElementById('cd-modal-root');
+    if(!_mount) _mount=document.body||document.documentElement;
+    _mount.appendChild(l);
+    // 读取图库列表并渲染（复用原逻辑：按 postKey 分组、纯文字列表、点行看图/存/删）
+    function _t6(p){ return Promise.race([p, new Promise(function(_r){ setTimeout(function(){ _r(null); },6000); })]); }
+    _t6(cdForumImgList()).then(async function(list){
+      if(list===null){ body.innerHTML='<div style="text-align:center;padding:24px;color:#b0473a;font-size:10.5px;line-height:1.8;">图库读取超时或异常。\n可点左上角 ← 关闭后重开，或「清空」重建图库。</div>'; return; }
+      if(!list || list.length===0){ body.innerHTML='<div style="text-align:center;padding:30px;color:#9aa5a0;font-size:11px;line-height:1.8;">图库还是空的。<br>发带图帖或生成图片后会存到这里。</div>'; return; }
+      // 确保所有图都有缩略图（缺的用原图生成 small thumb）
+      try{ list=await cdForumEnsureThumbs(list); }catch(_e){}
+      var arr=list.slice().sort(function(a,b){ return (b.time||0)-(a.time||0); });
+      // ── 网格缩略图 + 分批渲染（防一次性加载太多卡死）──
+      var _grid=document.createElement('div');
+      _grid.style.cssText='display:grid;grid-template-columns:repeat(3,1fr);gap:6px;';
+      body.innerHTML='';
+      body.appendChild(_grid);
+      var _showN=0, _BATCH=12;
+      function _thumbSrc(rec){ return (rec&&rec.thumb)?rec.thumb:(rec&&rec.dataUrl?rec.dataUrl:''); }
+      function _renderMore(){
+        var _end=Math.min(_showN+_BATCH, arr.length);
+        for(var _g=_showN;_g<_end;_g++){
+          (function(rec,idx){
+            var _cell=document.createElement('div');
+            _cell.style.cssText='position:relative;border-radius:8px;overflow:hidden;background:#eef0f1;cursor:pointer;aspect-ratio:3/4;';
+            var _img=document.createElement('img');
+            _img.style.cssText='width:100%;height:100%;object-fit:cover;display:block;';
+            _img.src=_thumbSrc(rec)||'';
+            _img.onerror=function(){ try{ _img.src='data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=='; }catch(_e){} };
+            // 删除角标
+            var _del=document.createElement('span');
+            _del.style.cssText='position:absolute;top:4px;right:4px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,.5);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;cursor:pointer;z-index:2;';
+            _del.innerHTML='&#215;';
+            _del.onclick=function(ev){ ev.stopPropagation(); delImgLib(rec.key).then(function(){ try{ if(_cell.parentNode) _cell.parentNode.removeChild(_cell); }catch(_e){} try{ if(typeof toastr==='function') toastr.info('已删除'); }catch(_e2){} }); };
+            _cell.appendChild(_img); _cell.appendChild(_del);
+            _cell.addEventListener('click',function(){ try{ if(typeof openImgView==='function') openImgView(rec.key); }catch(_e){ try{ if(typeof toastr==='function') toastr.info('查看图片功能暂不可用'); }catch(_e2){} } });
+            _grid.appendChild(_cell);
+          })(arr[_g], _g);
+        }
+        _showN=_end;
+        // 底部“加载更多”
+        if(_showN<arr.length){
+          if(!_grid.__loadMore){ _grid.__loadMore=document.createElement('div'); _grid.__loadMore.style.cssText='grid-column:1/-1;text-align:center;padding:12px;color:#3f6d84;font-size:10px;cursor:pointer;'; _grid.__loadMore.textContent='加载更多'; _grid.appendChild(_grid.__loadMore); }
+          _grid.__loadMore.onclick=function(){ _grid.__loadMore.style.display='none'; _renderMore(); };
+        } else {
+          if(_grid.__loadMore) _grid.__loadMore.style.display='none';
+        }
+      }
+      // 监听滚动到底部自动加载下一批
+      var _scroller=body;
+      var _debounce=false;
+      _scroller.addEventListener('scroll',function(){ if(_debounce) return; _debounce=true; setTimeout(function(){ _debounce=false; if(_renderMore && _scroller.scrollTop+_scroller.clientHeight>=_scroller.scrollHeight-40){ _renderMore(); } },200); });
+      _renderMore();
+    });
+  }catch(_e){ try{ if(typeof toastr==='function') toastr.error('图库打开异常: '+(_e&&_e.message)); }catch(_e2){ } }
 }
 /* 打开图库面板并渲染列表（新的在前；带 查看/存相册/删除） */
 function openImgLib(){
