@@ -237,6 +237,8 @@ const DEFAULT_SETTINGS = {
   diaryMode     : 'append',   // 'append' | 'vector' 角色日记模式
   vectorTopK    : 5,          // 向量检索召回条数
   vectorThreshold : 0.6,      // 向量检索相似度阈值
+  vectorFastMode : false,    // [v2.9.x] 高速检索：向量库较大时只查最近 vectorFastPool 条（治卡顿；关闭则全量检索不丢记忆）
+  vectorFastPool : 1500,     // 高速检索时参与计算的最大向量条数（按出现顺序保留最近 N 条）
   rerankEnabled : false,      // Rerank 重排序总开关
   rerankTarget  : 'both',     // 'story' | 'diary' | 'both' 要 rerank 的目标
   rerankApi     : { base: '', key: '', model: '' }, // Rerank 端点（OpenAI 兼容 /rerank）
@@ -1586,21 +1588,34 @@ async function cdGetEmbedding(text) {
   if (!text || !text.trim()) return null;
   const s = cdGetSettings();
   const ve = s.vectorEmbedding;
+  // ── 超时保护：任何嵌入来源都必须在 maxMs 内返回，否则降级，绝不卡死界面 ──
+  const _withTimeout = (promiseFn, maxMs) => {
+    return new Promise((resolve) => {
+      let done = false;
+      const timer = setTimeout(() => { if (!done) { done = true; resolve(null); } }, maxMs);
+      Promise.resolve().then(() => promiseFn()).then((v) => {
+        if (!done) { done = true; clearTimeout(timer); resolve(v); }
+      }).catch(() => { if (!done) { done = true; clearTimeout(timer); resolve(null); } });
+    });
+  };
+  const T = 5000; // 单次嵌入最大等待 5 秒
   if (!ve || !ve.source || ve.source === 'tavern') {
-    // 未配嵌入 API 或选跟随酒馆但无配置 → 尝试 ST 嵌入
+    // 未配嵌入 API 或选跟随酒馆但无配置 → 尝试 ST 嵌入（超时保护）
     if (ve?.source === 'tavern' || !ve?.source) {
-      const ctx = SillyTavern.getContext();
-      if (ctx && typeof ctx.getEmbedding === 'function') {
-        const emb = await ctx.getEmbedding(text);
-        if (Array.isArray(emb)) return emb;
-      }
-      if (typeof SillyTavern.getContext === 'function') {
-        const stCtx = SillyTavern.getContext();
-        if (stCtx?.textgenerationwebui?.is_connected && typeof stCtx.textgenerationwebui.do_embedding === 'function') {
-          const emb = await stCtx.textgenerationwebui.do_embedding(text);
+      try {
+        const ctx = SillyTavern.getContext();
+        if (ctx && typeof ctx.getEmbedding === 'function') {
+          const emb = await _withTimeout(() => ctx.getEmbedding(text), T);
           if (Array.isArray(emb)) return emb;
         }
-      }
+        if (typeof SillyTavern.getContext === 'function') {
+          const stCtx = SillyTavern.getContext();
+          if (stCtx?.textgenerationwebui?.is_connected && typeof stCtx.textgenerationwebui.do_embedding === 'function') {
+            const emb2 = await _withTimeout(() => stCtx.textgenerationwebui.do_embedding(text), T);
+            if (Array.isArray(emb2)) return emb2;
+          }
+        }
+      } catch (e) {}
     }
     return null;
   }
@@ -1612,31 +1627,35 @@ async function cdGetEmbedding(text) {
       if (!key) return null;
       const model = ve.model || 'text-embedding-ada-002';
       const body = { input: text, model };
-      const res = await fetch(`${url}/embeddings`, {
+      const res = await _withTimeout(() => fetch(`${url}/embeddings`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-      });
+      }), T);
+      if (!res) return null;
       if (!res.ok) return null;
-      const data = await res.json();
+      const data = await _withTimeout(() => res.json(), T);
+      if (!data) return null;
       return data?.data?.[0]?.embedding || null;
     }
     if (source === 'gemini') {
       const key = ve.key;
       if (!key) return null;
       const body = { model: 'models/embedding-001', content: { parts: [{ text }] } };
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/embedding-001:embedContent?key=${encodeURIComponent(key)}`, {
+      const res = await _withTimeout(() => fetch(`https://generativelanguage.googleapis.com/v1beta/models/embedding-001:embedContent?key=${encodeURIComponent(key)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-      });
+      }), T);
+      if (!res) return null;
       if (!res.ok) return null;
-      const data = await res.json();
+      const data = await _withTimeout(() => res.json(), T);
+      if (!data) return null;
       return data?.embedding?.values || null;
     }
     return null;
   } catch (e) {
-    cdLog('cdGetEmbedding 失败:', e.message);
+    cdLog('cdGetEmbedding 失败:', e && e.message);
     return null;
   }
 }
@@ -1799,7 +1818,16 @@ async function cdSearchVectors(queryText, vectors, topK = 5, threshold = 0.6) {
   if (Array.isArray(qVec) && qVec.length) {
     const dim = (vectors[0].vector || []).length;
     if (dim > 0 && qVec.length === dim) {
-      return vectors
+      // ★ B方案：向量库较大导致卡顿时，启用「高速检索」只对最近 N 条做余弦（默认关闭=全量检索不丢早期记忆）
+      let _vecS = null;
+      try { _vecS = (typeof cdGetSettings === 'function') ? cdGetSettings() : null; } catch (_e) {}
+      const _fast = !!(_vecS && _vecS.vectorFastMode === true);
+      const _FAST_POOL = Math.max(50, parseInt((_vecS && _vecS.vectorFastPool) || 1500, 10) || 1500);
+      const pool = (_fast && vectors.length > _FAST_POOL) ? vectors.slice(-_FAST_POOL) : vectors;
+      if (_fast && vectors.length > _FAST_POOL && typeof cdLog === 'function') {
+        cdLog('cdSearchVectors: 高速检索已启用，仅对最近', _FAST_POOL, '条做余弦（总量', vectors.length, '条）');
+      }
+      return pool
         .map(v => {
           const vec = v.vector;
           if (!Array.isArray(vec) || vec.length !== dim) return { ...v, score: 0 };
@@ -10649,6 +10677,7 @@ const CHANGELOG = [
       '图库改「网格缩略图」(论坛设置→图库): 3列网格显示缩略图, 分批渲染防卡死, 点格看大图, 角标删除, 清空',
       '状态界面新增「身份」「精神状态」字段: 身份=当前职业/社会地位/出身背景; 精神状态=心理/精神状况(灵活,可含精神病病名/情绪状态)',
       '修复世界论坛全屏覆盖层白屏问题: 缘遇/漫境/图库等弹出子界面改用「#cd-forum-overlay内动态全屏覆盖层」方案(不再依赖.panel/showPanel), 治好了反复出现的小窗白屏/全屏空白/被遮罩盖住/无法退出',
+      '【修复·向量检索打开聊天/重开卡死】A/B双方案: ①嵌入请求超时保护(cdGetEmbedding新增_withTimeout,单次最长5秒,时超/失败自动降级关键词匹配, 绝不卡死界面); ②新增「高速检索模式」开关(设置→向量化检索), 默认关闭=全量检索不丢早期记忆, 遇卡顿用户可开启后只查最近N条除余弦, 明显提速',
     ],
   },
     {
@@ -11914,6 +11943,18 @@ async function cdRenderVector() {
           <label>相似度阈值</label>
           <input type="number" id="cd-vec-threshold" value="${s.vectorThreshold || 0.6}" min="0" max="1" step="0.05" style="width:50px;font-size: calc(0.68rem * var(--cd-fs, 1));padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
         </div>
+        <div class="cd-set-row" style="margin-top:8px;">
+          <label><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px;"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>高速检索模式</label>
+          <label class="cd-switch">
+            <input type="checkbox" id="cd-vec-fast" ${s.vectorFastMode ? 'checked' : ''}>
+            <span class="cd-slider"></span>
+          </label>
+        </div>
+        <div class="cd-set-row" style="margin-top:2px;">
+          <label>近端检索条数</label>
+          <input type="number" id="cd-vec-fastpool" value="${s.vectorFastPool || 1500}" min="50" step="100" style="width:70px;font-size: calc(0.68rem * var(--cd-fs, 1));padding:2px 4px;border:1px solid rgba(180,150,120,0.2);border-radius:4px;background:transparent;color:#4a3a2a;">
+        </div>
+        <div style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.7;margin-top:4px;line-height:1.4;">默认关闭＝全量检索，不丢任何早期记忆；仅当检索量大导致卡顿时，开启后只查最近 N 条，可明显提速。</div>
       </div>
 
       <div class="cd-egg-section">
@@ -12152,6 +12193,8 @@ async function cdRenderVector() {
     settings.diaryMode = $('#cd-content input[name="cd-vec-diary-mode"]:checked').val() || 'append';
     settings.vectorTopK = Math.max(1, topK);
     settings.vectorThreshold = Math.max(0, Math.min(1, threshold));
+    settings.vectorFastMode = $('#cd-vec-fast').is(':checked');
+    settings.vectorFastPool = Math.max(50, parseInt($('#cd-vec-fastpool').val()) || 1500);
     settings.vectorEmbedding = {
       source: window._cdEditVecSource || 'tavern',
       url: $('#cd-vec-emb-url').val() || '',
