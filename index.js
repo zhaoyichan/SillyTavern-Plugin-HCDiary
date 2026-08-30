@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.9.9';
+const PLUGIN_VERSION = '2.10.0';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -417,6 +417,8 @@ function emptyData() {
       itemsHold: [],  // [v2.9.7] 物品当前持有 [{ line }]（覆盖式，谁持有/位置/随身或寄存）
       timeAnchor: '', // [v2.9.7] 当前故事内时间锚点（覆盖式，最新一条）
       tasks: [],     // [v2.9.7] 任务记录（覆盖式，每条 { line }：任务名|发布者|进度|下一步|限时|最近推进）
+      money: '',     // [v2.9.9] 当前钱财金额（覆盖式，如 5000）
+      moneyLog: [],  // [v2.9.9] 钱财变动日志（追加式，每条 { time, desc }：买了什么减多少钱/干了什么加多少钱）
       custom: {},      // 用户自定义剧情追踪项 { key: [{ time, desc }] }（key 来自设置 customFields）
     },
     cards: [],         // 剧情卡牌收集 [{ title, desc, time, icon }]
@@ -561,7 +563,15 @@ async function callOpenAI(messages, ep, s) {
       usage.cacheMiss = j.usage.prompt_cache_miss_tokens || j.usage.prompt_tokens_details?.uncached_tokens || 0;
       _cdLastTokenUsage = usage;
     }
-    return j.choices?.[0]?.message?.content ?? '';
+    // ★ 推理模型兼容：部分模型(reasoning/DeepSeek-R1等)把正文放 reasoning_content 而 content 为空，需回退
+    var _msg0 = j.choices && j.choices[0] ? (j.choices[0].message || {}) : {};
+    var _txt0 = _msg0.content || _msg0.reasoning_content || _msg0.delta || '';
+    if (!_txt0 && j.choices && j.choices[0] && typeof j.choices[0].text !== 'undefined') _txt0 = j.choices[0].text;
+    if (!_txt0 && Array.isArray(j.choices)) {
+      var _all = j.choices.map(function(c){ var m=c&&c.message||{}; return m.content||m.reasoning_content||''; }).filter(Boolean).join('');
+      if (_all) _txt0 = _all;
+    }
+    return String(_txt0 || '');
   } catch (e) {
     // 仅对「网络/CORS 类失败」（Failed to fetch、TypeError、Level 2 CORS）降级；
     // 对明确的 4xx/5xx 业务错误不降级
@@ -725,7 +735,17 @@ async function callGemini(messages, ep, s) {
   const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   if (!res.ok) throw new Error(`Gemini ${res.status}: ${await textOr(res)}`);
   const j = await res.json();
-  return (j.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
+  var _gparts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
+  var _gTxt = _gparts.map(p => p.text || '').join('');
+  if (!_gTxt && j.candidates && j.candidates[0]) {
+    // 推理模型可能把内容放 thoughts/reasoning，或 parts 里缺 text
+    var _gC = j.candidates[0];
+    if (_gC.thoughts && Array.isArray(_gC.thoughts)) _gTxt = _gC.thoughts.map(function(t){ return t&&t.content||''; }).filter(Boolean).join('');
+    if (!_gTxt && _gC.content && Array.isArray(_gC.content.parts)) {
+      _gTxt = _gC.content.parts.map(function(p){ if(!p) return ''; return p.text||p.inline_data||''; }).filter(function(x){return typeof x==='string' && x;}).join('');
+    }
+  }
+  return String(_gTxt || '');
 }
 
 /** 拉取模型列表 (非酒馆接口时使用) */
@@ -1023,18 +1043,18 @@ const ARCHIVE_SYSTEM = [
   '其中「主线」「支线」是追加式（只补新内容），「重要状态变化」「未解决事项」是覆盖式（输出当前最新全貌）。',
   '',
   '主线（追加式·事件流水，只输出本次新增楼层的关键事件，一条一行，必须记录关键句子，禁止笼统）：',
-  '（格式样板，每条 = 一行，用【时间·地点】开头，后接"谁 + 做了什么 + 关键对话原话 + 结果"）：',
-  '【第3天·傍晚·雪原酒馆】主角用青铜钥匙打开旧箱，取出信笺，对女巫说"信里写的是矿坑的坐标"——女巫皱眉，将信笺收进怀里。',
+  '（格式样板，每条 = 一行，用【年月日 时:分 · 地点】开头，如【2026年3月15日 14:30 · 雪原酒馆】，时间必须精确到时:分，禁止用"清晨/午后/傍晚/入夜"等模糊时段词，后接"谁 + 做了什么 + 关键对话原话 + 结果"）：',
+  '【2026年3月15日 14:30 · 雪原酒馆】主角用青铜钥匙打开旧箱，取出信笺，对女巫说"信里写的是矿坑的坐标"——女巫皱眉，将信笺收进怀里。',
   '【铁律】',
   '1. 每个事件必须含【关键句子】：有推动剧情的对话→写关键原话(带引号,1~2句即可,不整段转录)；无对话→写具体动作/具体物证("取出藏有线索的信笺""从尸体搜出半枚铜币")。',
   '2. 严禁笼统替代：禁止"他们交谈了""达成交易""发生了冲突""关系变好"这类空话；必须落到 谁+具体做了什么+说了哪句关键的话+得到/失去/发现了什么具体东西。',
-  '3. 时间地点齐全：每条以【时间·地点】开头(无法推断地点可只写【时间】，但禁止两者都缺)。',
+  '3. 时间地点齐全：每条以【年月日 时:分 · 地点】开头，时间必须精确到时:分，禁止用"清晨/午后/傍晚/入夜"等模糊时段词(无法推断地点可只写【年月日 时:分】，但禁止两者都缺)。',
   '4. 追加式累积，按时间顺序，同一事件绝不重复记录。',
   '5. 若本次没有新主线事件，输出"无"，不要凭空编造。',
   '',
   '支线（追加式·事件流水，只输出本次新增的支线关键事件，格式与主线相同）：',
-  '（格式样板，每条 = 一行，用【时间·地点】开头：）',
-  '【第3天·入夜·酒馆角落】酒保低声对主角说"北境最近死了三个猎人，死因都一样"——他比了个噤声的手势。',
+  '（格式样板，每条 = 一行，用【年月日 时:分 · 地点】开头，时间精确到时:分：）',
+  '【2026年3月15日 21:10 · 酒馆角落】酒保低声对主角说"北境最近死了三个猎人，死因都一样"——他比了个噤声的手势。',
   '【铁律】',
   '1. 与主线同：每条含【时间·地点】+ 谁 + 具体动作 + 关键对话原话(若有) + 结果。',
   '2. 禁止笼统词，落到具体细节；支线同样要带关键句子。',
@@ -1043,10 +1063,10 @@ const ARCHIVE_SYSTEM = [
   '重要状态变化（覆盖式，输出"当前仍然有效"的角色状态汇总，而非累积历史）：',
   '（已被后续剧情推翻/缓解的旧状态不要重复列出；没有当前有效状态则输出"无"。）',
   '（严格按下面的固定分格格式输出，用 | 分隔不同维度、一格一值，禁止把多个维度混在同一个值里。每行 = 一个对象（主角/环境/某个角色），以换行分隔：）',
-  '- 主角行格式（覆盖式）：主角：身份【…】| 身体【…】| 精神状态【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】',
-  '- 环境行格式（覆盖式，输出当前环境现状，非历史）：环境：布局【…】| 温度天气【…】| 钱财【…】',
-  '- 其他每个角色一行（覆盖式）：角色名：身体【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】',
-  '各维度内容：身体=伤病/体力/健康；地址=当前所在地点的核心地名（主角必须直接写清实际位置，只写地名，不写"抵达/身处"等动作词与冗长修饰）；资产=钱/物品/持有物；穿着=衣服穿戴；好感=对主角(用户)的好感度数值与态度；备注=不易归类的其它当前状态。已变化才更新该格，未变化的可保留或留空，不要用“无”填满所有格。好感度必须带数字与负号（负好感带-）。每行末尾以【时间标记】标注该状态最近一次变化时间，如【第3天 傍晚】。当前位置规则：主角的「地址」必须写清当前实际所在地点），',
+  '- 主角行格式（覆盖式）：主角：身份【…】| 身体【…】| 精神【…】| 地址【…】| 资产【…】| 外在【…】| 好感【…】| 备注【…】',
+  '- 环境行格式（覆盖式，输出当前环境现状，非历史）：环境：布局【…】| 温度天气【…】',
+  '- 其他每个角色一行（覆盖式）：角色名：身体【…】| 地址【…】| 资产【…】| 外在【…】| 好感【…】| 备注【…】',
+  '各维度内容：身体=伤病/体力/健康；地址=当前所在地点的核心地名（主角必须直接写清实际位置，只写地名，不写"抵达/身处"等动作词与冗长修饰）；资产=钱/物品/持有物；外在=此刻的外貌长相与穿着打扮（写清当前外貌：发型/面色/神态 + 衣服款式颜色，如"银色微卷长发，面色苍白，穿着孤儿院制服"）；好感=对主角(用户)的好感度数值与态度；备注=不易归类的其它当前状态。已变化才更新该格，未变化的可保留或留空，不要用“无”填满所有格。好感度必须带数字与负号（负好感带-）。每行末尾以【时间标记】标注该状态最近一次变化时间，如【第3天 傍晚】。当前位置规则：主角的「地址」必须写清当前实际所在地点），',
   '',
   '当前位置规则（地图/行程准确性关键，必须严格遵守）：',
   '1. 在「主角」行的「处境」中，必须明确写出主角【当前所在地点】，使用偏正结构名词短语（如"处身于雪原边缘的酒馆""身处灯火通明的王城大厅"），并确保该地点是此次剧情里【实际移动/停留】的位置。',
@@ -1069,13 +1089,20 @@ const ARCHIVE_SYSTEM = [
   '任务记录（覆盖式·跟踪"正在进行/待完成"的任务，一条任务一行，已完成的不要列）：',
   '（格式样板，每条 = 一行：）',
   '任务名 | 发布者/来源 | 当前进度 | 下一步 | 限时/优先级 | 最近推进时间',
-  '（示例：护送商队到北境 | 商会长 | 已过山隘，剩2日路程 | 明日清晨继续赶路 | 限时3日 | 【第3天·傍晚】）',
+  '（示例：护送商队到北境 | 商会长 | 已过山隘，剩2日路程 | 明日清晨继续赶路 | 限时3日 | 2026年3月15日 14:30）',
   '【铁律】',
   '1. 覆盖式：只列"仍未完成"的任务；已完成/放弃的从列表移除。',
   '2. 任务名要具体("护送商队到北境")，禁止"一个任务""某事"。',
   '3. 进度写"当前进展到哪一步 + 下一步做什么"，越具体越好，禁止笼统"进行中"。',
-  '4. 每次推进就更新"最近推进时间"。',
+  '4. 每次推进就更新"最近推进时间"，时间必须精确到年/月/日/时:分（如 2026年3月15日 14:30），禁止用"清晨/傍晚"等模糊时段词。',
   '5. 若没有进行中的任务，输出"无"。',
+  '',
+  '钱财追踪（覆盖式+追加式，用来精确跟踪钱财）：',
+  '当前金额（覆盖式，只输出当前主角手里的具体钱数，纯数字，如 5000；若没有明确金额可留空）：',
+  '当前金额：5000',
+  '钱财变动（追加式，逐条记录本次剧情里金钱的收入与支出，一条一行，写明具体数额与事由；本次无变动输出"无"）：',
+  '（格式：减/加具体数额（事由），带时间，如：-200（买干粮）2026年3月15日 14:30 | +1000（完成护送任务酬金）2026年3月15日 16:00）',
+  '【铁律】金额必须精确到具体数字（5000就是5000），禁止模糊词（"一些钱""钱变多了"）；每笔买卖都标注减了多少/加了多少、干什么事、以及精确年月日时分。',
         '6. 与「未解决事项」不得重复：未解决=长期伏笔/谜团/悬而未决线索；任务=正在进行的行动进度。同一件事只归一类记录，绝不在两处重复写。',
   '',
   '地点（追加式，地图用：只输出本次剧情新增出现/移动到的地点，按剧情先后顺序一行一个，直接写核心地名，如"贫民窟垃圾山""半塌危楼阁楼""南区佣兵集散地"；本次未移动则输出"无"）：',
@@ -1083,7 +1110,7 @@ const ARCHIVE_SYSTEM = [
   '<<<LOCATIONS>>>',
   '<<<LOCATIONS_END>>>',
   '当前时间轴（覆盖式，只输出当前故事内时间快照，作为全剧统一的"现在"）：',
-  '（格式：【第7天 午后·雪原营地】，并写明距上次时间推进了多久，如"距上次【第6天 夜晚】推进约半日"。必须从上次记录的时间向后推进，禁止时间倒流，禁止把"昨天"写成"三天前"；跨夜/赶路/战斗的时间流逝要显式标注。若剧情无明显时间推进，则原样保留上次时间）',
+  '（格式：【2026年3月15日 14:30 · 雪原营地】，时间必须精确到年/月/日/时:分，禁止用"清晨/午后/傍晚/入夜/约半日"等模糊表述；并写明距上次时间推进了多久，如"距上次 2026年3月15日 12:00 推进约2小时30分"。必须从上次记录的时间向后推进，禁止时间倒流；跨夜/赶路/战斗的时间流逝要显式标注合理分钟数/小时数。若剧情无明显时间推进，则原样保留上次时间）',
   '',
   '',
   '最后，单独输出以下两个覆盖式总结字段（用来更新整体概览，不是追列事件）：',
@@ -1122,8 +1149,8 @@ const ARCHIVE_SYSTEM_FULL = [
   '「主线」「支线」按时间顺序【完整】列出这段剧情的全部进展；「重要状态变化」「未解决事项」「剧情总览」「章回标题」输出当前最新全貌。',
   '',
   '主线（完整式·事件流水，把从剧情开始到当前的【全部】主线事件按时间先后完整列出，一条一行，必须记录关键句子，禁止笼统）：',
-  '（格式样板，每条 = 一行，用【时间·地点】开头，后接"谁 + 做了什么 + 关键对话原话 + 结果"）：',
-  '【第3天·傍晚·雪原酒馆】主角用青铜钥匙打开旧箱，取出信笺，对女巫说"信里写的是矿坑的坐标"——女巫皱眉，将信笺收进怀里。',
+  '（格式样板，每条 = 一行，用【年月日 时:分 · 地点】开头，如【2026年3月15日 14:30 · 雪原酒馆】，时间必须精确到时:分，禁止用"清晨/午后/傍晚/入夜"等模糊时段词，后接"谁 + 做了什么 + 关键对话原话 + 结果"）：',
+  '【2026年3月15日 14:30 · 雪原酒馆】主角用青铜钥匙打开旧箱，取出信笺，对女巫说"信里写的是矿坑的坐标"——女巫皱眉，将信笺收进怀里。',
   '【铁律】',
   '1. 每个事件必须含【关键句子】：有对话→写关键原话(带引号,1~2句)；无对话→写具体动作/物证。',
   '2. 严禁笼统替代：禁止"他们交谈了""达成交易""发生冲突"这类空话；落到 谁+具体动作+关键对话+得到/失去/发现了什么。',
@@ -1132,8 +1159,8 @@ const ARCHIVE_SYSTEM_FULL = [
   '5. 若没有主线事件，输出"无"。',
   '',
   '支线（完整式·事件流水，把这段剧情的全部支线事件按时间完整列出，格式与主线相同）：',
-  '（格式样板，每条 = 一行，用【时间·地点】开头：）',
-  '【第3天·入夜·酒馆角落】酒保低声对主角说"北境最近死了三个猎人，死因都一样"——他比了个噤声的手势。',
+  '（格式样板，每条 = 一行，用【年月日 时:分 · 地点】开头，时间精确到时:分：）',
+  '【2026年3月15日 21:10 · 酒馆角落】酒保低声对主角说"北境最近死了三个猎人，死因都一样"——他比了个噤声的手势。',
   '【铁律】',
   '1. 与主线同：每条含【时间·地点】+ 谁 + 具体动作 + 关键对话原话(若有) + 结果。',
   '2. 禁止笼统词，落到具体细节。',
@@ -1142,10 +1169,10 @@ const ARCHIVE_SYSTEM_FULL = [
   '重要状态变化（覆盖式，输出"当前仍然有效"的角色状态汇总，而非累积历史）：',
   '（已被后续剧情推翻/缓解的旧状态不要重复列出；没有当前有效状态则输出"无"。）',
   '（严格按下面的固定分格格式输出，用 | 分隔不同维度、一格一值，禁止把多个维度混在同一个值里。每行 = 一个对象（主角/环境/某个角色），以换行分隔：）',
-  '- 主角行格式（覆盖式）：主角：身份【…】| 身体【…】| 精神状态【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】',
-  '- 环境行格式（覆盖式，输出当前环境现状，非历史）：环境：布局【…】| 温度天气【…】| 钱财【…】',
-  '- 其他每个角色一行（覆盖式）：角色名：身体【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】',
-  '各维度内容：身体=伤病/体力/健康；地址=当前所在地点的核心地名（主角必须直接写清实际位置，只写地名，不写"抵达/身处"等动作词与冗长修饰）；资产=钱/物品/持有物；穿着=衣服穿戴；好感=对主角(用户)的好感度数值与态度；备注=不易归类的其它当前状态。已变化才更新该格，未变化的可保留或留空，不要用“无”填满所有格。好感度必须带数字与负号（负好感带-）。每行末尾以【时间标记】标注该状态最近一次变化时间，如【第3天 傍晚】。当前位置规则：主角的「地址」必须写清当前实际所在地点），',
+  '- 主角行格式（覆盖式）：主角：身份【…】| 身体【…】| 精神【…】| 地址【…】| 资产【…】| 外在【…】| 好感【…】| 备注【…】',
+  '- 环境行格式（覆盖式，输出当前环境现状，非历史）：环境：布局【…】| 温度天气【…】',
+  '- 其他每个角色一行（覆盖式）：角色名：身体【…】| 地址【…】| 资产【…】| 外在【…】| 好感【…】| 备注【…】',
+  '各维度内容：身体=伤病/体力/健康；地址=当前所在地点的核心地名（主角必须直接写清实际位置，只写地名，不写"抵达/身处"等动作词与冗长修饰）；资产=钱/物品/持有物；外在=此刻的外貌长相与穿着打扮（写清当前外貌：发型/面色/神态 + 衣服款式颜色，如"银色微卷长发，面色苍白，穿着孤儿院制服"）；好感=对主角(用户)的好感度数值与态度；备注=不易归类的其它当前状态。已变化才更新该格，未变化的可保留或留空，不要用“无”填满所有格。好感度必须带数字与负号（负好感带-）。每行末尾以【时间标记】标注该状态最近一次变化时间，如【第3天 傍晚】。当前位置规则：主角的「地址」必须写清当前实际所在地点），',
   '',
   '当前位置规则（地图/行程准确性关键，必须严格遵守）：',
   '1. 在「主角」行的「处境」中，必须明确写出主角【当前所在地点】，使用偏正结构名词短语（如"处身于雪原边缘的酒馆""身处灯火通明的王城大厅"），并确保该地点是此次剧情里【实际移动/停留】的位置。',
@@ -1167,13 +1194,20 @@ const ARCHIVE_SYSTEM_FULL = [
   '任务记录（覆盖式·跟踪"正在进行/待完成"的任务，一条任务一行，已完成的不要列）：',
   '（格式样板，每条 = 一行：）',
   '任务名 | 发布者/来源 | 当前进度 | 下一步 | 限时/优先级 | 最近推进时间',
-  '（示例：护送商队到北境 | 商会长 | 已过山隘，剩2日路程 | 明日清晨继续赶路 | 限时3日 | 【第3天·傍晚】）',
+  '（示例：护送商队到北境 | 商会长 | 已过山隘，剩2日路程 | 明日清晨继续赶路 | 限时3日 | 2026年3月15日 14:30）',
   '【铁律】',
   '1. 覆盖式：只列"仍未完成"的任务；已完成/放弃的从列表移除。',
   '2. 任务名要具体("护送商队到北境")，禁止"一个任务""某事"。',
   '3. 进度写"当前进展到哪一步 + 下一步做什么"，越具体越好，禁止笼统"进行中"。',
-  '4. 每次推进就更新"最近推进时间"。',
+  '4. 每次推进就更新"最近推进时间"，时间必须精确到年/月/日/时:分（如 2026年3月15日 14:30），禁止用"清晨/傍晚"等模糊时段词。',
   '5. 若没有进行中的任务，输出"无"。',
+  '',
+  '钱财追踪（覆盖式+追加式，用来精确跟踪钱财）：',
+  '当前金额（覆盖式，只输出当前主角手里的具体钱数，纯数字，如 5000；若没有明确金额可留空）：',
+  '当前金额：5000',
+  '钱财变动（追加式，逐条记录本次剧情里金钱的收入与支出，一条一行，写明具体数额与事由；本次无变动输出"无"）：',
+  '（格式：减/加具体数额（事由），带时间，如：-200（买干粮）2026年3月15日 14:30 | +1000（完成护送任务酬金）2026年3月15日 16:00）',
+  '【铁律】金额必须精确到具体数字（5000就是5000），禁止模糊词（"一些钱""钱变多了"）；每笔买卖都标注减了多少/加了多少、干什么事、以及精确年月日时分。',
         '6. 与「未解决事项」不得重复：未解决=长期伏笔/谜团/悬而未决线索；任务=正在进行的行动进度。同一件事只归一类记录，绝不在两处重复写。',
   '',
   '地点（追加式，地图用：只输出本次剧情新增出现/移动到的地点，按剧情先后顺序一行一个，直接写核心地名，如"贫民窟垃圾山""半塌危楼阁楼""南区佣兵集散地"；本次未移动则输出"无"）：',
@@ -1181,7 +1215,7 @@ const ARCHIVE_SYSTEM_FULL = [
   '<<<LOCATIONS>>>',
   '<<<LOCATIONS_END>>>',
   '当前时间轴（覆盖式，只输出剧情结束时的当前故事内时间）：',
-  '（格式：【第7天 午后·雪原营地】。必须从最早的记录一路向后推进到当前，中间跳过的天数/时段要交代清楚，禁止时间倒流）',
+  '（格式：【2026年3月15日 14:30 · 雪原营地】，时间必须精确到年/月/日/时:分，禁止用"清晨/午后/傍晚"等模糊时段词。必须从最早的记录一路向后推进到当前，中间跳过的天数/小时要交代清楚，禁止时间倒流）',
   '',
   '',
   '最后，单独输出以下两个覆盖式总结字段（用来更新整体概览，不是追列事件）：',
@@ -1334,7 +1368,7 @@ function parseArchiveJson(text, customDefs) {
   }
   const defs = Array.isArray(customDefs) ? customDefs : [];
   // 全部字段标签：内置四个 + 每个自定义项的 label
-  const builtin = ['主线', '支线', '重要状态变化', '未解决事项', '剧情总览', '章回标题', '物品清单', '当前时间轴', '任务记录'];
+  const builtin = ['主线', '支线', '重要状态变化', '未解决事项', '剧情总览', '章回标题', '物品清单', '当前时间轴', '任务记录', '当前金额', '钱财变动'];
   const customLabels = defs.map(d => d && d.label ? d.label : '').filter(Boolean);
   // 按长度降序排列，避免「主角状态」被「状态」抢先截断
   const allLabels = builtin.concat(customLabels).sort((a, b) => b.length - a.length);
@@ -1402,9 +1436,24 @@ function parseArchiveJson(text, customDefs) {
     var _tl = String(_tklines[_ti] || '').trim();
     if (!_tl || _tl === '无') continue;
     if (/^任务记录|^（|^任务名/.test(_tl)) continue;
+    if (/^地点[：:]/.test(_tl)) continue;   // 地点已在地图/主角/环境卡展示，任务里剔除避免重复
+    if (/^钱财追踪|^当前金额|^钱财变动/.test(_tl)) continue;  // 钱财追踪独立卡展示，任务里剔除避免空标签
     _tasks.push({ line: _tl });
   }
-  return { mainline, sideline, states, unresolved, locations, items: _itemsLog, itemsHold: _itemsHold, timeAnchor, tasks: _tasks, custom, title, lead };
+  // ===== 钱财追踪：当前金额(覆盖式) + 钱财变动日志(追加式) =====
+  var money = (parts['当前金额'] || '').split('\n').map(function(_x){return _x.trim();}).filter(Boolean).join(' ').trim();
+  money = String(money).replace(/^当前金额[：:]?/,'').trim();
+  const _moneyLog = [];
+  var _mlk = parts['钱财变动'] || '';
+  var _mllines = String(_mlk).split('\n');
+  for (var _mi2 = 0; _mi2 < _mllines.length; _mi2++) {
+    var _ml2 = String(_mllines[_mi2] || '').trim();
+    if (!_ml2 || _ml2 === '无' || /^钱财变动|^（|^当前金额/.test(_ml2)) continue;
+    var _mtm = String(_ml2).match(/^【([^】]+)】\s*(.*)/);
+    if (_mtm) { _moneyLog.push({ time: _mtm[1], desc: _mtm[2] }); }
+    else { _moneyLog.push({ time: '', desc: _ml2 }); }
+  }
+  return { mainline, sideline, states, unresolved, locations, items: _itemsLog, itemsHold: _itemsHold, timeAnchor, tasks: _tasks, money, moneyLog: _moneyLog, custom, title, lead };
 }
 
 function cdBuildRelationPrompt(windowFloors, data, _s) {
@@ -1613,9 +1662,9 @@ async function cdCompressArchive(data, s, isAuto) {
 
 【格式铁律（与自动写档案完全一致，压缩时也必须遵守，禁止破坏现有格式）】：
 1. 重要状态变化（states）必须保持固定分格格式，用 | 分隔不同维度、一格一值，禁止把多个维度混在同一个值里。每行 = 一个对象（主角/环境/某个角色），以换行分隔：
-   - 主角行：主角：身份【…】| 身体【…】| 精神状态【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】
-   - 环境行：环境：布局【…】| 温度天气【…】| 钱财【…】
-   - 其他角色行：角色名：身体【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】
+   - 主角行：主角：身份【…】| 身体【…】| 精神【…】| 地址【…】| 资产【…】| 外在【…】| 好感【…】| 备注【…】
+   - 环境行：环境：布局【…】| 温度天气【…】
+   - 其他角色行：角色名：身体【…】| 地址【…】| 资产【…】| 外在【…】| 好感【…】| 备注【…】
    压缩时保持这些分格与维度不丢失；已变化才更新该格，未变化保留或留空，不要用“无”填满所有格。
 2. 好感度数值铁律（必须严格遵守，压缩时不可破坏）：
    - 好感度必须以数字单独写出（如“对主角好感 62”或“对主角好感 -90”），禁止用“好感大幅提升”“好感下降”等模糊表述。
@@ -2796,6 +2845,11 @@ async function cdBuildDiaryInjectionText() {
           // ★ 任务记录（活跃任务）
           if (Array.isArray(arc.tasks) && arc.tasks.length) {
             arcParts.push('任务记录：\n' + arc.tasks.map(function(t){ return '- ' + (t && t.line || ''); }).join('\n'));
+          }
+          // ★ 钱财追踪（当前金额 + 变动日志）
+          if (arc.money && String(arc.money).trim()) { arcParts.push('当前钱财：' + String(arc.money).trim()); }
+          if (Array.isArray(arc.moneyLog) && arc.moneyLog.length) {
+            arcParts.push('钱财变动：\n' + arc.moneyLog.map(function(ml){ var _s=(ml&&ml.time?('【'+ml.time+'】'):'')+(ml&&ml.desc||''); return '- ' + _s; }).join('\n'));
           }
   // ★ 自定义剧情追踪项注入
           const injCustomFields = Array.isArray(s.customFields) ? s.customFields.filter(f => f && f.key && f.label) : [];
@@ -5086,6 +5140,25 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
           // ★ 任务记录（覆盖式，只留最新）
           if (arc.tasks && Array.isArray(arc.tasks) && arc.tasks.length) {
             data.archive.tasks = arc.tasks.slice();
+          }
+          // ★ 当前钱财金额（覆盖式，只留最新）
+          if (arc.money && String(arc.money).trim()) {
+            data.archive.money = String(arc.money).trim();
+          }
+          // ★ 钱财变动日志（追加式，按 desc 去重复结算，与 items 同法）
+          if (arc.moneyLog && Array.isArray(arc.moneyLog) && arc.moneyLog.length) {
+            if (!data.archive.moneyLog || !Array.isArray(data.archive.moneyLog)) data.archive.moneyLog = [];
+            for (var _ai2 = 0; _ai2 < arc.moneyLog.length; _ai2++) {
+              var _ait2 = arc.moneyLog[_ai2] || {};
+              var _ad2 = String(_ait2.desc || '').replace(/^【[^】]+】\s*/, '').trim();
+              if (!_ad2) continue;
+              var _dup2 = false;
+              for (var _aj2 = 0; _aj2 < data.archive.moneyLog.length; _aj2++) {
+                var _od2 = String(data.archive.moneyLog[_aj2] && data.archive.moneyLog[_aj2].desc || '').replace(/^【[^】]+】\s*/, '').trim();
+                if (_od2 === _ad2) { _dup2 = true; break; }
+              }
+              if (!_dup2) data.archive.moneyLog.push({ time: _ait2.time || '', desc: _ait2.desc });
+            }
           }
           // 自定义追踪项（默认追加式数组；开启 overwrite 的项每轮只保留最新）
           if (arc.custom && Object.keys(arc.custom).length) {
@@ -7809,6 +7882,14 @@ async function cdRenderGraph() {
       '.cd-st-prob{background:#8a6a3b;color:#fff;border-radius:8px;padding:11px 13px;margin-bottom:10px}',
       '.cd-st-pb-title{font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:7px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.18);margin-bottom:8px}',
       '.cd-st-pb-grid{display:flex;flex-direction:column;gap:6px}',
+      '.cd-st-money{background:#f3ede1;color:#6b4a1b;border:1px solid #e0d3b8;border-radius:8px;padding:11px 13px;margin-bottom:10px}',
+      '.cd-st-money-title{display:flex;align-items:center;gap:6px;font-size:calc(0.72rem*var(--cd-fs,1));font-weight:700;margin-bottom:6px}',
+      '.cd-st-money-cur{font-size:calc(1.0rem*var(--cd-fs,1));font-weight:800;margin-bottom:6px}',
+      '.cd-st-money-log{max-height:180px;overflow:auto;font-size:calc(0.62rem*var(--cd-fs,1));line-height:1.7}',
+      '.cd-st-money-log-row{display:flex;gap:6px;padding:2px 0;border-bottom:1px dashed rgba(107,74,27,.15)}',
+      '.cd-st-money-log-row .t{color:#9a7a45;flex-shrink:0}',
+      '.cd-st-money-empty{opacity:.6;font-size:calc(0.6rem*var(--cd-fs,1))}',
+      '.cd-st-money-toggle{cursor:pointer;font-size:calc(0.62rem*var(--cd-fs,1));opacity:.8;margin-top:4px}',
       '.cd-st-pb-item{display:flex;gap:8px;font-size:10.5px;line-height:1.5}',
       '.cd-st-pb-item .k{color:#ffd9a0;font-weight:700;width:30px;flex-shrink:0}',
       '.cd-st-pb-item .v{color:#fff;flex:1}',
@@ -7818,7 +7899,8 @@ async function cdRenderGraph() {
       '.cd-st-map-body{width:100%}',
       '.cd-st-map-note{display:flex;justify-content:space-between;align-items:center;margin-top:4px;font-size:9px;color:#8b7355}',
       '.cd-st-env{border:1px solid #dcc9a4;border-radius:8px;background:#faf6ec;padding:9px 11px;margin-bottom:10px}',
-      '.cd-st-env-title{font-size:11px;font-weight:700;color:#6b4a1b;display:flex;align-items:center;gap:6px;margin-bottom:6px}',
+      '.cd-st-env-title{font-size:11px;font-weight:700;color:#6b4a1b;display:flex;align-items:center;gap:6px;margin-bottom:6px;cursor:pointer;list-style:none}',
+      '.cd-st-env-title::-webkit-details-marker{display:none}',
       '.cd-st-env-grid{display:flex;flex-direction:column;gap:5px}',
       '.cd-st-env-item{display:flex;gap:8px;font-size:10.5px;line-height:1.5}',
       '.cd-st-env-item .k{color:#9a7a45;font-weight:700;width:52px;flex-shrink:0}',
@@ -7902,8 +7984,8 @@ async function cdRenderGraph() {
   } catch (e) {}
 
   // ===== 解析状态文本 → 主角 + 角色 =====
-  const prot = { 身体: '', 地址: '', 资产: '', 穿着: '', 好感: '', 备注: '' };
-  const env = { 布局: '', 温度天气: '', 钱财: '', 身体状态: '' };
+  const prot = { 身体: '', 地址: '', 资产: '', 外在: '', 好感: '', 备注: '' };
+  const env = { 布局: '', 温度天气: '', 身体状态: '' };
   const roles = []; // { name, grid:{}, text, fav }
   let protFound = false;
 
@@ -7938,7 +8020,6 @@ async function cdRenderGraph() {
         const g = parseGrid(body);
         if (g['布局'] || g['环境布局']) env['布局'] = g['布局'] || g['环境布局'] || '';
         if (g['温度天气'] || g['温度'] || g['天气']) env['温度天气'] = g['温度天气'] || g['温度'] || g['天气'] || '';
-        if (g['钱财'] || g['钱'] || g['金钱']) env['钱财'] = g['钱财'] || g['钱'] || g['金钱'] || '';
         if (g['身体状态'] || g['体力']) env['身体状态'] = g['身体状态'] || g['体力'] || '';
         continue;
       }
@@ -7946,7 +8027,7 @@ async function cdRenderGraph() {
         protFound = true;
         if (/\|/.test(body)) {
           const g = parseGrid(body);
-          prot['身份'] = g['身份'] || ''; prot['身体'] = g['身体'] || ''; prot['精神状态'] = g['精神状态'] || g['精神'] || g['心理'] || ''; prot['地址'] = g['地址'] || g['所在地'] || ''; prot['资产'] = g['资产'] || ''; prot['穿着'] = g['穿着'] || g['衣着'] || ''; prot['好感'] = g['好感'] || ''; prot['备注'] = g['备注'] || '';
+          prot['身份'] = g['身份'] || ''; prot['身体'] = g['身体'] || ''; prot['精神'] = g['精神状态'] || g['精神'] || g['心理'] || ''; prot['地址'] = g['地址'] || g['所在地'] || ''; prot['资产'] = g['资产'] || ''; prot['外在'] = g['外在'] || g['穿着'] || g['衣着'] || g['外貌'] || ''; prot['好感'] = g['好感'] || ''; prot['备注'] = g['备注'] || '';
         } else {
           const segs = body.split(/[；;]/).map(s => s.trim()).filter(Boolean);
           for (const seg of segs) {
@@ -7956,7 +8037,7 @@ async function cdRenderGraph() {
               if (kk === '状况' || kk === '状态') prot['身体'] = kv[2];
               else if (kk === '资源') prot['资产'] = kv[2];
               else if (kk === '处境') prot['地址'] = kv[2];
-              else if (kk === '衣着') prot['穿着'] = kv[2];
+              else if (kk === '衣着' || kk === '穿着' || kk === '外在' || kk === '外貌') prot['外在'] = kv[2];
               else prot[kk] = kv[2];
             } else if (prot['备注']) { prot['备注'] += '；' + seg; }
             else { prot['备注'] = seg; }
@@ -8122,7 +8203,7 @@ async function cdRenderGraph() {
       </div>`;
   }
   // ===== 主角状态卡 HTML =====
-  const protKeys = ['身份','身体','精神状态','地址','资产','穿着','好感','备注'];
+  const protKeys = ['身份','身体','精神','地址','资产','外在','好感','备注'];
   const protHas = protKeys.some(k => prot[k]);
   const protCard = `
     <div class="cd-st-prob">
@@ -8137,19 +8218,27 @@ async function cdRenderGraph() {
       </div>
     </div>`;
 
+  // ===== 【钱财卡：当前金额 + 变动日志，来自 archive.money / archive.moneyLog】（深色，主角状态下面）=====
+  const _moneyVal = (data.archive && String(data.archive.money||'').trim()) || '';
+  const _moneyLog = (data.archive && Array.isArray(data.archive.moneyLog)) ? data.archive.moneyLog : [];
+  const moneyLogHtml = _moneyLog.length ? _moneyLog.slice(-30).reverse().map(function(ml,mi){ var _mlt=ml&&ml.time||''; var _mld=ml&&ml.desc||''; return '<div class="cd-st-money-log-row">'+( _mlt?'<span class="t">'+escapeHtml(_mlt)+'</span>':'')+'<span class="d">'+escapeHtml(_mld)+'</span></div>'; }).join('') : '';
+  var _moneyCount = _moneyLog.length;
+  const moneyCard = (_moneyVal || _moneyCount) ? `
+    <div class="cd-st-money">
+      <div class="cd-st-money-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> 钱财</div>
+      <div class="cd-st-money-cur">${_moneyVal ? escapeHtml(_moneyVal) : '（未记录）'}</div>
+      ${moneyLogHtml ? '<details><summary class="cd-st-money-toggle">钱财变动日志（' + _moneyCount + ' 条）</summary><div class="cd-st-money-log">' + moneyLogHtml + '</div></details>' : '<div class="cd-st-money-empty">（暂无钱财变动记录）</div>'}
+    </div>` : '';
   // ===== 环境卡（地图下方）=====
-  const envKeys = ['布局','温度天气','钱财'];
+  const envKeys = ['布局','温度天气'];
   const envHas = envKeys.some(k => env[k] && String(env[k]).trim());
   const envCard = envHas ? `
-    <div class="cd-st-env">
-      <div class="cd-st-env-title">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l3-8 3 8M3 11a3 3 0 0 0 6 0M3 11v9h6v-8M9 11V3h6v8M9 11a3 3 0 0 0 6 0M9 20h6m-6-8h6M15 11l3-8 3 8m-6 0a3 3 0 0 0 6 0m-6 0v9h6v-9"/></svg>
-        <span>环境</span>
-      </div>
+    <details class="cd-st-env">
+      <summary class="cd-st-env-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l3-8 3 8M3 11a3 3 0 0 0 6 0M3 11v9h6v-8M9 11V3h6v8M9 11a3 3 0 0 0 6 0M9 20h6m-6-8h6M15 11l3-8 3 8m-6 0a3 3 0 0 0 6 0m-6 0v9h6v-9"/></svg> 环境</summary>
       <div class="cd-st-env-grid">
         ${envKeys.map(k => env[k] && String(env[k]).trim() ? `<div class="cd-st-env-item"><span class="k">${k}</span><span class="v">${escapeHtml(env[k])}</span></div>` : '').join('')}
       </div>
-    </div>` : '';
+    </details>` : '';
 
   
   // ===== 【时间锚卡：时间轴最顶，来自 archive.timeAnchor】=====
@@ -8179,10 +8268,11 @@ async function cdRenderGraph() {
   // ===== 【任务卡：活跃任务快照，来自 archive.tasks】=====
   const _taskItems = (data.archive && Array.isArray(data.archive.tasks)) ? data.archive.tasks : [];
   const _parseTask = function(line){ var p=String(line||'').split('|'); return { name:(p[0]||'').trim(), giver:(p[1]||'').trim(), prog:(p[2]||'').trim(), next:(p[3]||'').trim(), limit:(p[4]||'').trim(), mt:(p[5]||'').trim() }; };
-  const tasksBodyHtml = _taskItems.length ? _taskItems.map(function(t){ var o=_parseTask(t.line); return '<div class="cd-st-task"><span class="nm">'+escapeHtml(o.name)+'</span>'+(o.prog?'<span class="pg">进度：'+escapeHtml(o.prog)+'</span>':'')+(o.next?'<span class="nx">下一步：'+escapeHtml(o.next)+'</span>':'')+(o.mt?'<span class="mt">最近推进：'+escapeHtml(o.mt)+'</span>':'')+'</div>'; }).join('') : '<div class="cd-st-tasks-empty">（暂无进行中的任务）</div>';
-  const tasksCard = _taskItems.length ? `
+  const tasksBodyHtml = _taskItems.filter(function(t){ return !/^地点[：:]/.test(String((t&&t.line)||'')) && !/^钱财追踪|^当前金额|^钱财变动/.test(String((t&&t.line)||'')); }).map(function(t){ var o=_parseTask(t.line); return '<div class="cd-st-task"><span class="nm">'+escapeHtml(o.name)+'</span>'+(o.prog?'<span class="pg">进度：'+escapeHtml(o.prog)+'</span>':'')+(o.next?'<span class="nx">下一步：'+escapeHtml(o.next)+'</span>':'')+(o.mt?'<span class="mt">最近推进：'+escapeHtml(o.mt)+'</span>':'')+'</div>'; }).join('');
+  const _taskItemsFiltered = _taskItems.filter(function(t){ return !/^地点[：:]/.test(String((t&&t.line)||'')) && !/^钱财追踪|^当前金额|^钱财变动/.test(String((t&&t.line)||'')); });
+  const tasksCard = _taskItemsFiltered.length ? `
     <details class="cd-st-tasks" open>
-      <summary class="cd-st-tasks-head"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> 任务 <span class="hint">进行中 ${_taskItems.length} 项</span></summary>
+      <summary class="cd-st-tasks-head"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> 任务 <span class="hint">进行中 ${_taskItemsFiltered.length} 项</span></summary>
       <div class="cd-st-tasks-body">${tasksBodyHtml}</div>
     </details>` : '';
   
@@ -8217,7 +8307,7 @@ async function cdRenderGraph() {
           ${renderRoleField('身体', row['身体'])}
           ${renderRoleField('地址', row['地址'] || row['处境'])}
           ${renderRoleField('资产', row['资产'] || row['资源'])}
-          ${renderRoleField('穿着', row['穿着'] || row['衣着'])}
+          ${renderRoleField('外在', row['外在'] || row['穿着'] || row['衣着'] || row['外貌'])}
           ${renderRoleField('好感', row['好感'])}
           ${renderRoleField('备注', row['备注'] || row['其他'])}
         </div>
@@ -8228,6 +8318,7 @@ async function cdRenderGraph() {
     protCard +
     mapHtml +
     timeCard +
+    moneyCard +
     envCard +
     tasksCard +
     memoCard +
@@ -16310,20 +16401,72 @@ cdBindOnce(R.querySelector('#cfImgStyle'),function(){
   var edImg=R.querySelector('#cfEditImg'), edPub=R.querySelector('#cfEditPub'), edPubLbl=R.querySelector('#cfEditPubLbl');
   var _editPickKey='';   // 发帖时已从相册选图的图库 key（选了相册图→发帖直接用它，不再AI生成）
   var isPublic = (cfg.public!==false);   // 公开状态（持久化 cfg.public）
-  // 打开编辑卡片：把底部输入框已有内容带入正文
+  // 打开编辑卡片：动态自包含弹层（不依赖静态 mask，保证必弹出）；把底部输入框已有内容带入正文
+  var _cfDynEditor=null;
   function openEditor(){
-    if(!editorMask) return;
+    try{ if(typeof cdAddLog==='function') cdAddLog('info','[论坛][发帖诊断] openEditor 被调用，走动态弹层'); }catch(_e){}
+    // 强制走动态自包含弹层（静态 #cfEditorMask 显示在部分环境不可靠，动态最稳）
     try{
-      var inp=R.querySelector('#newPost');
-      if(inp && inp.value && inp.value.trim() && edBody && !String(edBody.value||'').trim()) edBody.value=inp.value;
-      if(edTitle && !String(edTitle.value||'').trim()) edTitle.value='';
+      if(editorMask && editorMask.classList) editorMask.classList.remove('open');
     }catch(_e){}
-    if(edPub) edPub.checked=!!isPublic;
-    if(edPubLbl) edPubLbl.textContent = isPublic?'公开':'隐私';
-    editorMask.classList.add('open');
-    try{ if(edBody) setTimeout(function(){ edBody.focus(); },60); }catch(_e2){}
+    _cfOpenDynEditor();
   }
-  function closeEditor(){ if(editorMask) editorMask.classList.remove('open'); }
+  function _cfOpenDynEditor(){
+    try{ if(typeof cdAddLog==='function') cdAddLog('info','[论坛][发帖诊断] _cfOpenDynEditor 创建动态弹层'); }catch(_e){}
+    try{ if(_cfDynEditor && _cfDynEditor.parentNode) _cfDynEditor.parentNode.removeChild(_cfDynEditor); }catch(_e){}
+    var _mount = R.closest('#cd-forum-overlay')||R||document.body;
+    var _box=document.createElement('div');
+    _box.style.cssText='position:fixed;left:0;top:0;width:100%;height:100%;z-index:2147483647;background:rgba(20,24,28,.45);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;';
+    var _card=document.createElement('div');
+    _card.style.cssText='width:min(330px,92vw);background:#fff;border:1px solid #dde5e2;border-radius:16px;box-shadow:0 18px 50px rgba(0,0,0,.30);padding:15px;display:flex;flex-direction:column;gap:9px;box-sizing:border-box;color:#2a3a33;';
+    var _title=document.createElement('div');
+    _title.style.cssText='font-size:12px;font-weight:800;color:#2f5d50;display:flex;align-items:center;gap:6px;margin-bottom:1px;'; _title.textContent='发帖';
+    var _lbl1=document.createElement('div'); _lbl1.style.cssText='font-size:9px;font-weight:700;color:#8b9590;margin-top:1px;'; _lbl1.textContent='标题';
+    var _ipt1=document.createElement('input'); _ipt1.type='text'; _ipt1.placeholder='标题（可选）';
+    _ipt1.style.cssText='width:100%;border:1px solid #dde5e2;border-radius:9px;background:#fafcfb;color:#2a3a33;font-size:11px;padding:7px 9px;outline:none;box-sizing:border-box;';
+    var _lbl2=document.createElement('div'); _lbl2.style.cssText='font-size:9px;font-weight:700;color:#8b9590;margin-top:1px;'; _lbl2.textContent='正文';
+    var _ipt2=document.createElement('textarea'); _ipt2.placeholder='说点什么…';
+    _ipt2.style.cssText='width:100%;min-height:74px;border:1px solid #dde5e2;border-radius:9px;background:#fafcfb;color:#2a3a33;font-size:11px;padding:7px 9px;outline:none;box-sizing:border-box;resize:vertical;line-height:1.6;';
+    // 从底部输入框带入已有内容
+    try{ var _np0=R.querySelector('#newPost'); if(_np0 && _np0.value && _np0.value.trim()) _ipt2.value=_np0.value; }catch(_e){}
+    var _row=document.createElement('div'); _row.style.cssText='display:flex;align-items:center;gap:8px;font-size:9.5px;color:#5a7d72;font-weight:600;';
+    var _imgCb=document.createElement('input'); _imgCb.type='checkbox'; _imgCb.id='cd-dyn-edit-img'; _imgCb.style.cssText='accent-color:#2f8a7a;';
+    var _imgLb=document.createElement('label'); _imgLb.textContent='带图'; _imgLb.style.cssText='display:flex;align-items:center;gap:4px;cursor:pointer;';
+    _imgLb.insertBefore(_imgCb, _imgLb.firstChild);
+    var _pubCb=document.createElement('input'); _pubCb.type='checkbox'; _pubCb.checked=!!isPublic; _pubCb.id='cd-dyn-edit-pub'; _pubCb.style.cssText='accent-color:#2f8a7a;margin-left:8px;';
+    var _pubLb=document.createElement('label'); _pubLb.textContent = isPublic?'公开':'隐私'; _pubLb.style.cssText='display:flex;align-items:center;gap:4px;cursor:pointer;';
+    _pubLb.insertBefore(_pubCb, _pubLb.firstChild);
+    _row.appendChild(_imgLb); _row.appendChild(_pubLb);
+    var _btns=document.createElement('div'); _btns.style.cssText='display:flex;justify-content:flex-end;gap:8px;margin-top:3px;';
+    var _cancel=document.createElement('button'); _cancel.textContent='取消';
+    _cancel.style.cssText='border:1px solid #dde5e2;background:#f5f8f6;color:#5a6a63;font-size:10px;font-weight:700;border-radius:8px;padding:7px 14px;cursor:pointer;';
+    var _send=document.createElement('button'); _send.textContent='发布';
+    _send.style.cssText='border:none;background:linear-gradient(135deg,#2f8a7a,#1f6a5c);color:#fff;font-size:10px;font-weight:700;border-radius:8px;padding:7px 18px;cursor:pointer;';
+    _btns.appendChild(_cancel); _btns.appendChild(_send);
+    _card.appendChild(_title); _card.appendChild(_lbl1); _card.appendChild(_ipt1); _card.appendChild(_lbl2); _card.appendChild(_ipt2); _card.appendChild(_row); _card.appendChild(_btns);
+    _box.appendChild(_card);
+    try{ _mount.appendChild(_box); }catch(_ae){ try{ if(typeof cdAddLog==='function') cdAddLog('error','[论坛][发帖诊断] 动态弹层挂载失败 '+(_ae&&_ae.message)); }catch(_e2){} }
+    _cfDynEditor=_box;
+    try{ if(typeof cdAddLog==='function') cdAddLog('info','[论坛][发帖诊断] 动态弹层已挂载, mount='+(_mount&&_mount.id||_mount&&_mount.nodeName)); }catch(_e){}
+    _ipt2.focus();
+    _cancel.onclick=function(){ try{ if(_box.parentNode) _box.parentNode.removeChild(_box); }catch(_e){} _cfDynEditor=null; };
+    _box.onmousedown=function(e){ if(e.target===_box){ try{ if(_box.parentNode) _box.parentNode.removeChild(_box); }catch(_e2){} _cfDynEditor=null; } };
+    _send.onclick=function(){
+      var _txt=String(_ipt2.value||'').trim();
+      if(!_txt){ try{ if(typeof toastr==='function') toastr.info('请输入帖子内容'); }catch(_e){} return; }
+      // 同步到静态变量，复用 doPublish
+      try{ if(edTitle) edTitle.value=_ipt1.value; if(edBody) edBody.value=_txt; if(edImg) edImg.checked=_imgCb.checked; }catch(_e){}
+      isPublic=!!_pubCb.checked;
+      doPublish(_txt);
+      try{ var _np2=R.querySelector('#newPost'); if(_np2) _np2.value=''; }catch(_e){}
+      try{ if(_box.parentNode) _box.parentNode.removeChild(_box); }catch(_e){} _cfDynEditor=null;
+    };
+  }
+  function closeEditor(){
+    try{ if(editorMask) editorMask.classList.remove('open'); }catch(_e){}
+    try{ if(_cfDynEditor && _cfDynEditor.parentNode) _cfDynEditor.parentNode.removeChild(_cfDynEditor); }catch(_e2){}
+    _cfDynEditor=null;
+  }
   // 发帖：从手机相册选图（存图库，发帖时设置帖子的 imgKey）
   var pickPic=R.querySelector('#cfEditPickPic'), picFile=R.querySelector('#cfEditPicFile'), picPrev=R.querySelector('#cfEditPicPrev'), picPrevImg=R.querySelector('#cfEditPicPrevImg'), picClear=R.querySelector('#cfEditPicClear');
   function _showPicPrev(dataUrl){ if(picPrev){ picPrev.style.display='inline-flex'; } if(picPrevImg&&dataUrl){ try{ picPrevImg.src=dataUrl; }catch(_e){} } }
@@ -16348,10 +16491,11 @@ cdBindOnce(R.querySelector('#cfImgStyle'),function(){
   if(picClear) picClear.addEventListener('click',function(){ _editPickKey=''; if(picPrev) picPrev.style.display='none'; });
   // 点底部输入框 focus → 打开编辑卡片（承载输入，内容带入编辑页）
   var npInp=R.querySelector('#newPost');
-  if(npInp) npInp.addEventListener('focus',function(){ if(!String(this.value||'').trim()){ /* 空也打开编辑页 */ } openEditor(); });
+  try{ if(typeof cdAddLog==='function') cdAddLog('info','[论坛][发帖诊断] newPost元素='+(npInp?'存在':'不存在')+' openEditorBtn='+(R.querySelector('#openEditorBtn')?'存在':'不存在')); }catch(_e){}
+  if(npInp) npInp.addEventListener('focus',function(){ try{ if(typeof cdAddLog==='function') cdAddLog('info','[论坛][发帖诊断] newPost focus 触发，调用openEditor'); }catch(_e){} openEditor(); });
   // 点底部「发布」按钮 → 打开编辑卡片
   var ob=R.querySelector('#openEditorBtn');
-  if(ob) ob.addEventListener('click',function(){ openEditor(); });
+  if(ob) ob.addEventListener('click',function(){ try{ if(typeof cdAddLog==='function') cdAddLog('info','[论坛][发帖诊断] openEditorBtn click 触发，调用openEditor'); }catch(_e){} openEditor(); });
   // 编辑卡片：公开/隐私切换
   if(edPub) edPub.addEventListener('change',function(){ isPublic=!!edPub.checked; var c=cdForumCfg(); c.public=isPublic; _cfCfgCache=c; cdForumPersist(); cfg.public=isPublic; if(edPubLbl) edPubLbl.textContent=isPublic?'公开':'隐私'; });
   // 取消 / 点遮罩空白关
