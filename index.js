@@ -1947,9 +1947,20 @@ async function cdCheckForUpdates(silent = true) {
     const resp = await fetch(REPO_URL);
     if (!resp.ok) return;
     const data = await resp.json();
-    const remoteVer = (data.tag_name || data.name || '').replace(/^v/, '');
+    const remoteVer = (data.tag_name || data.name || '').replace(/^v/, '').trim();
     const localVer = PLUGIN_VERSION;
-    if (remoteVer && remoteVer !== localVer) {
+    // ★ 语义化版本比较：拆分数字逐段比，避免本地版本号更高时被误报"有新版本"（如本地 2.9.7 > 远端 2.9.6）
+    const cmpVer = (a, b) => {
+      const pa = String(a || '0').split('.').map(n => parseInt(n, 10) || 0);
+      const pb = String(b || '0').split('.').map(n => parseInt(n, 10) || 0);
+      const len = Math.max(pa.length, pb.length);
+      for (let i = 0; i < len; i++) {
+        const x = pa[i] || 0, y = pb[i] || 0;
+        if (x !== y) return x > y ? 1 : -1;
+      }
+      return 0;
+    };
+    if (remoteVer && cmpVer(remoteVer, localVer) > 0) {
       const msg = `发现新版本 v${remoteVer}（当前 v${localVer}），请运行 git pull 更新`;
       toastr.warning(msg, '角色日记', { timeOut: 10000, extendedTimeOut: 15000 });
       cdLog('[更新] ' + msg);
