@@ -1005,7 +1005,7 @@ const ARCHIVE_SYSTEM = [
   '（已被后续剧情推翻/缓解的旧状态不要重复列出；没有当前有效状态则输出"无"。）',
   '（严格按下面的固定分格格式输出，用 | 分隔不同维度、一格一值，禁止把多个维度混在同一个值里。每行 = 一个对象（主角/环境/某个角色），以换行分隔：）',
   '- 主角行格式（覆盖式）：主角：身份【…】| 身体【…】| 精神状态【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】',
-  '- 环境行格式（覆盖式，输出当前环境现状，非历史）：环境：布局【…】| 温度天气【…】| 钱财【…】| 身体状态【…】',
+  '- 环境行格式（覆盖式，输出当前环境现状，非历史）：环境：布局【…】| 温度天气【…】| 钱财【…】',
   '- 其他每个角色一行（覆盖式）：角色名：身体【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】',
   '各维度内容：身体=伤病/体力/健康；地址=当前所在地点的核心地名（主角必须直接写清实际位置，只写地名，不写"抵达/身处"等动作词与冗长修饰）；资产=钱/物品/持有物；穿着=衣服穿戴；好感=对主角(用户)的好感度数值与态度；备注=不易归类的其它当前状态。已变化才更新该格，未变化的可保留或留空，不要用“无”填满所有格。好感度必须带数字与负号（负好感带-）。每行末尾以【时间标记】标注该状态最近一次变化时间，如【第3天 傍晚】。当前位置规则：主角的「地址」必须写清当前实际所在地点），',
   '',
@@ -1037,17 +1037,12 @@ const ARCHIVE_SYSTEM = [
   '3. 进度写"当前进展到哪一步 + 下一步做什么"，越具体越好，禁止笼统"进行中"。',
   '4. 每次推进就更新"最近推进时间"。',
   '5. 若没有进行中的任务，输出"无"。',
+        '6. 与「未解决事项」不得重复：未解决=长期伏笔/谜团/悬而未决线索；任务=正在进行的行动进度。同一件事只归一类记录，绝不在两处重复写。',
   '',
   '地点（追加式，地图用：只输出本次剧情新增出现/移动到的地点，按剧情先后顺序一行一个，直接写核心地名，如"贫民窟垃圾山""半塌危楼阁楼""南区佣兵集散地"；本次未移动则输出"无"）：',
   '（用下面的专属标记包裹地点，与其他字段完全独立；地点一行一个，只写核心地名，不写比喻/回忆/梦境场景，不带时间标记前缀）：',
   '<<<LOCATIONS>>>',
   '<<<LOCATIONS_END>>>',
-  '物品清单（双轨，必须同时输出覆盖式「当前持有」+ 追加式「变动日志」）：',
-  '当前持有（覆盖式，只列「现在仍然存在」的物品，一件一行，格式：物品名|持有者|位置|随身上/寄存）：',
-  '（如：残破的青铜钥匙|主角|随身携带|随身上；契约文书|女巫|老宅书房木匣|寄存。已消耗/已送人/已丢弃的不要在覆盖层出现）',
-  '变动日志（追加式，记录物品每次流转，每条带【时间标记】；发生"获得/消耗/送出/寄存/丢失/被夺"就追加一条，同一物品同一状态绝不重复结算、绝不记两遍）：',
-  '（如：【第3天 傍晚】主角购得青铜钥匙；【第4天 清晨】主角把青铜钥匙交给女巫）',
-  '',
   '当前时间轴（覆盖式，只输出当前故事内时间快照，作为全剧统一的"现在"）：',
   '（格式：【第7天 午后·雪原营地】，并写明距上次时间推进了多久，如"距上次【第6天 夜晚】推进约半日"。必须从上次记录的时间向后推进，禁止时间倒流，禁止把"昨天"写成"三天前"；跨夜/赶路/战斗的时间流逝要显式标注。若剧情无明显时间推进，则原样保留上次时间）',
   '',
@@ -1109,7 +1104,7 @@ const ARCHIVE_SYSTEM_FULL = [
   '（已被后续剧情推翻/缓解的旧状态不要重复列出；没有当前有效状态则输出"无"。）',
   '（严格按下面的固定分格格式输出，用 | 分隔不同维度、一格一值，禁止把多个维度混在同一个值里。每行 = 一个对象（主角/环境/某个角色），以换行分隔：）',
   '- 主角行格式（覆盖式）：主角：身份【…】| 身体【…】| 精神状态【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】',
-  '- 环境行格式（覆盖式，输出当前环境现状，非历史）：环境：布局【…】| 温度天气【…】| 钱财【…】| 身体状态【…】',
+  '- 环境行格式（覆盖式，输出当前环境现状，非历史）：环境：布局【…】| 温度天气【…】| 钱财【…】',
   '- 其他每个角色一行（覆盖式）：角色名：身体【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】',
   '各维度内容：身体=伤病/体力/健康；地址=当前所在地点的核心地名（主角必须直接写清实际位置，只写地名，不写"抵达/身处"等动作词与冗长修饰）；资产=钱/物品/持有物；穿着=衣服穿戴；好感=对主角(用户)的好感度数值与态度；备注=不易归类的其它当前状态。已变化才更新该格，未变化的可保留或留空，不要用“无”填满所有格。好感度必须带数字与负号（负好感带-）。每行末尾以【时间标记】标注该状态最近一次变化时间，如【第3天 傍晚】。当前位置规则：主角的「地址」必须写清当前实际所在地点），',
   '',
@@ -1140,17 +1135,12 @@ const ARCHIVE_SYSTEM_FULL = [
   '3. 进度写"当前进展到哪一步 + 下一步做什么"，越具体越好，禁止笼统"进行中"。',
   '4. 每次推进就更新"最近推进时间"。',
   '5. 若没有进行中的任务，输出"无"。',
+        '6. 与「未解决事项」不得重复：未解决=长期伏笔/谜团/悬而未决线索；任务=正在进行的行动进度。同一件事只归一类记录，绝不在两处重复写。',
   '',
   '地点（追加式，地图用：只输出本次剧情新增出现/移动到的地点，按剧情先后顺序一行一个，直接写核心地名，如"贫民窟垃圾山""半塌危楼阁楼""南区佣兵集散地"；本次未移动则输出"无"）：',
   '（用下面的专属标记包裹地点，与其他字段完全独立；地点一行一个，只写核心地名，不写比喻/回忆/梦境场景，不带时间标记前缀）：',
   '<<<LOCATIONS>>>',
   '<<<LOCATIONS_END>>>',
-  '物品清单（双轨，覆盖式「当前持有」+ 追加式「变动日志」都要完整输出）：',
-  '当前持有（覆盖式，只列整段剧情结束时「仍然存在」的物品，一件一行，格式：物品名|持有者|位置|随身上/寄存）：',
-  '（如：残破的青铜钥匙|主角|随身携带|随身上；契约文书|女巫|老宅书房木匣|寄存。已消耗/已送人/已丢弃的不要列）',
-  '变动日志（追加式，把整段剧情的物品流转按时间补齐，每条带【时间标记】；获得/消耗/送出/寄存/丢失/被夺各记一条，同一物品同一状态绝不重复结算、绝不记两遍）：',
-  '（如：【第3天 傍晚】主角购得青铜钥匙；【第4天 清晨】主角把青铜钥匙交给女巫）',
-  '',
   '当前时间轴（覆盖式，只输出剧情结束时的当前故事内时间）：',
   '（格式：【第7天 午后·雪原营地】。必须从最早的记录一路向后推进到当前，中间跳过的天数/时段要交代清楚，禁止时间倒流）',
   '',
@@ -1585,7 +1575,7 @@ async function cdCompressArchive(data, s, isAuto) {
 【格式铁律（与自动写档案完全一致，压缩时也必须遵守，禁止破坏现有格式）】：
 1. 重要状态变化（states）必须保持固定分格格式，用 | 分隔不同维度、一格一值，禁止把多个维度混在同一个值里。每行 = 一个对象（主角/环境/某个角色），以换行分隔：
    - 主角行：主角：身份【…】| 身体【…】| 精神状态【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】
-   - 环境行：环境：布局【…】| 温度天气【…】| 钱财【…】| 身体状态【…】
+   - 环境行：环境：布局【…】| 温度天气【…】| 钱财【…】
    - 其他角色行：角色名：身体【…】| 地址【…】| 资产【…】| 穿着【…】| 好感【…】| 备注【…】
    压缩时保持这些分格与维度不丢失；已变化才更新该格，未变化保留或留空，不要用“无”填满所有格。
 2. 好感度数值铁律（必须严格遵守，压缩时不可破坏）：
@@ -2752,6 +2742,7 @@ async function cdBuildDiaryInjectionText() {
           if (arc.unresolved) arcParts.push(`待解决事项：${arc.unresolved}`);
           // ★ 当前时间轴（覆盖式最新）
           if (arc.timeAnchor && String(arc.timeAnchor).trim()) arcParts.push(`当前时间：${String(arc.timeAnchor).trim()}`);
+          if (Array.isArray(arc.locations) && arc.locations.length) arcParts.push('地点（已踏足/当前位置）：\n' + arc.locations.map(function(l){ return '- ' + l; }).join('\n'));
           // ★ 物品当前持有 + 变动日志
           if (Array.isArray(arc.itemsHold) && arc.itemsHold.length) {
             arcParts.push('当前持有物品：\n' + arc.itemsHold.map(function(l){ return '- ' + (l && l.line || ''); }).join('\n'));
@@ -8110,7 +8101,7 @@ async function cdRenderGraph() {
     </div>`;
 
   // ===== 环境卡（地图下方）=====
-  const envKeys = ['布局','温度天气','钱财','身体状态'];
+  const envKeys = ['布局','温度天气','钱财'];
   const envHas = envKeys.some(k => env[k] && String(env[k]).trim());
   const envCard = envHas ? `
     <div class="cd-st-env">
@@ -8166,7 +8157,6 @@ async function cdRenderGraph() {
         <div class="cd-st-snap-sec">时间</div>
         <div class="cd-st-time-body">${escapeHtml(timeAnchorVal.trim())}</div>
         ${envHas ? `<div class="cd-st-snap-sec">环境</div><div class="cd-st-env-grid">${envKeys.map(function(k){ return (env[k] && String(env[k]).trim()) ? `<div class="cd-st-env-item"><span class="k">${k}</span><span class="v">${escapeHtml(env[k])}</span></div>` : ''; }).join('')}</div>` : ''}
-        ${(_holdItems.length || _logItems.length) ? `<div class="cd-st-snap-sec">物品</div><div class="cd-st-items-list">${itemsHoldHtml || '<div class="cd-st-items-empty">（暂无持有物）</div>'}</div>${itemsLogHtml ? '<div class="cd-st-log-list">'+itemsLogHtml+'</div>' : ''}` : ''}
         ${_taskItems.length ? `<div class="cd-st-snap-sec">任务</div><div class="cd-st-tasks-body">${_taskItems.map(function(t,ti){ return '<div class="cd-st-task" style="display:flex;align-items:flex-start;gap:4px;"><label class="cd-st-cb-wrap"><input type="checkbox" class="cd-st-cb" data-kind="task" data-idx="'+ti+'"></label><div style="flex:1">'+String(t.line||'').replace(/\|/g,' · ')+'</div></div>'; }).join('')}</div>` : ''}
       </div>
     </details>` : '';
@@ -8210,13 +8200,13 @@ async function cdRenderGraph() {
   }).join('') : '<div class="cd-empty"><p>暂无角色状态</p><p class="cd-empty-sub">写日记时 AI 会记录各角色的状态与好感</p></div>';
 
   $('#cd-content').html(
-    `<div class="cd-st-manage-bar"><button type="button" class="cd-st-manage-btn" id="cd-st-manage-btn">批量管理</button><span class="cd-st-manage-ops"><span>已选 <b id="cd-st-sel-num">0</b> 项</span><button type="button" class="del" id="cd-st-del">删除选中</button><button type="button" class="cancel" id="cd-st-cancel">取消</button></span></div>` +
     protCard +
     mapHtml +
     snapshotCard +
     memoCard +
     `<div class="cd-st-section-title"><i class="fa-regular fa-people-group"></i> 角色状态</div>` +
-    roleHtml
+    roleHtml +
+    `<div class="cd-st-manage-bar"><button type="button" class="cd-st-manage-btn" id="cd-st-manage-btn">批量管理</button><span class="cd-st-manage-ops"><span>已选 <b id="cd-st-sel-num">0</b> 项</span><button type="button" class="del" id="cd-st-del">删除选中</button><button type="button" class="cancel" id="cd-st-cancel">取消</button></span></div>`
   );
   // ★ 状态页批量管理（多选删除 任务/物品/角色状态）事件绑定（委托，防 DOM 未插入失效）
   try {
