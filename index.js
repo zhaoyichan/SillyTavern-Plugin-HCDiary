@@ -2743,13 +2743,6 @@ async function cdBuildDiaryInjectionText() {
           // ★ 当前时间轴（覆盖式最新）
           if (arc.timeAnchor && String(arc.timeAnchor).trim()) arcParts.push(`当前时间：${String(arc.timeAnchor).trim()}`);
           if (Array.isArray(arc.locations) && arc.locations.length) arcParts.push('地点（已踏足/当前位置）：\n' + arc.locations.map(function(l){ return '- ' + l; }).join('\n'));
-          // ★ 物品当前持有 + 变动日志
-          if (Array.isArray(arc.itemsHold) && arc.itemsHold.length) {
-            arcParts.push('当前持有物品：\n' + arc.itemsHold.map(function(l){ return '- ' + (l && l.line || ''); }).join('\n'));
-          }
-          if (Array.isArray(arc.items) && arc.items.length) {
-            arcParts.push('物品变动日志：\n' + arc.items.map(function(it){ return '- ' + (it.time ? '【' + it.time + '】' : '') + (it.desc || ''); }).join('\n'));
-          }
           // ★ 任务记录（活跃任务）
           if (Array.isArray(arc.tasks) && arc.tasks.length) {
             arcParts.push('任务记录：\n' + arc.tasks.map(function(t){ return '- ' + (t && t.line || ''); }).join('\n'));
@@ -7833,11 +7826,6 @@ async function cdRenderGraph() {
       '.cd-st-task .nx{color:#8a6a3b;font-size:9.5px}',
       '.cd-st-task .mt{color:#9a7a45;font-size:9px;margin-top:2px}',
       '.cd-st-tasks-empty{font-size:9.5px;color:#8b7355}',
-      '.cd-st-snapshot{border:1px solid #dcc9a4;border-radius:8px;background:#faf6ec;margin-bottom:10px;overflow:hidden}',
-      '.cd-st-snap-head{display:flex;align-items:center;gap:7px;padding:9px 11px;font-size:11px;font-weight:700;color:#6b4a1b;cursor:pointer}',
-      '.cd-st-snap-head .hint{font-size:10px;font-weight:600;color:#8a6a3b;margin-left:auto}',
-      '.cd-st-snap-body{padding:0 11px 10px;border-top:1px solid #e6dcc6;display:flex;flex-direction:column;gap:4px}',
-      '.cd-st-snap-sec{font-size:9.5px;font-weight:700;color:#9a7a45;margin-top:7px}',
       '.cd-st-manage-bar{display:flex;align-items:center;gap:8px;padding:6px 2px;margin-bottom:8px;flex-wrap:wrap}',
       '.cd-st-manage-btn{font-size:10px;font-weight:600;color:#6b4a1b;border:1px solid #dcc9a4;border-radius:7px;padding:5px 12px;cursor:pointer;background:#faf6ec}',
       '.cd-st-manage-btn.active{background:#8a6a3b;color:#fff;border-color:#8a6a3b}',
@@ -7846,7 +7834,6 @@ async function cdRenderGraph() {
       '.cd-st-manage-ops .cancel{color:#6b4a1b;border:1px solid #dcc9a4;border-radius:7px;padding:5px 12px;cursor:pointer}',
       '.cd-st-cb-wrap{display:none;align-items:center;margin-right:4px}',
       '#cd-content.cd-st-managing .cd-st-cb-wrap{display:inline-flex}',
-      '.cd-st-managing .cd-st-snapshot .cd-st-cb-wrap{display:inline-flex}',
       '.cd-st-cb{width:14px;height:14px;cursor:pointer;accent-color:#8a6a3b}',
     ].join('\n');
     document.head.appendChild(st);
@@ -8149,18 +8136,6 @@ async function cdRenderGraph() {
       <div class="cd-st-tasks-body">${tasksBodyHtml}</div>
     </details>` : '';
   
-  // ===== 【当前状态·综合卡（时间/环境/物品/任务），默认折叠只显示时间摘要，放地图下】 =====
-  const snapshotCard = (timeAnchorVal.trim() || envHas || _holdItems.length || _logItems.length || _taskItems.length) ? `
-    <details class="cd-st-snapshot">
-      <summary class="cd-st-snap-head"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> 当前状态 <span class="hint">${escapeHtml(timeAnchorVal.trim() || '暂无时间')}</span></summary>
-      <div class="cd-st-snap-body">
-        <div class="cd-st-snap-sec">时间</div>
-        <div class="cd-st-time-body">${escapeHtml(timeAnchorVal.trim())}</div>
-        ${envHas ? `<div class="cd-st-snap-sec">环境</div><div class="cd-st-env-grid">${envKeys.map(function(k){ return (env[k] && String(env[k]).trim()) ? `<div class="cd-st-env-item"><span class="k">${k}</span><span class="v">${escapeHtml(env[k])}</span></div>` : ''; }).join('')}</div>` : ''}
-        ${_taskItems.length ? `<div class="cd-st-snap-sec">任务</div><div class="cd-st-tasks-body">${_taskItems.map(function(t,ti){ return '<div class="cd-st-task" style="display:flex;align-items:flex-start;gap:4px;"><label class="cd-st-cb-wrap"><input type="checkbox" class="cd-st-cb" data-kind="task" data-idx="'+ti+'"></label><div style="flex:1">'+String(t.line||'').replace(/\|/g,' · ')+'</div></div>'; }).join('')}</div>` : ''}
-      </div>
-    </details>` : '';
-  
   // ===== 备忘录（地图下方，默认折叠；手动填写，对话时注入给AI）=====
   const memoCard = `
     <details class="cd-st-memo" id="cd-memo-details">
@@ -8202,7 +8177,9 @@ async function cdRenderGraph() {
   $('#cd-content').html(
     protCard +
     mapHtml +
-    snapshotCard +
+    timeCard +
+    envCard +
+    tasksCard +
     memoCard +
     `<div class="cd-st-section-title"><i class="fa-regular fa-people-group"></i> 角色状态</div>` +
     roleHtml +
