@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.9.7';
+const PLUGIN_VERSION = '2.9.9';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -536,7 +536,16 @@ async function callOpenAI(messages, ep, s) {
     const res = await fetch(`${base}/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ep.key}` },
-      body: JSON.stringify({ model: ep.model, messages, temperature: s.temperature, max_tokens: 8192, stream: false }),
+      body: JSON.stringify({ model: ep.model, messages: messages.map(function (_mm0) {
+        var _rp0 = _cdParseMsgContent(_mm0.content);
+        if (_rp0.images.length) {
+          var _carr0 = [];
+          if (_rp0.text) _carr0.push({ type: 'text', text: _rp0.text });
+          _rp0.images.forEach(function (_d0) { _carr0.push({ type: 'image_url', image_url: { url: _d0 } }); });
+          return { role: _mm0.role, content: _carr0 };
+        }
+        return { role: _mm0.role, content: _mm0.content };
+      }), temperature: s.temperature, max_tokens: 8192, stream: false }),
     });
     if (!res.ok) {
       // 4xx/5xx 是接口或密钥问题，不降级（避免掩盖真实错误）
@@ -647,11 +656,34 @@ async function cdRerankResults(query, results, s, target) {
   return results;
 }
 
+/* 多模态消息解析：把消息 content 里的 [IMG]data:image/...[/IMG] 标记拆成文本+图片数组 */
+function _cdParseMsgContent(content){
+  var text=String(content||'');
+  var images=[];
+  var re=/\[IMG\](data:image\/[^\[\]]+)\[\/IMG\]/gi;
+  var m;
+  while((m=re.exec(text))){ images.push(m[1]); }
+  text=text.replace(/\[IMG\](data:image\/[^\[\]]+)\[\/IMG\]/gi,'');
+  text=text.replace(/\n{3,}/g,'\n\n').trim();
+  return { text:text, images:images };
+}
+
 async function callClaude(messages, ep, s) {
   const base = ep.url.replace(/\/+$/, '');
   const system = messages.filter(m => m.role === 'system').map(m => m.content).join('\n\n');
-  const msgs = messages.filter(m => m.role !== 'system')
-    .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
+  const msgs = messages.filter(m => m.role !== 'system').map(m => {
+    var _rp = _cdParseMsgContent(m.content);
+    if (_rp.images.length) {
+      var _carr = [];
+      if (_rp.text) _carr.push({ type: 'text', text: _rp.text });
+      _rp.images.forEach(function (d) {
+        var _mm = /^data:(image\/(?:png|jpeg|gif|webp));base64,(.*)$/.exec(d);
+        if (_mm) _carr.push({ type: 'image', source: { type: 'base64', media_type: _mm[1], data: _mm[2] } });
+      });
+      return { role: m.role === 'assistant' ? 'assistant' : 'user', content: _carr };
+    }
+    return { role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content };
+  });
   const res = await fetch(`${base}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': ep.key, 'anthropic-version': '2023-06-01' },
@@ -668,9 +700,16 @@ async function callClaude(messages, ep, s) {
 async function callGemini(messages, ep, s) {
   const base = ep.url.replace(/\/+$/, '');
   const system = messages.filter(m => m.role === 'system').map(m => m.content).join('\n\n');
-  const contents = messages.filter(m => m.role !== 'system').map(m => ({
-    role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }],
-  }));
+  const contents = messages.filter(m => m.role !== 'system').map(m => {
+    var _rp = _cdParseMsgContent(m.content);
+    var _parts = [];
+    if (_rp.text) _parts.push({ text: _rp.text });
+    _rp.images.forEach(function (d) {
+      var _mm = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/.exec(d);
+      if (_mm) _parts.push({ inline_data: { mime_type: _mm[1], data: _mm[2] } });
+    });
+    return { role: m.role === 'assistant' ? 'model' : 'user', parts: _parts };
+  });
   const body = {
     contents,
     generationConfig: { temperature: s.temperature, maxOutputTokens: 8192 },
@@ -14208,8 +14247,14 @@ async function cdForumApiComplete(messages){
   // 构造一个临时 settings 指向 forum.api（若配置了 url）否则用主插件
   var tmp = Object.assign({}, s);
   if(fa.url && fa.key){
-    tmp.source = 'openai';
-    tmp.endpoints = Object.assign({}, s.endpoints, { openai: { url: fa.url, key: fa.key, model: fa.model || s.endpoints?.openai?.model || '' } });
+    var _fsrc = fa.source || 'auto';
+    if(_fsrc==='gemini'){
+      tmp.source='gemini';
+      tmp.endpoints = Object.assign({}, s.endpoints, { gemini: { url: fa.url, key: fa.key, model: fa.model || s.endpoints?.gemini?.model || '' } });
+    } else {
+      tmp.source = 'openai';
+      tmp.endpoints = Object.assign({}, s.endpoints, { openai: { url: fa.url, key: fa.key, model: fa.model || s.endpoints?.openai?.model || '' } });
+    }
     tmp.temperature = (typeof fa.temperature==='number') ? fa.temperature : (s.temperature||0.7);
   }
   var res = await cdWithTimeout(cdApiComplete(messages, tmp), 180000, '世界论坛生成');
@@ -16904,7 +16949,258 @@ cdBindOnce(R.querySelector('#cfImgStyle'),function(){
     }catch(_e){}
   }
 
-  function _mangaRenderInit(){
+    function _mangaRenderRefPrev(d){
+    var md=_mangaLayerBody; if(!md) return;
+    var pv=md.querySelector('#mgRefPrev'); if(!pv) return;
+    d=d||cdMangaData();
+    if(d.refImg){
+      pv.innerHTML='<div style="display:flex;align-items:center;gap:7px;"><img src="'+d.refImg+'" style="width:42px;height:42px;object-fit:cover;border-radius:7px;border:1px solid #c8d6cf;"><div style="font-size:9px;color:#3a6b58;">已选参考图</div><span id="mgRefClear" style="cursor:pointer;color:#c84632;border:1px solid #e0b8ae;background:#fdf0ec;padding:3px 9px;border-radius:6px;font-size:9px;">清除</span></div>';
+      var cl=pv.querySelector('#mgRefClear'); if(cl){ cl.onclick=function(){ var d5=cdMangaData(); d5.refImg=''; cdMangaSave(); _mangaRenderRefPrev(d5); }; }
+    } else { pv.innerHTML=''; }
+  }
+  /* 识图+指令 -> 【九维长段设计·保留原图特征】 -> 提炼英文TAG -> 文生图（默认路径，走论坛多模态模型） */
+  function _mangaGenByImage(res, go, d, instruction, mangaStyleWord, roleBlock){
+    var refImg=d.refImg||'';
+    if(!refImg){ try{ if(typeof toastr==='function') toastr.info('请先选择参考图'); }catch(e){} return; }
+    res.innerHTML='<div style="text-align:center;padding:16px;color:#2f8a7a;font-size:10px;">正在识图设计…（AI 先仔细看懂原图，结合指令写画面设计）</div>';
+    if(go){ go.disabled=true; go.textContent='生成中…'; }
+    var _msw=String(mangaStyleWord||'').trim();
+    // 系统性修复 AIGC 流程：角色名(作品名)+禁脑补+冲突画风检测+质量词克制+否定词规范+精简负面
+    var sys='你现在是给 NovelAI 生图模型生成提示词的专家。输入会包含一张参考图片和用户的修改描述。你的目标：产出一组【正向tag】和【任务专属负面tag】，让 NAI 画出既保留原图角色本体、又落实用户修改的干净画面。\n\n'
+      +'【铁律1·角色名最高权重】若原图是知名原作/游戏/动漫角色，正向tag最开头必须写【角色名(作品名)】如 Le\'garde(Fear and Hunger)、Griffith(Berserk)。同人角色名字的权重远大于外貌堆砌，能极大提升角色辨识度；实在不知道作品名才只用外貌描述。\n\n'
+      +'【铁律2·严格忠于原图，禁止脑补】五官、发质、衣甲、构图、画风全部以图片实际看到的为准。绝不自动添加原图没有的修饰词——例如原图是中等长度微卷发，就不能写 long hair 或 messy hair；原图没有的斗篷/伤口/背景物件不能凭空加。宁可少写一个不确切的词，也不要写错。\n\n'
+      +'【铁律3·五官与发质精描】这是像不像同一个人的关键，逐项写具体：眼型(狭长/圆/上挑/下垂/丹凤等)、瞳色与眼神、鼻型(挺直/小巧/鹰钩)、嘴型(薄/厚/嘴角走向)、脸型与下颌线、发质(直/微卷/大波浪/小卷)、发长(短/中/长)、发色(具体色)、肤色。\n\n'
+      +'【铁律4·冲突画风检测】正向tag必须自洽，禁止矛盾的画风tag共存：\n'
+      +'   - 用户要"纯线稿无阴影"→ 用 monochrome, black and white lineart, clean outlines, ink sketch, no shading；【禁止】加 manga style（自带阴影网点）、禁止加 screentone/halftone。\n'
+      +'   - 用户要"漫画网点/80s复古"→ 才加 retro manga, screentone, halftone dots, dramatic shading。\n'
+      +'   - 背景如果是纯色，写 plain white background / plain black background，不要只写 background。\n\n'
+      +'【铁律5·克制空泛质量词】不要自动加 masterpiece / best quality / ultra detailed 这类空洞赞美词（NAI4.5收益极低甚至引入多余渲染）。优先客观视觉描述。\n\n'
+      +'【铁律6·否定词规范】负面tag里：不要单独写 background（会让AI拒绝画背景导致崩坏）；要写 complex background, landscape, detailed background。不要写 grayscale 与 lineart 同时在正向。\n\n'
+      +'【画风词】'+(_msw||'')+'\n\n'
+      +'【输出格式(严格遵守)】\n'
+      +'  1) 先用不超过150字中文写【画面设计】交代新画面；\n'
+      +'  2) 然后用【正向TAG】单独起一行，下一行写纯英文、逗号分隔的正向tag（顺序=角色名(作品名)→1boy/1girl→五官发质→体型→衣甲→构图姿态→背景→画风；质量词不要加或最多一个）；\n'
+      +'  3) 再用【负面TAG】单独起一行，下一行写纯英文、逗号分隔的【任务专属负面】（针对本次需求禁止的元素，如纯线稿则加 color, shading, painting, screentone；注意否定 background 要写 complex background/landscape，别裸写 background）。\n'
+      +'  4) 全文不要markdown符号（**、##、-、>等）；【画面设计】中文不加序号点；TAG后只写纯英文逗号串，禁止中文/星号。';
+    // ★ 角色库自动注入：把匹配到的角色TAG块放进用户消息（多角色），AI 据此锁定角色相貌
+    var _roleBlk = roleBlock ? String(roleBlock) : '';
+    var usr=_roleBlk+'用户指令：'+(instruction||'')+'\n参考图：\n[IMG]'+refImg+'[/IMG]';
+    cdForumApiComplete([{role:'system',content:sys},{role:'user',content:usr}]).then(function(raw){
+      raw=String(raw||'').trim();
+      // ---- 健壮提取：先把 raw 按「负面TAG」切一刀，前半=正向，后半=任务专属负面 ----------------
+      var _negIdx = raw.search(/负面TAG\s*[:：]?/i);
+      var posRaw = raw, negRaw = '';
+      if(_negIdx>=0){ posRaw = raw.slice(0,_negIdx); negRaw = raw.slice(_negIdx).replace(/负面TAG\s*[:：]?/i,''); }
+      // 从 posRaw 里截取正向英文段（找 正向TAG/TAG 标记，取其后到行尾）
+      var tag='';
+      var _tmPos = posRaw.search(/正向TAG\s*[:：]?|【正向TAG】|【TAG】|TAG\s*[:：]/i);
+      if(_tmPos>=0){ tag=posRaw.slice(_tmPos).replace(/正向TAG\s*[:：]?|【正向TAG】|【TAG】|TAG\s*[:：]/i,''); }
+      else { tag=posRaw; }
+      var neg=String(negRaw||'');
+      // 清洗：去标记词/中文/星号/多余空白与逗号；去正向里可能混入的 TAG 残留
+      var _clean=function(s){ return String(s||'').replace(/【正向TAG】|【TAG】|【负面TAG】|正向TAG|负面TAG|TAG\s*[:：]|\*\*/gi,'').replace(/[^\x00-\x7F]+/g,' ').replace(/\s+/g,' ').replace(/,+\s*,+/g,',').replace(/^[,\s]+|[,\s]+$/g,'').trim(); };
+      tag=_clean(tag); neg=_clean(neg);
+      if(!tag || tag.replace(/[, ]/g,'').length<4){ throw new Error('AI 未能生成可用画面TAG'); }
+      // 精简通用崩坏负面库（防崩坏，放任务专属负面之后）——比超长版精简，避免权重稀释
+      var COMMON_NEG='bad anatomy, bad hands, bad face, malformed limbs, mutated hands, extra fingers, missing fingers, fused fingers, deformed body, twisted body, lowres, blurry, jpeg artifacts, watermark, text, logo, ugly, deformed face, crossed eyes, extra eyes, extra limbs, bad proportions';
+      var negFinal = neg ? (neg + ', ' + COMMON_NEG) : COMMON_NEG;
+      try{ if(typeof cdAddLog==='function') cdAddLog('info','[漫境·识图] 系统性修复',{ instruction:String(instruction||'').slice(0,200), design:String(raw||'').slice(0,1200), tag:String(tag).slice(0,1000), taskNeg:String(neg||'').slice(0,800), negFinal:String(negFinal||'').slice(0,1200) }); }catch(_e){}
+      res.innerHTML='<div style="text-align:center;padding:12px;color:#2f8a7a;font-size:10px;">画面设计完成，正在生图…</div>';
+      // 业务任务负面+精简通用负面合并传到底层生图（不再混入正向）
+      return cdForumGenerateImage(tag, negFinal, '', true);
+    }).then(function(img){
+      if(go){ go.disabled=false; go.textContent='生成'; }
+      if(img && img.dataUrl){
+        res.innerHTML='<div style="text-align:center;"><img src="'+img.dataUrl+'" style="max-width:100%;border-radius:10px;border:1px solid #dde5e2;"></div><div style="text-align:center;margin-top:10px;"><span id="mgSaveNow" style="display:inline-block;font-size:9.5px;font-weight:700;color:#fff;background:linear-gradient(135deg,#2f8a7a,#1f6a5c);border-radius:7px;padding:6px 14px;cursor:pointer;">保存到相册</span></div>';
+        _mangaAddHistory('single','[参考图]'+(instruction||''), img.dataUrl);
+        var _s=document.getElementById('mgSaveNow'); if(_s){ _s.onclick=function(){ _mangaSaveToGallery({mode:'single', img:img.dataUrl, text:'[参考图]'+(instruction||'')}); }; }
+      } else {
+        res.innerHTML='<div style="color:#c84632;text-align:center;padding:12px;font-size:10px;">生图失败，请查看日志</div>';
+      }
+    }).catch(function(err){
+      if(go){ go.disabled=false; go.textContent='生成'; }
+      res.innerHTML='<div style="color:#c84632;text-align:center;padding:12px;font-size:10px;">识图/生成失败：'+(err&&err.message||err)+'</div>';
+    });
+  }
+  /* img2img：直接把参考图喂给生图站（需生图站支持参考图字段），跳过识图。中文指令先经多模态转成英文prompt，避免中文污染 */
+  function _mangaGenImg2Img(res, go, d, instruction, mangaStyleWord, roleBlock){
+    var refImg=d.refImg||'';
+    if(!refImg){ try{ if(typeof toastr==='function') toastr.info('请先选择参考图'); }catch(e){} return; }
+    res.innerHTML='<div style="text-align:center;padding:16px;color:#2f8a7a;font-size:10px;">正在直连图生图…（先转英文指令）</div>';
+    if(go){ go.disabled=true; go.textContent='生成中…'; }
+    var _msw=String(mangaStyleWord||'').trim();
+    // 转英文指令：用多模态模型读参考图+中文指令，输出纯英文 img2img prompt（保留原图延续要素+画风）
+    var sys='你是图生图(img2img)提示词翻译器。给你一张参考图和一句中文指令。你要：\n1) 看懂参考图里要延续的元素（角色/构图/画风等）。\n2) 把中文指令翻译成一段【纯英文、逗号分隔】的生图提示词(prompt)，描述要生成的画面：延续原图关键要素+按指令修改，并包含必要的画风词。\n3) 只输出英文prompt，不要任何解释/中文/markdown。\n【画风词】'+(_msw||'')+'\n【示例】中文"改成黑白线稿图" -> monochrome lineart, black and white, clean ink lines, white background, sketch';
+    var _roleBlk2 = roleBlock ? String(roleBlock) : '';
+    var usr=_roleBlk2+'中文指令：'+(instruction||'')+'\n参考图：\n[IMG]'+refImg+'[/IMG]';
+    cdForumApiComplete([{role:'system',content:sys},{role:'user',content:usr}]).then(function(en){
+      en=String(en||'').trim().replace(/[^\x00-\x7F]+/g,' ').replace(/\s+/g,' ').replace(/,/g,', ').trim();
+      if(!en){ throw new Error('未能转出英文提示词'); }
+      try{ if(typeof cdAddLog==='function') cdAddLog('info','[漫境·图生图] 转英完成',{ zh:String(instruction||'').slice(0,200), en:String(en||'').slice(0,800) }); }catch(_e){}
+      res.innerHTML='<div style="text-align:center;padding:12px;color:#2f8a7a;font-size:10px;">指令转换完成，正在图生图…</div>';
+      var finalPrompt = _msw ? (_msw + ', ' + en) : en;
+      return cdForumGenerateImageRef(refImg, finalPrompt, '', '', _msw, 0.6);
+    }).then(function(img){
+      if(go){ go.disabled=false; go.textContent='生成'; }
+      if(img && img.dataUrl){
+        res.innerHTML='<div style="text-align:center;"><img src="'+img.dataUrl+'" style="max-width:100%;border-radius:10px;border:1px solid #dde5e2;"></div><div style="text-align:center;margin-top:10px;"><span id="mgSaveNow" style="display:inline-block;font-size:9.5px;font-weight:700;color:#fff;background:linear-gradient(135deg,#2f8a7a,#1f6a5c);border-radius:7px;padding:6px 14px;cursor:pointer;">保存到相册</span></div>';
+        _mangaAddHistory('single','[图生图]'+(instruction||''), img.dataUrl);
+        var _s2=document.getElementById('mgSaveNow'); if(_s2){ _s2.onclick=function(){ _mangaSaveToGallery({mode:'single', img:img.dataUrl, text:'[图生图]'+(instruction||'')}); }; }
+      } else {
+        res.innerHTML='<div style="color:#c84632;text-align:center;padding:12px;font-size:10px;">图生图失败（可能该站不支持参考图字段），可关掉「直连图生图」改走识图模式</div>';
+      }
+    }).catch(function(err){
+      if(go){ go.disabled=false; go.textContent='生成'; }
+      res.innerHTML='<div style="color:#c84632;text-align:center;padding:12px;font-size:10px;">图生图失败：'+(err&&err.message||err)+'</div>';
+    });
+  }
+
+  /* ===== 角色管理：角色库渲染/增删/AI生成TAG ===== */
+  function _mangaRenderRoles(){
+    var md=_mangaLayerBody; if(!md) return;
+    var body=md.querySelector('#mgRolesBody'); if(!body) return;
+    var d=cdMangaData(); var roles=d.roles||[];
+    var _act=d.activeRoleId||''; var _actName='';
+    roles.forEach(function(r){ if(r.id===_act){ _actName=r.name||''; } });
+    var html='<div style="display:flex;gap:6px;margin-bottom:8px;align-items:center;">'+
+      '<input id="mgRoleNewName" placeholder="角色名，如：勒加德" style="flex:1;min-width:0;border:1px solid #dde5e2;border-radius:7px;padding:6px 8px;font-size:9.5px;">'+
+      '<span id="mgRoleAdd" style="cursor:pointer;flex-shrink:0;font-size:9.5px;font-weight:700;color:#fff;background:linear-gradient(135deg,#2f8a7a,#1f6a5c);border-radius:7px;padding:6px 12px;">新增</span>'+
+    '</div>'+
+    '<div style="font-size:8.5px;color:#8b9590;line-height:1.5;margin-bottom:6px;">新增后点「AI生成TAG」自动填好生图标签。点角色名展开可改描述/TAG。</div>'+
+    '<div style="font-size:9px;color:#2f5d50;font-weight:700;background:#eef6f3;border:1px solid #d3e8e1;border-radius:7px;padding:5px 9px;margin-bottom:8px;">当前选用角色：'+( _actName?esc0(_actName):'（未选用，点角色行内「选用」）')+'</div>';
+    if(!roles.length){ html+='<div style="padding:6px 2px;color:#9aa5a0;font-size:9px;">还没有角色，先在上面新增一个。</div>'; }
+    else {
+      roles.forEach(function(r,i){
+        html+='<div style="border:1px solid #e6ece8;border-radius:8px;margin-bottom:6px;background:#fafcfb;">'+
+          '<div style="display:flex;align-items:center;gap:6px;padding:6px 9px;'+(r.id===d.activeRoleId?'background:#eef6f3;':'')+'" data-role-toggle="'+i+'">'+
+            '<span style="flex:1;font-size:10px;font-weight:700;color:#2f5d50;">'+esc0(r.name||('角色'+(i+1)))+'</span>'+
+            '<span style="font-size:8.5px;color:#9aa5a0;flex-shrink:0;">'+(r.tag?('已生成TAG'):'未生成TAG')+'</span>'+
+            '<span data-role-pick="'+i+'" style="font-size:8.5px;font-weight:700;color:#3f6d84;border:1px solid #bcd0da;background:#eef5f8;border-radius:6px;padding:2px 7px;flex-shrink:0;cursor:pointer;" onclick="event.stopPropagation();">'+(r.id===d.activeRoleId?'取消':'选用')+'</span>'+
+            '<span style="font-size:9px;color:#c84632;cursor:pointer;flex-shrink:0;" data-role-del="'+i+'" onclick="event.stopPropagation();">删除</span>'+
+          '</div>'+
+          '<div data-role-detail="'+i+'" style="display:none;padding:8px 10px;border-top:1px solid #edf1ef;">'+
+            '<div style="font-size:8.5px;color:#8b9590;margin-bottom:3px;">角色描述</div>'+
+            '<textarea data-role-desc="'+i+'" rows="2" placeholder="角色的外貌/性格/出处描述，原创或同人都行" style="width:100%;box-sizing:border-box;border:1px solid #dde5e2;border-radius:7px;padding:6px;font-size:9.5px;resize:vertical;line-height:1.5;">'+esc0(r.desc||'')+'</textarea>'+
+            '<div style="display:flex;align-items:center;gap:6px;margin-top:5px;">'+
+              '<span style="font-size:8.5px;color:#8b9590;flex-shrink:0;">生图TAG</span>'+
+              '<span id="mgRoleGenTag'+i+'" style="cursor:pointer;flex-shrink:0;font-size:8.5px;font-weight:700;color:#3f6d84;border:1px solid #bcd0da;background:#eef5f8;border-radius:6px;padding:3px 8px;">AI生成TAG</span>'+
+            '</div>'+
+            '<textarea data-role-tag="'+i+'" rows="2" placeholder="AI生成后自动填入，也可手动改" style="width:100%;box-sizing:border-box;border:1px solid #dde5e2;border-radius:7px;padding:6px;font-size:9.5px;resize:vertical;line-height:1.5;margin-top:5px;font-family:monospace;">'+esc0(r.tag||'')+'</textarea>'+
+            '<div style="display:flex;justify-content:flex-end;gap:6px;margin-top:6px;">'+
+              '<span data-role-save="'+i+'" style="cursor:pointer;font-size:9px;font-weight:700;color:#fff;background:linear-gradient(135deg,#2f8a7a,#1f6a5c);border-radius:6px;padding:4px 12px;">保存</span>'+
+            '</div>'+
+          '</div>'+
+        '</div>';
+      });
+    }
+    body.innerHTML=html;
+    // 新增
+    var add=body.querySelector('#mgRoleAdd'); if(add){ add.onclick=function(){ _mangaAddRole(); }; }
+    var nk=body.querySelector('#mgRoleNewName'); if(nk){ nk.onkeydown=function(ev){ if(ev&&ev.key==='Enter'){ _mangaAddRole(); } }; }
+    // 展开/折叠 + 删除 + 保存 + AI生成TAG
+    body.querySelectorAll('[data-role-toggle]').forEach(function(el){ el.onclick=function(){ var idx=parseInt(el.getAttribute('data-role-toggle'),10); var det=body.querySelector('[data-role-detail="'+idx+'"]'); if(det){ det.style.display = (det.style.display==='none')?'block':'none'; } }; });
+    body.querySelectorAll('[data-role-del]').forEach(function(el){ el.onclick=function(){ _mangaDelRole(parseInt(el.getAttribute('data-role-del'),10)); }; });
+    body.querySelectorAll('[data-role-save]').forEach(function(el){ el.onclick=function(){ _mangaSaveRole(parseInt(el.getAttribute('data-role-save'),10)); }; });
+    body.querySelectorAll('[data-role-pick]').forEach(function(el){ el.onclick=function(){ _mangaPickRole(parseInt(el.getAttribute('data-role-pick'),10)); }; });
+    body.querySelectorAll('[data-role-gen]').forEach(function(){ });
+    // AI生成TAG 按钮（id 含序号，需重绑）
+    roles.forEach(function(r,i){
+      var g=body.querySelector('#mgRoleGenTag'+i); if(g){ (function(ii){ g.onclick=function(){ _mangaGenRoleTag(ii); }; })(i); }
+    });
+  }
+  /* 自动匹配：在指令文字里找角色库里的角色名，匹配到就把该角色TAG带上（多角色都可匹配） */
+  function _mangaMatchRoles(text){
+    var d=cdMangaData();
+    var matched=[];
+    if(!d || !d.roles || !d.roles.length || !text) return matched;
+    var t=String(text||'');
+    var i;
+    for(i=0;i<d.roles.length;i++){
+      var r=d.roles[i]; if(!r) continue;
+      var nm=String(r.name||'').trim();
+      var tg=String(r.tag||'').trim();
+      if(nm && tg && t.indexOf(nm)>=0){ matched.push({ name:r.name, tag:tg }); }
+    }
+    return matched;
+  }
+  /* 把多个匹配角色的TAG拼成一个注入块（中文引导 + 英文TAG） */
+  function _mangaRolesToBlock(matched){
+    if(!matched || !matched.length) return '';
+    var lines=[];
+    for(var i=0;i<matched.length;i++){ lines.push('【指定生图角色·必须还原该角色相貌】'+matched[i].name+': '+matched[i].tag); }
+    return lines.join('\n')+'\n';
+  }
+
+  /* 选用/取消角色：设置 d.activeRoleId，生图时注入其TAG */
+  function _mangaPickRole(idx){
+    var d=cdMangaData(); if(!d.roles || !d.roles[idx]) return;
+    var r=d.roles[idx];
+    if(d.activeRoleId===r.id){ d.activeRoleId=''; }
+    else { d.activeRoleId=r.id; }
+    cdMangaSave(); _mangaRenderRoles();
+  }
+  /* 取当前选用角色的TAG（无则空串） */
+  function _mangaActiveRoleTag(){
+    var d=cdMangaData();
+    if(!d || !d.activeRoleId || !d.roles || !d.roles.length) return '';
+    for(var i=0;i<d.roles.length;i++){ if(d.roles[i] && d.roles[i].id===d.activeRoleId){ return String(d.roles[i].tag||'').trim(); } }
+    return '';
+  }
+  /* 取当前选用角色名 */
+  function _mangaActiveRoleName(){
+    var d=cdMangaData();
+    if(!d || !d.activeRoleId || !d.roles) return '';
+    for(var i=0;i<d.roles.length;i++){ if(d.roles[i] && d.roles[i].id===d.activeRoleId){ return String(d.roles[i].name||''); } }
+    return '';
+  }
+
+  function _mangaAddRole(){
+    var md=_mangaLayerBody; if(!md) return;
+    var inp=md.querySelector('#mgRoleNewName'); if(!inp) return;
+    var nm=String(inp.value||'').trim();
+    if(!nm){ try{ if(typeof toastr==='function') toastr.info('请先输入角色名'); }catch(e){} return; }
+    var d=cdMangaData(); if(!d.roles) d.roles=[];
+    d.roles.push({ id:'role_'+Date.now()+'_'+Math.floor(Math.random()*1e4), name:nm, desc:'', tag:'', time:Date.now() });
+    cdMangaSave(); inp.value='';
+    _mangaRenderRoles();
+  }
+  function _mangaDelRole(idx){
+    var d=cdMangaData(); if(!d.roles) return;
+    if(idx>=0 && idx<d.roles.length){ d.roles.splice(idx,1); cdMangaSave(); _mangaRenderRoles(); }
+  }
+  function _mangaSaveRole(idx){
+    var md=_mangaLayerBody; if(!md) return;
+    var d=cdMangaData(); if(!d.roles || !d.roles[idx]) return;
+    var descEl=md.querySelector('[data-role-desc="'+idx+'"]');
+    var tagEl=md.querySelector('[data-role-tag="'+idx+'"]');
+    if(descEl) d.roles[idx].desc=String(descEl.value||'').trim();
+    if(tagEl) d.roles[idx].tag=String(tagEl.value||'').trim();
+    cdMangaSave();
+    try{ if(typeof toastr==='function') toastr.success('角色已保存'); }catch(e){}
+    _mangaRenderRoles();
+  }
+  /* AI 根据角色名+描述自动生成生图TAG（用论坛多模态模型知识） */
+  function _mangaGenRoleTag(idx){
+    var md=_mangaLayerBody; if(!md) return;
+    var d=cdMangaData(); if(!d.roles || !d.roles[idx]) return;
+    var r=d.roles[idx];
+    if(!cdForumApiReady()){ try{ if(typeof toastr==='function') toastr.error('尚未配置论坛 API'); }catch(e){} return; }
+    var btn=md.querySelector('#mgRoleGenTag'+idx); if(btn){ btn.textContent='生成中…'; }
+    var sys='你是动漫/游戏/影视角色生图TAG生成助手。用户给一个角色名和可选描述。你要：\n1) 回忆并确定该角色的外貌特征——尤其知名原作角色（如 Fear and Hunger 的勒加德 Le\'garde、剑风传奇的格里菲斯 Griffith 等）要按原作设定还原相貌；原创角色则按用户描述推演。\n2) 用一长段中文描述该角色的外貌细节：发色发质、眼型瞳色、脸型、五官、身形、肤色、穿着/标志性装备、气质、性别。\n3) 最后【只输出】一行纯英文、逗号分隔的 NovelAI 生图 TAG 串：开头写 角色名(作品名) 如 Le\'garde (Fear and Hunger)，接着 1boy/1girl、外貌五官发质、体型、衣着装备，画风词按通用高质量（masterpiece 最多一个放最后）。\n【输出铁律】只输出一行英文TAG，不要任何解释/中文/markdown；若你确实不了解该角色，就按描述客观描述，不编造。';
+    var usr='角色名：'+(r.name||'')+'\n角色描述：'+(r.desc||'（无，请按角色名知识）');
+    cdForumApiComplete([{role:'system',content:sys},{role:'user',content:usr}]).then(function(tag){
+      tag=String(tag||'').trim().replace(/[^\x00-\x7F]+/g,' ').replace(/\s+/g,' ').replace(/,+\s*,+/g,',').trim();
+      if(!tag){ throw new Error('AI 未能生成TAG'); }
+      if(d.roles[idx]){ d.roles[idx].tag=tag; cdMangaSave(); }
+      if(btn){ btn.textContent='AI生成TAG'; }
+      _mangaRenderRoles();
+    }).catch(function(err){
+      if(btn){ btn.textContent='AI生成TAG'; }
+      try{ if(typeof toastr==='function') toastr.error('AI生成TAG失败：'+(err&&err.message||err)); }catch(e){}
+    });
+  }
+
+function _mangaRenderInit(){
     var d=cdMangaData();
     var md=_mangaLayerBody; if(!md) return;
     md.innerHTML=
@@ -16917,6 +17213,7 @@ cdBindOnce(R.querySelector('#cfImgStyle'),function(){
         '</div>'+
         '<div style="display:flex;gap:7px;margin-top:8px;">'+
           '<div style="flex:1;"><div style="font-size:8.5px;color:#8b9590;margin-bottom:3px;">画风</div><select id="mgStyle" style="width:100%;border:1px solid #dde5e2;border-radius:8px;padding:7px;font-size:10px;color:#3a4a45;background:#fff;">'+
+            '<option value="neutral"'+(d.style==='neutral'||!d.style?' selected':'')+'>无风格中性（自由发挥，可自己在指令里加风格词）</option>'+
             '<option value="comic"'+(d.style==='comic'?' selected':'')+'>复古漫画线稿</option>'+
             '<option value="anime"'+(d.style==='anime'?' selected':'')+'>动漫赛璐璐</option>'+
             '<option value="ink"'+(d.style==='ink'?' selected':'')+'>水墨国风</option>'+
@@ -16926,8 +17223,18 @@ cdBindOnce(R.querySelector('#cfImgStyle'),function(){
           '</select></div>'+
           '<div style="width:80px;"><div style="font-size:8.5px;color:#8b9590;margin-bottom:3px;">格数</div><input id="mgPanels" type="number" min="2" max="8" value="'+(d.panels||4)+'" style="width:100%;border:1px solid #dde5e2;border-radius:8px;padding:7px;font-size:10px;color:#3a4a45;background:#fff;box-sizing:border-box;"></div>'+
         '</div>'+
-        '<textarea id="mgText" rows="5" placeholder="粘贴小说段落 / 剧情 / 或直接说你想画什么（一句话也行），比如：雪夜古街，戴面具的剑客独行，身后白衣女子提灯跟随…" style="width:100%;margin-top:10px;border:1px solid #dde5e2;border-radius:9px;padding:9px;font-size:10.5px;color:#3a4a45;background:#fff;box-sizing:border-box;line-height:1.6;resize:vertical;"></textarea>'+
+        '<div style="display:flex;gap:7px;margin-top:8px;align-items:center;">'+
+          '<div style="flex:1;border:1.5px dashed #bcd0ca;border-radius:9px;padding:7px 9px;font-size:9.5px;color:#5a7d72;cursor:pointer;text-align:center;" id="mgRefPick">选参考图（图生图/识图用，可选）</div>'+
+          '<label style="display:flex;align-items:center;gap:5px;font-size:9px;color:#3a6b58;cursor:pointer;flex-shrink:0;" title="开启后直接把参考图喂给生图站做 img2img，需生图站支持参考图"><input type="checkbox" id="mgImg2Img" '+(d.img2img?'checked':'')+' style="accent-color:#2f8a7a;">直连图生图</label>'+
+        '</div>'+
+        '<input type="file" id="mgRefFile" accept="image/*" style="display:none;">'+
+        '<div id="mgRefPrev" style="margin-top:6px;"></div>'+
+        '<textarea id="mgText" rows="5" placeholder="① 粘贴小说段落 / 剧情；或② 配参考图时，在这里写指令，比如：这是A，生成他走路的图；按这个风格画另一个人…" style="width:100%;margin-top:8px;border:1px solid #dde5e2;border-radius:9px;padding:9px;font-size:10.5px;color:#3a4a45;background:#fff;box-sizing:border-box;line-height:1.6;resize:vertical;"></textarea>'+
         '<button id="mgGo" style="width:100%;margin-top:10px;background:linear-gradient(135deg,#2f8a7a,#1f6a5c);color:#fff;border:none;border-radius:10px;padding:11px;font-size:11.5px;font-weight:700;cursor:pointer;">生成</button>'+
+        '<details id="mgRoles" style="margin-top:10px;border:1px solid #e0e8e4;border-radius:10px;background:#fff;">'+
+          '<summary style="padding:9px 12px;font-size:10px;font-weight:700;color:#2f5d50;cursor:pointer;display:flex;align-items:center;gap:5px;">角色管理（生图角色库）</summary>'+
+          '<div id="mgRolesBody" style="padding:6px 12px 12px;"></div>'+
+        '</details>'+
         '<div id="mgResult" style="margin-top:10px;"></div>'+
         '<details style="margin-top:12px;border:1px solid #e0e8e4;border-radius:10px;background:#fff;">'+
           '<summary style="padding:10px 12px;font-size:10px;font-weight:700;color:#2f5d50;cursor:pointer;display:flex;align-items:center;gap:5px;">已生成的图片</summary>'+
@@ -16938,6 +17245,12 @@ cdBindOnce(R.querySelector('#cfImgStyle'),function(){
     var go=md.querySelector('#mgGo'); if(go){ go.onclick=function(){ _mangaGenerate(); }; }
     var st=md.querySelector('#mgStyle'); if(st){ st.onchange=function(){ var d2=cdMangaData(); d2.style=st.value; cdMangaSave(); }; }
     var pn=md.querySelector('#mgPanels'); if(pn){ pn.onchange=function(){ var d2=cdMangaData(); d2.panels=parseInt(pn.value,10)||4; cdMangaSave(); }; }
+    var rp=md.querySelector('#mgRefPick'); var rf=md.querySelector('#mgRefFile');
+    if(rp&&rf){ rp.onclick=function(){ rf.click(); }; }
+    if(rf){ rf.onchange=function(){ var f=rf.files&&rf.files[0]; if(!f) return; var fr=new FileReader(); fr.onload=function(){ var d3=cdMangaData(); d3.refImg=String(fr.result||''); cdMangaSave(); _mangaRenderRefPrev(d3); }; fr.onerror=function(){ try{ if(typeof toastr==='function') toastr.error('读取图片失败'); }catch(e){} }; fr.readAsDataURL(f); rf.value=''; }; }
+    var i2=md.querySelector('#mgImg2Img'); if(i2){ i2.onchange=function(){ var d4=cdMangaData(); d4.img2img=!!i2.checked; cdMangaSave(); }; }
+    var rl=md.querySelector('#mgRoles'); if(rl){ rl.ontoggle=function(){ if(rl.open) _mangaRenderRoles(); }; }
+    _mangaRenderRefPrev(cdMangaData());
     _mangaRenderHistory();
   }
   function _mangaGenerate(){
@@ -16945,13 +17258,20 @@ cdBindOnce(R.querySelector('#cfImgStyle'),function(){
     if(!cdForumApiReady()){ try{ if(typeof toastr==='function') toastr.error('尚未配置论坛 API'); }catch(e){} return; }
     var d=cdMangaData();
     var textEl=md.querySelector('#mgText'); var text=textEl?(textEl.value||'').trim():'';
-    if(!text){ try{ if(typeof toastr==='function') toastr.info('请先输入文本或描述'); }catch(e){} return; }
+    // 参考图模式下允许空指令（纯文生图仍需文字）
+    if(!d.refImg && !text){ try{ if(typeof toastr==='function') toastr.info('请先输入文本或描述'); }catch(e){} return; }
     var res=md.querySelector('#mgResult'); if(!res) return;
     res.innerHTML='<div style="text-align:center;padding:16px;color:#2f8a7a;font-size:10px;">生成中…（走帖子同款九维思考+生图管线，可能需要一点时间）</div>';
     var go=md.querySelector('#mgGo'); if(go){ go.disabled=true; go.textContent='生成中…'; }
     var mode=d.mode, style=d.style, panels=d.panels||4;
+    // ★ 角色库自动联动：在指令文字里匹配角色库角色名 -> 自动注入对应TAG（多角色都注入，取代手动选用）
+    var _matchedRoles=_mangaMatchRoles(text);
+    var _roleBlock=_mangaRolesToBlock(_matchedRoles);
+    var _roleNames=(_matchedRoles&&_matchedRoles.length)?_matchedRoles.map(function(m){return m.name;}).join('、'):'';
+    if(_matchedRoles && _matchedRoles.length){ try{ if(typeof cdAddLog==='function') cdAddLog('info','[漫境·角色库] 自动匹配到角色并注入TAG',{ names:_roleNames }); }catch(e2){} }
     // 漫境画风 -> 英文生图画风词（复用成熟管线时，在最终 TAG 前覆盖漫境画风）
     var MANGA_STYLE_WORDS={
+      neutral:'', // 无风格中性：不强制任何固定画风词，交给用户在指令里自由指定风格
       comic:'retro 80s manga, halftone dots, bold ink lineart, screentone, dramatic manga shading, comic panel style',
       anime:'anime style, clean cel shading, vibrant colors, crisp clean lineart, bright lively anime screencap',
       ink:'ink wash painting, sumi-e, chinese ink, rice paper texture, elegant brush strokes, monochrome ink, white space',
@@ -16959,11 +17279,24 @@ cdBindOnce(R.querySelector('#cfImgStyle'),function(){
       realistic:'realistic detailed illustration, cinematic lighting, high detail, semi-realistic, dramatic atmosphere',
       manhwa:'korean manhwa style, webtoon style, clean crisp lineart, soft delicate shading, refined elegant beauty, porcelain skin, silky hair strands, soft airy background, romantic atmosphere'
     };
-    var mangaStyleWord=MANGA_STYLE_WORDS[style]||MANGA_STYLE_WORDS.comic;
+    // 无风格中性(neutral)或未选时 => 空串，不前置任何固定画风词，让用户在指令里自由加风格词
+    var mangaStyleWord = (style && style!=='neutral') ? (MANGA_STYLE_WORDS[style]||'') : '';
+    // ★ 参考图分流：若选了参考图，走「识图+指令」或「直连图生图」（需 mangaStyleWord 就绪）
+    if(d.refImg){
+      if(d.img2img){
+        _mangaGenImg2Img(res, go, d, text, mangaStyleWord, _roleBlock);
+      } else {
+        _mangaGenByImage(res, go, d, text, mangaStyleWord, _roleBlock);
+      }
+      return;
+    }
     function _genOne(desc, label){
       // 复用帖子成熟管线：构造假 post 走 cdForumGenPostImg（九维思考+TAG提取+生图+入库），并传 _mangaStyle 覆盖画风
       try{
-        var fp={ title:label||'', text:String(desc||''), auth:'', _mangaStyle:mangaStyleWord };
+        // ★ 角色库自动注入：若指令里匹配到角色名，把对应角色的TAG前置到帖子正文，多角色都注入
+        var _d0=String(desc||'');
+        if(_roleBlock){ _d0 = _roleBlock + _d0; }
+        var fp={ title:label||'', text:_d0, auth:'', _mangaStyle:mangaStyleWord };
         return cdForumGenPostImg(fp).then(function(r){
           if(r && r.dataUrl) return r.dataUrl;
           if(r && r.sub) throw new Error(r.sub);
@@ -17227,11 +17560,15 @@ function cdMangaData(){
     var d = raw ? (JSON.parse(raw)||{}) : {};
     d.history = d.history||[];   // 生成历史 [{mode,text,panels:[],time}]
     d.mode = d.mode||'manga';    // manga 漫画 | single 单图
-    d.style = d.style||'comic';  // 画风档
+    d.style = d.style||'neutral';  // 画风档（neutral=无风格中性，用户自由发挥）
     d.panels = d.panels||4;      // 默认格数
+    d.roles = d.roles||[];       // 角色库 [{id,name,desc,tag,time}]
+    d.activeRoleId = d.activeRoleId||'';  // 当前选用的角色id（生图时注入其TAG）
     _cfMangaCache=d;
+    if(d && typeof d==='object'){ d.refImg=d.refImg||''; d.img2img=!!d.img2img; }
+
     return d;
-  }catch(e){ return {history:[],mode:'manga',style:'comic',panels:4}; }
+  }catch(e){ return {history:[],mode:'manga',style:'neutral',panels:4,roles:[]}; }
 }
 function cdMangaSave(){ var d=_cfMangaCache; if(!d) return; try{ localStorage.setItem('cd-forum-manga', JSON.stringify(d)); return; }catch(e){} try{ var slim=JSON.parse(JSON.stringify(d)); while(slim.history && slim.history.length>0){ slim.history.pop(); try{ localStorage.setItem('cd-forum-manga', JSON.stringify(slim)); return; }catch(e2){} } }catch(e3){} }
 function cdMangaResetCache(){ _cfMangaCache=null; }
@@ -18004,7 +18341,10 @@ function _cfCleanEn(x){
   try{
     var s=String(x==null?'':x);
     s=s.replace(/[^\x00-\x7F]+/g,' ');            /* 去中文/全角标点 */
-    s=s.replace(/[*#`_~>|(){}\[\]]+/g,' ');        /* 去 markdown / 括号 / 装饰符噪声 */
+    // 先保护并保留「含英文的圆括号」=同人角色名作品名，如 Griffith (Eagle Flag Dawn)、(Fear and Hunger)
+    s=s.replace(/\((?=[^)]*[A-Za-z])[^)]*\)/g,function(m){ return '\u0001'+m+'\u0002'; });
+    s=s.replace(/[*#`_~>|(){}\[\]]+/g,' ');        /* 去 markdown / 裸括号 / 装饰符噪声 */
+    s=s.replace(/\u0001/g,'(').replace(/\u0002/g,')'); /* 恢复被保护的角色名括号 */
     s=s.replace(/^\s*\d+[\.\u3001:]\s*/gm,' '); /* 去序号(数字+点/顿号/冒号) */
     s=s.replace(/\s+/g,' ').trim();
     var parts=s.split(','); var seen={}; var out=[]; var i;
@@ -18016,7 +18356,9 @@ function _cfCleanEn(x){
       seen[lo]=1;
       out.push(t);
     }
-    return out.join(', ');
+    var _joined=out.join(', ');
+    _joined=_joined.replace(/\(\s+/g,'(').replace(/\s+\)/g,')'); /* 去括号内侧空格：( Eagle ) -> (Eagle) */
+    return _joined;
   }catch(e){ return String(x==null?'':x); }
 }
 /* 统一收口兜底：把 masterpiece/best quality/8k 等通用质量词压制到最多 2 个并放末尾，防堆砌稀释 */
@@ -18119,6 +18461,57 @@ function _cfPullAppearanceForPost(p){
     return out.length ? ('\n【角色长相/IP参考】\n'+out.join('\n')) : '';
   }catch(e){ return ''; }
 }
+/* ---------- 图生图（img2img）参考图接口：直接把参考图喂给生图站 ---------- */
+async function cdForumGenerateImageRef(refDataUrl, prompt, neg, add, styleLead, strength){
+  var g=cdForumImgReady(); if(!g) return null;
+  var base=String(g.url||'').replace(/\/+$/,'').replace(/\/generate-image$/,'').replace(/\/ai\/generate-image$/,'');
+  var _b64='', _mm='image/png';
+  var _m=/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/.exec(String(refDataUrl||''));
+  if(_m){ _mm=_m[1]; _b64=_m[2]; }
+  else if(String(refDataUrl||'').indexOf('base64,')>=0){ _b64=String(refDataUrl).split('base64,')[1]||''; }
+  if(!_b64){ cdWarn('[图生图] 无有效参考图'); return null; }
+  var HARD_NEG='bad anatomy, bad hands, bad face, bad proportions, malformed limbs, deformed body, mutated hands, fused fingers, extra fingers, missing fingers, deformed fingers, glued fingers, extra hands, twisted body, lowres, low quality, text, letters, typography, words, captions, logo, watermark, signature, internal organs, exposed organs, visible intestines, viscera, gore, mutilation, deformed face, distorted face, ugly, twisted facial features, crossed eyes, extra eyes, bad eyes, empty eyes, deformed ear, mutant, mutation, deformity, grotesque, jpeg artifacts, blurry, out of focus';
+  var _negAll = String(neg||'') ? (String(neg||'')+', '+HARD_NEG) : HARD_NEG;
+  var _steps=parseInt(g.steps,10)||28;
+  var _guidance=parseInt(g.guidance_scale,10)||7;
+  var _seed=(g.seed===undefined||g.seed===null||g.seed===0)?Math.floor(Math.random()*4294967295):parseInt(g.seed,10);
+  var _ns=parseInt(g.n_samples,10)||1; if(_ns<1)_ns=1; if(_ns>4)_ns=4;
+  var _st= (typeof strength==='number')?strength:0.6;
+  var _sLead = String(styleLead||'').trim();
+  var input = _sLead ? (_sLead + ', ' + String(prompt||'')) : String(prompt||'');
+  var body={ input:input, model:g.model||'nai-diffusion-3', parameters:{ negative_prompt:_negAll, width:parseInt(g.width,10)||832, height:parseInt(g.height,10)||1216, steps:_steps, guidance_scale:_guidance, seed:_seed, smea:!!g.smea, n_samples:_ns } };
+  // img2img：参考图以 reference_image_multiple 传入（NAI 兼容协议），并带 strength 控制重绘强度
+  body.parameters.reference_image_multiple=[{ image:_b64, strength:_st }];
+  try{ if(typeof cdAddLog==='function') cdAddLog('info','[图生图·底层请求] 模型:'+String(body.model||''), { promptFinal:String(input||'').slice(0,2000), strength:_st, refB64Len:_b64.length }); }catch(_le){}
+  try{
+    var res=await fetch(base+(base.indexOf('/ai')>=0?'':'/ai')+'/generate-image', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+g.key }, body:JSON.stringify(body) });
+    if(!res.ok){ var err=''; try{ err=await res.text(); }catch(e2){} cdWarn('[图生图] HTTP '+res.status+': '+String(err).slice(0,200)); return null; }
+    var ct=res.headers.get('content-type')||'';
+    if(ct.indexOf('json')>=0){
+      var j=await res.json();
+      var d=cdPickImgFromJSON(j);
+      if(!d){ cdWarn('[图生图] JSON 响应未提取到图片'); return null; }
+      var rv=cdImgResolve(d);
+      return { dataUrl:rv.dataUrl||rv.url, blob:null, b64:rv.b64||'' };
+    } else {
+      var buf=await res.arrayBuffer();
+      var arr=new Uint8Array(buf); var bin=''; for(var i=0;i<arr.length;i++) bin+=String.fromCharCode(arr[i]);
+      var b64=btoa(bin);
+      var isZip=(buf.byteLength>=4 && arr[0]===0x50 && arr[1]===0x4b && (arr[2]===0x03||arr[2]===0x05||arr[2]===0x07));
+      if(isZip){
+        var pngU8=await cdZipExtractPng(buf);
+        if(pngU8 && pngU8.length>8){
+          var pbin=''; for(var q=0;q<pngU8.length;q++) pbin+=String.fromCharCode(pngU8[q]);
+          var pb64=btoa(pbin);
+          return { dataUrl:'data:image/png;base64,'+pb64, blob:new Blob([pngU8],{type:'image/png'}), b64:pb64 };
+        }
+        cdWarn('[图生图] ZIP 响应内未解出有效 PNG'); return null;
+      }
+      return { dataUrl:'data:image/png;base64,'+b64, blob:new Blob([buf],{type:'image/png'}), b64:b64 };
+    }
+  }catch(e){ cdWarn('[图生图] 生成失败', e); return null; }
+}
+
 /* 帖详情「图像生成」：文字模型读帖→生成画面prompt→丢给生图模型→入库并返回 key
  *  返回 { key } 成功；{ sub } 出错提示；null 未知失败 */
 async function cdForumGenPostImg(p){
