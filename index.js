@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.9.6';
+const PLUGIN_VERSION = '2.9.7';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -414,6 +414,9 @@ function emptyData() {
       locations: [],      // 旅程地图地点时序（AI 直接输出的「地点」字段，按剧情顺序追加；不填表）
       unresolved:'',   // 未解决事项
       items: [],       // 物品记录 [{ time, desc }]（获得/失去/使用的重要物品，按追加顺序，保持楼层顺序）
+      itemsHold: [],  // [v2.9.7] 物品当前持有 [{ line }]（覆盖式，谁持有/位置/随身或寄存）
+      timeAnchor: '', // [v2.9.7] 当前故事内时间锚点（覆盖式，最新一条）
+      tasks: [],     // [v2.9.7] 任务记录（覆盖式，每条 { line }：任务名|发布者|进度|下一步|限时|最近推进）
       custom: {},      // 用户自定义剧情追踪项 { key: [{ time, desc }] }（key 来自设置 customFields）
     },
     cards: [],         // 剧情卡牌收集 [{ title, desc, time, icon }]
@@ -980,11 +983,23 @@ const ARCHIVE_SYSTEM = [
   '注意：字段标签必须原样输出为"主线：""支线：""重要状态变化：""未解决事项：""地点："，不要加任何前缀。',
   '其中「主线」「支线」是追加式（只补新内容），「重要状态变化」「未解决事项」是覆盖式（输出当前最新全貌）。',
   '',
-  '主线（追加式，只输出本次新增楼层的新进展，带时间标记，不要重复已有内容）：',
-  '（每条事件以【时间标记】开头，多个事件用换行分隔）',
+  '主线（追加式·事件流水，只输出本次新增楼层的关键事件，一条一行，必须记录关键句子，禁止笼统）：',
+  '（格式样板，每条 = 一行，用【时间·地点】开头，后接"谁 + 做了什么 + 关键对话原话 + 结果"）：',
+  '【第3天·傍晚·雪原酒馆】主角用青铜钥匙打开旧箱，取出信笺，对女巫说"信里写的是矿坑的坐标"——女巫皱眉，将信笺收进怀里。',
+  '【铁律】',
+  '1. 每个事件必须含【关键句子】：有推动剧情的对话→写关键原话(带引号,1~2句即可,不整段转录)；无对话→写具体动作/具体物证("取出藏有线索的信笺""从尸体搜出半枚铜币")。',
+  '2. 严禁笼统替代：禁止"他们交谈了""达成交易""发生了冲突""关系变好"这类空话；必须落到 谁+具体做了什么+说了哪句关键的话+得到/失去/发现了什么具体东西。',
+  '3. 时间地点齐全：每条以【时间·地点】开头(无法推断地点可只写【时间】，但禁止两者都缺)。',
+  '4. 追加式累积，按时间顺序，同一事件绝不重复记录。',
+  '5. 若本次没有新主线事件，输出"无"，不要凭空编造。',
   '',
-  '支线（追加式，只输出本次新增的支线进展，带时间标记）：',
-  '（每条事件以【时间标记】开头）',
+  '支线（追加式·事件流水，只输出本次新增的支线关键事件，格式与主线相同）：',
+  '（格式样板，每条 = 一行，用【时间·地点】开头：）',
+  '【第3天·入夜·酒馆角落】酒保低声对主角说"北境最近死了三个猎人，死因都一样"——他比了个噤声的手势。',
+  '【铁律】',
+  '1. 与主线同：每条含【时间·地点】+ 谁 + 具体动作 + 关键对话原话(若有) + 结果。',
+  '2. 禁止笼统词，落到具体细节；支线同样要带关键句子。',
+  '3. 追加式累积，不重复；本次无支线输出"无"。',
   '',
   '重要状态变化（覆盖式，输出"当前仍然有效"的角色状态汇总，而非累积历史）：',
   '（已被后续剧情推翻/缓解的旧状态不要重复列出；没有当前有效状态则输出"无"。）',
@@ -1012,10 +1027,30 @@ const ARCHIVE_SYSTEM = [
   '未解决事项（覆盖式，只列出"尚未解决"的事项与长期伏笔，已解决的不要列出）：',
   '（包含：长期伏笔、未揭晓的谜团、未兑现的承诺、跨楼层的悬而未决线索。每条以【时间标记】标注该事项产生的时间；已解决/已放弃/不再相关的不要列出。）',
   '',
+  '任务记录（覆盖式·跟踪"正在进行/待完成"的任务，一条任务一行，已完成的不要列）：',
+  '（格式样板，每条 = 一行：）',
+  '任务名 | 发布者/来源 | 当前进度 | 下一步 | 限时/优先级 | 最近推进时间',
+  '（示例：护送商队到北境 | 商会长 | 已过山隘，剩2日路程 | 明日清晨继续赶路 | 限时3日 | 【第3天·傍晚】）',
+  '【铁律】',
+  '1. 覆盖式：只列"仍未完成"的任务；已完成/放弃的从列表移除。',
+  '2. 任务名要具体("护送商队到北境")，禁止"一个任务""某事"。',
+  '3. 进度写"当前进展到哪一步 + 下一步做什么"，越具体越好，禁止笼统"进行中"。',
+  '4. 每次推进就更新"最近推进时间"。',
+  '5. 若没有进行中的任务，输出"无"。',
+  '',
   '地点（追加式，地图用：只输出本次剧情新增出现/移动到的地点，按剧情先后顺序一行一个，直接写核心地名，如"贫民窟垃圾山""半塌危楼阁楼""南区佣兵集散地"；本次未移动则输出"无"）：',
   '（用下面的专属标记包裹地点，与其他字段完全独立；地点一行一个，只写核心地名，不写比喻/回忆/梦境场景，不带时间标记前缀）：',
   '<<<LOCATIONS>>>',
   '<<<LOCATIONS_END>>>',
+  '物品清单（双轨，必须同时输出覆盖式「当前持有」+ 追加式「变动日志」）：',
+  '当前持有（覆盖式，只列「现在仍然存在」的物品，一件一行，格式：物品名|持有者|位置|随身上/寄存）：',
+  '（如：残破的青铜钥匙|主角|随身携带|随身上；契约文书|女巫|老宅书房木匣|寄存。已消耗/已送人/已丢弃的不要在覆盖层出现）',
+  '变动日志（追加式，记录物品每次流转，每条带【时间标记】；发生"获得/消耗/送出/寄存/丢失/被夺"就追加一条，同一物品同一状态绝不重复结算、绝不记两遍）：',
+  '（如：【第3天 傍晚】主角购得青铜钥匙；【第4天 清晨】主角把青铜钥匙交给女巫）',
+  '',
+  '当前时间轴（覆盖式，只输出当前故事内时间快照，作为全剧统一的"现在"）：',
+  '（格式：【第7天 午后·雪原营地】，并写明距上次时间推进了多久，如"距上次【第6天 夜晚】推进约半日"。必须从上次记录的时间向后推进，禁止时间倒流，禁止把"昨天"写成"三天前"；跨夜/赶路/战斗的时间流逝要显式标注。若剧情无明显时间推进，则原样保留上次时间）',
+  '',
   '',
   '最后，单独输出以下两个覆盖式总结字段（用来更新整体概览，不是追列事件）：',
   '剧情总览：用一段80-120字、语言精炼的连贯文字，概述当前整体剧情发展到哪一步、主要局势与各线关系，覆盖式（只描述当前阶段的最新综合情况，勿加编号）。',
@@ -1052,11 +1087,23 @@ const ARCHIVE_SYSTEM_FULL = [
   '注意：字段标签必须原样输出为"主线：""支线：""重要状态变化：""未解决事项：""地点："，不要加任何前缀。',
   '「主线」「支线」按时间顺序【完整】列出这段剧情的全部进展；「重要状态变化」「未解决事项」「剧情总览」「章回标题」输出当前最新全貌。',
   '',
-  '主线（完整式：把从剧情开始到当前的【全部】主线事件按时间先后完整列出，带时间标记，多个事件用换行分隔）：',
-  '（必须覆盖整段剧情，不能只写最后几层；越早的事件越不能漏）',
+  '主线（完整式·事件流水，把从剧情开始到当前的【全部】主线事件按时间先后完整列出，一条一行，必须记录关键句子，禁止笼统）：',
+  '（格式样板，每条 = 一行，用【时间·地点】开头，后接"谁 + 做了什么 + 关键对话原话 + 结果"）：',
+  '【第3天·傍晚·雪原酒馆】主角用青铜钥匙打开旧箱，取出信笺，对女巫说"信里写的是矿坑的坐标"——女巫皱眉，将信笺收进怀里。',
+  '【铁律】',
+  '1. 每个事件必须含【关键句子】：有对话→写关键原话(带引号,1~2句)；无对话→写具体动作/物证。',
+  '2. 严禁笼统替代：禁止"他们交谈了""达成交易""发生冲突"这类空话；落到 谁+具体动作+关键对话+得到/失去/发现了什么。',
+  '3. 时间地点齐全：每条以【时间·地点】开头。',
+  '4. 覆盖整段剧情，按时间顺序累积，越早越不能漏，同一事件不重复。',
+  '5. 若没有主线事件，输出"无"。',
   '',
-  '支线（完整式：把这段剧情的全部支线进展按时间列出，带时间标记）：',
-  '（每条事件以【时间标记】开头）',
+  '支线（完整式·事件流水，把这段剧情的全部支线事件按时间完整列出，格式与主线相同）：',
+  '（格式样板，每条 = 一行，用【时间·地点】开头：）',
+  '【第3天·入夜·酒馆角落】酒保低声对主角说"北境最近死了三个猎人，死因都一样"——他比了个噤声的手势。',
+  '【铁律】',
+  '1. 与主线同：每条含【时间·地点】+ 谁 + 具体动作 + 关键对话原话(若有) + 结果。',
+  '2. 禁止笼统词，落到具体细节。',
+  '3. 覆盖整段剧情，按时间顺序累积，不重复；无支线输出"无"。',
   '',
   '重要状态变化（覆盖式，输出"当前仍然有效"的角色状态汇总，而非累积历史）：',
   '（已被后续剧情推翻/缓解的旧状态不要重复列出；没有当前有效状态则输出"无"。）',
@@ -1083,10 +1130,30 @@ const ARCHIVE_SYSTEM_FULL = [
   '未解决事项（覆盖式，只列出"尚未解决"的事项与长期伏笔，已解决的不要列出）：',
   '（包含：长期伏笔、未揭晓的谜团、未兑现的承诺、跨楼层的悬而未决线索。每条以【时间标记】标注该事项产生的时间；已解决/已放弃/不再相关的不要列出。）',
   '',
+  '任务记录（覆盖式·跟踪"正在进行/待完成"的任务，一条任务一行，已完成的不要列）：',
+  '（格式样板，每条 = 一行：）',
+  '任务名 | 发布者/来源 | 当前进度 | 下一步 | 限时/优先级 | 最近推进时间',
+  '（示例：护送商队到北境 | 商会长 | 已过山隘，剩2日路程 | 明日清晨继续赶路 | 限时3日 | 【第3天·傍晚】）',
+  '【铁律】',
+  '1. 覆盖式：只列"仍未完成"的任务；已完成/放弃的从列表移除。',
+  '2. 任务名要具体("护送商队到北境")，禁止"一个任务""某事"。',
+  '3. 进度写"当前进展到哪一步 + 下一步做什么"，越具体越好，禁止笼统"进行中"。',
+  '4. 每次推进就更新"最近推进时间"。',
+  '5. 若没有进行中的任务，输出"无"。',
+  '',
   '地点（追加式，地图用：只输出本次剧情新增出现/移动到的地点，按剧情先后顺序一行一个，直接写核心地名，如"贫民窟垃圾山""半塌危楼阁楼""南区佣兵集散地"；本次未移动则输出"无"）：',
   '（用下面的专属标记包裹地点，与其他字段完全独立；地点一行一个，只写核心地名，不写比喻/回忆/梦境场景，不带时间标记前缀）：',
   '<<<LOCATIONS>>>',
   '<<<LOCATIONS_END>>>',
+  '物品清单（双轨，覆盖式「当前持有」+ 追加式「变动日志」都要完整输出）：',
+  '当前持有（覆盖式，只列整段剧情结束时「仍然存在」的物品，一件一行，格式：物品名|持有者|位置|随身上/寄存）：',
+  '（如：残破的青铜钥匙|主角|随身携带|随身上；契约文书|女巫|老宅书房木匣|寄存。已消耗/已送人/已丢弃的不要列）',
+  '变动日志（追加式，把整段剧情的物品流转按时间补齐，每条带【时间标记】；获得/消耗/送出/寄存/丢失/被夺各记一条，同一物品同一状态绝不重复结算、绝不记两遍）：',
+  '（如：【第3天 傍晚】主角购得青铜钥匙；【第4天 清晨】主角把青铜钥匙交给女巫）',
+  '',
+  '当前时间轴（覆盖式，只输出剧情结束时的当前故事内时间）：',
+  '（格式：【第7天 午后·雪原营地】。必须从最早的记录一路向后推进到当前，中间跳过的天数/时段要交代清楚，禁止时间倒流）',
+  '',
   '',
   '最后，单独输出以下两个覆盖式总结字段（用来更新整体概览，不是追列事件）：',
   '剧情总览：用一段80-120字、语言精炼的连贯文字，概述当前整体剧情发展到哪一步、主要局势与各线关系，覆盖式（只描述当前阶段的最新综合情况，勿加编号）。',
@@ -1238,7 +1305,7 @@ function parseArchiveJson(text, customDefs) {
   }
   const defs = Array.isArray(customDefs) ? customDefs : [];
   // 全部字段标签：内置四个 + 每个自定义项的 label
-  const builtin = ['主线', '支线', '重要状态变化', '未解决事项', '剧情总览', '章回标题'];
+  const builtin = ['主线', '支线', '重要状态变化', '未解决事项', '剧情总览', '章回标题', '物品清单', '当前时间轴', '任务记录'];
   const customLabels = defs.map(d => d && d.label ? d.label : '').filter(Boolean);
   // 按长度降序排列，避免「主角状态」被「状态」抢先截断
   const allLabels = builtin.concat(customLabels).sort((a, b) => b.length - a.length);
@@ -1279,7 +1346,36 @@ function parseArchiveJson(text, customDefs) {
   }
   const title = (parts['章回标题'] || '').split('\n').filter(Boolean)[0] || '';
   const lead  = (parts['剧情总览'] || '').split('\n').filter(Boolean).join('\n').trim();
-  return { mainline, sideline, states, unresolved, locations, items: [], custom, title, lead };
+  // ====== 物品清单 + 当前时间轴（本次新增） ======
+  const _itemsLog = [];    // 变动日志 [{time, desc}]
+  const _itemsHold = [];   // 当前持有 [{line}]
+  var _mg = parts['物品清单'] || '';
+  var _mgSec = '';
+  var _mglines = String(_mg).split('\n');
+  for (var _mi = 0; _mi < _mglines.length; _mi++) {
+    var _ml = String(_mglines[_mi] || '').trim();
+    if (!_ml) continue;
+    if (/^当前持有/.test(_ml) || /^物品名\|/.test(_ml)) { _mgSec = 'hold'; continue; }
+    if (/^变动日志/.test(_ml)) { _mgSec = 'log'; continue; }
+    if (_mgSec === 'log') { _itemsLog.push({ time: '', desc: _ml }); }
+    else if (_mgSec === 'hold') { if (_ml && _ml !== '无') _itemsHold.push({ line: _ml }); }
+  }
+  for (var _li = 0; _li < _itemsLog.length; _li++) {
+    var _tm = String(_itemsLog[_li].desc).match(/^【([^】]+)】\s*(.*)/);
+    if (_tm) { _itemsLog[_li].time = _tm[1]; _itemsLog[_li].desc = _tm[2]; }
+  }
+  var timeAnchor = (parts['当前时间轴'] || '').split('\n').map(function(_x){return _x.trim();}).filter(Boolean).join(' ').trim();
+  // ===== 任务记录（覆盖式，每条一行：任务名|发布者|进度|下一步|限时|最近推进） =====
+  const _tasks = [];
+  var _tk = parts['任务记录'] || '';
+  var _tklines = String(_tk).split('\n');
+  for (var _ti = 0; _ti < _tklines.length; _ti++) {
+    var _tl = String(_tklines[_ti] || '').trim();
+    if (!_tl || _tl === '无') continue;
+    if (/^任务记录|^（|^任务名/.test(_tl)) continue;
+    _tasks.push({ line: _tl });
+  }
+  return { mainline, sideline, states, unresolved, locations, items: _itemsLog, itemsHold: _itemsHold, timeAnchor, tasks: _tasks, custom, title, lead };
 }
 
 function cdBuildRelationPrompt(windowFloors, data, _s) {
@@ -2654,6 +2750,19 @@ async function cdBuildDiaryInjectionText() {
           if (arc.sideline) arcParts.push(`支线：${arc.sideline}`);
           if (arc.states) arcParts.push(`重要状态：${arc.states}`);
           if (arc.unresolved) arcParts.push(`待解决事项：${arc.unresolved}`);
+          // ★ 当前时间轴（覆盖式最新）
+          if (arc.timeAnchor && String(arc.timeAnchor).trim()) arcParts.push(`当前时间：${String(arc.timeAnchor).trim()}`);
+          // ★ 物品当前持有 + 变动日志
+          if (Array.isArray(arc.itemsHold) && arc.itemsHold.length) {
+            arcParts.push('当前持有物品：\n' + arc.itemsHold.map(function(l){ return '- ' + (l && l.line || ''); }).join('\n'));
+          }
+          if (Array.isArray(arc.items) && arc.items.length) {
+            arcParts.push('物品变动日志：\n' + arc.items.map(function(it){ return '- ' + (it.time ? '【' + it.time + '】' : '') + (it.desc || ''); }).join('\n'));
+          }
+          // ★ 任务记录（活跃任务）
+          if (Array.isArray(arc.tasks) && arc.tasks.length) {
+            arcParts.push('任务记录：\n' + arc.tasks.map(function(t){ return '- ' + (t && t.line || ''); }).join('\n'));
+          }
   // ★ 自定义剧情追踪项注入
           const injCustomFields = Array.isArray(s.customFields) ? s.customFields.filter(f => f && f.key && f.label) : [];
           const injCustomMap = (arc.custom && typeof arc.custom === 'object') ? arc.custom : {};
@@ -4916,6 +5025,34 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
             }
           }
           if (arc.unresolved !== undefined) data.archive.unresolved = _overwriteKeepMissed((data.archive && data.archive.unresolved) || '', arc.unresolved);
+          // ★ 物品清单（变动日志，追加去重，防重复结算）
+          if (arc.items && Array.isArray(arc.items) && arc.items.length) {
+            if (!Array.isArray(data.archive.items)) data.archive.items = [];
+            for (var _ai = 0; _ai < arc.items.length; _ai++) {
+              var _ait = arc.items[_ai];
+              if (!_ait || !_ait.desc) continue;
+              var _ad = String(_ait.desc).replace(/^【[^】]+】\s*/, '').trim();
+              if (!_ad) continue;
+              var _dup = false;
+              for (var _aj = 0; _aj < data.archive.items.length; _aj++) {
+                var _od = String(data.archive.items[_aj] && data.archive.items[_aj].desc || '').replace(/^【[^】]+】\s*/, '').trim();
+                if (_od === _ad) { _dup = true; break; }
+              }
+              if (!_dup) data.archive.items.push({ time: _ait.time || '', desc: _ait.desc });
+            }
+          }
+          // ★ 物品当前持有（覆盖式，只留最新）
+          if (arc.itemsHold && Array.isArray(arc.itemsHold) && arc.itemsHold.length) {
+            data.archive.itemsHold = arc.itemsHold.slice();
+          }
+          // ★ 当前时间轴（覆盖式，只留最新；禁止倒流由 AI prompt 约束）
+          if (arc.timeAnchor && String(arc.timeAnchor).trim()) {
+            data.archive.timeAnchor = String(arc.timeAnchor).trim();
+          }
+          // ★ 任务记录（覆盖式，只留最新）
+          if (arc.tasks && Array.isArray(arc.tasks) && arc.tasks.length) {
+            data.archive.tasks = arc.tasks.slice();
+          }
           // 自定义追踪项（默认追加式数组；开启 overwrite 的项每轮只保留最新）
           if (arc.custom && Object.keys(arc.custom).length) {
             if (!data.archive.custom || typeof data.archive.custom !== 'object') data.archive.custom = {};
@@ -7678,6 +7815,48 @@ async function cdRenderGraph() {
       '.cd-st-memo-body textarea{width:100%;box-sizing:border-box;padding:6px;font-size:10.5px;background:#fff;border:1px solid #e3d5b8;border-radius:6px;color:#3c2f1f;resize:vertical;line-height:1.5;margin-top:8px}',
       '.cd-st-memo-body .save{margin-top:6px}',
       '.cd-st-memo-hint{font-size:9px;color:#8b7355;margin:5px 0 0;line-height:1.5}',
+      '.cd-st-time{border:1px solid #dcc9a4;border-radius:8px;background:#faf6ec;padding:9px 11px;margin-bottom:10px}',
+      '.cd-st-time-title{font-size:11px;font-weight:700;color:#6b4a1b;display:flex;align-items:center;gap:6px;margin-bottom:5px}',
+      '.cd-st-time-body{font-size:12px;color:#4a3a2a;font-weight:600;line-height:1.5}',
+      '.cd-st-items{border:1px solid #dcc9a4;border-radius:8px;background:#faf6ec;margin-bottom:10px;overflow:hidden}',
+      '.cd-st-items-head{display:flex;align-items:center;gap:7px;padding:9px 11px;font-size:11px;font-weight:700;color:#6b4a1b;cursor:pointer}',
+      '.cd-st-items-head .hint{font-size:9px;font-weight:400;color:#9a7a45}',
+      '.cd-st-items-body{padding:0 11px 10px;border-top:1px solid #e6dcc6}',
+      '.cd-st-items-sub{font-size:9.5px;font-weight:700;color:#9a7a45;margin:8px 0 4px}',
+      '.cd-st-items-list,.cd-st-log-list{display:flex;flex-direction:column;gap:4px}',
+      '.cd-st-items-row{display:flex;gap:6px;font-size:10.5px;line-height:1.5}',
+      '.cd-st-items-row .n{font-weight:700;color:#4a3a2a;min-width:64px;flex-shrink:0}',
+      '.cd-st-items-row .h{color:#4a3a2a}',
+      '.cd-st-items-row .l{color:#7a6437}',
+      '.cd-st-items-row .c{color:#9a7a45;margin-left:auto;flex-shrink:0}',
+      '.cd-st-items-empty,.cd-st-log-empty{font-size:9.5px;color:#8b7355}',
+      '.cd-st-log-row{display:flex;gap:6px;font-size:10px;line-height:1.5;color:#5a4a32}',
+      '.cd-st-log-row .t{color:#9a7a45;font-weight:700;flex-shrink:0}',
+      '.cd-st-tasks{border:1px solid #dcc9a4;border-radius:8px;background:#faf6ec;margin-bottom:10px;overflow:hidden}',
+      '.cd-st-tasks-head{display:flex;align-items:center;gap:7px;padding:9px 11px;font-size:11px;font-weight:700;color:#6b4a1b;cursor:pointer}',
+      '.cd-st-tasks-head .hint{font-size:9px;font-weight:400;color:#9a7a45}',
+      '.cd-st-tasks-body{padding:0 11px 10px;border-top:1px solid #e6dcc6;display:flex;flex-direction:column;gap:6px}',
+      '.cd-st-task{display:flex;flex-direction:column;gap:2px;font-size:10.5px;line-height:1.5;padding:5px 7px;border:1px solid #ead9b8;border-radius:6px;background:#fffdf6}',
+      '.cd-st-task .nm{font-weight:700;color:#4a3a2a}',
+      '.cd-st-task .pg{color:#5a4a32}',
+      '.cd-st-task .nx{color:#8a6a3b;font-size:9.5px}',
+      '.cd-st-task .mt{color:#9a7a45;font-size:9px;margin-top:2px}',
+      '.cd-st-tasks-empty{font-size:9.5px;color:#8b7355}',
+      '.cd-st-snapshot{border:1px solid #dcc9a4;border-radius:8px;background:#faf6ec;margin-bottom:10px;overflow:hidden}',
+      '.cd-st-snap-head{display:flex;align-items:center;gap:7px;padding:9px 11px;font-size:11px;font-weight:700;color:#6b4a1b;cursor:pointer}',
+      '.cd-st-snap-head .hint{font-size:10px;font-weight:600;color:#8a6a3b;margin-left:auto}',
+      '.cd-st-snap-body{padding:0 11px 10px;border-top:1px solid #e6dcc6;display:flex;flex-direction:column;gap:4px}',
+      '.cd-st-snap-sec{font-size:9.5px;font-weight:700;color:#9a7a45;margin-top:7px}',
+      '.cd-st-manage-bar{display:flex;align-items:center;gap:8px;padding:6px 2px;margin-bottom:8px;flex-wrap:wrap}',
+      '.cd-st-manage-btn{font-size:10px;font-weight:600;color:#6b4a1b;border:1px solid #dcc9a4;border-radius:7px;padding:5px 12px;cursor:pointer;background:#faf6ec}',
+      '.cd-st-manage-btn.active{background:#8a6a3b;color:#fff;border-color:#8a6a3b}',
+      '.cd-st-manage-ops{display:none;align-items:center;gap:8px;font-size:10px;color:#8b7355}',
+      '.cd-st-manage-ops .del{color:#c84632;border:1px solid #e6c0b8;border-radius:7px;padding:5px 12px;cursor:pointer;font-weight:600}',
+      '.cd-st-manage-ops .cancel{color:#6b4a1b;border:1px solid #dcc9a4;border-radius:7px;padding:5px 12px;cursor:pointer}',
+      '.cd-st-cb-wrap{display:none;align-items:center;margin-right:4px}',
+      '#cd-content.cd-st-managing .cd-st-cb-wrap{display:inline-flex}',
+      '.cd-st-managing .cd-st-snapshot .cd-st-cb-wrap{display:inline-flex}',
+      '.cd-st-cb{width:14px;height:14px;cursor:pointer;accent-color:#8a6a3b}',
     ].join('\n');
     document.head.appendChild(st);
   }
@@ -7945,6 +8124,53 @@ async function cdRenderGraph() {
     </div>` : '';
 
   
+  // ===== 【时间锚卡：时间轴最顶，来自 archive.timeAnchor】=====
+  const timeAnchorVal = (data.archive && data.archive.timeAnchor) || '';
+  const timeCard = timeAnchorVal.trim() ? `
+    <div class="cd-st-time">
+      <div class="cd-st-time-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> 当前时间 <span style="font-size:calc(0.55rem*var(--cd-fs,1));opacity:.6;font-weight:400;">故事内时间锚点</span></div>
+      <div class="cd-st-time-body">${escapeHtml(timeAnchorVal)}</div>
+    </div>` : '';
+  
+  // ===== 【物品卡：当前持有 + 变动日志，来自 archive.itemsHold / archive.items】=====
+  const _holdItems = (data.archive && Array.isArray(data.archive.itemsHold)) ? data.archive.itemsHold : [];
+  const _logItems = (data.archive && Array.isArray(data.archive.items)) ? data.archive.items : [];
+  const _parseHold = function(line){ var p=String(line||'').split('|'); return { name:(p[0]||'').trim(), holder:(p[1]||'').trim(), loc:(p[2]||'').trim(), carry:(p[3]||'').trim() }; };
+  const itemsHoldHtml = _holdItems.length ? _holdItems.map(function(l,hi){ var o=_parseHold(l.line); return '<div class="cd-st-items-row"><label class="cd-st-cb-wrap"><input type="checkbox" class="cd-st-cb" data-kind="itemhold" data-idx="'+hi+'"></label><span class="n">'+escapeHtml(o.name)+'</span><span class="h">'+escapeHtml(o.holder)+'</span><span class="l">'+escapeHtml(o.loc)+'</span><span class="c">'+escapeHtml(o.carry||'')+'</span></div>'; }).join('') : '';
+  const itemsLogHtml = _logItems.length ? _logItems.slice(-25).reverse().map(function(it,li){ var _d=String(it.desc||''); var _ridx=_logItems.length-1-li; return '<div class="cd-st-log-row"><label class="cd-st-cb-wrap"><input type="checkbox" class="cd-st-cb" data-kind="itemlog" data-idx="'+_ridx+'"></label>'+(it.time?'<span class="t">'+escapeHtml(it.time)+'</span>':'')+'<span class="d">'+escapeHtml(_d)+'</span></div>'; }).join('') : '';
+  const itemsCard = (_holdItems.length || _logItems.length) ? `
+    <details class="cd-st-items">
+      <summary class="cd-st-items-head"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7l2-3h12l2 3M4 7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2M6 9l1 11h10l1-11"/></svg> 物品 <span class="hint">当前持有 ${_holdItems.length} 件 · 变动日志 ${_logItems.length} 条</span></summary>
+      <div class="cd-st-items-body">
+        <div class="cd-st-items-sub">当前持有</div>
+        <div class="cd-st-items-list">${itemsHoldHtml || '<div class="cd-st-items-empty">（暂无持有物）</div>'}</div>
+        ${itemsLogHtml ? '<div class="cd-st-items-sub">物品变动日志</div><div class="cd-st-log-list">'+itemsLogHtml+'</div>' : ''}
+      </div>
+    </details>` : '';
+  
+  // ===== 【任务卡：活跃任务快照，来自 archive.tasks】=====
+  const _taskItems = (data.archive && Array.isArray(data.archive.tasks)) ? data.archive.tasks : [];
+  const _parseTask = function(line){ var p=String(line||'').split('|'); return { name:(p[0]||'').trim(), giver:(p[1]||'').trim(), prog:(p[2]||'').trim(), next:(p[3]||'').trim(), limit:(p[4]||'').trim(), mt:(p[5]||'').trim() }; };
+  const tasksBodyHtml = _taskItems.length ? _taskItems.map(function(t){ var o=_parseTask(t.line); return '<div class="cd-st-task"><span class="nm">'+escapeHtml(o.name)+'</span>'+(o.prog?'<span class="pg">进度：'+escapeHtml(o.prog)+'</span>':'')+(o.next?'<span class="nx">下一步：'+escapeHtml(o.next)+'</span>':'')+(o.mt?'<span class="mt">最近推进：'+escapeHtml(o.mt)+'</span>':'')+'</div>'; }).join('') : '<div class="cd-st-tasks-empty">（暂无进行中的任务）</div>';
+  const tasksCard = _taskItems.length ? `
+    <details class="cd-st-tasks" open>
+      <summary class="cd-st-tasks-head"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> 任务 <span class="hint">进行中 ${_taskItems.length} 项</span></summary>
+      <div class="cd-st-tasks-body">${tasksBodyHtml}</div>
+    </details>` : '';
+  
+  // ===== 【当前状态·综合卡（时间/环境/物品/任务），默认折叠只显示时间摘要，放地图下】 =====
+  const snapshotCard = (timeAnchorVal.trim() || envHas || _holdItems.length || _logItems.length || _taskItems.length) ? `
+    <details class="cd-st-snapshot">
+      <summary class="cd-st-snap-head"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> 当前状态 <span class="hint">${escapeHtml(timeAnchorVal.trim() || '暂无时间')}</span></summary>
+      <div class="cd-st-snap-body">
+        <div class="cd-st-snap-sec">时间</div>
+        <div class="cd-st-time-body">${escapeHtml(timeAnchorVal.trim())}</div>
+        ${envHas ? `<div class="cd-st-snap-sec">环境</div><div class="cd-st-env-grid">${envKeys.map(function(k){ return (env[k] && String(env[k]).trim()) ? `<div class="cd-st-env-item"><span class="k">${k}</span><span class="v">${escapeHtml(env[k])}</span></div>` : ''; }).join('')}</div>` : ''}
+        ${(_holdItems.length || _logItems.length) ? `<div class="cd-st-snap-sec">物品</div><div class="cd-st-items-list">${itemsHoldHtml || '<div class="cd-st-items-empty">（暂无持有物）</div>'}</div>${itemsLogHtml ? '<div class="cd-st-log-list">'+itemsLogHtml+'</div>' : ''}` : ''}
+        ${_taskItems.length ? `<div class="cd-st-snap-sec">任务</div><div class="cd-st-tasks-body">${_taskItems.map(function(t,ti){ return '<div class="cd-st-task" style="display:flex;align-items:flex-start;gap:4px;"><label class="cd-st-cb-wrap"><input type="checkbox" class="cd-st-cb" data-kind="task" data-idx="'+ti+'"></label><div style="flex:1">'+String(t.line||'').replace(/\|/g,' · ')+'</div></div>'; }).join('')}</div>` : ''}
+      </div>
+    </details>` : '';
+  
   // ===== 备忘录（地图下方，默认折叠；手动填写，对话时注入给AI）=====
   const memoCard = `
     <details class="cd-st-memo" id="cd-memo-details">
@@ -7968,6 +8194,7 @@ async function cdRenderGraph() {
     return `
       <div class="cd-st-role">
         <div class="cd-st-role-head">
+          <label class="cd-st-cb-wrap"><input type="checkbox" class="cd-st-cb" data-kind="role" data-idx="${idx}"></label>
           <span class="cd-st-role-name">${escapeHtml(r.name)}</span>
           <span class="cd-st-role-right">${favPill(r.fav)}<span class="cd-st-present ${idx === roles.length-1 ? 'on' : 'off'}">${idx === roles.length-1 ? '在场' : '未出场'}</span></span>
         </div>
@@ -7983,13 +8210,65 @@ async function cdRenderGraph() {
   }).join('') : '<div class="cd-empty"><p>暂无角色状态</p><p class="cd-empty-sub">写日记时 AI 会记录各角色的状态与好感</p></div>';
 
   $('#cd-content').html(
+    `<div class="cd-st-manage-bar"><button type="button" class="cd-st-manage-btn" id="cd-st-manage-btn">批量管理</button><span class="cd-st-manage-ops"><span>已选 <b id="cd-st-sel-num">0</b> 项</span><button type="button" class="del" id="cd-st-del">删除选中</button><button type="button" class="cancel" id="cd-st-cancel">取消</button></span></div>` +
     protCard +
     mapHtml +
+    snapshotCard +
     memoCard +
-    envCard +
     `<div class="cd-st-section-title"><i class="fa-regular fa-people-group"></i> 角色状态</div>` +
     roleHtml
   );
+  // ★ 状态页批量管理（多选删除 任务/物品/角色状态）事件绑定（委托，防 DOM 未插入失效）
+  try {
+    $('#cd-content').off('click', '#cd-st-manage-btn').on('click', '#cd-st-manage-btn', function () {
+      const cc = $('#cd-content');
+      const on = !cc.hasClass('cd-st-managing');
+      cc.toggleClass('cd-st-managing', on);
+      $('.cd-st-manage-ops').toggle(on);
+      $('#cd-st-manage-btn').toggleClass('active', on);
+      if (!on) { $('.cd-st-cb').prop('checked', false); $('#cd-st-sel-num').text('0'); }
+    });
+    $('#cd-content').off('click', '#cd-st-cancel').on('click', '#cd-st-cancel', function () {
+      const cc = $('#cd-content'); cc.removeClass('cd-st-managing');
+      $('.cd-st-manage-ops').hide(); $('#cd-st-manage-btn').removeClass('active');
+      $('.cd-st-cb').prop('checked', false); $('#cd-st-sel-num').text('0');
+    });
+    $('#cd-content').off('change', '.cd-st-cb').on('change', '.cd-st-cb', function () {
+      $('#cd-st-sel-num').text(String($('.cd-st-cb:checked').length));
+    });
+    $('#cd-content').off('click', '#cd-st-del').on('click', '#cd-st-del', async function () {
+      const d2 = await cdGetData();
+      if (!d2.archive) d2.archive = Object.assign({}, emptyData().archive);
+      let any = false;
+      // 先收集要删的角色名（角色删除走 arc.states 行移除）
+      const delRoles = [];
+      $('.cd-st-cb:checked').each(function () {
+        const kind = $(this).attr('data-kind'); const idx = parseInt($(this).attr('data-idx'), 10);
+        if (isNaN(idx)) return;
+        if (kind === 'task' && Array.isArray(d2.archive.tasks)) { if(d2.archive.tasks[idx]){ d2.archive.tasks.splice(idx, 1); any = true; } }
+        else if (kind === 'itemhold' && Array.isArray(d2.archive.itemsHold)) { if(d2.archive.itemsHold[idx]){ d2.archive.itemsHold.splice(idx, 1); any = true; } }
+        else if (kind === 'itemlog' && Array.isArray(d2.archive.items)) { if(d2.archive.items[idx]){ d2.archive.items.splice(idx, 1); any = true; } }
+        else if (kind === 'role' && Array.isArray(roles) && roles[idx] && roles[idx].name) { delRoles.push(roles[idx].name); any = true; }
+      });
+      // 从 arc.states 移除角色行（匹配「角色名：」行，含分格文本）
+      if (delRoles.length && d2.archive && d2.archive.states) {
+        const stLines = String(d2.archive.states).split('\n');
+        const keep = stLines.filter(function (ln) {
+          const t = String(ln || '').trim(); if (!t) return true;
+          for (var ri = 0; ri < delRoles.length; ri++) {
+            const nm = delRoles[ri];
+            if (t.indexOf(nm + '：') === 0 || t.indexOf(nm + ':') === 0) return false;
+          }
+          return true;
+        });
+        d2.archive.states = keep.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+      }
+      if (any) {
+        try { await cdSaveData(d2); } catch (e) { if (typeof cdWarn === 'function') cdWarn('状态批量删除保存失败', e); }
+        if (typeof cdRenderStatus === 'function') cdRenderStatus();
+      }
+    });
+  } catch (e) { if (typeof cdWarn === 'function') cdWarn('状态页批量管理绑定失败', e); }
 }
 
 /** 🕐 剧情时间线（基于剧情档案，按时间标记排序） */
@@ -16630,20 +16909,17 @@ cdBindOnce(R.querySelector('#cfImgStyle'),function(){
   function _mangaSaveToGallery(h){
     if(!h){ try{ if(typeof toastr==='function') toastr.info('无可保存图片'); }catch(e){} return; }
     try{
-      var _cnt=0;
-      var _saveOne=function(dataUrl,label){
-        if(!dataUrl) return Promise.resolve();
-        if(typeof cdForumImgAdd==='function'){
-          return cdForumImgAdd({dataUrl:dataUrl, src:'manga', time:Date.now(), prompt:label||''}).then(function(){ _cnt++; });
-        }
-        return Promise.resolve();
-      };
+      var _base=String(h.text||'漫境').replace(/[\\/:*?"<>|\s]+/g,'_').slice(0,24)||('manga_'+Date.now());
+      var _doSave=function(dataUrl,fname){ if(dataUrl && typeof _cfSaveDataUrlToGallery==='function'){ _cfSaveDataUrlToGallery(dataUrl, fname, '已触发保存到手机'); } };
       if(h.mode==='manga' && h.imgs && h.imgs.length){
-        // 整组保存
-        var _p=h.imgs.map(function(g){ return _saveOne(g&&g.img, (h.text||'')+' 第'+(h.imgs.indexOf(g)+1)+'格'); });
-        Promise.all(_p).then(function(){ try{ if(typeof toastr==='function') toastr.success('已保存 '+_cnt+' 张到图库'); }catch(e){} });
+        // 多格漫画：逐格分别下载到手机相册
+        for(var _i=0;_i<h.imgs.length;_i++){
+          var _g=h.imgs[_i]; if(!_g) continue;
+          _doSave(_g&&_g.img, '漫境_'+_base+'_第'+(_i+1)+'格');
+        }
       } else if(h.img){
-        _saveOne(h.img, h.text||'').then(function(){ try{ if(typeof toastr==='function') toastr.success('已保存到图库'); }catch(e){} });
+        // 单图下载到手机相册
+        _doSave(h.img, '漫境_'+_base);
       } else {
         try{ if(typeof toastr==='function') toastr.info('无可保存图片'); }catch(e){}
       }
@@ -16720,7 +16996,7 @@ cdBindOnce(R.querySelector('#cfImgStyle'),function(){
     if(mode==='single'){
       _genOne(text, '漫境·单图').then(function(img){
         if(go){ go.disabled=false; go.textContent='生成'; }
-        if(img){ res.innerHTML='<div style="text-align:center;"><img src="'+img+'" style="max-width:100%;border-radius:10px;border:1px solid #dde5e2;"></div>'; _mangaAddHistory('single', text, img); }
+        if(img){ res.innerHTML='<div style="text-align:center;"><img src="'+img+'" style="max-width:100%;border-radius:10px;border:1px solid #dde5e2;"></div><div style="text-align:center;margin-top:10px;"><span id="mgSaveNow" style="display:inline-block;font-size:9.5px;font-weight:700;color:#fff;background:linear-gradient(135deg,#2f8a7a,#1f6a5c);border-radius:7px;padding:6px 14px;cursor:pointer;">保存到相册</span></div>'; _mangaAddHistory('single', text, img); var _s=document.getElementById('mgSaveNow'); if(_s){ _s.onclick=function(){ _mangaSaveToGallery({mode:'single', img:img, text:text}); }; } }
         else { res.innerHTML='<div style="color:#c84632;text-align:center;padding:12px;font-size:10px;">生成失败，请查看日志</div>'; }
       }).catch(function(err){
         if(go){ go.disabled=false; go.textContent='生成'; }
@@ -16770,6 +17046,8 @@ cdBindOnce(R.querySelector('#cfImgStyle'),function(){
             cdMangaSave();
           }catch(_e){}
           _mangaRenderHistory();
+          var _nres=md.querySelector('#mgResult');
+          if(_nres){ _nres.insertAdjacentHTML('beforeend','<div style="text-align:center;margin-top:10px;"><span id="mgSaveGroup" style="display:inline-block;font-size:9.5px;font-weight:700;color:#fff;background:linear-gradient(135deg,#2f8a7a,#1f6a5c);border-radius:7px;padding:6px 16px;cursor:pointer;">保存全部格到相册</span></div>'); var _sg=document.getElementById('mgSaveGroup'); if(_sg){ _sg.onclick=function(){ _mangaSaveToGallery({mode:'manga', imgs:panelImgs, text:text}); }; } }
         }).catch(function(err){
           if(go){ go.disabled=false; go.textContent='生成'; }
           res.innerHTML='<div style="color:#c84632;text-align:center;padding:12px;font-size:10px;">生成失败：'+(err&&err.message||err)+'</div>';
@@ -16977,7 +17255,7 @@ function cdMangaData(){
     return d;
   }catch(e){ return {history:[],mode:'manga',style:'comic',panels:4}; }
 }
-function cdMangaSave(){ var d=_cfMangaCache; if(!d) return; try{ localStorage.setItem('cd-forum-manga', JSON.stringify(d)); }catch(e){} }
+function cdMangaSave(){ var d=_cfMangaCache; if(!d) return; try{ localStorage.setItem('cd-forum-manga', JSON.stringify(d)); return; }catch(e){} try{ var slim=JSON.parse(JSON.stringify(d)); while(slim.history && slim.history.length>0){ slim.history.pop(); try{ localStorage.setItem('cd-forum-manga', JSON.stringify(slim)); return; }catch(e2){} } }catch(e3){} }
 function cdMangaResetCache(){ _cfMangaCache=null; }
 /* 画风映射 */
 var CD_MANGA_STYLES = {
@@ -17045,9 +17323,9 @@ function cdForumCfg(){
   try{
     var raw=localStorage.getItem('cd-forum-cfg');
     var c=null; if(raw){ try{c=JSON.parse(raw);}catch(e){} }
-    if(!c) c={ repCount:6, autoEvery:5, customPrompt:'', mode:'auto', erotica:false, homeName:'', bio:'', inject:true, chatFeed:true, chatCount:5, autoGen:true, selTypes:[], api:{}, summarizeMode:'recent', summarizeRecentCount:10, archiveIndex:null };
+    if(!c) c={ repCount:6, autoEvery:5, customPrompt:'', mode:'auto', erotica:false, homeName:'', bio:'', inject:true, chatFeed:true, chatCount:5, autoGen:false, selTypes:[], api:{}, summarizeMode:'recent', summarizeRecentCount:10, archiveIndex:null };
     _cfCfgCache=c; return c;
-  }catch(e){ if(_cfCfgCache) return _cfCfgCache; return { repCount:6, autoEvery:5, customPrompt:'', mode:'auto', erotica:false, homeName:'', bio:'', inject:true, chatFeed:true, chatCount:5, autoGen:true, selTypes:[], summarizeMode:'recent', summarizeRecentCount:10, archiveIndex:null }; }
+  }catch(e){ if(_cfCfgCache) return _cfCfgCache; return { repCount:6, autoEvery:5, customPrompt:'', mode:'auto', erotica:false, homeName:'', bio:'', inject:true, chatFeed:true, chatCount:5, autoGen:false, selTypes:[], summarizeMode:'recent', summarizeRecentCount:10, archiveIndex:null }; }
 }
 
 /* ============================================================
@@ -18249,45 +18527,56 @@ function closeImgView(){
   var mask=document.getElementById('cfImgViewMask'); if(mask) mask.style.display='none';
   try{ if(typeof _cfCfgCache!=='undefined'){} }catch(_e){}
 }
-/* 保存到相册：从图库读 dataUrl，用 <a download> 触发浏览器下载（WebView 一般存到 Download/相册） */
-function saveImgToGallery(key){
-  if(!key) return;
-  cdForumImgGet(key).then(function(rec){
-    if(!rec || !rec.dataUrl){ try{ if(typeof toastr==='function') toastr.error('[图] 图片不存在'); }catch(_e){ } return; }
+/* 保存到手机相册：把一张 dataUrl/Blob 图触发系统下载（WebView 一般存到 Download/相册）。
+   优先 Tauri 原生钩子，其次 Blob+createObjectURL，最后 <a download> 兜底。帖子与漫境共用。 */
+function _cfSaveDataUrlToGallery(dataUrl, fn, label){
+  try{
+    if(!dataUrl){ try{ if(typeof toastr==='function') toastr.info('无可保存图片'); }catch(_e){} return; }
+    var _fn=String(fn||'forum_img').replace(/[\\/:*?"<>|\s]+/g,'_').slice(0,80)||('forum_img_'+Date.now());
+    if(!/\.png$/i.test(_fn)) _fn+='.png';
+    var done=false;
+    // ① 优先：ST/Tauri 若有原生下载钩子则用（能真正落到系统下载/相册）
     try{
-      var fn=(rec.title?rec.title.replace(/[\\/:*?"<>|\s]+/g,'_').slice(0,40):'forum_img')+'_'+String(rec.key).replace(/^(img_|plc_)/,'')+'.png';
-      var done=false;
-      // ① 优先：ST/Tauri 若有原生下载钩子则用（能真正落到系统下载/相册）
+      var __t=null; try{ __t=(typeof window!=='undefined' && window.__TAURI__)||null; }catch(_e2){}
+      if(__t && __t.http && typeof __t.http.downloadFile==='function'){
+        __t.http.downloadFile(dataUrl, {}); done=true;
+        try{ if(typeof cdWarn==='function') cdWarn('[图] 使用 Tauri http.downloadFile 保存：'+_fn); }catch(_e3){}
+      }
+    }catch(_e){ try{ if(typeof cdWarn==='function') cdWarn('[图] Tauri 下载失败，降级 <a download>', _e); }catch(_e2){}}
+    // ② 兜底：优先用 Blob + createObjectURL 触发下载（Android WebView 比 dataURL 更可靠）
+    if(!done){
       try{
-        var __t=null; try{ __t=(typeof window!=='undefined' && window.__TAURI__)||null; }catch(_e2){}
-        if(__t && __t.http && typeof __t.http.downloadFile==='function'){
-          __t.http.downloadFile(rec.dataUrl, {}); done=true;
-          cdWarn('[图] 使用 Tauri http.downloadFile 保存：'+fn);
-        }
-      }catch(_e){ cdWarn('[图] Tauri 下载失败，降级 <a download>', _e); }
-      // ② 兜底：优先用 Blob + createObjectURL 触发下载（Android WebView 比 dataURL 更可靠，能落到 Download/相册）
-      if(!done){
+        var _obj=null;
         try{
-          var _obj=null;
-          if(rec.blob && rec.blob.size){ _obj=URL.createObjectURL(rec.blob); }
-          else if(rec.dataUrl){
-            var _b64=String(rec.dataUrl||'').split(',')[1]||'';
+          if(dataUrl && dataUrl.slice && dataUrl.indexOf('data:')===0){
+            var _b64=String(dataUrl).split(',')[1]||'';
             var _bin=atob(_b64), _u8=new Uint8Array(_bin.length);
             for(var _q=0;_q<_bin.length;_q++) _u8[_q]=_bin.charCodeAt(_q);
             _obj=URL.createObjectURL(new Blob([_u8],{type:'image/png'}));
           }
-          var a=document.createElement('a');
-          a.href=_obj||rec.dataUrl; a.download=fn;
-          a.style.display='none'; document.body.appendChild(a); a.click();
-          setTimeout(function(){ try{ document.body.removeChild(a); }catch(_e){ } if(_obj){ setTimeout(function(){ try{ URL.revokeObjectURL(_obj); }catch(_e){} },4000); } },100);
-          cdWarn('[图] 使用 Blob+createObjectURL 保存：'+fn);
-        }catch(_be){ cdWarn('[图] Blob 保存失败，退回 <a download> dataURL', _be);
-          var a2=document.createElement('a'); a2.href=rec.dataUrl; a2.download=fn;
+        }catch(_e2){}
+        var a=document.createElement('a');
+        a.href=_obj||dataUrl; a.download=_fn;
+        a.style.display='none'; document.body.appendChild(a); a.click();
+        setTimeout(function(){ try{ document.body.removeChild(a); }catch(_e){ } if(_obj){ setTimeout(function(){ try{ URL.revokeObjectURL(_obj); }catch(_e2){} },4000); } },100);
+        try{ if(typeof cdWarn==='function') cdWarn('[图] 使用 Blob+createObjectURL 保存：'+_fn); }catch(_e2){}
+      }catch(_be){ try{ if(typeof cdWarn==='function') cdWarn('[图] Blob 保存失败，退回 <a download> dataURL', _be); }catch(_e3){}
+        try{
+          var a2=document.createElement('a'); a2.href=dataUrl; a2.download=_fn;
           document.body.appendChild(a2); a2.click(); setTimeout(function(){ try{ document.body.removeChild(a2); }catch(_e){ } },100);
-        }
+        }catch(_e4){}
       }
-      try{ if(typeof toastr==='function') toastr.success('已触发保存到手机'); }catch(_e){ }
-    }catch(_e){ try{ if(typeof toastr==='function') toastr.error('[图] 保存失败'); }catch(_e2){ } }
+    }
+    try{ if(typeof toastr==='function') toastr.success(label||'已触发保存到手机'); }catch(_e){}
+  }catch(_e){ try{ if(typeof toastr==='function') toastr.error('[图] 保存失败'); }catch(_e2){} }
+}
+/* 保存到相册：从图库读 dataUrl，转公共下载函数（WebView 一般存到 Download/相册） */
+function saveImgToGallery(key){
+  if(!key) return;
+  cdForumImgGet(key).then(function(rec){
+    if(!rec || !rec.dataUrl){ try{ if(typeof toastr==='function') toastr.error('[图] 图片不存在'); }catch(_e){ } return; }
+    var fn=(rec.title?String(rec.title).replace(/[\\/:*?"<>|\s]+/g,'_').slice(0,40):'forum_img')+'_'+String(rec.key).replace(/^(img_|plc_)/,'')+'.png';
+    _cfSaveDataUrlToGallery(rec.dataUrl, fn, '已触发保存到手机');
   });
 }
 /* 帖子「重新生成图」：用该帖子当前这张图已存的生图标签(TAG)重新生成一张，不调用LLM再构思；新图挂同帖 */
