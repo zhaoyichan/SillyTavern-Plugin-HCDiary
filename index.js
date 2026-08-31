@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.10.0';
+const PLUGIN_VERSION = '2.11.0';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -205,6 +205,7 @@ const DEFAULT_SETTINGS = {
   source          : 'tavern',     // 'tavern' | 'openai' | 'claude' | 'gemini'
   fabShow         : true,         // 是否显示悬浮按钮
   dotNotify       : true,         // 未读小红点通知：有新日记时在悬浮球右上角显示小红点
+  fabDirectForum  : false,        // 论坛直达：开启后点悬浮球直接打开跨世界论坛（关闭后回记忆面板/回酒馆见交互）
   themeMode       : 'day',       // 'auto' | 'day' | 'night'
   fontScale       : 1,            // 界面字号缩放 0.8~1.4（1=标准）
   autoSummary     : true,         // 自动总结开关（独立于手动写日记）
@@ -873,21 +874,30 @@ async function cdBuildDiaryPrompt(windowFloors, data, s) {
     } catch (e) { cdWarn('日记向量检索失败（降级为全量记忆）:', e); }
   }
   const sys = [
-    '你是一个"角色日记"记录员。阅读给定剧情片段, 为其中每个有名有戏份的登场角色, 以该角色第一人称主观视角写一篇日记。',
+    '你是一个"角色日记"记录员。阅读给定剧情片段, 为其中每个有名有戏份的登场角色, 以该角色第一人称主观视角写一篇**活人感十足的私密内心日记**。',
     '要求:',
     '- 只为有名字、有实际戏份的角色写。纯路人、无名群众忽略。',
     '- 不要为用户/玩家角色写日记。',
     s.mainCardIsGM ? '- 如果某角色是旁白/系统/上帝视角/GM式叙述者, 不要为其写。' : '',
-    '- 第一人称, 带该角色的情绪、私心、主观理解(可与事实有偏差)。同一事件不同角色可记得不同。',
-    '- entry 是日记摘要, 不是剧情复述: 聚焦角色的心理活动、情绪、关系变化、关键决定。',
+    '- 第一人称, 带该角色的情绪、私心、主观理解(可与事实有偏差)。同一事件不同角色可记得不同、解读不同。',
+    '- ★★★ entry 是"写给自己看的私密日记", 不是剧情复述、不是给外人看的汇报。要像真人深夜随手写下的内心实况, 而不是四平八稳的总结。',
+    '- ★★★ 内心直白 + 反差幼稚(活人味): 允许角色在"冷静算计/老练"和"赌气/幼稚/小性子"之间自然跳切, 展现人的多面与反复。不要一味装深沉、不要文学腔美化、不要每句都解释"为什么"。',
+    '- ★★★ 提供"内心素材库", 哪一层有戏就写哪一层, 不必硬凑、不必每篇都面面俱到:',
+    '    ① 表面事件: 只留转折/关键点当骨架, 删日常流水(不流水账)。',
+    '    ② 我在乎什么: 不写"我开心/我生气"这种结论, 而写"这件事真正动到我哪根弦、我最在乎的是什么"。',
+    '    ③ 对TA的账本: 关系旧账与预期落差——TA上次欠我什么、我记着、这次触发了我哪笔旧账。',
+    '    ④ 没告诉任何人的计划: 角色私底下盘算什么、不打算说出口的心机与筹谋(最锋利的一层, 有就重点写)。',
+    '    ⑤ 自己都不承认的: 自我欺瞒——用"我才没有""算了""其实"这类口吻带出角色最不愿面对的那一面。',
+    '- ★★★ 记忆回环: 若已有记忆里提到上次的某人/某事/某种情绪, 尽量在本次日记里呼应一下(如"上次我说再也不想见他, 可今天我又……"), 形成跨篇的内心连续剧, 让日记有"活人在延续"的感觉。',
+    '- ★★★ 允许留白与半句: 可以用"……"、写到一半停住、涂改式的自我打断, 表现角色写到这里的犹豫与情绪(比写满更有内心)。',
     '- 涉及性爱/暴力等露骨情节时, 只需简洁概括地提及(例如"与他发生了关系"、"被他压制"), 严禁逐字描写动作、器官、体液等露骨细节。日记重在记录"发生了什么和我的感受", 而非还原过程。',
-    '- 每篇 entry 控制在 150 字以内, 简洁凝练。',
+    '- ★★★ 每篇 entry 控制在 300~520 字, 宁缺毋滥、有血肉, 禁止空洞凑字数。',
     '- 在日记正文末尾添加一个符合该角色性格的颜文字(如 (。-ω-)、(*^▽^*)、(´;ω;`)、╮(╯▽╰)╭ 等)。',
     '- 复用"已知角色名单"中的主名; 若识别出别名/代称, 归并到已有主名, 并在 aliases 里补充别名。',
     '- 语言: 跟随剧情片段的主要语言。',
     '- 用 is_minor 标记角色重要性: 主角、重要配角、有名有戏份的 NPC 标 false; 仅出场一两句、无关紧要的纯路人标 true。',
     '严格只输出 JSON, 格式:',
-    '{"npcs":[{"name":"主名","aliases":["别名"],"is_minor":false,"date":"剧情时间或第N楼","turn":楼号数字,"entry":"第一人称正文(150字内)","mood":"心情(限用以下词之一：开心、难过、生气、紧张、平静、困惑、惊讶、思念)","attitude_to_user":"对用户态度","secret":"没说出口的心思","key_events":["关键事件"],"relationship_with_others":{"某角色":"关系描述"}}]}',
+    '{"npcs":[{"name":"主名","aliases":["别名"],"is_minor":false,"date":"剧情时间或第N楼","turn":楼号数字,"entry":"第一人称私密内心日记(300~520字, 直白有内心层次, 可自由选写素材库里的层)", "mood":"心情(限用以下词之一：开心、难过、生气、紧张、平静、困惑、惊讶、思念)","attitude_to_user":"对用户态度","secret":"没说出口的心思(可与entry重复, 但要更私密更短)","key_events":["关键事件"],"relationship_with_others":{"某角色":"关系描述"}}]}',
   ].filter(Boolean).join('\n');
   // ★ 世界书联动：在函数体顶部异步获取登场角色的世界书设定（loadWorldInfo 为异步 API）
   let _worldbookTxtDiary = '';
@@ -938,15 +948,19 @@ function cdBuildCombinedPrompt(windowFloors, data, s) {
     '阅读给定剧情片段, 同时完成以下三项任务。',
     '',
     '=== 任务一：角色日记 ===',
-    '为每个有名有戏份的登场角色, 以该角色第一人称主观视角写一篇日记。',
+    '为每个有名有戏份的登场角色, 以该角色第一人称主观视角写一篇**活人感十足的私密内心日记**。',
     '要求:',
     '- 只为有名字、有实际戏份的角色写。纯路人、无名群众忽略。',
     '- 不要为用户/玩家角色写日记。',
     s.mainCardIsGM ? '- 如果某角色是旁白/系统/上帝视角/GM式叙述者, 不要为其写。' : '',
     '- 第一人称, 带该角色的情绪、私心、主观理解(可与事实有偏差)。',
-    '- entry 是日记摘要, 聚焦角色的心理活动、情绪、关系变化、关键决定。',
+    '- ★★★ entry 是"写给自己看的私密日记", 不是剧情复述、不是汇报。要像真人深夜随手写下的内心实况, 而不是四平八稳的总结。',
+    '- ★★★ 内心直白 + 反差幼稚(活人味): 允许角色在"冷静算计/老练"和"赌气/幼稚/小性子"之间自然跳切; 不要文学腔美化、不要每句解释"为什么"。',
+    '- ★★★ 提供"内心素材库", 哪层有戏写哪层, 不必硬凑: ①表面事件(骨架) ②我在乎什么(暗线动机) ③对TA的账本(旧账/落差) ④没告诉人的计划(心机筹谋) ⑤自己都不承认的(自我欺瞒, 用"我才没有/算了/其实"带出)。',
+    '- ★★★ 记忆回环: 已有记忆里提到的上次某人/某事/情绪, 尽量在本次呼应, 形成跨篇内心连续剧。',
+    '- ★★★ 允许留白与半句("……"/写到一半停住), 比写满更有内心。',
     '- 涉及露骨情节时只需简洁概括, 严禁逐字描写。',
-    '- 每篇 entry 控制在 150 字以内。',
+    '- ★★★ 每篇 entry 控制在 300~520 字, 宁缺毋滥。',
     '- 复用"已知角色名单"中的主名; 若识别出别名/代称, 归并到已有主名, 并在 aliases 里补充别名。',
     '- 语言: 跟随剧情片段的主要语言。',
     '- 用 is_minor 标记角色重要性。',
@@ -5418,8 +5432,9 @@ async function cdOnMessageReceivedJsonl() {
     匹配: ((res.chatId && res.file && String(res.file).indexOf(String(res.chatId)) !== -1) || (!res.chatId)) ? '✅ 匹配' : '⚠️ 注意：文件名与 chatId 不一致'
   });
   // 找出 lastFloor 之后、未处理的新楼层（jsonl 行号 i = message_id，与 lastFloor/processedFloors 对齐）
+  // ★ [Bug4修复] 与 chat 路径口径对齐：只统计有正文(非空 mes) 的楼层，保证两路径 totalNew 一致
   const newFloors = res.floors.filter(function (fl) {
-    return fl.i > baseline && _pfSet.indexOf(fl.i) < 0;
+    return fl.i > baseline && _pfSet.indexOf(fl.i) < 0 && fl.mes && String(fl.mes).trim();
   });
   const totalNew = newFloors.length;
   if (totalNew < interval) {
@@ -5427,11 +5442,19 @@ async function cdOnMessageReceivedJsonl() {
     return;
   }
   // 锚点偏移 + 分批（与 chat 路径一致）
-  const safeCount = Math.max(0, totalNew - offset);
-  let takeCount = Math.floor(safeCount / interval) * interval;
+  // ★ [Bug2修复] 边界处真正跳过最新 offset 条：稳定区(stable=totalNew-offset)不足一整批但总新增已够整批时，
+  //   只推进「稳定区全部」，绝不再强行取满 interval 条而把最新 offset 条不稳定楼层写进记忆。
+  const stable = Math.max(0, totalNew - offset);
+  let takeCount = Math.floor(stable / interval) * interval;
   if (takeCount < interval) {
-    if (totalNew >= interval) takeCount = interval;
-    else return;
+    if (stable >= interval) {
+      takeCount = Math.floor(stable / interval) * interval;   // 稳定区能凑整批 → 按整批
+    } else if (totalNew >= interval) {
+      takeCount = stable;                                     // 稳定区不足整批 → 只取稳定区全部（跳过最新 offset 条），防死锁
+    } else {
+      if (typeof cdAddLog === 'function') cdAddLog('info', '自动总结[jsonl]', { 未触发: '新增AI不足一整批', 新增: totalNew, 间隔: interval, 偏移: offset, 基线: baseline });
+      return;
+    }
   }
   // 最大批次限制，避免 token 爆（一次性处理几百楼会超预算）
   const maxW = Math.max(1, parseInt(s.maxWindowFloors, 10) || 40);
@@ -5514,13 +5537,18 @@ async function cdOnMessageReceived() {
 
   // ★ 锚点偏移：本轮不立刻写入最新 offset 条（留给下一轮待其稳定），
   //   但触发判定用完整新增量，避免「单轮新增 < offset」时永久不触发。
+  // ★ [Bug2修复] 边界处真正跳过最新 offset 条：稳定区(stable=totalNew-offset)不足一整批但总新增已够整批时，
+  //   只推进「稳定区全部」，绝不再强行取满 interval 条而把最新 offset 条不稳定楼层写进记忆。
   const totalNew = aiFloors.length;
-  const safeCount = Math.max(0, totalNew - offset);
-  let takeCount = Math.floor(safeCount / interval) * interval;
+  const stable = Math.max(0, totalNew - offset);
+  let takeCount = Math.floor(stable / interval) * interval;
   if (takeCount < interval) {
-    // 防死锁：稳定区不足一整批但完整新增已够整批时，强制推进最早一整批（早已稳定）
-    if (totalNew >= interval) {
-      takeCount = interval;
+    if (stable >= interval) {
+      takeCount = Math.floor(stable / interval) * interval;   // 稳定区能凑整批 → 按整批
+    } else if (totalNew >= interval) {
+      // 防死锁：稳定区不足一整批但完整新增已够整批时，只推进「稳定区全部」（=跳过最新 offset 条，早已稳定），
+      //         不再取满 interval 条而把最新 offset 条不稳定楼层也写进记忆
+      takeCount = stable;
     } else {
       // ★ 扫描 chat 结构，定位“AI楼层在哪、为何新增不足”
       try {
@@ -6297,6 +6325,12 @@ function cdInjectFab() {
   $(`#${FAB_ID} .cd-fab-btn`).on('click', function () {
     cdLog('[FAB] 点击, cdFabDragged:', cdFabDragged, 'cdPanelOpen:', cdPanelOpen);
     if (!cdFabDragged) {
+      // ★ 论坛直达：开启后点悬浮球直接进论坛（记忆面板保持关闭，论坛层自包含于面板内）
+      var _s = (typeof cdGetSettings === 'function') ? cdGetSettings() : null;
+      if (_s && _s.fabDirectForum && !cdPanelOpen) {
+        cdForumOpen();
+        return;
+      }
       if (cdPanelOpen) {
         cdClosePanel();
       } else {
@@ -10475,6 +10509,7 @@ async function cdRenderSettings() {
       <div class="cds-row"><span class="cds-lab">主开关</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-enabled" ${s.enabled ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
       <div class="cds-row"><span class="cds-lab">快捷入口（悬浮球）</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-fab" ${s.fabShow !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
       <div class="cds-row"><span class="cds-lab">小红点通知 <span class="cds-hint">新写日记时悬浮球显示</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-dotnotify" ${s.dotNotify !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+      <div class="cds-row"><span class="cds-lab">论坛直达 <span class="cds-hint">点悬浮球直接进论坛</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-forumdirect" ${s.fabDirectForum ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
       <div class="cds-row"><span class="cds-lab">新手引导</span><span class="cds-ctrl"><button class="cd-btn-secondary" id="cd-btn-reset-onboarding" style="padding:3px 12px;font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;">重新显示</button></span></div>
     </div>
 
@@ -10721,6 +10756,7 @@ async function cdRenderSettings() {
       injectDepth: Math.max(0, parseInt($('#cd-s-injdepth').val(), 10) || 1),
       fabShow: $('#cd-s-fab').is(':checked'),
       dotNotify: $('#cd-s-dotnotify').is(':checked'),
+      fabDirectForum: $('#cd-s-forumdirect').is(':checked'),
       enableDiary: $('#cd-s-diary').is(':checked'),
       enableRelation: $('#cd-s-relation').is(':checked'),
       enableArchive: $('#cd-s-archive').is(':checked'),
@@ -11053,6 +11089,16 @@ async function cdRenderEgg() {
 
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
+    {
+    version: 'v2.11.0',
+    date: '2026-09-01',
+    items: [
+      '重写角色日记内容架构：从 150 字「四件套模板」升级为 300~520 字「活人感私密内心日记」——直白剖白 + 反差幼稚(活人味)，提供「内心素材库」五层(表面事件/我在乎什么/对TA的账本/没告诉人的计划/自己都不承认的)自由选写，支持跨篇记忆回环、留白半句，让每篇日记都像真人深夜写下的内心实况，而非剧情汇报',
+      '新增「论坛直达」(设置→基本·总控→论坛直达)：开启后点悬浮球直接进跨世界论坛；论坛右上角新增「返回记忆」箭头(始终显示)，点它从论坛回到记忆面板；「✕ 关闭」仍整个面板回酒馆',
+      '修复记忆锚点偏移边界 Bug：当新增楼层落在 [interval, interval+offset) 时，旧逻辑会被死锁兜底击穿、把最新 offset 条不稳定(正在重roll)楼层写进记忆，现改为只推进稳定区、真正跳过最新 offset 条，既防死锁又不写脏数据(chat/jsonl 两路径统一)',
+      '修复 jsonl/chat 自动总结统计口径不一致：jsonl 路径补上有正文楼层过滤，与 chat 路径对同一批对话算出的新增量一致，切换数据源触发节奏稳定',
+    ],
+  },
     {
     version: 'v2.9.6',
     date: '2026-08-30',
@@ -11486,7 +11532,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.9.6 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.11.0 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
@@ -13390,6 +13436,7 @@ const CD_FORUM_HTML = `<div id="cdForumRoot">
   <div class="fl" id="fl">
     <div class="fl-bar">
       <div class="fl-t"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>跨世界论坛</div>
+      <div class="mini-btn" id="cfBackBtn" title="返回记忆"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></div>
       <div class="mini-btn" id="cfFullBtn" title="全屏/还原"><svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></div>
       <div class="mini-btn" id="moonBtn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg></div>
       <div class="mini-btn" id="closeBtn"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></div>
@@ -13965,8 +14012,15 @@ function cdForumOpen(){
 function cdForumClose(){
   var ov=document.getElementById('cd-forum-overlay');
   if(ov){ ov.style.display='none'; ov.innerHTML=''; }
-  // 论坛关闭后直接回到酒馆（整个插件面板一起淡出），而不是退回插件界面。
+// 论坛关闭后直接回到酒馆（整个插件面板一起淡出），而不是退回插件界面。
   try{ if(typeof cdClosePanel==='function') cdClosePanel(); }catch(e){}
+}
+/** ★ 论坛返回记忆：隐藏论坛层，切回记忆插件面板（browse 视图），面板保持打开 */
+function cdForumBack(){
+  var ov=document.getElementById('cd-forum-overlay');
+  if(ov){ ov.style.display='none'; ov.innerHTML=''; }
+  // 打开记忆面板（幂等：若已开则刷新视图；未开则完整打开）
+  try{ if(typeof cdOpenPanel==='function') cdOpenPanel(); else if(typeof cdSwitchView==='function') cdSwitchView('browse'); }catch(e){}
 }
 function cdForumToggleTheme(){
   _cfNight=!_cfNight;
@@ -16566,6 +16620,9 @@ cdBindOnce(R.querySelector('#cfImgStyle'),function(){
 
   // ===== 关闭 =====
   R.querySelector('#closeBtn').addEventListener('click',function(){ cdForumClose(); });
+  // ★ 论坛返回记忆箭头：点它从论坛回到记忆面板（面板保持打开），区别于关闭(回酒馆)
+  var _cfBack=R.querySelector('#cfBackBtn');
+  if(_cfBack){ _cfBack.addEventListener('click',function(){ cdForumBack(); }); }
 
   // ===== 全屏：论坛顶栏全屏按钮，复用插件面板全屏 =====
   var _cfFull=R.querySelector('#cfFullBtn');
