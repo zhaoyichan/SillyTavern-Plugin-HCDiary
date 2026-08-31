@@ -12,8 +12,6 @@ const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCD
 /** 调试开关 */
 const DEBUG = true;
 
-/** 日记世界书后缀 */
-const WB_SUFFIX = '-日记记忆';
 
 /** 好感引擎 复杂化好感度系统 完整原文（仪式注入台·好感引擎·原样版） */
 const CD_RITUAL_EMOTION_FULL = `复杂化好感度系统设计:
@@ -2606,110 +2604,7 @@ function mergeRelations(data, relList) {
   return data;
 }
 
-/* ============================== 世界书同步 ============================== */
-function sanitizeName(name) {
-  let n = String(name || 'character');
-  n = n.replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, '');
-  n = n.slice(0, 20);
-  return n || 'character';
-}
 
-function cdWbName() {
-  const raw = (typeof SillyTavern !== 'undefined' && SillyTavern.name2)
-    ? SillyTavern.name2 : 'character';
-  return sanitizeName(raw) + WB_SUFFIX;
-}
-
-async function cdEnsureWorldbook() {
-  // 世界书 API 在当前 ST 版本可能不可用，全部加防御
-  try {
-    if (typeof getWorldbookNames !== 'function') {
-      cdLog('cdEnsureWorldbook: getWorldbookNames 不可用，跳过世界书同步');
-      return null;
-    }
-    const name = cdWbName();
-    const names = (await getWorldbookNames()) || [];
-    if (!names.includes(name)) {
-      if (typeof createWorldbook === 'function') {
-        try { await createWorldbook(name, []); } catch (e) {
-          cdWarn('createWorldbook:', e && e.message);
-        }
-      }
-    }
-    if (typeof getCharWorldbookNames === 'function') {
-      const bind = await getCharWorldbookNames('current');
-      const additional = Array.isArray(bind.additional) ? bind.additional.slice() : [];
-      if (!additional.includes(name)) {
-        additional.push(name);
-        if (typeof rebindCharWorldbooks === 'function') {
-          await rebindCharWorldbooks('current', { primary: bind.primary, additional });
-        }
-      }
-    }
-    return name;
-  } catch (e) {
-    cdWarn('cdEnsureWorldbook 失败（世界书不可用）:', e.message);
-    cdAddLog('warn', '世界书同步失败（不影响日记）: ' + e.message);
-    return null;
-  }
-}
-
-function formatEntryForWb(npc, e) {
-  return [
-    `【${npc}的日记 · ${e.date || '第' + e.turn + '楼'}】`,
-    e.entry,
-    e.mood ? `(心情: ${e.mood})` : '',
-    e.attitude_to_user ? `(对用户: ${e.attitude_to_user})` : '',
-    e.secret ? `(心声: ${e.secret})` : '',
-    (e.key_events && e.key_events.length) ? `(关键事件: ${e.key_events.join('; ')})` : '',
-  ].filter(Boolean).join('\n');
-}
-
-async function cdSyncWorldbook(data) {
-  try {
-    const name = await cdEnsureWorldbook();
-    if (!name) {
-      cdLog('cdSyncWorldbook: 世界书不可用，跳过同步');
-      return;
-    }
-    if (typeof createOrReplaceWorldbook !== 'function') {
-      cdLog('cdSyncWorldbook: createOrReplaceWorldbook 不可用，跳过同步');
-      return;
-    }
-    const entries = [];
-    let order = 100;
-    for (const [npc, list] of Object.entries(data.diaries)) {
-      if (!list.length) continue;
-      const aliases = data.aliases[npc] || [];
-      const keys = Array.from(new Set([npc, ...aliases]));
-      const last = list[list.length - 1];
-      entries.push({
-        name: `${npc} · 最新日记`,
-        enabled: true,
-        strategy: { type: 'constant', keys: [], keys_secondary: { logic: 'and_any', keys: [] }, scan_depth: 'same_as_global' },
-        position: { type: 'at_depth', role: 'system', depth: 4, order: order++ },
-        content: formatEntryForWb(npc, last),
-      });
-      const archive = list.slice(0, -1);
-      if (archive.length) {
-        entries.push({
-          name: `${npc} · 日记存档`,
-          enabled: true,
-          strategy: { type: 'selective', keys, keys_secondary: { logic: 'and_any', keys: [] }, scan_depth: 'same_as_global' },
-          position: { type: 'at_depth', role: 'system', depth: 4, order: order++ },
-          content: archive.map(e => formatEntryForWb(npc, e)).join('\n\n---\n\n'),
-        });
-      }
-    }
-    if (entries.length) {
-      await createOrReplaceWorldbook(name, entries);
-      cdLog('cdSyncWorldbook: 世界书同步完成，共', entries.length, '条');
-    }
-  } catch (e) {
-    cdWarn('cdSyncWorldbook 失败:', e.message);
-    cdAddLog('warn', '世界书同步失败（不影响日记）: ' + e.message);
-  }
-}
 /**
  * 楼层回滚: 当聊天楼层被删除/撤回时触发。
  * ★ 参考「剧情档案」模式（追加式、不随楼层删除而丢失）：楼层被删时**不自动删除日记**，
@@ -5239,8 +5134,7 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
         cdAddLog('info', '[进度] 本次已处理楼层', {批次: _batchIds, lastFloor: data.lastFloor, _lastDiaryChatLength: data._lastDiaryChatLength, processedFloors总数: data.processedFloors.length});
       }
       await cdSaveData(data);
-      if (diaryOk) await cdSyncWorldbook(data);
-      
+            
       // ★ 从剧情档案中提取剧情卡牌 —— 已停用（不再生成新卡牌、不再匹配正则），保留旧数据
       /*
       if (archiveOk && data.archive) {
@@ -9578,8 +9472,7 @@ function cdRenderClear() {
     </div>`);
   $('#cd-do-clear').off('click').on('click', async () => {
     await cdSaveData(emptyData());
-    await cdSyncWorldbook(emptyData());
-    toastr.success('已清空本局日记');
+        toastr.success('已清空本局日记');
     cdSwitchView('browse');
   });
 }
@@ -10901,7 +10794,6 @@ async function cdRenderEgg() {
 
       <div class="cd-stats-detail" style="margin:8px 0;">
         <p><span class="cd-stat-dot"></span> 剧情档案：${hasArchive ? '已有' : '暂无'}</p>
-        <p><span class="cd-stat-dot"></span> 世界书同步：${typeof createOrReplaceWorldbook === 'function' ? '可用' : '不可用'}</p>
         ${allDates.length ? `<p><span class="cd-stat-dot"></span> 最近记录：${escapeHtml(allDates[0])}</p>` : ''}
         <p><span class="cd-stat-dot"></span> 当前楼层数：${getLastFloorId() + 1}</p>
         <p><span class="cd-stat-dot"></span> API 来源：${cdGetSettings().source || 'tavern'}</p>
