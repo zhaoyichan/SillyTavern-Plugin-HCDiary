@@ -13321,6 +13321,40 @@ const CD_FORUM_CSS = `/* ===== 基调：米白藏青（日）/ 深藏青午夜�
   #cd-forum-overlay .lv-tagrow .lvt.on{border-color:#b06a7a;color:#8b4a5c;background:#f6e9ed;}
   #cd-forum-overlay .lv-result{background:#f6e9ed;border:1px solid #e8d3da;border-radius:11px;padding:11px 13px;margin-top:10px;font-size:10px;color:#8b4a5c;line-height:1.7;}
 
+  /* ===== 夜间模式兜底：把所有内联硬编码的浅色区块统一切到深色 ===== */
+  #cd-forum-overlay.cd-forum-night .floor,
+  #cd-forum-overlay.cd-forum-night .genpanel,
+  #cd-forum-overlay.cd-forum-night #cfMultiBar,
+  #cd-forum-overlay.cd-forum-night [style*="background:#fafbfc"],
+  #cd-forum-overlay.cd-forum-night [style*="background:#f7f8f9"],
+  #cd-forum-overlay.cd-forum-night [style*="background:#fdf0ec"],
+  #cd-forum-overlay.cd-forum-night [style*="background:#f0f5f2"],
+  #cd-forum-overlay.cd-forum-night [style*="background:#eef0f1"],
+  #cd-forum-overlay.cd-forum-night [style*="background:#eef5f8"],
+  #cd-forum-overlay.cd-forum-night [style*="background:#f6e9ed"],
+  #cd-forum-overlay.cd-forum-night [style*="background:#f7ece9"],
+  #cd-forum-overlay.cd-forum-night [style*="background:#fbf3f0"],
+  #cd-forum-overlay.cd-forum-night [style*="background:#f0f6f3"],
+  #cd-forum-overlay.cd-forum-night [style*="background:#fff"],
+  #cd-forum-overlay.cd-forum-night [style*="background:#ffffff"]{
+    background:var(--c-card) !important;
+    border-color:var(--c-line) !important;
+  }
+  #cd-forum-overlay.cd-forum-night [style*="color:#2e3337"],
+  #cd-forum-overlay.cd-forum-night [style*="color:#5a5f64"],
+  #cd-forum-overlay.cd-forum-night [style*="color:#6d757b"],
+  #cd-forum-overlay.cd-forum-night [style*="color:#6a6f74"],
+  #cd-forum-overlay.cd-forum-night [style*="color:#7a4a40"],
+  #cd-forum-overlay.cd-forum-night [style*="color:#a7adb2"]{
+    color:var(--c-txt2) !important;
+  }
+  #cd-forum-overlay.cd-forum-night [style*="color:#c84632"],
+  #cd-forum-overlay.cd-forum-night [style*="background:#e0b8ae"]{
+    color:var(--c-neg-txt) !important;
+    border-color:var(--c-rival-line) !important;
+    background:var(--c-rival-bg) !important;
+  }
+
 `;
 
 const CD_FORUM_HTML = `<div id="cdForumRoot">
@@ -16360,7 +16394,12 @@ cdBindOnce(R.querySelector('#cfImgStyle'),function(){
   function _cfOpenDynEditor(){
     try{ if(typeof cdAddLog==='function') cdAddLog('info','[论坛][发帖诊断] _cfOpenDynEditor 创建动态弹层'); }catch(_e){}
     try{ if(_cfDynEditor && _cfDynEditor.parentNode) _cfDynEditor.parentNode.removeChild(_cfDynEditor); }catch(_e){}
-    var _mount = R.closest('#cd-forum-overlay')||R||document.body;
+    // 编辑弹层挂到 document.documentElement（<html> 顶层）——这是本插件所有"全屏遮罩"弹层的统一做法
+    // （cf: cdAddLineEdit 的 cd-table-editor-wrap、相亲角层、图库层等均挂 documentElement + z-index 拉满）。
+    // 好处：① position:fixed 以整块手机屏幕(视口)为基准真正居中，不再被面板小窗的位置/大小带偏；
+    //       ② 层级与面板(#cd-modal-root, isolation:isolate, z-index:2000001)平级、用更高 z-index(2147483647)压顶，
+    //          不会被帖子详情等面板内容盖住。
+    var _mount = document.documentElement;
     var _box=document.createElement('div');
     _box.style.cssText='position:fixed;left:0;top:0;width:100%;height:100%;z-index:2147483647;background:rgba(20,24,28,.45);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;';
     var _card=document.createElement('div');
@@ -16383,6 +16422,42 @@ cdBindOnce(R.querySelector('#cfImgStyle'),function(){
     var _pubLb=document.createElement('label'); _pubLb.textContent = isPublic?'公开':'隐私'; _pubLb.style.cssText='display:flex;align-items:center;gap:4px;cursor:pointer;';
     _pubLb.insertBefore(_pubCb, _pubLb.firstChild);
     _row.appendChild(_imgLb); _row.appendChild(_pubLb);
+    // ---- 从相册选真图（加号入口）：选图→预览→发布时作为帖子配图(imgKey) ----
+    var _pickArea=document.createElement('div');
+    _pickArea.style.cssText='display:flex;align-items:center;gap:8px;';
+    var _pickBtn=document.createElement('button'); _pickBtn.type='button';
+    _pickBtn.style.cssText='display:inline-flex;align-items:center;gap:5px;padding:6px 11px;border:1px solid #bcd0da;background:#eef5f8;color:#3f6d84;border-radius:9px;font-size:10px;font-weight:700;cursor:pointer;';
+    _pickBtn.innerHTML='<svg viewBox="0 0 24 24" style="width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>从相册选图';
+    var _pickFile=document.createElement('input'); _pickFile.type='file'; _pickFile.accept='image/*'; _pickFile.style.display='none';
+    var _pickPrev=document.createElement('div');
+    _pickPrev.style.cssText='display:none;align-items:center;gap:7px;flex:1;min-width:0;';
+    var _pickImg=document.createElement('img');
+    _pickImg.style.cssText='width:38px;height:38px;object-fit:cover;border-radius:8px;border:1px solid #c8d6cf;flex-shrink:0;';
+    var _pickTxt=document.createElement('span'); _pickTxt.style.cssText='font-size:9px;color:#4a8571;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'; _pickTxt.textContent='已选相册图片';
+    var _pickClear=document.createElement('button'); _pickClear.type='button';
+    _pickClear.style.cssText='flex-shrink:0;padding:3px 9px;color:#c84632;border:1px solid #e0b8ae;background:#fdf0ec;border-radius:7px;font-size:9px;font-weight:700;cursor:pointer;'; _pickClear.textContent='取消';
+    _pickPrev.appendChild(_pickImg); _pickPrev.appendChild(_pickTxt); _pickPrev.appendChild(_pickClear);
+    _pickArea.appendChild(_pickBtn); _pickArea.appendChild(_pickFile); _pickArea.appendChild(_pickPrev);
+    _card.appendChild(_pickArea);
+    _pickBtn.addEventListener('click',function(){ try{ _pickFile.click(); }catch(_e){ try{ if(typeof toastr==='function') toastr.error('无法打开相册选择器'); }catch(_e2){} } });
+    _pickFile.addEventListener('change',function(){
+      var f=(_pickFile.files&&_pickFile.files[0]); if(!f) return;
+      try{
+        var _fr=new FileReader();
+        _fr.onload=function(){
+          var _dataUrl=String(_fr.result||'');
+          var _key='plc_'+Date.now()+'_'+Math.floor(Math.random()*1e6);
+          try{ cdForumImgAdd({ key:_key, dataUrl:_dataUrl, title:'发帖选图', author:'', text:'', time:Date.now() }); }catch(_e){}
+          _editPickKey=_key;               // 同一变量，doPublish 会把它作为帖子 imgKey
+          _pickImg.src=_dataUrl; _pickBtn.style.display='none'; _pickPrev.style.display='flex';
+          try{ if(typeof toastr==='function') toastr.success('已选相册图片'); }catch(_e){}
+        };
+        _fr.onerror=function(){ try{ if(typeof toastr==='function') toastr.error('读取图片失败'); }catch(_e){} };
+        _fr.readAsDataURL(f);
+      }catch(e){ try{ if(typeof toastr==='function') toastr.error('选择图片失败'); }catch(_e2){} }
+      _pickFile.value='';
+    });
+    _pickClear.addEventListener('click',function(){ _editPickKey=''; _pickPrev.style.display='none'; _pickBtn.style.display='inline-flex'; });
     var _btns=document.createElement('div'); _btns.style.cssText='display:flex;justify-content:flex-end;gap:8px;margin-top:3px;';
     var _cancel=document.createElement('button'); _cancel.textContent='取消';
     _cancel.style.cssText='border:1px solid #dde5e2;background:#f5f8f6;color:#5a6a63;font-size:10px;font-weight:700;border-radius:8px;padding:7px 14px;cursor:pointer;';
@@ -16395,8 +16470,8 @@ cdBindOnce(R.querySelector('#cfImgStyle'),function(){
     _cfDynEditor=_box;
     try{ if(typeof cdAddLog==='function') cdAddLog('info','[论坛][发帖诊断] 动态弹层已挂载, mount='+(_mount&&_mount.id||_mount&&_mount.nodeName)); }catch(_e){}
     _ipt2.focus();
-    _cancel.onclick=function(){ try{ if(_box.parentNode) _box.parentNode.removeChild(_box); }catch(_e){} _cfDynEditor=null; };
-    _box.onmousedown=function(e){ if(e.target===_box){ try{ if(_box.parentNode) _box.parentNode.removeChild(_box); }catch(_e2){} _cfDynEditor=null; } };
+    _cancel.onclick=function(){ _editPickKey=''; try{ if(_box.parentNode) _box.parentNode.removeChild(_box); }catch(_e){} _cfDynEditor=null; };
+    _box.onmousedown=function(e){ if(e.target===_box){ _editPickKey=''; try{ if(_box.parentNode) _box.parentNode.removeChild(_box); }catch(_e2){} _cfDynEditor=null; } };
     _send.onclick=function(){
       var _txt=String(_ipt2.value||'').trim();
       if(!_txt){ try{ if(typeof toastr==='function') toastr.info('请输入帖子内容'); }catch(_e){} return; }
@@ -16404,6 +16479,7 @@ cdBindOnce(R.querySelector('#cfImgStyle'),function(){
       try{ if(edTitle) edTitle.value=_ipt1.value; if(edBody) edBody.value=_txt; if(edImg) edImg.checked=_imgCb.checked; }catch(_e){}
       isPublic=!!_pubCb.checked;
       doPublish(_txt);
+      _editPickKey='';   // 发完清空相册选图
       try{ var _np2=R.querySelector('#newPost'); if(_np2) _np2.value=''; }catch(_e){}
       try{ if(_box.parentNode) _box.parentNode.removeChild(_box); }catch(_e){} _cfDynEditor=null;
     };
@@ -19330,7 +19406,18 @@ async function cdForumGenerateReplies(post, isPublic, userReplies){
   var effectsReq = isPublic
     ? '另请判断：帖子内容可能让哪些【有名字有关系角色】产生记忆和好感变化；若无影响则 effects 给空数组。\n   - 若内容伤害/背叛/亏欠了某角色 → type=grievance(积怨)，mood 写情绪(如 愤怒/心寒/吃醋/伤心)，favDelta 写负数(如 -15)，event 写一句话事件；\n   - 若内容宣示与某角色关系/让某角色感动 → type=affection(铭记)，favDelta 写正数(如 +20)，event 写这句话事件。'
     : '（隐私帖：effects 给空数组。）';
-  var prompt = '这是跨世界论坛。请根据下面帖子的正文、楼主和已有回复，补充生成回复（像真实帖子盖楼），并判断帖子对有关系角色的影响。\n\n帖子标题：'+(post.title||'')+'\n帖子正文：'+(post.text||'')+'\n帖子作者：'+(post.auth||'')+'（来自：'+(post.world||'?')+'世界）\n\n已有回复：\n'+userRepliesTxt+'\n\n本论坛世界档案：\n'+worldJson+'\n\n有名字角色名单：\n'+roleList+'\n\n有关系角色现状（含记忆/好感）：\n'+relatedTxt+'\n\n'+pubNote+'\n'+effectsReq+'\n\n【输出要求】严格按如下 JSON 对象输出，不要输出 JSON 以外的话：\n{"replies":[{"from":"回复人（楼主本人或角色/路人）","world":"所属世界","content":"紧扣主题的真实回复"}共6条],"effects":[{"role":"角色名","type":"grievance|affection","mood":"情绪","favDelta":-15或+20整数","event":"一句话事件"}...]}';
+  // 帖子配图(用户从相册选的真图)：把它以 [IMG]data:image/...[/IMG] 标记嵌入提示词，
+  // 多模态模型会被 cdApiComplete→callOpenAI 解析成 image_url 真正读懂图；非多模态模型忽略该标记、不影响发帖。
+  var _postImgBlock = '';
+  try{
+    if(post && post.imgKey){
+      var _imgRec = await cdForumImgGet(post.imgKey);
+      if(_imgRec && _imgRec.dataUrl){
+        _postImgBlock = '\n\n帖子配图（用户上传的真图，请看图片内容，并让回复紧扣/回应图片）：\n[IMG]' + _imgRec.dataUrl + '[/IMG]\n';
+      }
+    }
+  }catch(_eimg){ _postImgBlock=''; }
+  var prompt = '这是跨世界论坛。请根据下面帖子的正文、楼主和已有回复，补充生成回复（像真实帖子盖楼），并判断帖子对有关系角色的影响。\n\n帖子标题：'+(post.title||'')+'\n帖子正文：'+(post.text||'')+_postImgBlock+'\n帖子作者：'+(post.auth||'')+'（来自：'+(post.world||'?')+'世界）\n\n已有回复：\n'+userRepliesTxt+'\n\n本论坛世界档案：\n'+worldJson+'\n\n有名字角色名单：\n'+roleList+'\n\n有关系角色现状（含记忆/好感）：\n'+relatedTxt+'\n\n'+pubNote+'\n'+effectsReq+'\n\n【输出要求】严格按如下 JSON 对象输出，不要输出 JSON 以外的话：\n{"replies":[{"from":"回复人（楼主本人或角色/路人）","world":"所属世界","content":"紧扣主题的真实回复"}共6条],"effects":[{"role":"角色名","type":"grievance|affection","mood":"情绪","favDelta":-15或+20整数","event":"一句话事件"}...]}';
   try{
     prompt += '\n\n【说人话·禁机器词】回复要像真人灌水、说人话，严禁"分析/数据显示/统计/参数/模型/综上所述/逻辑bug/乱码/格式化/CPU/代码/程序/系统/异常/处理中"这类机器词，禁止输出乱码或转义符。';
     var msgs = [ { role:'system', content: prompt }, { role:'user', content:'生成回复和影响。' } ];
