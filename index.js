@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.11.0';
+const PLUGIN_VERSION = '2.13.0';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -873,6 +873,9 @@ async function cdBuildDiaryPrompt(windowFloors, data, s) {
   }
   const sys = [
     '你是一个"角色日记"记录员。阅读给定剧情片段, 为其中每个有名有戏份的登场角色, 以该角色第一人称主观视角写一篇**活人感十足的私密内心日记**。',
+    (typeof data === 'object' && data !== null && typeof data.lastFloor === 'number' && data.lastFloor === -1)
+      ? '- ★★★ 本次是这段剧情的【首次】记录。开头【第0楼的开场白】包含背景设定、时间地点、登场人物及彼此当前的关系状态，务必优先从开场白中提炼出这些底层设定并写进日记/关系，不要把它当作场景铺垫而略过。'
+      : '',
     '要求:',
     '- 只为有名字、有实际戏份的角色写。纯路人、无名群众忽略。',
     '- 不要为用户/玩家角色写日记。',
@@ -1291,6 +1294,10 @@ async function cdBuildArchivePrompt(windowFloors, data, _s, archiveFull) {
       const sys = [
         _archSys,
         '',
+        (typeof data === 'object' && data !== null && typeof data.lastFloor === 'number' && data.lastFloor === -1)
+          ? '【首次记录特别要求】本次输入含开头的【第0楼开场白】。请把它中的背景/时间/地点/登场人物及其当前彼此的关系状态，作为"主线起点/重要状态"优先写入档案，不要因它是静态描述、非事件而遗漏。'
+          : '',
+        '',
         customFormatBlock ? '自定义追踪项（同样严格按格式输出）：\n' + customFormatBlock : '',
         '',
         '**从历史档案中检索到的相关事件（供参考）**：',
@@ -1316,6 +1323,9 @@ async function cdBuildArchivePrompt(windowFloors, data, _s, archiveFull) {
   const sys = [
     _archSys,
     '',
+    (typeof data === 'object' && data !== null && typeof data.lastFloor === 'number' && data.lastFloor === -1)
+      ? '【首次记录特别要求】本次输入含开头的【第0楼开场白】。请把它中的背景/时间/地点/登场人物及其当前彼此的关系状态，作为"主线起点/重要状态"优先写入档案，不要因它是静态描述、非事件而遗漏。'
+      : '',
     archiveFull ? '**（全量重建模式）请基于下方全部楼层完整输出当前剧情档案，覆盖旧值，不要遗漏早期剧情**：' : '**已有剧情进展（请做增量扩展，不要重复）**：',
     existing.mainline ? `已知主线：${existing.mainline}` : '已知主线：（暂无，这是初见）',
     existing.sideline ? `已知支线：${existing.sideline}` : '',
@@ -4767,7 +4777,25 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
 
   if (windowFloors.length > (s.maxWindowFloors || 40))
     windowFloors = windowFloors.slice(-(s.maxWindowFloors || 40));
-
+  // ★ [改动①-openair0] 开场白(0层)保底进第1批（双通道统一收口于此）。
+  //   仅当该聊天【首次总结】(lastFloor===-1) 且本批没有0层时，把 message_id=0 的开场白 unshift 置顶到批次最前，
+  //   并同步计入 processedFloors 锁定，确保后续批次不再重复带。
+  //   顺序：先按 maxWindowFloors 截尾(保留最近N条)，再置顶0层，避免开场白被截断挤出。
+  try {
+    const _firstTime = (typeof data === 'object' && data !== null && typeof data.lastFloor === 'number' && data.lastFloor === -1);
+    if (_firstTime && Array.isArray(windowFloors)) {
+      const _hasZero = windowFloors.some(function(w){ return w && w.message_id === 0; });
+      if (!_hasZero) {
+        const _chat0 = _cdGetChat()[0];
+        if (_chat0 && _chat0.mes && String(_chat0.mes).trim()) {
+          windowFloors.unshift({ message_id: 0, name: (_chat0.name||''), mes: _chat0.mes });
+          if (!Array.isArray(data.processedFloors)) data.processedFloors = [];
+          if (data.processedFloors.indexOf(0) < 0) data.processedFloors.push(0);
+          if (typeof cdAddLog === 'function') cdAddLog('info', '[开场白保底] 已将第0楼开场白置顶加入第1批总结', {楼层数: windowFloors.length, 首层: windowFloors[0].message_id});
+        }
+      }
+    }
+  } catch(_e){ if (typeof cdWarn === 'function') cdWarn('[开场白保底] 异常(已忽略)', _e); }
   cdBusy = true; cdBusyLabel = '写日记'; cdBusyAt = Date.now();
   try {
     if (!silent && typeof toastr !== "undefined") toastr.info(`开始写日记 (${windowFloors.length} 个新楼层)...`);
@@ -10982,6 +11010,14 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
     {
+    version: 'v2.13.0',
+    date: '2026-09-02',
+    items: [
+      '新增「开场白保底进首次总结」：新开对话的第一次自动总结时，强制把第0楼开场白(即使被 memoryOffset/锚点偏移或批次截断漏掉)置顶加入本批，确保收录；同步把0层计入 processedFloors 锁定，后续批次不再重复带(chat/jsonl 双通道统一收口于 cdRunDiary，不重复总结)。同时在该聊天首次总结时注入提示词，要求 AI 优先把开场白里的背景/时间/地点/登场人物与关系状态写进日记与剧情档案，避免开场白被当成场景铺垫略过。',
+      '版本号统一为 v2.13.0(manifest / PLUGIN_VERSION / UI 底部一致)。',
+    ],
+  },
+    {
     version: 'v2.11.0',
     date: '2026-09-01',
     items: [
@@ -11424,7 +11460,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.11.0 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.13.0 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
