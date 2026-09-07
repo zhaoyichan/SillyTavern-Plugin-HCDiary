@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.13.0';
+const PLUGIN_VERSION = '2.14.0';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -207,9 +207,11 @@ const DEFAULT_SETTINGS = {
   themeMode       : 'day',       // 'auto' | 'day' | 'night'
   fontScale       : 1,            // 界面字号缩放 0.8~1.4（1=标准）
   autoSummary     : true,         // 自动总结开关（独立于手动写日记）
+  autoSummaryDelay: 20,            // [v2.11+] 自动总结到达目标楼层后延迟 N 秒再调 API（错峰避开限流），0=不延迟；手动触发不等待
   enableDiary     : true,         // 生成角色日记（默认开）
   enableRelation  : false,        // 生成人物关系（默认关，可手动开启）
   enableArchive   : true,         // 生成剧情档案（默认开）
+  diaryVersion    : 'full',        // 角色日记版本: 'full'=复杂版(300~520字) | 'lite'=精简版(80~120字)
   injectDiary     : true,         // 注入角色日记到AI上下文
   injectRelation  : false,        // 注入人物关系到AI上下文（跟随关系生成默认关）
   injectArchive   : true,         // 注入剧情档案到AI上下文
@@ -871,34 +873,34 @@ async function cdBuildDiaryPrompt(windowFloors, data, s) {
       }
     } catch (e) { cdWarn('日记向量检索失败（降级为全量记忆）:', e); }
   }
+  const _dv = (s && s.diaryVersion === 'lite') ? 'lite' : 'full';
   const sys = [
-    '你是一个"角色日记"记录员。阅读给定剧情片段, 为其中每个有名有戏份的登场角色, 以该角色第一人称主观视角写一篇**活人感十足的私密内心日记**。',
+    '你是一个"角色日记"记录员。读剧情时，让每个有名有戏份的角色，用第一人称写下此刻自己心里真正在想什么。',
     (typeof data === 'object' && data !== null && typeof data.lastFloor === 'number' && data.lastFloor === -1)
-      ? '- ★★★ 本次是这段剧情的【首次】记录。开头【第0楼的开场白】包含背景设定、时间地点、登场人物及彼此当前的关系状态，务必优先从开场白中提炼出这些底层设定并写进日记/关系，不要把它当作场景铺垫而略过。'
+      ? '- ★★★ 本次是这段剧情的【首次】记录。开头【第0楼的开场白】包含背景设定、时间地点、登场人物及彼此当前的关系状态，应从中领会这些设定，但不要复述开场白，只把这层背景融进角色此刻的心境。'
       : '',
-    '要求:',
-    '- 只为有名字、有实际戏份的角色写。纯路人、无名群众忽略。',
-    '- 不要为用户/玩家角色写日记。',
-    s.mainCardIsGM ? '- 如果某角色是旁白/系统/上帝视角/GM式叙述者, 不要为其写。' : '',
-    '- 第一人称, 带该角色的情绪、私心、主观理解(可与事实有偏差)。同一事件不同角色可记得不同、解读不同。',
-    '- ★★★ entry 是"写给自己看的私密日记", 不是剧情复述、不是给外人看的汇报。要像真人深夜随手写下的内心实况, 而不是四平八稳的总结。',
-    '- ★★★ 内心直白 + 反差幼稚(活人味): 允许角色在"冷静算计/老练"和"赌气/幼稚/小性子"之间自然跳切, 展现人的多面与反复。不要一味装深沉、不要文学腔美化、不要每句都解释"为什么"。',
-    '- ★★★ 提供"内心素材库", 哪一层有戏就写哪一层, 不必硬凑、不必每篇都面面俱到:',
-    '    ① 表面事件: 只留转折/关键点当骨架, 删日常流水(不流水账)。',
-    '    ② 我在乎什么: 不写"我开心/我生气"这种结论, 而写"这件事真正动到我哪根弦、我最在乎的是什么"。',
-    '    ③ 对TA的账本: 关系旧账与预期落差——TA上次欠我什么、我记着、这次触发了我哪笔旧账。',
-    '    ④ 没告诉任何人的计划: 角色私底下盘算什么、不打算说出口的心机与筹谋(最锋利的一层, 有就重点写)。',
-    '    ⑤ 自己都不承认的: 自我欺瞒——用"我才没有""算了""其实"这类口吻带出角色最不愿面对的那一面。',
-    '- ★★★ 记忆回环: 若已有记忆里提到上次的某人/某事/某种情绪, 尽量在本次日记里呼应一下(如"上次我说再也不想见他, 可今天我又……"), 形成跨篇的内心连续剧, 让日记有"活人在延续"的感觉。',
-    '- ★★★ 允许留白与半句: 可以用"……"、写到一半停住、涂改式的自我打断, 表现角色写到这里的犹豫与情绪(比写满更有内心)。',
-    '- 涉及性爱/暴力等露骨情节时, 只需简洁概括地提及(例如"与他发生了关系"、"被他压制"), 严禁逐字描写动作、器官、体液等露骨细节。日记重在记录"发生了什么和我的感受", 而非还原过程。',
-    '- ★★★ 每篇 entry 控制在 300~520 字, 宁缺毋滥、有血肉, 禁止空洞凑字数。',
-    '- 在日记正文末尾添加一个符合该角色性格的颜文字(如 (。-ω-)、(*^▽^*)、(´;ω;`)、╮(╯▽╰)╭ 等)。',
-    '- 复用"已知角色名单"中的主名; 若识别出别名/代称, 归并到已有主名, 并在 aliases 里补充别名。',
-    '- 语言: 跟随剧情片段的主要语言。',
-    '- 用 is_minor 标记角色重要性: 主角、重要配角、有名有戏份的 NPC 标 false; 仅出场一两句、无关紧要的纯路人标 true。',
-    '严格只输出 JSON, 格式:',
-    '{"npcs":[{"name":"主名","aliases":["别名"],"is_minor":false,"date":"剧情时间或第N楼","turn":楼号数字,"entry":"第一人称私密内心日记(300~520字, 直白有内心层次, 可自由选写素材库里的层)", "mood":"心情(限用以下词之一：开心、难过、生气、紧张、平静、困惑、惊讶、思念)","attitude_to_user":"对用户态度","secret":"没说出口的心思(可与entry重复, 但要更私密更短)","key_events":["关键事件"],"relationship_with_others":{"某角色":"关系描述"}}]}',
+    '【给谁写】只给有名有戏份的角色写。纯路人忽略；不代玩家/主角写。',
+    s.mainCardIsGM ? '- 旁白/系统/上帝视角/GM式叙述者，不要为其写。' : '',
+    '【这是写给自己的心里话，不是剧情汇报】',
+    '- 顺着这个角色此刻的情绪和脾气去写，别像背课文一样复述今天发生了啥。只写他亲眼看见、亲耳听见、亲身体会到、并且心里真这么想的事。',
+    '- 全知禁令：绝不能像上帝一样说出另一个角色心里在想什么，不能写这个角色不知道、没经历的情节。',
+    '【重头戏】把这段剧情里真正戳到他心上的那件事写出来——他可能因为这件事对某人改观了、记上了、心动了、后怕了、感激了、气笑了、或者狠狠吐槽了一顿自己；也可能就是心里咯噔一下、自己也说不清的那种滋味。跟着他那个人物该有的反应走：高兴就高兴、酸就酸、认就认、恼就恼。重点是这件事带着情绪落进了他心里，让他对某个人或自己有了点新的看法或态度。',
+    '【口吻】像深夜一个人碎碎念：可以有潜台词、说一半咽回去、突然自嘲一下、或者嘴硬两句；会反复、会矛盾——人本来就是这样的。别文艺腔、别打官腔、别每句都解释为什么。',
+    '【记忆】想起旧事就带一句呼应，想不起就不带，不强求。',
+    '【语言】跟随剧情片段的主要语言。',
+    '【露骨情节】性/暴力等只一句话带过（如"与他发生了关系"、"被他压制"），严禁描写动作、器官、体液等细节。日记记的是感受与判断，不是还原过程。',
+    (_dv === 'lite'
+      ? '【本批为精简档】正文 100 字以内，就写三样压干的话：① 此刻心里怎么想（爽不爽/憋不憋屈/放下没放下）② 今天最要紧的一件事（一句话带过，带出他的态度——吐槽/感激/记仇/心动都行）③ 这件事里他想留住的一个记忆点。一句是一句，不堆词儿、不啰嗦。'
+      : '【本批为完整档】正文 300~520 字。顺着情绪铺开：可以有心理活动、有口吻，把戳到他的那件事写到有分量。宁缺毋滥，别空洞凑字。'),
+    '【结构】只输出JSON，字段照旧、不得删减：',
+    '{"npcs":[{"name":"主名","aliases":["别名"],"is_minor":false,"date":"剧情时间或第N楼","turn":楼号数字,"entry":"第一人称心里话正文", "mood":"心情(限用以下词之一：开心、难过、生气、紧张、平静、困惑、惊讶、思念)","attitude_to_user":"对用户态度","secret":"没说出口的心思(可与entry有重叠但更私密更短)","key_events":["关键事件"],"relationship_with_others":{"某角色":"关系描述"}}]}',
+    '字段说明：',
+    '- entry：就是这个角色此刻的心里话正文（按上面的精简/完整档字数写）。',
+    '- mood：当下心情；attitude_to_user：对用户的态度；secret：没说出口的心思。',
+    '- key_events：他亲历、且对他个人有分量的事件。',
+    '- relationship_with_others：他对自己与别人关系的印象（主观、按他经历来写，不是上帝视角的结论）。',
+    '- 复用已知角色名单里的主名；识别出别名则归并到主名并在 aliases 补充。',
+    '- 用 is_minor 标记角色分量：主角/重要配角/有名有戏份NPC标 false；只在片段里露面一两句的纯路人标 true。',
   ].filter(Boolean).join('\n');
   // ★ 世界书联动：在函数体顶部异步获取登场角色的世界书设定（loadWorldInfo 为异步 API）
   let _worldbookTxtDiary = '';
@@ -961,7 +963,6 @@ function cdBuildCombinedPrompt(windowFloors, data, s) {
     '- ★★★ 记忆回环: 已有记忆里提到的上次某人/某事/情绪, 尽量在本次呼应, 形成跨篇内心连续剧。',
     '- ★★★ 允许留白与半句("……"/写到一半停住), 比写满更有内心。',
     '- 涉及露骨情节时只需简洁概括, 严禁逐字描写。',
-    '- ★★★ 每篇 entry 控制在 300~520 字, 宁缺毋滥。',
     '- 复用"已知角色名单"中的主名; 若识别出别名/代称, 归并到已有主名, 并在 aliases 里补充别名。',
     '- 语言: 跟随剧情片段的主要语言。',
     '- 用 is_minor 标记角色重要性。',
@@ -1360,6 +1361,52 @@ async function cdBuildArchivePrompt(windowFloors, data, _s, archiveFull) {
   ];
 }
 
+/** ★ 合并 prompt：一次 API 调用完成「角色日记 + 剧情档案」，动态拼接（勾哪个拼哪个） */
+async function cdBuildDiaryArchiveCombined(windowFloors, data, s, archiveFull) {
+  const hasDiary = s.enableDiary !== false;
+  const hasArch  = s.enableArchive !== false;
+  const diaryMsgs = hasDiary ? await cdBuildDiaryPrompt(windowFloors, data, s) : null;
+  const archMsgs  = hasArch  ? await cdBuildArchivePrompt(windowFloors, data, s, archiveFull) : null;
+  const sysParts = [];
+  sysParts.push('你是一个多功能记忆整理AI。请基于下方提供的同一段剧情，完成下面给你的任务，并严格按要求分节输出。');
+  if (diaryMsgs) {
+    sysParts.push('【任务一：角色日记】请完整遵守下面任务一的全部要求，输出角色日记的 JSON 对象数组（保持第一人称、字数、内心层次等所有约束）。若还包含任务二，则在你把任务一的完整 JSON 输出并闭合后，另起一行只写一行分隔符 <<<CD_NEXT>>>，再继续输出任务二。\n\n' + (diaryMsgs[0] ? diaryMsgs[0].content : ''));
+  }
+  if (archMsgs) {
+    sysParts.push('【任务二：剧情档案】请完整遵守下面任务二的全部要求，输出剧情档案的 主线/支线/重要状态变化/未解决事项 等纯文本。注意：每次分节交界处，只写一行分隔符 <<<CD_NEXT>>>。若只有这一个任务，则直接输出内容、不要画任何分隔符。\n\n' + (archMsgs[0] ? archMsgs[0].content : ''));
+  }
+  sysParts.push('分隔符规矩：每段内容之间恰好用一个「<<<CD_NEXT>>>」单独成行来分隔，除此之外不要出现这个符号。先写的放前面，后写的放后面。');
+  const sys = sysParts.join('\n\n');
+  const usr = archMsgs ? archMsgs[1].content : (diaryMsgs ? diaryMsgs[1].content : '');
+  const asst = diaryMsgs ? '{"npcs":[' : (archMsgs ? '主线：' : '');
+  return [
+    { role: 'system', content: sys },
+    { role: 'user', content: usr },
+    { role: 'assistant', content: asst },
+  ];
+}
+/** 拆分合并返回：按 <<<CD_NEXT>>> 分隔吸出「日记文本」与「档案文本」；hasDiary/hasArch 用于无分隔符时的兜底分配 */
+function cdSplitDiaryArchive(text, hasDiary, hasArch) {
+  const t = String(text || '');
+  const A = '<<<CD_NEXT>>>';
+  const iA = t.lastIndexOf(A);
+  if (iA >= 0) {
+    const before = t.slice(0, iA).trim();
+    const after  = t.slice(iA + A.length).trim();
+    const diaryText = hasDiary !== false ? before : '';
+    const archiveText = hasArch !== false ? after : '';
+    return { diaryText, archiveText };
+  }
+  // 无分隔符：按启用的功能做保守分配
+  const idx = t.indexOf('主线：');
+  if (hasDiary && hasArch && idx >= 0) {
+    // 都开但没分隔符：尝试用「主线：」特征切
+    return { diaryText: t.slice(0, idx).trim(), archiveText: t.slice(idx).trim() };
+  }
+  if (hasDiary) return { diaryText: t.trim(), archiveText: '' };
+  if (hasArch)  return { diaryText: '', archiveText: t.trim() };
+  return { diaryText: t.trim(), archiveText: '' };
+}
 /** 把物品字段文本解析成有序数组 [{ time, desc }]，保持原文追加顺序 */
 function parseItemsText(text) {
   const out = [];
@@ -1673,14 +1720,23 @@ async function cdCompressArchive(data, s, isAuto) {
   const joinText = blocks.join('\n\n');
   if (!joinText) { cdLog('cdCompressArchive: 无内容可压缩'); return; }
 
-  const COMPRESS_PROMPT = `你是一个剧情档案整理员。把下面按【标题】分段的剧情总结压缩融合成一版更紧凑但仍然完整可续写的版本。保留所有关键事实、时间标记、地点、关系变化、物品流转。不要丢失信息。
-【绝对不可丢失的内容】：
-- 长期伏笔、未揭晓的谜团、未兑现的承诺、跨楼层的线索 —— 必须原样保留，宁可保留原文也不许删除。
-- 关键人物的长期动机、秘密、执念 —— 必须保留。
-- 主角的核心目标、身份设定 —— 必须保留。
-- 跨越多个时间段的因果链（谁导致了什么、埋下了什么）—— 必须保留。
-- 【时间标记】必须原样保留：每条事件都要带上它原本的【时间】标记（如【第3日】【深夜】【第二章】【某月某日】等），不得删除或合并时间标记。不得把带【时间】的条目改写成无时间标记的连续叙述。
-- 若原文包含【地点】字段或 <<<LOCATIONS>>>…<<<LOCATIONS_END>>> 地点标记段，必须原样保留这些地点序列，不得删除或改写核心地名。
+  const COMPRESS_PROMPT = `你是一个剧情档案整理员。把下面按【标题】分段的剧情总结，压缩融合成一版"更紧凑、但每一件已发生的事都不丢"的剧情档案。
+
+【第一铁律：瘦身不截肢，不是挑重点】
+- 这个"压缩"是把每一段话用更短的句式重述，目标是留下一份【信息完整、事件全集】的档案，而不是只挑几件关键事出来。
+- 主线、支线里所有"已经发生的事"，即使再小、显得次要，也一件都不能删——每一件都要以更精炼的方式保留下来（可合并同类小事为一句，但不得当成没发生过）。
+- 严禁把具体事实压缩成抽象概括（如"遇到一些麻烦""发生了不少事"这类含糊句，不许出现）。
+- 压缩后长度应约为原文的 1/2~2/3：让句子更紧、段落更密，但绝不压到只留下几条主线。宁可稍微长一点，也不许丢经历过的事。
+
+【时间与地点铁律】
+- 【时间标记】必须原样保留：每条事件都要带它原本的【时间】标注，不得删除或合并时间标记；不得把带【时间】的条目改写成无时间标记的连续叙述。
+- 事件先后顺序、跨时间的因果链不能乱、不能跳段。
+- 若原文含【地点】字段或 <<<LOCATIONS>>>…<<<LOCATIONS_END>>> 标记段，必须原样保留这些地点序列，不得删除或改写核心地名。
+
+【可清除项（放心地狠狠丢）】
+- 未解决事项：只需保留"当前最要紧、仍在推进"的少数几条；旧的、已翻篇的未解决可以直接清掉（下一轮会重新记录新的一批）。
+- 长期伏笔、未揭晓谜团、未兑现承诺、铺垫性线索、跨楼层伏线——可以大量清理，不必原样保留。
+- 环境氛围、情绪渲染、碎日常、过渡衔接——直接删除。
 
 【格式铁律（与自动写档案完全一致，压缩时也必须遵守，禁止破坏现有格式）】：
 1. 重要状态变化（states）必须保持固定分格格式，用 | 分隔不同维度、一格一值，禁止把多个维度混在同一个值里。每行 = 一个对象（主角/环境/某个角色），以换行分隔：
@@ -4797,25 +4853,31 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
     }
   } catch(_e){ if (typeof cdWarn === 'function') cdWarn('[开场白保底] 异常(已忽略)', _e); }
   cdBusy = true; cdBusyLabel = '写日记'; cdBusyAt = Date.now();
+  // ★ [自动总结延迟] 到达目标楼层后错峰等待（默认20秒）：避开刚触发的其他API调用、降低命中频率限制几率；手动触发不等待。等待期间新楼层照常累积、不影响本次批次。
+  if (!manual) {
+    const _asDelay = Math.max(0, parseInt(s.autoSummaryDelay, 10) || 0);
+    if (_asDelay > 0) {
+      cdAddLog('info', `自动总结延迟 ${_asDelay} 秒后执行…（错峰避开 API 限流）`);
+      await new Promise(r => setTimeout(r, _asDelay * 1000));
+    }
+  }
   try {
     if (!silent && typeof toastr !== "undefined") toastr.info(`开始写日记 (${windowFloors.length} 个新楼层)...`);
 
     // ★ 根据开关决定调哪几路 API
     const calls = [];
-    if (s.enableDiary !== false) {
-      const diaryMsgs = await cdBuildDiaryPrompt(windowFloors, data, s);
-      calls.push({ name: '日记', msgs: diaryMsgs });
+    // ★ 合并模式：角色日记 + 剧情档案 用一次 API 调用（提示词动态拼接，勾哪个拼哪个）
+    const _needDiary = s.enableDiary !== false;
+    const _needArch  = s.enableArchive !== false;
+    const _archiveFull = manual && Array.isArray(extraFloors) && extraFloors.length > 0;
+    if (_archiveFull && _needArch) cdAddLog('info', '[档案] 手动补写 → 全量重建模式（完整总结全部楼层）');
+    if (_needDiary || _needArch) {
+      const comboMsgs = await cdBuildDiaryArchiveCombined(windowFloors, data, s, _archiveFull);
+      calls.push({ name: '日记+档案', msgs: comboMsgs });
     }
     if (s.enableRelation !== false) {
       const relMsgs = cdBuildRelationPrompt(windowFloors, data, s);
       calls.push({ name: '关系', msgs: relMsgs });
-    }
-    if (s.enableArchive !== false) {
-      // ★ 手动补写大区间时走「全量重建」提示词，避免 AI 只总结末尾而遗漏早期剧情
-      const _archiveFull = manual && Array.isArray(extraFloors) && extraFloors.length > 0;
-      if (_archiveFull) cdAddLog('info', '[档案] 手动补写 → 全量重建模式（完整总结全部楼层）');
-      const archiveMsgs = await cdBuildArchivePrompt(windowFloors, data, s, _archiveFull);
-      calls.push({ name: '剧情档案', msgs: archiveMsgs });
     }
 
     cdAddLog('api_req', `发送 ${calls.length} 路API请求`, {路由: calls.map(c => c.name)});
@@ -4872,9 +4934,25 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
     let relOk     = false;
     let archiveOk = false;
 
-    const diaryRes   = resultMap['日记'];
+    let diaryRes   = resultMap['日记'];
     const relRes     = resultMap['关系'];
-    const archiveRes = resultMap['剧情档案'];
+    let archiveRes = resultMap['剧情档案'];
+    // ★ 合并模式拆分回填：本次走了「日记+档案」合并请求时，按节拆开回填到 diaryRes/archiveRes
+    const _combo = resultMap['日记+档案'];
+    if (_combo && _combo.status === 'fulfilled') {
+      const _split = cdSplitDiaryArchive(String((_combo.value && _combo.value.text) || ''), _needDiary, _needArch);
+      if (_needDiary) {
+        diaryRes = { status: 'fulfilled', value: { text: _split.diaryText, tokenUsage: _combo.value.tokenUsage } };
+        cdAddLog('info', '[合并] 拆分出日记段', { 长度: (_split.diaryText || '').length, 前80: (_split.diaryText || '').slice(0, 80) });
+      }
+      if (_needArch) {
+        archiveRes = { status: 'fulfilled', value: { text: _split.archiveText, tokenUsage: _combo.value.tokenUsage } };
+        cdAddLog('info', '[合并] 拆分出档案段', { 长度: (_split.archiveText || '').length, 前80: (_split.archiveText || '').slice(0, 80) });
+      }
+    } else if (_combo && _combo.status === 'rejected') {
+      if (_needDiary) diaryRes = _combo;
+      if (_needArch) archiveRes = _combo;
+    }
 
     // 处理日记
     if (diaryRes?.status === 'fulfilled') {
@@ -5765,6 +5843,7 @@ let cdPanelOpen    = false;
 let cdViewMode     = 'browse';   // 'browse' | 'settings'
 let cdFabDragged   = false;
 let cdFabDragState = null;
+let _cdLastTap     = 0;       // 悬浮球双击（点两下直达小剧场）计时
 let _themeObserver = null;
 const _cdListeners  = { chat: null, char: null, deleted: null };
 
@@ -6449,8 +6528,8 @@ function cdInjectModal() {
   $('#cd-tb-changelog').on('click', () => cdSwitchView('changelog'));
   $('#cd-tb-help').on('click',     () => cdSwitchView('help'));
   $('#cd-tb-table').on('click', function(){ cdSwitchView('table', this); });
-  $('#cd-tb-inject').on('click', function(){ cdSwitchView('inject', this); });
- $('#cd-tb-vector').on('click',   () => cdSwitchView('vector'));
+$('#cd-tb-inject').on('click', function(){ cdSwitchView('inject', this); });
+  $('#cd-tb-vector').on('click',   () => cdSwitchView('vector'));
   $('#cd-tb-manage').on('click',  () => cdSwitchView('manage'));
 
   // ★ 更多 → 工具中心：点击「更多」用圆形覆盖层展开工具中心卡片页
@@ -6514,11 +6593,614 @@ async function cdRefreshPanelContent() {
     case 'help':     cdRenderHelp(); break;
     case 'table':    cdRenderTable(); break;
     case 'inject':   cdRenderInject(); break;
+    case 'theatre':  cdRenderTheatre(); break;
     case 'vector':   cdRenderVector(); break;
     case 'manage':   cdRenderManage(); break;
   }
   // 视图渲染完成后重新应用界面字号缩放（动态内容也生效）
   cdApplyFontScale();
+}
+
+/* =============================================================================
+ * 小剧场（cdTheatre）
+ * 存储：
+ *   - 小剧场内容（分组/条目）→ localStorage 常驻（跨聊天），键 CD_THEATRE_KEY
+ *   - 全局替换组 → localStorage 常驻，键 CD_THEATRE_MAP_G
+ *   - 聊天记录替换组 → 挂进 cdGetData() 的数据对象（随聊天，新聊天为空）
+ * ============================================================================= */
+const CD_THEATRE_KEY   = 'cd-theatre-data';
+const CD_THEATRE_MAP_G = 'cd-theatre-map-global';
+let _cdTgOpenGroup   = null;
+
+function cdTgGetStore() {
+  try { const raw = localStorage.getItem(CD_THEATRE_KEY); const o = raw ? JSON.parse(raw) : null; return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; }
+}
+function cdTgGetGroups() {
+  const s = cdTgGetStore(); return Array.isArray(s.groups) ? s.groups : [];
+}
+function cdTgSaveStore(s) { try { localStorage.setItem(CD_THEATRE_KEY, JSON.stringify(s || {})); } catch (e) {} }
+function cdTgSaveGroups(groups) { const s = cdTgGetStore(); s.groups = groups; cdTgSaveStore(s); }
+function cdTgGetGlobalMap() { try { const o = JSON.parse(localStorage.getItem(CD_THEATRE_MAP_G) || 'null'); return (o && typeof o === 'object') ? o : { presets: {}, current: '' }; } catch (e) { return { presets: {}, current: '' }; } }
+function cdTgSaveGlobalMap(m) { try { localStorage.setItem(CD_THEATRE_MAP_G, JSON.stringify(m || { presets: {}, current: '' })); } catch (e) {} }
+async function cdTgGetChatMap() { try { const d = await cdGetData(); return (d && d.__theatreChatMap && typeof d.__theatreChatMap === 'object') ? d.__theatreChatMap : { presets: {}, current: '' }; } catch (e) { return { presets: {}, current: '' }; } }
+async function cdTgSaveChatMap(m) { try { const d = await cdGetData(); d.__theatreChatMap = m || { presets: {}, current: '' }; await cdSaveData(d); } catch (e) {} }
+async function cdTgCurrentNames() {
+  let chatName = '', userName = '';
+  try { const ctx = SillyTavern.getContext(); userName = (ctx && ctx.name1) ? String(ctx.name1) : ''; chatName = (ctx && (ctx.characterName || ctx.name2)) ? String(ctx.characterName || ctx.name2) : ''; } catch (e) {}
+  const cm = await cdTgGetChatMap(); const gm = cdTgGetGlobalMap();
+  let userRep = '', chatRep = '';
+  if (cm && cm.current && cm.presets && cm.presets[cm.current]) { userRep = cm.presets[cm.current].user || ''; chatRep = cm.presets[cm.current].chat || ''; }
+  else if (gm && gm.current && gm.presets && gm.presets[gm.current]) { userRep = gm.presets[gm.current].user || ''; chatRep = gm.presets[gm.current].chat || ''; }
+  return { userName: userName || 'user', chatName: chatName || 'chat', userRep: userRep, chatRep: chatRep };
+}
+function cdTgApplyReplace(text, n) {
+  text = String(text || '');
+  const u = (n && n.userRep) || (n && n.userName) || 'user';
+  const c = (n && n.chatRep) || (n && n.chatName) || 'chat';
+  text = text.replace(/{{user}}|<user>|\{user\}/gi, u);
+  text = text.replace(/{{chat}}|<chat>|\{chat\}/gi, c);
+  return text;
+}
+function cdTgIco(name) {
+  const map = {
+    book:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 19.5A2.5 2.5 0 0 0 6.5 22H20V2H6.5A2.5 2.5 0 0 0 4 4.5z"/></svg>',
+    sword:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 17.5L3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2"/></svg>',
+    smile:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/></svg>',
+    star:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.1 6.3 7 1-5.1 5-1.2 7-3.8-3-3.8 3-1.2-7-5.1-5 7-1z"/></svg>',
+    plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>',
+    send:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-8-8 18-2-8z"/></svg>',
+    fill:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+    edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>',
+    back:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
+    gear:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2M4.2 4.2l1.4 1.4m12.8 12.8l1.4 1.4M1 12h2m18 0h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg>',
+    arrow:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
+    globe:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 4 9 15 15 0 0 1-4 9 15 15 0 0 1-4-9 15 15 0 0 1 4-9z"/></svg>',
+    chat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
+  };
+  return map[name] || map.book;
+}
+function cdTgInjectStyle() {
+  if (document.getElementById('cd-theatre-style')) return;
+  const st = document.createElement('style'); st.id = 'cd-theatre-style';
+  st.textContent = [
+    '.cd-tg-ovbar{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid #ecebe7;background:#fff;flex-shrink:0;}',
+    '.cd-tg-ovback{width:26px;height:26px;border-radius:7px;background:#eef0f3;color:#2b4460;display:flex;align-items:center;justify-content:center;cursor:pointer;}',
+    '.cd-tg-ovback svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;}',
+    '.cd-tg-ovttl{font-size:14px;font-weight:700;color:#26292e;}',
+    '.cd-tg-ovcnt{flex:1 1 0;min-height:60px;overflow-y:auto;overflow-x:hidden;padding:10px 12px;-webkit-overflow-scrolling:touch;}',
+    '#cd-theatre-content .cd-tg-wrap{min-height:100%;}',
+    '#cd-content,#cd-theatre-content .cd-tg-wrap{padding:6px 2px;color:#26292e;}',
+    '#cd-content .cd-tg-hd{display:flex;align-items:center;gap:8px;margin:2px 2px 12px;}',
+    '#cd-content .cd-tg-hd .cd-tg-back{width:26px;height:26px;border-radius:7px;background:#eef0f3;color:#2b4460;display:flex;align-items:center;justify-content:center;cursor:pointer;}',
+    '#cd-content .cd-tg-hd .cd-tg-back svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;}',
+    '#cd-content .cd-tg-hd .cd-tg-title{font-size:14px;font-weight:700;}',
+    '#cd-content .cd-tg-hd .cd-tg-gear{margin-left:auto;width:26px;height:26px;border-radius:7px;background:#eef0f3;color:#2b4460;display:flex;align-items:center;justify-content:center;cursor:pointer;}',
+    '#cd-content .cd-tg-hd .cd-tg-gear svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2;}',
+    '#cd-content .cd-tg-card{background:#fff;border:1px solid #ecebe7;border-radius:12px;padding:12px;margin-bottom:10px;display:flex;align-items:center;gap:11px;cursor:pointer;}',
+    '#cd-content .cd-tg-card .cd-tg-ic{width:34px;height:34px;border-radius:10px;background:#eef0f3;color:#2b4460;display:flex;align-items:center;justify-content:center;flex-shrink:0;}',
+    '#cd-content .cd-tg-card .cd-tg-ic svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;}',
+    '#cd-content .cd-tg-card.cd-tg-fav .cd-tg-ic{background:#16263b;color:#c8a45f;}',
+    '#cd-content .cd-tg-card.cd-tg-add .cd-tg-ic{background:#16263b;color:#f6f5f1;}',
+    '#cd-content .cd-tg-card .cd-tg-info{flex:1;min-width:0;}',
+    '#cd-content .cd-tg-card .cd-tg-name{font-size:13.5px;font-weight:700;}',
+    '#cd-content .cd-tg-card .cd-tg-meta{font-size:11px;color:#8b8f96;margin-top:2px;}',
+    '#cd-content .cd-tg-card .cd-tg-arrow{color:#a7adb2;flex-shrink:0;}',
+    '#cd-content .cd-tg-card .cd-tg-arrow svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;}',
+    '#cd-content .cd-tg-item{background:#fff;border:1px solid #ecebe7;border-radius:12px;padding:11px 12px 10px;margin-bottom:10px;}',
+    '#cd-content .cd-tg-item .cd-tg-irow{display:flex;align-items:center;gap:8px;}',
+    '#cd-content .cd-tg-item .cd-tg-it{font-size:13.5px;font-weight:700;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
+    '#cd-content .cd-tg-item .cd-tg-favt{width:22px;height:22px;display:flex;align-items:center;justify-content:center;color:#a7adb2;cursor:pointer;flex-shrink:0;}',
+    '#cd-content .cd-tg-item .cd-tg-favt.on{color:#c8a45f;}',
+    '#cd-content .cd-tg-item .cd-tg-favt svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;}',
+    '#cd-content .cd-tg-item .cd-tg-favt.on svg{fill:currentColor;}',
+    '#cd-content .cd-tg-item .cd-tg-prev{font-size:11px;color:#8b8f96;line-height:1.55;margin-top:6px;padding:7px 9px;background:#eef0f3;border-radius:8px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}',
+    '#cd-content .cd-tg-item .cd-tg-brow{display:flex;align-items:center;gap:6px;margin-top:8px;}',
+    '#cd-content .cd-tg-item .cd-tg-btn{flex:1;height:28px;border-radius:8px;font-size:11.5px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:5px;cursor:pointer;color:#2b4460;background:#eef0f3;}',
+    '#cd-content .cd-tg-item .cd-tg-btn.cd-tg-send{background:#16263b;color:#f6f5f1;}',
+    '#cd-content .cd-tg-item .cd-tg-btn.cd-tg-edit{flex:0 0 50px;color:#5b5f66;}',
+    '#cd-content .cd-tg-item .cd-tg-btn svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.9;}',
+    '#cd-content .cd-tg-setcard{background:#fff;border:1px solid #ecebe7;border-radius:12px;padding:13px;margin-bottom:12px;}',
+    '#cd-content .cd-tg-setcard .cd-tg-scti{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;margin-bottom:5px;}',
+    '#cd-content .cd-tg-setcard .cd-tg-scti svg{width:14px;height:14px;color:#2b4460;fill:none;stroke:currentColor;stroke-width:1.8;}',
+    '#cd-content .cd-tg-setcard .cd-tg-schint{font-size:10px;color:#8b8f96;line-height:1.6;margin-bottom:10px;}',
+    '#cd-content .cd-tg-setcard .cd-tg-sel{width:100%;border:1px solid #e3e2dd;border-radius:9px;padding:8px 11px;font-size:12.5px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;background:#fff;margin-bottom:8px;}',
+    '#cd-content .cd-tg-setcard .cd-tg-sel svg{width:13px;height:13px;fill:none;stroke:#a7adb2;stroke-width:2;}',
+    '#cd-content .cd-tg-setcard .cd-tg-map{display:flex;align-items:center;gap:7px;margin-bottom:8px;}',
+    '#cd-content .cd-tg-setcard .cd-tg-mk{font-size:10px;font-weight:700;color:#2b4460;background:#eef0f3;padding:4px 7px;border-radius:7px;white-space:nowrap;flex-shrink:0;font-family:Menlo,monospace;}',
+    '#cd-content .cd-tg-setcard .cd-tg-map input{flex:1;min-width:0;border:1px solid #e3e2dd;border-radius:9px;padding:6px 9px;font-size:12.5px;outline:none;background:#fff;}',
+    '#cd-content .cd-tg-setcard .cd-tg-tags{display:flex;gap:7px;flex-wrap:wrap;margin-top:2px;}',
+    '#cd-content .cd-tg-setcard .cd-tg-tag{font-size:11px;background:#eef0f3;color:#2b4460;padding:4px 9px;border-radius:13px;border:1px solid #e3e2dd;cursor:pointer;}',
+    '#cd-content .cd-tg-setcard .cd-tg-tag.cd-tg-cur{background:#16263b;color:#f6f5f1;border-color:#16263b;}',
+    '#cd-content .cd-tg-top{display:flex;align-items:center;gap:7px;margin:10px 2px 2px;}',
+    '#cd-content .cd-tg-top .cd-tg-plus{width:28px;height:28px;border-radius:9px;background:#16263b;color:#f6f5f1;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}',
+    '#cd-content .cd-tg-top .cd-tg-plus svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2.2;}',
+    '#cd-content .cd-tg-top .cd-tg-tip{flex:1;font-size:11px;color:#8b8f96;text-align:center;}',
+    '#cd-content,#cd-theatre-content .cd-tg-no{font-size:12px;color:#a7adb2;text-align:center;padding:40px 10px;line-height:1.8;}',
+    '.cd-tg-modal{position:fixed;inset:0;background:rgba(20,24,30,.45);z-index:999999;display:none;align-items:center;justify-content:center;padding:20px;}',
+    '.cd-tg-modal.on{display:flex;}',
+    '.cd-tg-modal .cd-tg-box{background:#fbfaf7;border-radius:14px;width:100%;max-width:320px;padding:16px;box-shadow:0 18px 50px rgba(20,24,30,.3);}',
+    '.cd-tg-modal .cd-tg-box input[type=text],.cd-tg-modal .cd-tg-box textarea{width:100%;border:1px solid #e3e2dd;border-radius:9px;padding:7px 9px;font-size:12.5px;outline:none;background:#fff;color:#26292e;margin-bottom:10px;resize:vertical;box-sizing:border-box;font-family:inherit;}',
+    '.cd-tg-modal .cd-tg-box textarea{min-height:84px;}',
+    '.cd-tg-modal .cd-tg-mbtn{flex:1;background:#eef0f3;color:#2b4460;border-radius:8px;padding:8px;font-size:12px;font-weight:600;cursor:pointer;border:none;text-align:center;}',
+    '.cd-tg-modal .cd-tg-mbtn.primary{background:#16263b;color:#f6f5f1;}'
+  ].join('\n').split('#cd-content').join('#cd-content,#cd-theatre-content');
+  (document.head || document.documentElement).appendChild(st);
+}
+/* ================== 分组列表页（小剧场首页） ================== */
+/* 小剧场覆盖层：仿论坛 cdForumOpen，盖满整个插件面板 #cd-modal-root */
+function cdTheatreOpen() {
+  cdTgInjectStyle();
+  var panel = document.getElementById('cd-modal-root');
+  if (!panel) { cdWarn('[小剧场] 插件面板未就绪'); return; }
+  if (panel.style.display === 'none') panel.style.display = '';
+  // ★ 诊断：记录面板当前绑定的兄弟层（可能残留遮挡点击的透明遮罩）
+  try {
+    var _shadows = [];
+    var _pp = panel.parentElement;
+    if (_pp) [].forEach.call(_pp.children, function (ch) { if (ch && ch !== panel) _shadows.push(ch.id || ch.className || ch.tagName); });
+    console.log('[小剧场·诊断] #cd-modal-root 的兄弟节点(可能在面板之上/之下遮罩):', _shadows.join(',') || '(无)');
+  } catch (_e) {}
+
+  // ★ 防御：清除可能残留的全屏遮罩（照抄论坛 cdForumOpen，防止遮挡点击/按钮）
+  try { [].forEach.call(document.querySelectorAll('.cd-overlay,.cd-modal-overlay-dedupe,.cd-modal-overlay,#cd-dedupe-test-overlay'), function (_ov2) { if (_ov2 && _ov2.parentNode) { _ov2.parentNode.removeChild(_ov2); } }); } catch (_e1) {}
+  try { var _em2 = document.getElementById('cfEditorMask'); if (_em2) { _em2.classList.remove('open'); _em2.style.display = 'none'; } } catch (_e2) {}
+  try { var _iv2 = document.getElementById('cfImgViewMask'); if (_iv2) _iv2.style.display = 'none'; } catch (_e3) {}
+
+  var ov = document.getElementById('cd-theatre-overlay');
+  if (!ov) {
+    ov = document.createElement('div'); ov.id = 'cd-theatre-overlay';
+    ov.style.cssText = 'position:absolute;inset:0;z-index:2000010;display:none;flex-direction:column;background:#fafbfc;overflow:hidden;';
+    panel.appendChild(ov);
+  }
+  ov.innerHTML = '<div style="pointer-events:auto;width:100%;height:100%;display:flex;flex-direction:column;overflow:hidden;background:#fafbfc;">' +
+    '<div class="cd-tg-ovbar"><span class="cd-tg-ovback" onclick="cdTheatreClose()" title="返回">' + cdTgIco('back') + '</span><span class="cd-tg-ovttl">小剧场</span></div>' +
+    '<div class="cd-tg-ovcnt" id="cd-theatre-content"></div>' +
+    '</div>';
+  ov.style.display = 'flex';
+  cdTgRenderGroups();
+
+  // ★ 诊断：打开后，探测覆盖层中心点击位置实际命中的目标（看是否有透明遮罩挡在卡片上）
+  try {
+    setTimeout(function () {
+      var _c = document.getElementById('cd-theatre-content');
+      var _probe;
+      if (_c) {
+        var _r = _c.getBoundingClientRect();
+        var _cx = _r.left + Math.min(40, _r.width / 2);
+        var _cy = _r.top + Math.min(40, _r.height / 2);
+        _probe = document.elementFromPoint(_cx, _cy);
+      }
+      console.log('[小剧场·诊断] elementFromPoint 命中:', _probe ? (_probe.id || _probe.className || _probe.tagName) : '(null)', '| 命中是否在小剧场覆盖层内:', _probe ? !!_probe.closest('#cd-theatre-overlay') : false, '| 命中的可点击祖先onclick:', _probe ? (_probe.closest('[onclick]') ? (_probe.closest('[onclick]').getAttribute('onclick') || '(inline)') : '(无 onClick)') : '(无)');
+    }, 80);
+  } catch (_e4) {}
+}
+function cdTheatreClose() {
+  var ov = document.getElementById('cd-theatre-overlay');
+  if (ov) { ov.style.display = 'none'; ov.innerHTML = ''; }
+}
+/* 当前小剧场内容的挂载点：覆盖层开启则渲染进覆盖层内容容器，否则渲染进 #cd-content */
+function cdTgMountEl() {
+  var c = document.getElementById('cd-theatre-content');
+  return c || document.getElementById('cd-content');
+}
+/* ===== 页面内自绘弹窗（安卓 WebView 禁 prompt/confirm，全走这里） ===== */
+function cdTgDlg() {
+  var d = document.getElementById('cd-tg-dlg');
+  if (!d) { d = document.createElement('div'); d.id = 'cd-tg-dlg'; d.addEventListener('click', function(){ d.classList.remove('on'); }); document.body.appendChild(d); }
+  d.setAttribute('class', 'cd-tg-modal cd-tg-adv');
+  return d;
+}
+/* 通用单输入框弹窗：label=提示标题, ph=占位, init=初始值, cb(value|null) */
+function cdTgPrompt(label, ph, init, cb) {
+  var d = cdTgDlg();
+  var safeInit = cdTgEscapeHtml(init || '');
+  d.innerHTML = '<div class="cd-tg-box" onclick="event.stopPropagation()">' +
+    '<div style="font-size:13.5px;font-weight:700;margin-bottom:12px;">' + cdTgEscapeHtml(label) + '</div>' +
+    '<input id="cd-tg-prompt-v" type="text" value="' + safeInit + '" placeholder="' + cdTgEscapeHtml(ph || '') + '" style="margin-bottom:10px;">' +
+    '<div style="display:flex;gap:8px;margin-top:4px;">' +
+    '<div class="cd-tg-mbtn" onclick="cdTgPromptCancel()">取消</div>' +
+    '<div class="cd-tg-mbtn primary" onclick="cdTgPromptOk()">确定</div>' +
+    '</div></div>';
+  d.classList.add('on');
+  window._cdTgPromptCb = cb;
+  var inp = document.getElementById('cd-tg-prompt-v');
+  setTimeout(function(){ if (inp) { inp.focus(); } }, 10);
+}
+function cdTgPromptOk() {
+  var v = document.getElementById('cd-tg-prompt-v') ? document.getElementById('cd-tg-prompt-v').value : '';
+  cdTgDlg().classList.remove('on');
+  var cb = window._cdTgPromptCb; window._cdTgPromptCb = null;
+  if (cb) cb(v);
+}
+function cdTgPromptCancel() {
+  cdTgDlg().classList.remove('on');
+  var cb = window._cdTgPromptCb; window._cdTgPromptCb = null;
+  if (cb) cb(null);
+}
+/* 通用确认弹窗：msg=正文, okLabel/okLabel(确定/取消默认) */
+function cdTgConfirm(msg, cb, okLabel) {
+  var d = cdTgDlg();
+  d.innerHTML = '<div class="cd-tg-box" onclick="event.stopPropagation()">' +
+    '<div style="font-size:12.5px;font-weight:600;margin-bottom:12px;line-height:1.6;">' + cdTgEscapeHtml(msg || '') + '</div>' +
+    '<div style="display:flex;gap:8px;margin-top:4px;">' +
+    '<div class="cd-tg-mbtn" onclick="cdTgConfirmResp(false)">取消</div>' +
+    '<div class="cd-tg-mbtn primary" onclick="cdTgConfirmResp(true)">' + cdTgEscapeHtml(okLabel || '确定') + '</div>' +
+    '</div></div>';
+  d.classList.add('on');
+  window._cdTgConfirmCb = cb;
+}
+function cdTgConfirmResp(yes) {
+  cdTgDlg().classList.remove('on');
+  var cb = window._cdTgConfirmCb; window._cdTgConfirmCb = null;
+  if (cb) cb(!!yes);
+}
+function cdRenderTheatre() {
+  cdTgInjectStyle();
+  _cdTgOpenGroup = null;
+  cdTheatreOpen();
+}
+function cdTgRenderGroups() {
+  const groups = cdTgGetGroups();
+  const gIco = { '常用': 'book', '战斗': 'sword', '日常': 'smile', '收藏': 'star' };
+  let html = ['<div class="cd-tg-wrap">'];
+  html.push('<div class="cd-tg-hd"><span class="cd-tg-title">小剧场</span><span class="cd-tg-gear" onclick="cdTgRenderSettings()" title="替换名设置">' + cdTgIco('gear') + '</span></div>');
+  groups.forEach(function (g) {
+    const cnt = Array.isArray(g.items) ? g.items.length : 0;
+    const ico = gIco[g.name] || 'book';
+    const cls = (g.name === '收藏') ? ' cd-tg-fav' : '';
+    const safe = String(g.name).replace(/'/g, "\\'").replace(/"/g, '"');
+    html.push('<div class="cd-tg-card' + cls + '" onclick="cdTgOpenGroup(\'' + safe + '\')"><div class="cd-tg-ic">' + cdTgIco(ico) + '</div><div class="cd-tg-info"><div class="cd-tg-name">' + cdTgEscapeHtml(g.name) + '</div><div class="cd-tg-meta">' + cnt + ' 条小剧场</div></div><div class="cd-tg-arrow">' + cdTgIco('arrow') + '</div></div>');
+  });
+  if (!groups.some(function (g) { return g.name === '收藏'; })) {
+    html.push('<div class="cd-tg-card cd-tg-fav"><div class="cd-tg-ic">' + cdTgIco('star') + '</div><div class="cd-tg-info"><div class="cd-tg-name">收藏</div><div class="cd-tg-meta">收藏的小剧场会出现在这里</div></div></div>');
+  }
+  html.push('<div class="cd-tg-card cd-tg-add" onclick="cdTgNewGroup()"><div class="cd-tg-ic">' + cdTgIco('plus') + '</div><div class="cd-tg-info"><div class="cd-tg-name">新建分组</div><div class="cd-tg-meta">建一个自己的组</div></div></div>');
+  html.push('</div>');
+  try {
+    var _mt = cdTgMountEl();
+    _mt.innerHTML = html.join('');
+    cdApplyFontScale();
+  } catch (er) {
+    try { console.log('[小剧场·渲染错误]', er && er.stack ? er.stack : er); } catch (_e) {}
+    var _mc = document.getElementById('cd-theatre-content');
+    if (_mc) { _mc.innerHTML = '<div style="padding:18px;color:#c0392b;font-size:12px;white-space:pre-wrap;">小剧场分组渲染出错（已拦截显示）：\n' + cdTgEscapeHtml(er && er.message ? er.message : er) + '</div>'; }
+  }
+}
+function cdTgOpenGroup(name) {
+  console.log('[小剧场·诊断] cdTgOpenGroup 被触发，目标组=', name);
+  _cdTgOpenGroup = name;
+  cdTgRenderItems();
+}
+function cdTgEscapeHtml(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '"'); }
+async function cdTgRenderItems() {
+  cdTgInjectStyle();
+  const name = _cdTgOpenGroup;
+  const groups = cdTgGetGroups();
+  const isFavView = (name === '收藏');
+  const g = groups.find(function (x) { return x.name === name; });
+  // ★ 收藏视图：跨组收集所有 fav=true 的条目（带源定位）
+  let items = [];
+  if (isFavView) {
+    groups.forEach(function (gg) {
+      if (gg.name === '收藏') return;
+      (Array.isArray(gg.items) ? gg.items : []).forEach(function (it, i) {
+        if (it.fav === true) items.push({ title: it.title, content: it.content, fav: true, _srcGroup: gg.name, _srcIdx: i });
+      });
+    });
+  } else {
+    items = ((g && Array.isArray(g.items)) ? g.items : []).map(function (it, i) { return { title: it.title, content: it.content, fav: (it.fav === true), _srcGroup: name, _srcIdx: i }; });
+  }
+  let html = ['<div class="cd-tg-wrap">'];
+  html.push('<div class="cd-tg-hd"><span class="cd-tg-back" onclick="cdTgRenderGroups()">' + cdTgIco('back') + '</span><span class="cd-tg-title">' + cdTgEscapeHtml(name) + '</span><span class="cd-tg-gear" onclick="cdTgRenderSettings()" title="替换名设置">' + cdTgIco('gear') + '</span></div>');
+  if (!items.length) html.push('<div class="cd-tg-no">' + (isFavView ? '还没有收藏的小剧场<br>在条目上点亮星就会出现在这里' : '这个组还没有小剧场<br>点下面 + 加一条') + '</div>');
+  items.forEach(function (it, idx) {
+    const srcGroupRaw = String(it._srcGroup || name).replace(/'/g, "\\'");
+    html.push('<div class="cd-tg-item">');
+    html.push('<div class="cd-tg-irow"><span class="cd-tg-it">' + cdTgEscapeHtml(it.title) + '</span><span class="cd-tg-favt' + (it.fav ? ' on' : '') + '" onclick="cdTgToggleFav(\'' + srcGroupRaw + '\',' + it._srcIdx + ')" title="收藏">' + cdTgIco('star') + '</span></div>');
+    html.push('<div class="cd-tg-prev">' + cdTgEscapeHtml(it.content) + '</div>');
+    html.push('<div class="cd-tg-brow"><div class="cd-tg-btn cd-tg-send" onclick="cdTgSendChat(' + idx + ')">' + cdTgIco('send') + '发送</div><div class="cd-tg-btn" onclick="cdTgFillBox(' + idx + ')">' + cdTgIco('fill') + '填框</div><div class="cd-tg-btn cd-tg-edit" onclick="cdTgEditItem(' + idx + ')">' + cdTgIco('edit') + '编辑</div></div>');
+    html.push('</div>');
+  });
+  if (!isFavView) {
+    html.push('<div class="cd-tg-top"><div class="cd-tg-plus" onclick="cdTgNewItem()">' + cdTgIco('plus') + '</div><div class="cd-tg-tip">在当前组加新小剧场</div></div>');
+  }
+  html.push('</div>');
+  cdTgMountEl().innerHTML = html.join('');
+  /* 记录当前渲染的源路径，供发送/填框/编辑做真实定位 */
+  window._cdTgRenderItems = items.map(function (it) { return { srcGroup: it._srcGroup, srcIdx: it._srcIdx }; });
+}
+function cdTgNewGroup() {
+  cdTgPrompt('新建分组名称：', '例如：日常、战斗…', '', function (v) {
+    if (!v || !String(v).trim()) return;
+    const groups = cdTgGetGroups();
+    if (groups.some(function (g) { return g.name === String(v).trim(); })) { if (typeof toastr !== 'undefined') toastr.warning('已存在同名分组'); return; }
+    groups.push({ name: String(v).trim(), items: [] });
+    cdTgSaveGroups(groups);
+    cdTgRenderGroups();
+  });
+}
+function cdTgNewItem() { cdTgEditItem(-1); }
+function cdTgEditItem(idx) {
+  let src;
+  if (idx === -1) { src = { title: '', content: '' }; }
+  else { const loc = cdTgLocate(idx); src = loc ? loc.it : { title: '', content: '' }; }
+  let dlg = document.getElementById('cd-tg-dlg');
+  if (!dlg) { dlg = document.createElement('div'); dlg.id = 'cd-tg-dlg'; dlg.addEventListener('click', function(){ dlg.classList.remove('on'); }); document.body.appendChild(dlg); }
+  dlg.setAttribute('class', 'cd-tg-modal');
+  dlg.innerHTML = '<div class="cd-tg-box" onclick="event.stopPropagation()"><div style="font-size:13.5px;font-weight:700;margin-bottom:12px;">' + (idx === -1 ? '新建小剧场' : '编辑小剧场') + '</div><div style="font-size:11px;color:#5b5f66;margin-bottom:4px;">标题</div><input id="cd-tg-dlg-t" type="text" value="' + cdTgEscapeHtml(src.title) + '" placeholder="一句话标题"><div style="font-size:11px;color:#5b5f66;margin-bottom:4px;">正文（可用 {{user}} / {{chat}}）</div><textarea id="cd-tg-dlg-c" placeholder="输入小剧场正文…">' + cdTgEscapeHtml(src.content) + '</textarea><div style="display:flex;gap:8px;margin-top:4px;"><div class="cd-tg-mbtn" onclick="document.getElementById(\'cd-tg-dlg\').classList.remove(\'on\')">取消</div><div class="cd-tg-mbtn primary" onclick="cdTgSaveItem(' + idx + ')">保存</div></div></div>';
+  dlg.classList.add('on');
+}
+function cdTgSaveItem(idx) {
+  const t = document.getElementById('cd-tg-dlg-t') ? document.getElementById('cd-tg-dlg-t').value : '';
+  const c = document.getElementById('cd-tg-dlg-c') ? document.getElementById('cd-tg-dlg-c').value : '';
+  const groups = cdTgGetGroups();
+  if (idx === -1) {
+    // 新建：写进当前打开的真实组；若当前是收藏视图则落到第一个非收藏组
+    let g;
+    if (_cdTgOpenGroup !== '收藏') { g = groups.find(function (x) { return x.name === _cdTgOpenGroup; }); }
+    if (!g) { g = groups.find(function (x) { return x.name !== '收藏'; }) || groups[0]; }
+    if (!g) { if (typeof toastr !== 'undefined') toastr.warning('请先新建一个分组'); const dlg = document.getElementById('cd-tg-dlg'); if (dlg) dlg.classList.remove('on'); return; }
+    if (!Array.isArray(g.items)) g.items = [];
+    g.items.push({ title: String(t).trim() || '未命名', content: String(c), fav: false });
+  } else {
+    const loc = cdTgLocate(idx);
+    if (!loc || !loc.it) return;
+    loc.it.title = String(t).trim() || '未命名';
+    loc.it.content = String(c);
+  }
+  cdTgSaveGroups(groups);
+  const dlg = document.getElementById('cd-tg-dlg'); if (dlg) dlg.classList.remove('on');
+  cdTgRenderItems();
+}
+function cdTgToggleFav(srcGroup, srcIdx) {
+  console.log('[小剧场·诊断] cdTgToggleFav 被触发，srcGroup=', srcGroup, 'srcIdx=', srcIdx);
+  const groups = cdTgGetGroups();
+  // 兼容旧的按 idx 调用（收藏视图/普通视图统一走 srcGroup+srcIdx）
+  let g, realIdx;
+  if (typeof srcGroup === 'number') {
+    g = groups.find(function (x) { return x.name === _cdTgOpenGroup; });
+    realIdx = srcGroup;
+  } else {
+    g = groups.find(function (x) { return x.name === srcGroup; });
+    realIdx = srcIdx;
+  }
+  if (!g || !g.items || !g.items[realIdx]) return;
+  g.items[realIdx].fav = !g.items[realIdx].fav;
+  cdTgSaveGroups(groups);
+  cdTgRenderItems();
+}
+/* 通过渲染序号定位真实存储中的条目 */
+function cdTgLocate(idx) {
+  const src = (window._cdTgRenderItems && window._cdTgRenderItems[idx]) || null;
+  if (!src) return null;
+  const groups = cdTgGetGroups();
+  const g = groups.find(function (x) { return x.name === src.srcGroup; });
+  if (!g || !g.items || !g.items[src.srcIdx]) return null;
+  return { group: g, gName: src.srcGroup, it: g.items[src.srcIdx], srcIdx: src.srcIdx };
+}
+/* ================== 设置页（替换名：全局 + 聊天记录） ================== */
+async function cdTgRenderSettings() {
+  console.log('[小剧场·诊断] cdTgRenderSettings 被触发（齿轮设置）');
+  cdTgInjectStyle();
+  const gm = cdTgGetGlobalMap();
+  const cm = await cdTgGetChatMap();
+  let html = ['<div class="cd-tg-wrap">'];
+  html.push('<div class="cd-tg-hd"><span class="cd-tg-back" onclick="' + (_cdTgOpenGroup ? 'cdTgRenderItems()' : 'cdTgRenderGroups()') + '">' + cdTgIco('back') + '</span><span class="cd-tg-title">替换名设置</span></div>');
+  /* ---- 全局替换 ---- */
+  html.push('<div class="cd-tg-setcard"><div class="cd-tg-scti">' + cdTgIco('globe') + '全局替换</div><div class="cd-tg-schint">选了全局 · 切到任何角色还是这一套，不用重填。不选 · 别的角色卡就是空的。</div>');
+  html.push('<div class="cd-tg-sel" onclick="cdTgPickGlobal()"><span>' + cdTgSelLabel(gm, '全局') + '</span>' + cdTgIco('arrow') + '</div>');
+  const gCur = (gm.current && gm.presets && gm.presets[gm.current]) ? gm.presets[gm.current] : { user: '', chat: '' };
+  html.push('<div class="cd-tg-map"><span class="cd-tg-mk">{{user}}</span><input data-tg-map="g-user" value="' + cdTgEscapeHtml(gCur.user) + '" placeholder="→ 用户名"></div>');
+  html.push('<div class="cd-tg-map"><span class="cd-tg-mk">{{chat}}</span><input data-tg-map="g-chat" value="' + cdTgEscapeHtml(gCur.chat) + '" placeholder="→ 角色名"></div>');
+  html.push('<div class="cd-tg-tags" id="cd-tg-gtags">' + cdTgPresetTags(gm, 'global') + '<span class="cd-tg-tag" onclick="cdTgSaveAsGroup(\'global\')">＋ 存成组</span></div></div>');
+  /* ---- 聊天记录替换 ---- */
+  html.push('<div class="cd-tg-setcard"><div class="cd-tg-scti">' + cdTgIco('chat') + '聊天记录替换</div><div class="cd-tg-schint">只对当前聊天生效；新开一个聊天记录这里是空的，要重新填。</div>');
+  html.push('<div class="cd-tg-sel" onclick="cdTgPickChat()"><span>' + cdTgSelLabel(cm, '聊天记录') + '</span>' + cdTgIco('arrow') + '</div>');
+  const cCur = (cm.current && cm.presets && cm.presets[cm.current]) ? cm.presets[cm.current] : { user: '', chat: '' };
+  html.push('<div class="cd-tg-map"><span class="cd-tg-mk">{{user}}</span><input data-tg-map="c-user" value="' + cdTgEscapeHtml(cCur.user) + '" placeholder="→ 用户名"></div>');
+  html.push('<div class="cd-tg-map"><span class="cd-tg-mk">{{chat}}</span><input data-tg-map="c-chat" value="' + cdTgEscapeHtml(cCur.chat) + '" placeholder="→ 角色名"></div>');
+  html.push('<div class="cd-tg-tags" id="cd-tg-ctags">' + cdTgPresetTags(cm, 'chat') + '<span class="cd-tg-tag" onclick="cdTgSaveAsGroup(\'chat\')">＋ 存成组</span></div></div>');
+  /* ---- 数据备份（导出 / 导入） ---- */
+  const grpCnt = cdTgGetGroups().length;
+  html.push('<div class="cd-tg-setcard"><div class="cd-tg-scti">' + cdTgIco('book') + '数据备份</div><div class="cd-tg-schint">把小剧场全部分组导出成 JSON 存档，换设备后一键恢复。当前共 ' + grpCnt + ' 个分组。</div>');
+  html.push('<div style="display:flex;gap:8px;margin-top:2px;"><div class="cd-tg-mbtn" onclick="cdTgExport()">导出 JSON</div><div class="cd-tg-mbtn primary" onclick="cdTgImport()">导入 JSON</div></div></div>');
+  html.push('</div>');
+  cdTgMountEl().innerHTML = html.join('');
+  /* 输入框实时保存（委托到 document，覆盖层 / 普通视图都能触发） */
+  $(document).on('input', '[data-tg-map]', function () {
+    const scope = $(this).attr('data-tg-map').split('-')[0]; // g | c
+    cdTgMapInputChanged(scope);
+  });
+  cdApplyFontScale();
+}
+function cdTgSelLabel(m, label) {
+  if (m && m.current && m.presets && m.presets[m.current]) return '组：' + cdTgEscapeHtml(m.current);
+  return '（未保存组合）';
+}
+function cdTgPresetTags(m, scope) {
+  if (!m || !m.presets) return '';
+  const keys = Object.keys(m.presets);
+  if (!keys.length) return '';
+  return keys.map(function (k) {
+    const on = (m.current === k);
+    return '<span class="cd-tg-tag' + (on ? ' cd-tg-cur' : '') + '" onclick="cdTgSwitchPreset(\'' + scope + '\',\'' + String(k).replace(/'/g, "\\'") + '\')">' + cdTgEscapeHtml(k) + '</span>';
+  }).join('');
+}
+function cdTgMapInputChanged(scope) {
+  const isG = (scope === 'g');
+  const u = ($('[data-tg-map="' + (isG ? 'g' : 'c') + '-user"]').val() || '').trim();
+  const c = ($('[data-tg-map="' + (isG ? 'g' : 'c') + '-chat"]').val() || '').trim();
+  /* 存成一个"未命名当前编辑组"，不主动落盘到 presets；仅在存成组时固化 */
+  if (isG) { cdTgGlobalEphemeral = { user: u, chat: c }; }
+  else { cdTgChatEphemeral = { user: u, chat: c }; }
+}
+function cdTgSaveAsGroup(scope) {
+  const isG = (scope === 'global');
+  cdTgPrompt('给这组替换名起个名字：', '例如：上学版 / 跑团版…', '', function (name) {
+    if (!name || !String(name).trim()) return;
+    const n = String(name).trim();
+    const u = ($('[data-tg-map="' + (isG ? 'g' : 'c') + '-user"]').val() || '').trim();
+    const c = ($('[data-tg-map="' + (isG ? 'g' : 'c') + '-chat"]').val() || '').trim();
+    (async function save() {
+      let m = isG ? cdTgGetGlobalMap() : await cdTgGetChatMap();
+      if (!m.presets) m.presets = {};
+      m.presets[n] = { user: u, chat: c };
+      m.current = n;
+      if (isG) cdTgSaveGlobalMap(m); else await cdTgSaveChatMap(m);
+      cdTgRenderSettings();
+    })();
+  });
+}
+async function cdTgSwitchPreset(scope, name) {
+  let m = (scope === 'global') ? cdTgGetGlobalMap() : await cdTgGetChatMap();
+  m.current = name;
+  if (scope === 'global') cdTgSaveGlobalMap(m); else await cdTgSaveChatMap(m);
+  cdTgRenderSettings();
+}
+async function cdTgPickGlobal() {
+  const m = cdTgGetGlobalMap(); cdTgPickShared(m, 'global');
+}
+async function cdTgPickChat() {
+  const m = await cdTgGetChatMap(); cdTgPickShared(m, 'chat');
+}
+async function cdTgPickShared(m, scope) {
+  if (!m || !m.presets || !Object.keys(m.presets).length) { if (typeof toastr !== 'undefined') toastr.info(scope === 'global' ? '还没有全局替换组，先存成组' : '还没有聊天记录替换组，先存成组'); return; }
+  const names = Object.keys(m.presets);
+  const cur = names.indexOf(m.current);
+  const next = names[(cur + 1) % names.length];
+  m.current = next;
+  if (scope === 'global') cdTgSaveGlobalMap(m); else await cdTgSaveChatMap(m);
+  cdTgRenderSettings();
+}
+/* ================== 数据备份：导出 / 导入 JSON ================== */
+function cdTgExport() {
+  try {
+    const groups = cdTgGetGroups();
+    const gm = cdTgGetGlobalMap();
+    const payload = { _cd_theatre_v: 1, exportedAt: new Date().toISOString(), groups: groups, globalMap: gm };
+    const blobStr = JSON.stringify(payload, null, 2);
+    const fname = '小剧场备份_' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '.json';
+    // 优先用酒馆/浏览器的下载
+    let saved = false;
+    try {
+      const blob = new Blob([blobStr], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = fname;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function(){ try { URL.revokeObjectURL(a.href); } catch(e){} document.body.removeChild(a); }, 100);
+      saved = true;
+    } catch (e) { saved = false; }
+    if (!saved) {
+      // 降级：复制到剪贴板并自绘弹窗提示
+      let copied = false;
+      if (typeof navigator.clipboard !== 'undefined' && navigator.clipboard.writeText) { try { navigator.clipboard.writeText(blobStr); copied = true; } catch (e) { copied = false; } }
+      cdTgConfirm('浏览器不支持直接下载，' + (copied ? '已把完整 JSON 复制到剪贴板，请粘贴保存为 .json 文件。' : '请在弹出的输入框内复制以下 JSON 手动保存：\n\n' + blobStr), function () {}, '知道了');
+    }
+    if (typeof toastr !== 'undefined') toastr.success('已导出 (' + groups.length + ' 个分组)');
+  } catch (e) {
+    if (typeof toastr !== 'undefined') toastr.error('导出失败：' + (e && e.message));
+  }
+}
+function cdTgImport() {
+  // 读取一个 JSON 文件
+  let fileInput = document.getElementById('cd-tg-file');
+  if (!fileInput) {
+    fileInput = document.createElement('input');
+    fileInput.id = 'cd-tg-file';
+    fileInput.type = 'file';
+    fileInput.accept = '.json,application/json';
+    fileInput.style.display = 'none';
+    document.body.appendChild(fileInput);
+    fileInput.addEventListener('change', function (ev) {
+      const f = (ev.target.files && ev.target.files[0]) || null;
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = function () {
+        cdTgApplyImport(String(reader.result || ''));
+      };
+      reader.readAsText(f);
+      fileInput.value = '';
+    });
+  }
+  fileInput.click();
+}
+function cdTgApplyImport(text) {
+  try {
+    const obj = JSON.parse(text);
+    const groups = (obj && Array.isArray(obj.groups)) ? obj.groups : null;
+    if (!groups) { if (typeof toastr !== 'undefined') toastr.error('导入文件格式不对，缺 groups'); return; }
+    // 允许覆盖或追加
+    cdTgConfirm('导入方式：确定=覆盖当前全部小剧场；取消=合并追加到当前', function (mode) {
+      if (mode) {
+        cdTgSaveGroups(groups);
+      } else {
+        const cur = cdTgGetGroups();
+        groups.forEach(function (g) {
+          if (!g || typeof g.name !== 'string') return;
+          const exist = cur.find(function (x) { return x.name === g.name; });
+          if (exist) { if (Array.isArray(g.items)) (exist.items = exist.items || []).push.apply(exist.items, g.items); }
+          else cur.push(g);
+        });
+        cdTgSaveGroups(cur);
+      }
+      // 全局替换组一并恢复（仅覆盖时才导入）
+      if (mode && obj && obj.globalMap && obj.globalMap.presets) {
+        cdTgSaveGlobalMap({ presets: obj.globalMap.presets || {}, current: obj.globalMap.current || '' });
+      }
+      if (typeof toastr !== 'undefined') toastr.success('导入成功');
+      cdTgRenderSettings();
+    }, '覆盖导入');
+  } catch (e) {
+    if (typeof toastr !== 'undefined') toastr.error('导入失败：' + (e && e.message));
+  }
+}
+/* ================== 发送到聊天 / 填入输入框 ================== */
+async function cdTgEvalText(idx) {
+  const loc = cdTgLocate(idx);
+  if (!loc) return '';
+  const names = await cdTgCurrentNames();
+  return cdTgApplyReplace(loc.it.content, names);
+}
+async function cdTgSendChat(idx) {
+  const text = await cdTgEvalText(idx);
+  if (!text) { if (typeof toastr !== 'undefined') toastr.info('这条小剧场是空的，没东西可发'); return; }
+  try {
+    const ctx = SillyTavern.getContext();
+    const names = await cdTgCurrentNames();
+    const user = (names.userRep && names.userRep.trim()) ? names.userRep : (names.userName || 'user');
+    if (ctx && Array.isArray(ctx.chat)) {
+      ctx.chat.push({ name: user, is_user: true, is_system: false, is_name: true, send_date: Date.now() / 1000, mes: text, swipes: [], swipe_info: {}, swipes_total: 0, swipe_cur: 0 });
+      try { if (typeof ctx.saveChat === 'function') ctx.saveChat(); else if (typeof ctx.saveChatConditional === 'function') ctx.saveChatConditional(); } catch (e) {}
+      try { if (typeof ctx.reloadCurrentChat === 'function') ctx.reloadCurrentChat(); } catch (e) {}
+      // 触发酒馆感知新消息
+      try { const es = ctx.eventSource || (typeof eventSource !== 'undefined' ? eventSource : null); const et = ctx.event_types || (typeof event_types !== 'undefined' ? event_types : null); if (es && et && et.MESSAGE_SENT) { es.emit(et.MESSAGE_SENT, { mes: text, is_user: true }); } } catch (e) {}
+      if (typeof toastr !== 'undefined') toastr.success('已发送到聊天');
+    } else if (typeof toastr !== 'undefined') { toastr.error('无法访问当前聊天'); }
+  } catch (e) {
+    if (typeof toastr !== 'undefined') toastr.error('发送失败：' + (e && e.message));
+  }
+}
+function cdTgFillBox(idx) {
+  cdTgEvalText(idx).then(function (text) {
+    if (!text) { if (typeof toastr !== 'undefined') toastr.info('这条小剧场是空的'); return; }
+    try {
+      const ta = document.getElementById('send_textarea');
+      if (ta) { ta.value = text; ta.dispatchEvent(new Event('input', { bubbles: true })); try { ta.focus(); } catch (e) {} if (typeof toastr !== 'undefined') toastr.success('已填入输入框，点发送发出'); }
+      else {
+        const form = document.getElementById('send_form');
+        if (form && form.querySelector('textarea')) { const t2 = form.querySelector('textarea'); t2.value = text; t2.dispatchEvent(new Event('input', { bubbles: true })); if (typeof toastr !== 'undefined') toastr.success('已填入输入框'); }
+        else if (typeof toastr !== 'undefined') toastr.warning('找不到酒馆输入框');
+      }
+    } catch (e) { if (typeof toastr !== 'undefined') toastr.error('填入失败：' + (e && e.message)); }
+  });
+}
+/* ================== 悬浮球直达：点两下进小剧场 ================== */
+async function cdTheatreDirect() {
+  // 打开面板并直接切换到小剧场视图
+  if (!cdPanelOpen) cdOpenPanel();
+  setTimeout(function () { cdSwitchView('theatre'); }, 60);
 }
 
 /* ============================== 仪式注入台（场景模块库） ============================== */
@@ -9210,15 +9892,17 @@ async function cdRenderFloors() {
   const s = cdGetSettings();
   const COMPRESS_PROMPT = `【你现在不是陪聊助手，而是"剧情档案整理员"。
 
-你的任务是把多次已经确认过的剧情总结，融合压缩成一版更紧凑但仍然完整可续写的累计总结正文。
+你的任务是把多次已经确认过的剧情总结，融合压缩成一版"更紧凑、但每一件已发生的事都不丢"的累计总结正文。
 
 要求：
 1. 沿用当前累计总结已经形成的写法和风格，不要强行改成另一种格式。
-2. 不得丢失关键事实。
-3. 保留日期、时段、地点、关系变化、身份变化、伤病或生理状态变化、承诺与交易、关键物品或证据流转、未解决事项。
-4. 严禁把具体事实压缩成抽象词。
-5. 如果多次总结里有重复信息，要融合，不要机械重复抄写。
-6. 输出纯文本，不要解释，不要多余说明。】`;
+2. 【瘦身不截肢，不是挑重点】所谓压缩是把每段话用更短的句式重述，目标是保留一份【事件全集】，而不是只挑几件关键事。所有已经发生的事，即使再小也不能删；可合并同类小事为一句，但不得当成没发生过。严禁把具体事实压缩成抽象词或概括句（如"遇到一些麻烦"这类含糊表述）。
+3. 保留日期、时段、地点、事件先后顺序、跨时间的因果链——时间线不能乱、不能跳段。
+4. 保留关系变化、身份变化、伤病或生理状态变化、承诺与交易、关键物品或证据流转。
+5. 可清理项：未解决事项只留"当前最要紧、仍在推进"的少数几条，旧的、已翻篇的可以清掉；长期伏笔、铺垫线索、环境氛围、情绪渲染、碎日常直接删除。
+6. 压缩后长度约为原文的 1/2~2/3：让句子更紧、段落更密，但绝不压到只留下几条主干。宁可稍微长一点，也不许丢发生过的事。
+7. 如果多次总结里有重复信息，要融合，不要机械重复抄写。
+8. 输出纯文本，不要解释，不要多余说明。】`;
   const arc = data.archive || {};
   const hasArchive = !!(arc.mainline || arc.sideline || arc.states || arc.unresolved || (Array.isArray(arc.items) && arc.items.length) || (arc.custom && Object.values(arc.custom).some(a => Array.isArray(a) && a.length)));
 
@@ -10437,6 +11121,7 @@ async function cdRenderSettings() {
     <div class="cds-card">
       <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-sliders"></i></span><span><span class="cds-gtitle">运行参数</span><span class="cds-gsub">自动处理的频率与稳定性</span></span></div>
       <div class="cds-row"><span class="cds-lab">处理频率 <span class="cds-hint">每 N 条楼层(AI+用户)</span></span><span class="cds-ctrl"><input type="number" id="cd-s-interval" value="${s.interval}" min="1" max="100" class="cd-input"></span></div>
+      <div class="cds-row"><span class="cds-lab">总结延迟 <span class="cds-hint">自动总结到达后等 N 秒再调用API</span></span><span class="cds-ctrl"><input type="number" id="cd-s-asdelay" value="${s.autoSummaryDelay === undefined ? 20 : s.autoSummaryDelay}" min="0" max="300" class="cd-input" style="width:52px;"><span class="cds-hint">秒</span></span></div>
       <div class="cds-row"><span class="cds-lab">记忆锚点偏移 <span class="cds-hint">跳过末尾 N 条</span></span><span class="cds-ctrl"><input type="number" id="cd-s-offset" value="${s.memoryOffset === undefined ? 2 : s.memoryOffset}" min="0" max="20" class="cd-input" style="width:52px;"></span></div>
       <div class="cds-row"><span class="cds-lab">临时角色转正 <span class="cds-hint">出场 N 次</span></span><span class="cds-ctrl"><input type="number" id="cd-s-cameo" value="${s.cameoThreshold}" min="1" max="50" class="cd-input"></span></div>
       <div class="cds-row"><span class="cds-lab">生成温度</span><span class="cds-ctrl"><input type="number" id="cd-s-temp" value="${s.temperature}" step="0.1" min="0" max="2" class="cd-input"></span></div>
@@ -10446,7 +11131,13 @@ async function cdRenderSettings() {
     <div class="cds-card">
       <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-feather"></i></span><span><span class="cds-gtitle">生成内容</span><span class="cds-gsub">AI 会自动产出哪些</span></span></div>
       <div class="cds-row"><span class="cds-lab"><i class="fa-regular fa-book"></i> 角色日记</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-diary" ${s.enableDiary !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
-      <div class="cds-row"><span class="cds-lab"><i class="fa-regular fa-diagram-project"></i> 人物关系</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-relation" ${s.enableRelation !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+      <details class="cds-collapse"><summary><i class="fa-regular fa-rectangle-list"></i> 日记版本</summary>
+        <div>
+          <div class="cds-row"><span class="cds-lab">版本</span><span class="cds-ctrl"><select id="cd-s-diaryver" class="cd-input" style="width:auto;min-width:140px;text-align:left;"><option value="full" ${!s.diaryVersion || s.diaryVersion === 'full' ? 'selected' : ''}>复杂版（300~520字）</option><option value="lite" ${s.diaryVersion === 'lite' ? 'selected' : ''}>精简版（100字以内）</option></select></span></div>
+          <div class="cds-row" style="opacity:.65;"><span class="cds-lab" style="font-size: calc(0.6rem * var(--cd-fs, 1));">精简版省 token、更快；复杂版更舍得写"关键时刻的内心消化"。两类用同一套人味写法，只是字数档不同。</span><span class="cds-ctrl"></span></div>
+        </div>
+      </details>
+      <div class="cds-row" style="display:none" title="人物关系功能已停用"><span class="cds-lab"><i class="fa-regular fa-diagram-project"></i> 人物关系</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-relation" ${s.enableRelation !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
       <div class="cds-row"><span class="cds-lab"><i class="fa-regular fa-timeline"></i> 剧情档案</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-archive" ${s.enableArchive !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
       <div class="cds-row"><span class="cds-lab"><i class="fa-regular fa-book-bookmark"></i> 世界书联动</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-worldbook" ${s.worldbookLink !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
     </div>
@@ -10462,7 +11153,7 @@ async function cdRenderSettings() {
           <div class="cds-row" style="opacity:.65;"><span class="cds-lab" style="font-size: calc(0.6rem * var(--cd-fs, 1));">开启后：从当前剧情捕获登场角色，只推送这些角色的近期日记（不注入所有角色的全量最新篇）</span><span class="cds-ctrl"></span></div>
         </div>
       </details>
-      <div class="cds-row"><span class="cds-lab">人物关系</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-inject-relation" ${s.injectRelation !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+      <div class="cds-row" style="display:none" title="人物关系注入已停用"><span class="cds-lab">人物关系</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-inject-relation" ${s.injectRelation !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
       <div class="cds-row"><span class="cds-lab">剧情档案</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-inject-archive" ${s.injectArchive !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
       <details class="cds-collapse"><summary>注入策略（位置 / 角色 / 深度）</summary>
         <div>
@@ -10667,6 +11358,7 @@ async function cdRenderSettings() {
     cdSaveSettings({
       enabled: $('#cd-s-enabled').is(':checked'),
       interval: parseInt($('#cd-s-interval').val(), 10) || 5,
+      autoSummaryDelay: Math.max(0, parseInt($('#cd-s-asdelay').val(), 10) || 0),
       memoryOffset: Math.max(0, parseInt($('#cd-s-offset').val(), 10) || 2),
       cameoThreshold: parseInt($('#cd-s-cameo').val(), 10) || 3,
       temperature: parseFloat($('#cd-s-temp').val()) || 0.7,
@@ -10679,6 +11371,7 @@ async function cdRenderSettings() {
       dotNotify: $('#cd-s-dotnotify').is(':checked'),
       fabDirectForum: $('#cd-s-forumdirect').is(':checked'),
       enableDiary: $('#cd-s-diary').is(':checked'),
+      diaryVersion: $('#cd-s-diaryver') && $('#cd-s-diaryver').val() || 'full',
       enableRelation: $('#cd-s-relation').is(':checked'),
       enableArchive: $('#cd-s-archive').is(':checked'),
       worldbookLink: $('#cd-s-worldbook').is(':checked'),
@@ -11009,6 +11702,17 @@ async function cdRenderEgg() {
 
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
+    {
+    version: 'v2.14.0',
+    date: '2026-09-08',
+    items: [
+      '重写角色日记提示词（去套路化）：废弃「内心素材库五层/强制记忆回环/活人感口号」，改为更接近真人写日记的语气——第一人称心里话、只写角色亲历与心理真话、增补「全知禁令」防上帝视角、把剧情中戳到角色的关键事按该角色性格写出情绪反应（改观/记仇/心动/后怕/感激/吐槽均可）。',
+      '日记新增「简复/复杂」版本选择（设置→生成内容→日记版本，折叠条）：精简版 100 字以内只写 心声+最要紧的一件事+记忆点；复杂版 300~520 字铺开。同一套人味写法、仅字数档不同；单路径与合并路径都生效。',
+      '自动总结新增「总结延迟」（设置→运行参数，默认 20 秒）：到达目标楼层后错峰等待再调 API，避开刚触发的其他调用、降低命中频率限制，手动触发不等待。',
+      '压缩剧情档案提示词重写「瘦身不截肢」：所有已发生的事无论多小都不丢、压缩为事件全集而非挑重点，保留主线/支线/时间/地点，目标长度约为原文 1/2~2/3；未解决事项只留最要紧几条、旧已翻篇的清理，长期伏笔/铺垫/氛围可大量清理。',
+      '设置面板「人物关系」生成与注入开关已隐藏（功能仍保留，可恢复）。',
+    ],
+  },
     {
     version: 'v2.13.0',
     date: '2026-09-02',
@@ -11460,7 +12164,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.13.0 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.14.0 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
