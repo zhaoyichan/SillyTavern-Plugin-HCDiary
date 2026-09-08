@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.15.3';
+const PLUGIN_VERSION = '2.15.4';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -210,6 +210,7 @@ const DEFAULT_SETTINGS = {
   replyToneUri     : '',            // 用户自定义提示音 data URI（空=用内置小剧场）
   replyToneName    : '',            // 当前使用提示音文件名（界面显示用）
   replyToneMode    : 'reply',           // 提示音触发时机: 'reply'=AI回复后 | 'summary'=插件总结后 | 'both'=两者都响
+  autoScrollTop    : false,          // AI回复结束后自动平滑滚动到该条回复开头（避免停在末尾）
   autoSummary     : true,         // 自动总结开关（独立于手动写日记）
   autoSummaryDelay: 20,            // [v2.11+] 自动总结到达目标楼层后延迟 N 秒再调 API（错峰避开限流），0=不延迟；手动触发不等待
   enableDiary     : true,         // 生成角色日记（默认开）
@@ -1062,7 +1063,7 @@ const ARCHIVE_SYSTEM = [
   '注意：字段标签必须原样输出为"主线：""支线：""重要状态变化：""未解决事项：""地点："，不要加任何前缀。',
   '其中「主线」「支线」是追加式（只补新内容），「重要状态变化」「未解决事项」是覆盖式（输出当前最新全貌）。',
   '',
-  '主线（追加式·事件流水，只输出本次新增楼层的关键事件，一条一行，必须记录关键句子，禁止笼统）：',
+  '主线（追加式·事件流水，只输出本次新增楼层的关键事件，一条一行，必须记录关键句子，禁止笼统）：\n【本节下方是写作指令/格式说明/示例，仅供你参考格式，严禁原样抄入正文】',
   '（格式样板，每条 = 一行，用【年月日 时:分 · 地点】开头，如【2026年3月15日 14:30 · 雪原酒馆】，时间必须精确到时:分，禁止用"清晨/午后/傍晚/入夜"等模糊时段词，后接"谁 + 做了什么 + 关键对话原话 + 结果"）：',
   '【2026年3月15日 14:30 · 雪原酒馆】主角用青铜钥匙打开旧箱，取出信笺，对女巫说"信里写的是矿坑的坐标"——女巫皱眉，将信笺收进怀里。',
   '【铁律】',
@@ -1080,7 +1081,7 @@ const ARCHIVE_SYSTEM = [
   '2. 禁止笼统词，落到具体细节；支线同样要带关键句子。',
   '3. 追加式累积，不重复；本次无支线输出"无"。',
   '',
-  '重要状态变化（覆盖式，输出"当前仍然有效"的角色状态汇总，而非累积历史）：',
+  '重要状态变化（覆盖式，输出"当前仍然有效"的角色状态汇总，而非累积历史）：\n【本节下方是写作指令/格式说明/示例，仅供你参考格式，严禁原样抄入正文】',
   '（已被后续剧情推翻/缓解的旧状态不要重复列出；没有当前有效状态则输出"无"。）',
   '（严格按下面的固定分格格式输出，用 | 分隔不同维度、一格一值，禁止把多个维度混在同一个值里。每行 = 一个对象（主角/环境/某个角色），以换行分隔：）',
   '- 主角行格式（覆盖式）：主角：身份【…】| 身体【…】| 精神【…】| 地址【…】| 资产【…】| 外在【…】| 好感【…】| 备注【…】',
@@ -1125,7 +1126,7 @@ const ARCHIVE_SYSTEM = [
   '【铁律】金额必须精确到具体数字（5000就是5000），禁止模糊词（"一些钱""钱变多了"）；每笔买卖都标注减了多少/加了多少、干什么事、以及精确年月日时分。',
         '6. 与「未解决事项」不得重复：未解决=长期伏笔/谜团/悬而未决线索；任务=正在进行的行动进度。同一件事只归一类记录，绝不在两处重复写。',
   '',
-  '地点（追加式，地图用：只输出本次剧情新增出现/移动到的地点，按剧情先后顺序一行一个，直接写核心地名，如"贫民窟垃圾山""半塌危楼阁楼""南区佣兵集散地"；本次未移动则输出"无"）：',
+  '地点（追加式，地图用：只输出本次剧情新增出现/移动到的地点，按剧情先后顺序一行一个，直接写核心地名，如"贫民窟垃圾山""半塌危楼阁楼""南区佣兵集散地"；本次未移动则输出"无"。★★★★ 铁律：绝不把历史/未本次接触的地点全量重列，绝不重复已记录地点，只列本次真正新增/新移动到的地方；多列会被插件自动丢弃并只保留最近轨迹）：',
   '（用下面的专属标记包裹地点，与其他字段完全独立；地点一行一个，只写核心地名，不写比喻/回忆/梦境场景，不带时间标记前缀）：',
   '<<<LOCATIONS>>>',
   '<<<LOCATIONS_END>>>',
@@ -1168,7 +1169,7 @@ const ARCHIVE_SYSTEM_FULL = [
   '注意：字段标签必须原样输出为"主线：""支线：""重要状态变化：""未解决事项：""地点："，不要加任何前缀。',
   '「主线」「支线」按时间顺序【完整】列出这段剧情的全部进展；「重要状态变化」「未解决事项」「剧情总览」「章回标题」输出当前最新全貌。',
   '',
-  '主线（完整式·事件流水，把从剧情开始到当前的【全部】主线事件按时间先后完整列出，一条一行，必须记录关键句子，禁止笼统）：',
+  '主线（完整式·事件流水，把从剧情开始到当前的【全部】主线事件按时间先后完整列出，一条一行，必须记录关键句子，禁止笼统）：\n【本节下方是写作指令/格式说明/示例，仅供你参考格式，严禁原样抄入正文】',
   '（格式样板，每条 = 一行，用【年月日 时:分 · 地点】开头，如【2026年3月15日 14:30 · 雪原酒馆】，时间必须精确到时:分，禁止用"清晨/午后/傍晚/入夜"等模糊时段词，后接"谁 + 做了什么 + 关键对话原话 + 结果"）：',
   '【2026年3月15日 14:30 · 雪原酒馆】主角用青铜钥匙打开旧箱，取出信笺，对女巫说"信里写的是矿坑的坐标"——女巫皱眉，将信笺收进怀里。',
   '【铁律】',
@@ -1186,7 +1187,7 @@ const ARCHIVE_SYSTEM_FULL = [
   '2. 禁止笼统词，落到具体细节。',
   '3. 覆盖整段剧情，按时间顺序累积，不重复；无支线输出"无"。',
   '',
-  '重要状态变化（覆盖式，输出"当前仍然有效"的角色状态汇总，而非累积历史）：',
+  '重要状态变化（覆盖式，输出"当前仍然有效"的角色状态汇总，而非累积历史）：\n【本节下方是写作指令/格式说明/示例，仅供你参考格式，严禁原样抄入正文】',
   '（已被后续剧情推翻/缓解的旧状态不要重复列出；没有当前有效状态则输出"无"。）',
   '（严格按下面的固定分格格式输出，用 | 分隔不同维度、一格一值，禁止把多个维度混在同一个值里。每行 = 一个对象（主角/环境/某个角色），以换行分隔：）',
   '- 主角行格式（覆盖式）：主角：身份【…】| 身体【…】| 精神【…】| 地址【…】| 资产【…】| 外在【…】| 好感【…】| 备注【…】',
@@ -1230,7 +1231,7 @@ const ARCHIVE_SYSTEM_FULL = [
   '【铁律】金额必须精确到具体数字（5000就是5000），禁止模糊词（"一些钱""钱变多了"）；每笔买卖都标注减了多少/加了多少、干什么事、以及精确年月日时分。',
         '6. 与「未解决事项」不得重复：未解决=长期伏笔/谜团/悬而未决线索；任务=正在进行的行动进度。同一件事只归一类记录，绝不在两处重复写。',
   '',
-  '地点（追加式，地图用：只输出本次剧情新增出现/移动到的地点，按剧情先后顺序一行一个，直接写核心地名，如"贫民窟垃圾山""半塌危楼阁楼""南区佣兵集散地"；本次未移动则输出"无"）：',
+  '地点（追加式，地图用：只输出本次剧情新增出现/移动到的地点，按剧情先后顺序一行一个，直接写核心地名，如"贫民窟垃圾山""半塌危楼阁楼""南区佣兵集散地"；本次未移动则输出"无"。★★★★ 铁律：绝不把历史/未本次接触的地点全量重列，绝不重复已记录地点，只列本次真正新增/新移动到的地方；多列会被插件自动丢弃并只保留最近轨迹）：',
   '（用下面的专属标记包裹地点，与其他字段完全独立；地点一行一个，只写核心地名，不写比喻/回忆/梦境场景，不带时间标记前缀）：',
   '<<<LOCATIONS>>>',
   '<<<LOCATIONS_END>>>',
@@ -2820,7 +2821,7 @@ async function cdBuildDiaryInjectionText() {
           if (arc.unresolved) arcParts.push(`待解决事项：${arc.unresolved}`);
           // ★ 当前时间轴（覆盖式最新）
           if (arc.timeAnchor && String(arc.timeAnchor).trim()) arcParts.push(`当前时间：${String(arc.timeAnchor).trim()}`);
-          if (Array.isArray(arc.locations) && arc.locations.length) arcParts.push('地点（已踏足/当前位置）：\n' + arc.locations.map(function(l){ return '- ' + l; }).join('\n'));
+          if (Array.isArray(arc.locations) && arc.locations.length) { var _locs30 = arc.locations.slice(-30).map(function(l){ return String(l).trim(); }).filter(Boolean); if (_locs30.length) arcParts.push('地点（已踏足/当前位置）：\n' + _locs30.map(function(l){ return '- ' + l; }).join('\n')); }
           // ★ 任务记录（活跃任务）
           if (Array.isArray(arc.tasks) && arc.tasks.length) {
             arcParts.push('任务记录：\n' + arc.tasks.map(function(t){ return '- ' + (t && t.line || ''); }).join('\n'));
@@ -5126,10 +5127,27 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
           if (arc.states !== undefined)     data.archive.states     = _mergeStatesByRole((data.archive && data.archive.states) || '', arc.states);
           if (Array.isArray(arc.locations) && arc.locations.length) {
             if (!Array.isArray(data.archive.locations)) data.archive.locations = [];
-            for (const _lp of arc.locations) {
-              const _ls = String(_lp || '').trim();
-              if (_ls && !data.archive.locations.some(function(x){ return String(x).trim() === _ls; })) data.archive.locations.push(_ls);
+            // ★ 尾部分别保留：arc.locations 内部先自身去重（保留首个出现顺序）
+            var _seen = [];
+            var _put = [];
+            for (var _lp2 of arc.locations) {
+              var _ls2 = String(_lp2 || '').trim();
+              if (!_ls2 || _ls2 === '无' || _ls2 === '无。' || /^[(（]/.test(_ls2)) continue;
+              if (_seen.indexOf(_ls2) < 0) { _seen.push(_ls2); _put.push(_ls2); }
             }
+            // 追加到全局（相对位置靠后为最新）
+            for (var _p of _put) {
+              if (!data.archive.locations.some(function(x){ return String(x).trim() === _p; })) data.archive.locations.push(_p);
+            }
+            // ★ 全局清理：去重（保最新）+ 上限 30 条，超出的最旧裁掉；等价"只保留最近轨迹"
+            var _dl = [];
+            for (var _i2 = data.archive.locations.length - 1; _i2 >= 0; _i2--) {
+              var _v = String(data.archive.locations[_i2]).trim();
+              if (_v && _dl.indexOf(_v) < 0) _dl.push(_v);
+            }
+            _dl.reverse();            // 恢复时间顺序（旧→新）
+            if (_dl.length > 30) _dl = _dl.slice(_dl.length - 30);  // 只留最近30
+            data.archive.locations = _dl;
           }
           if (arc.unresolved !== undefined) data.archive.unresolved = _overwriteKeepMissed((data.archive && data.archive.unresolved) || '', arc.unresolved);
           // ★ 物品清单（变动日志，追加去重，防重复结算）
@@ -5531,6 +5549,39 @@ function cdPlayReplyToneForce() {
 function cdPlayToneUri(uri) { try { cdAudioPlay(uri); } catch(e){} }
 if (typeof window !== 'undefined') window.cdPlayReplyToneForce = cdPlayReplyToneForce;
 window.cdPreviewReplyTone = cdPlayReplyToneForce;
+
+// 平滑滚动回「最新一条 AI 回复」的开头（设置 autoScrollTop 开启时用）
+function cdScrollToLastAiTop() {
+  try {
+    const s = (typeof cdGetSettings === 'function') ? cdGetSettings() : {};
+    if (!s || s.autoScrollTop === false) return;   // 开关关闭不滚
+    // 先尝试用 scrollIntoView（浏览器自动找祖先滚动容器 + 平滑），找最新一条 AI 消息
+    const _els = Array.prototype.slice.call(document.querySelectorAll('#chat .mes, .message, .mes'));
+    let target = null;
+    for (let i = _els.length - 1; i >= 0; i--) {
+      const el = _els[i];
+      if (!el || !el.parentNode) continue;
+      // 跳过用户/系统消息（按常见 ST 类名判断）
+      if (el.classList && (el.classList.contains('mes_user') || el.classList.contains('for_user')
+        || el.classList.contains('system_mes') || el.classList.contains('mes_system'))) continue;
+      target = el; break;
+    }
+    if (!target) { if (_els.length) target = _els[_els.length - 1]; }
+    if (!target) return;
+    if (typeof target.scrollIntoView === 'function') {
+      try { target.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+      catch (e) {}
+    }
+    // 降级：手动找祖先滚动容器平滑滚到 target 顶部
+    let sc = target.parentElement;
+    while (sc && sc.scrollHeight <= sc.clientHeight && sc.parentElement) { sc = sc.parentElement; }
+    if (sc && sc.scrollTop !== undefined) {
+      const top = target.offsetTop - sc.offsetTop - (parseInt(getComputedStyle ? getComputedStyle(sc).paddingTop : 0, 10) || 0);
+      try { sc.scrollTo({ top: Math.max(0, top - 4), behavior: 'smooth' }); }
+      catch (e2) { sc.scrollTop = Math.max(0, top - 4); }
+    }
+  } catch (e) { if (typeof cdWarn === 'function') cdWarn('滚动到AI回复开头失败', e); }
+}
 if (typeof window !== 'undefined') window.cdToneSrc = cdToneSrc;
 
 
@@ -6033,6 +6084,8 @@ async function _cdDoInit() {
         try {
           // 提示音：AI 回复结束（整段生成完毕立即响，按触发时机设置 + 双事件防抖）
           try { cdPlayReplyTone('reply'); } catch(e) {}
+          // 自动滚动：等消息渲染稳定后，平滑滚回这条 AI 回复开头（设置 autoScrollTop 开启时）
+          setTimeout(() => { try { cdScrollToLastAiTop(); } catch(e) {} }, 80);
           // 用短延迟确保 ST 的 chat 数组已更新
           setTimeout(() => cdOnMessageReceived(), 100);
         } catch(e) {
@@ -11214,6 +11267,7 @@ async function cdRenderSettings() {
           <div class="cds-hint" style="margin-top:4px;font-size: calc(0.55rem * var(--cd-fs, 1));opacity:.55;">选一个音频文件当提示音，选择后立即试听并保存（建议 1MB 以内，过长会占存储）</div>
         </div>
       </details>
+      <div class="cds-row"><span class="cds-lab">回复后回到开头 <span class="cds-hint">AI回复完平滑滚回该条开头</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-autoscrolltop" ${s.autoScrollTop ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
       <div class="cds-row"><span class="cds-lab">新手引导</span><span class="cds-ctrl"><button class="cd-btn-secondary" id="cd-btn-reset-onboarding" style="padding:3px 12px;font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;">重新显示</button></span></div>
     </div>
 
@@ -11456,6 +11510,11 @@ async function cdRenderSettings() {
     var _t = (v === 'summary' ? '插件总结后' : (v === 'both' ? '两者都响' : 'AI回复后'));
     if (typeof toastr !== 'undefined') toastr.success('提示音时机：' + _t);
   });
+  // 回复后回到开头：开关即时保存
+  $('#cd-s-autoscrolltop').off('change').on('change', function () {
+    cdSaveSettings({ autoScrollTop: $(this).is(':checked') });
+    if (typeof toastr !== 'undefined') toastr.success('回复后回到开头' + ($(this).is(':checked') ? '已开启' : '已关闭'));
+  });
   // 立即试听（用当前生效音：用户 uri 优先）
   $('#cd-btn-tone-preview').off('click').on('click', function () {
     try { if (typeof cdPlayReplyToneForce === 'function') cdPlayReplyToneForce(); else if (typeof cdPreviewReplyTone === 'function') cdPreviewReplyTone(); } catch(e){}
@@ -11553,6 +11612,7 @@ async function cdRenderSettings() {
       autoCompressSize: parseInt($('#cd-s-autocompress-size').val(), 10) || 2000,
       replyTone: $('#cd-s-replytone').is(':checked'),
       replyToneMode: $('input[name="cd-s-tonemode"]:checked').val() || 'reply',
+      autoScrollTop: $('#cd-s-autoscrolltop').is(':checked'),
       source: src,
       endpoints,
     });
