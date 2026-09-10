@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.17.0';
+const PLUGIN_VERSION = '2.17.1';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -1337,7 +1337,7 @@ async function cdBuildArchivePrompt(windowFloors, data, _s, archiveFull) {
       ? '【首次记录特别要求】本次输入含开头的【第0楼开场白】。请把它中的背景/时间/地点/登场人物及其当前彼此的关系状态，作为"主线起点/重要状态"优先写入档案，不要因它是静态描述、非事件而遗漏。'
       : '',
     archiveFull ? '**（全量重建模式）请基于下方全部楼层完整输出当前剧情档案，覆盖旧值，不要遗漏早期剧情**：' : '**已有剧情进展（请做增量扩展，不要重复）**：',
-    ...(s.summarizeInjectArchive ? [
+    ...(_s.summarizeInjectArchive ? [
       existing.mainline ? `已知主线：${existing.mainline}` : '已知主线：（暂无，这是初见）',
       existing.sideline ? `已知支线：${existing.sideline}` : '',
       existing.states ? `已知重要状态：${existing.states}` : '',
@@ -12016,6 +12016,13 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
     {
+    version: 'v2.17.1',
+    date: '2026-09-11',
+    items: [
+      '【修复】根治「写日记过程异常: s is not defined」——总结/写日记全流程中断的元凶：cdBuildArchivePrompt 第1340行「总结时注入历史·剧情档案」分支误把设置参数 _s 写成裸 s，在严格模式下每次走档案总结都抛 ReferenceError，导致日记/档案/关系全部写不进。已改为 _s，并用 AST 全量扫描确认无同类作用域隐患。',
+    ],
+  },
+    {
     version: 'v2.17.0',
     date: '2026-09-10',
     items: [
@@ -12499,7 +12506,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.17.0 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.17.1 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
@@ -20782,6 +20789,7 @@ async function cdSaveWrite(slotIdx, note, memo) {
       note: nm,
       star: false,
       memo: (memo && String(memo).trim()) ? String(memo).trim() : '',
+      memos: (memo && String(memo).trim()) ? [{ time: _cdSaveNowStr(), text: String(memo).trim() }] : [],
       cover: String(data && data.archive && data.archive.mainline ? String(data.archive.mainline).replace(/\n/g, ' ').slice(0, 40) : ''),
       charName: charName,
       time: _cdSaveNowStr(),
@@ -20998,29 +21006,60 @@ async function cdSaveImportFile(file) {
 /* 主渲染：全角色混同一个 Grid 存档盘；空位格子 + 已存格子并排 */
 
 /* ============ 存档界面（玻璃浅灰·紧凑密排：角色卡墙） ============ */
-/* ===== 角色感言：整角色留言（存 lib.__groupMemo = {角色名:感言}）===== */
+/* ===== 角色感言：整角色追加留言（存 lib.__groupMemo[角色] = 追加数组 [{time,text}]）===== */
 async function cdSaveGroupMemoGet(name) {
-  try { const lib = await cdSaveGetLib(); if (lib && lib.__groupMemo && lib.__groupMemo[name]) return String(lib.__groupMemo[name]); } catch (e) {}
-  return '';
+  try {
+    const lib = await cdSaveGetLib();
+    if (lib && lib.__groupMemo) {
+      const v = lib.__groupMemo[name];
+      if (Array.isArray(v)) return v;
+      if (v) return [{ time: '', text: String(v).trim() }];
+    }
+  } catch (e) {}
+  return [];
 }
-async function cdSaveGroupMemoSet(name, text) {
+async function _cdSaveGroupMemoListHtml(list) {
+  const arr = Array.isArray(list) ? list : (list ? [{ time: '', text: String(list) }] : []);
+  if (!arr.length) return '<div style="font-size:calc(0.78rem*var(--cd-fs,1));color:#98a1ad;">（还没有角色感言）</div>';
+  let h = '';
+  for (let i = 0; i < arr.length; i++) {
+    const m = arr[i] || {};
+    const t = (m.time && String(m.time).trim()) ? '<span style="font-size:11px;color:#98a1ad;flex-shrink:0;">' + escapeHtml(String(m.time)) + '</span>' : '';
+    h += '<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px dashed #e2d9c6;">'
+      + '<div style="flex:1;font-size:calc(0.8rem*var(--cd-fs,1));color:#3c2f1f;line-height:1.55;word-break:break-word;white-space:pre-wrap;">' + (String(m.text||'').trim() ? escapeHtml(String(m.text).trim()) : '') + '</div>'
+      + t + '</div>';
+  }
+  return h;
+}
+async function cdSaveAppendGroupMemo(name, text) {
+  const t = (text && String(text).trim()) ? String(text).trim() : '';
+  if (!t || !name) return false;
   try {
     const lib = await cdSaveGetLib();
     if (!lib.__groupMemo || typeof lib.__groupMemo !== 'object') lib.__groupMemo = {};
-    lib.__groupMemo[name] = (text && String(text).trim()) ? String(text).trim() : '';
+    const v = lib.__groupMemo[name];
+    let arr = Array.isArray(v) ? v : (v && String(v).trim()) ? [{ time: '', text: String(v).trim() }] : [];
+    if (arr.length && arr[arr.length-1] && arr[arr.length-1].text === t) return true;
+    arr.push({ time: _cdSaveNowStr(), text: t });
+    lib.__groupMemo[name] = arr;
     await cdSaveSetLib(lib);
-  } catch (e) { if (typeof cdAddLog === 'function') cdAddLog('error', '[存档] 角色感言保存失败: ' + (e && e.message)); }
+    return true;
+  } catch (e) { if (typeof cdAddLog === 'function') cdAddLog('error', '[存档] 角色感言追加失败: ' + (e && e.message)); return false; }
 }
 function cdSaveGroupMemoSave() {
   const ta = document.getElementById('cd-gs-groupmemo-input');
   if (!ta) return;
   const cur = window.__cdCurCharForMemo || '';
   if (!cur) return;
-  cdSaveGroupMemoSet(cur, ta.value).then(function () {
-    if (typeof toastr !== 'undefined') toastr.success('角色感言已保存');
-  });
+  const txt = ta.value;
+  if (!(txt && String(txt).trim())) { if (typeof toastr !== 'undefined') toastr.warning('[角色日记] 角色感言内容不能为空'); return; }
+  (async function () {
+    const ok = await cdSaveAppendGroupMemo(cur, txt);
+    if (ok && typeof toastr !== 'undefined') toastr.success('角色感言已追加');
+    try { if (typeof cdSaveGoSlots === 'function') cdSaveGoSlots(cur); else if (typeof cdRenderSave === 'function') cdRenderSave(); } catch (e) {}
+  })();
 }
-if (typeof window !== 'undefined') { window.cdSaveGroupMemoGet = cdSaveGroupMemoGet; window.cdSaveGroupMemoSet = cdSaveGroupMemoSet; window.cdSaveGroupMemoSave = cdSaveGroupMemoSave; }
+if (typeof window !== 'undefined') { window.cdSaveGroupMemoGet = cdSaveGroupMemoGet; window.cdSaveAppendGroupMemo = cdSaveAppendGroupMemo; window.cdSaveGroupMemoSave = cdSaveGroupMemoSave; window._cdSaveGroupMemoListHtml = _cdSaveGroupMemoListHtml; }
 
 async function cdRenderSave() {
   try {
@@ -21160,11 +21199,15 @@ async function cdSaveGoSlots(name) {
 
     html += '<div class="cd-save-hint"><i class="fa-regular fa-circle-info"></i> 点空格槽＝存档到该位 · 点已存槽＝读档并进入该时刻（新建聊天，原聊天保留）<br>悬停一份存档可：改名 / 删除</div>';
     // 底部：角色感言折叠（整个角色的留言）
-    var _gMemo = '';
+    var _gMemo = [];
     try { _gMemo = await cdSaveGroupMemoGet(name); window.__cdCurCharForMemo = name; } catch (e) {}
+    var _gMemoListHtml = '';
+    try { _gMemoListHtml = await _cdSaveGroupMemoListHtml(_gMemo); } catch (e) { _gMemoListHtml = ''; }
     html += '<details style="margin-top:12px;border:1px solid #cbd4dd;border-radius:10px;background:rgba(255,255,255,.62);padding:8px 12px;"><summary style="cursor:pointer;font-size:12.5px;color:#2c3540;font-weight:600;"><i class="fa-regular fa-note-sticky" style="color:#6e7e90;margin-right:6px;"></i>角色感言<span style="font-size:11px;color:#98a1ad;font-weight:400;margin-left:6px;">' + escapeHtml(name) + '</span></summary>'
-      + '<div style="margin-top:8px;"><textarea id="cd-gs-groupmemo-input" rows="3" maxlength="500" placeholder="写一段话作为这个角色的备注…" style="width:100%;border:1px solid #cbd4dd;border-radius:8px;padding:8px 10px;font-size:calc(0.76rem*var(--cd-fs,1));background:#fff;color:#2c3540;outline:none;box-sizing:border-box;resize:vertical;font-family:inherit;">' + String(_gMemo || '').replace(/</g, '&lt;') + '</textarea>'
-      + '<div style="display:flex;justify-content:flex-end;margin-top:8px;"><button onclick="cdSaveGroupMemoSave()" style="border:1px solid #cbd4dd;background:rgba(255,255,255,.62);color:#2c3540;padding:7px 20px;border-radius:11px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:5px;font-family:inherit;"><i class="fa-regular fa-floppy-disk"></i> 保存感言</button></div></div></details>';
+      + '<div style="margin-top:8px;">'
+      + '<div style="font-size:11px;color:#98a1ad;margin:2px 0 6px;">已写下的感言</div>'
+      + '<div style="max-height:180px;overflow-y:auto;border:1px solid #cbd4dd;border-radius:8px;padding:4px 10px;background:#fff;box-sizing:border-box;">' + _gMemoListHtml + '</div>'
+      + _cdMemoAddBoxHtml('cd-gs-groupmemo-new', 'group', '写一段话给这个角色…') + '</div></details>';
     document.getElementById('cd-content').innerHTML = html;
   } catch (e) {
     document.getElementById('cd-content').innerHTML = '<div class="cd-empty"><p>存档盘渲染失败</p><p class="cd-empty-sub">' + escapeHtml(e && e.message) + '</p></div>';
@@ -21312,28 +21355,54 @@ async function cdSaveAskRename(id, charName) {
     '#cd-content .cd-save-cap2-track{flex:1;height:5px;background:rgba(185,196,207,.35);border-radius:5px;overflow:hidden;min-width:40px;}',
     '#cd-content .cd-save-cap2-fill{display:block;height:100%;background:linear-gradient(90deg,#8d9bab,#6e7e90);border-radius:5px;transition:width .3s;}',
     '#cd-content .cd-save-memo-on{border-color:#6e7e90;color:#6e7e90;}',
+    '#cd-content .cd-amo-box{margin-top:12px;border:1px dashed #b7c2cc;border-radius:10px;background:rgba(255,255,255,.4);color:#98a1ad;font-size:13px;min-height:52px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:all .15s;padding:0;}',
+    '#cd-content .cd-amo-box .cd-amo-tip{display:flex;align-items:center;gap:6px;}',
+    '#cd-content .cd-amo-box textarea{display:none;width:100%;min-height:92px;border:none;outline:none;resize:vertical;background:#fff;color:#2c3540;font-size:14px;line-height:1.5;padding:8px 8px;box-sizing:border-box;font-family:inherit;border-radius:8px;}',
+    '#cd-content .cd-amo-box .cd-amo-actions{display:none;gap:8px;padding:0 6px 6px;}',
+    '#cd-content .cd-amo-box.cd-amo-on{display:block;min-height:0;background:#fff;border-style:solid;border-color:#cbd4dd;cursor:text;padding:6px;}',
+    '#cd-content .cd-amo-box.cd-amo-on .cd-amo-tip{display:none;}',
+    '#cd-content .cd-amo-box.cd-amo-on textarea{display:block;}',
+    '#cd-content .cd-amo-box.cd-amo-on .cd-amo-actions{display:flex;justify-content:flex-end;}',
+    '#cd-content .cd-amo-btn{border:1px solid #cbd4dd;background:#fff;color:#3b4650;border-radius:8px;padding:6px 14px;font-size:12px;cursor:pointer;font-family:inherit;}',
+    '#cd-content .cd-amo-btn-primary{border:none;background:linear-gradient(150deg,#6e7e90,#8d9bab);color:#fff;font-weight:600;padding:6px 16px;}',
   ].join('\n');
   document.head.appendChild(st);
 })();
 
 /* ===== 感言界面：存档条目左侧深色图标点入；显示备注+感言，右下角铅笔编辑 ===== */
+async function _cdSaveMemoListHtml(memos) {
+  // 兼容：memos 为空但 memo 单条时，迁移出一条；否则返回每条感言行
+  const arr = Array.isArray(memos) ? memos : (memos ? [{ time: '', text: String(memos) }] : []);
+  if (!arr.length) return '<div style="font-size:calc(0.78rem*var(--cd-fs,1));color:#98a1ad;">（还没有感言）</div>';
+  let h = '';
+  for (let i = 0; i < arr.length; i++) {
+    const m = arr[i] || {};
+    const t = (m.time && String(m.time).trim()) ? '<span style="font-size:11px;color:#98a1ad;flex-shrink:0;">' + escapeHtml(String(m.time)) + '</span>' : '';
+    h += '<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px dashed #e2d9c6;">'
+      + '<div style="flex:1;font-size:calc(0.8rem*var(--cd-fs,1));color:#3c2f1f;line-height:1.55;word-break:break-word;white-space:pre-wrap;">' + (String(m.text||'').trim() ? escapeHtml(String(m.text).trim()) : '<span style="color:#c3ada3;font-style:italic;">（空）</span>') + '</div>'
+      + t + '</div>';
+  }
+  return h;
+}
 async function cdSaveShowMemo(id, charName) {
   const rec = await cdSaveFind(charName, id);
   if (!rec) return;
-  const nm = rec.note || '未命名';
-  const memoText = (rec.memo && String(rec.memo).trim()) ? rec.memo : '（还没有写感言）';
+  const nm = (rec.note || '未命名');
+  const _idA = String(id || '').replace(/'/g, "\\'");
+  const _cnA = String(charName || '').replace(/'/g, "\\'");
+  window.__cdMemoCtx = { id: id, charName: charName };
+  let listHtml = '';
+  try { listHtml = await _cdSaveMemoListHtml(rec.memos || rec.memo); } catch (e) { listHtml = ''; }
   let html = '';
-  html += '<div class="cd-gs-memo-back" onclick="cdSaveGoSlots(\'' + String(charName||'').replace(/'/g,"\\'") + '\')" style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;color:#8a7d66;font-size:12px;padding:4px 8px;border:1px solid #e2d9c6;border-radius:8px;background:#fffdf8;margin-bottom:10px;"><i class="fa-regular fa-chevron-left"></i> 返回存档列表</div>';
-  html += '<div style="border:1px solid #e2d9c6;border-radius:12px;background:#fffdf8;padding:16px;position:relative;">'
-    + '<div style="font-weight:700;font-size:15px;color:#5b4a3a;">' + escapeHtml(nm) + '</div>'
-    + '<div style="font-size:11px;color:#8a7d66;margin:4px 0 12px;">感言</div>'
-    + '<div style="font-size:calc(0.82rem*var(--cd-fs,1));color:#3c2f1f;line-height:1.6;white-space:pre-wrap;word-break:break-word;">' + escapeHtml(memoText) + '</div>'
-    + '<div style="position:absolute;right:10px;bottom:10px;display:flex;gap:6px;">'
-    + '<button onclick="event.stopPropagation();cdSaveAskMemo(\'' + id + '\',\'' + String(charName||'').replace(/'/g,"\\'") + '\')" title="编辑感言" style="width:30px;height:30px;border-radius:8px;border:1px solid #e2d9c6;background:#fffdf8;color:#8a6a3b;cursor:pointer;"><i class="fa-regular fa-pen"></i></button>'
-    + '</div></div>';
+  html += '<div class="cd-gs-memo-back" onclick="cdSaveGoSlots(\'' + _cnA + '\')" style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;color:#6e7e90;font-size:12px;padding:5px 10px;border:1px solid #cbd4dd;border-radius:8px;background:rgba(255,255,255,.62);margin-bottom:12px;"><i class="fa-regular fa-chevron-left"></i> 返回存档列表</div>';
+  html += '<div style="border:1px solid rgba(185,196,207,.6);border-radius:12px;background:rgba(255,255,255,.62);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);padding:14px;box-shadow:0 4px 16px rgba(110,125,145,.12);">'
+    + '<div style="font-weight:700;font-size:15px;color:#2c3540;margin-bottom:8px;">' + escapeHtml(nm) + '</div>'
+    + '<div style="font-size:11px;color:#98a1ad;margin:0 0 6px;">曾写下的感言</div>'
+    + '<div id="cd-save-memo-list" style="max-height:200px;overflow-y:auto;border:1px solid #cbd4dd;border-radius:10px;padding:4px 12px;background:rgba(255,255,255,.65);box-sizing:border-box;">' + listHtml + '</div>'
+    + _cdMemoAddBoxHtml('cd-save-memo-new', 'item', '写一段话留给这份存档…')
+    + '</div>';
   document.getElementById('cd-content').innerHTML = html;
 }
-/* ===== 感言：查看/编辑某份存档的感言 ===== */
 async function cdSaveAskMemo(id, charName) {
   const rec = await cdSaveFind(charName, id);
   if (!rec) return;
@@ -21350,6 +21419,71 @@ async function cdSaveSetMemo(rec, memo) {
   for (var i = 0; i < slots.length; i++) if (slots[i] && slots[i].id === rec.id) slots[i] = rec;
   await cdSaveSetSlots(rec.charName, slots);
 }
+/* ===== 感言·下面可点写框（点击占位 → 输入 → 确定/取消）样式走 CSS 类 .cd-amo-* ===== */
+function cdMemoFocusBox(boxId) {
+  var box = document.getElementById(boxId); if (!box) return;
+  box.classList.add('cd-amo-on');
+  var ta = box.querySelector('textarea'); if (ta) ta.focus();
+}
+function cdMemoCancelBox(boxId) {
+  var box = document.getElementById(boxId); if (!box) return;
+  box.classList.remove('cd-amo-on');
+  var ta = box.querySelector('textarea'); if (ta) ta.value = '';
+}
+function _cdMemoBoxTa(boxId) {
+  var box = document.getElementById(boxId); return box ? box.querySelector('textarea') : null;
+}
+function _cdMemoAddBoxHtml(boxId, ctor, placeholder) {
+  return '<div class="cd-amo-box" id="' + boxId + '" onclick="cdMemoFocusBox(\'' + boxId + '\')">'
+    + '<div class="cd-amo-tip"><i class="fa-regular fa-pen-to-square"></i> 点击写感言…</div>'
+    + '<textarea placeholder="' + placeholder + '" onkeydown="if(event.key===\'Enter\'){cdMemoDoSave(\'' + ctor + '\',\'' + boxId + '\');event.preventDefault();}"></textarea>'
+    + '<div class="cd-amo-actions">'
+    + '<button class="cd-amo-btn" onclick="event.stopPropagation();cdMemoCancelBox(\'' + boxId + '\')">取消</button>'
+    + '<button class="cd-amo-btn cd-amo-btn-primary" onclick="event.stopPropagation();cdMemoDoSave(\'' + ctor + '\',\'' + boxId + '\')"><i class="fa-regular fa-floppy-disk"></i> 确定</button>'
+    + '</div></div>';
+}
+function cdMemoDoSave(ctor, boxId) {
+  var ta = _cdMemoBoxTa(boxId);
+  var txt = ta ? ta.value : '';
+  if (!(txt && String(txt).trim())) { if (typeof toastr !== 'undefined') toastr.warning('[角色日记] 感言内容不能为空'); return; }
+  if (ctor === 'item') {
+    var ctx = window.__cdMemoCtx || {};
+    cdSaveAppendMemo(ctx.id, ctx.charName, txt);
+  } else {
+    var cur = window.__cdCurCharForMemo || '';
+    cdSaveAppendGroupMemo(cur, txt).then(function () { try { cdSaveGoSlots(cur); } catch (e) {} });
+  }
+}
+
+async function _cdSaveAppendMemoCore(rec, text) {
+  const t = (text && String(text).trim()) ? String(text).trim() : '';
+  if (!t) return false;
+  if (!Array.isArray(rec.memos)) rec.memos = (rec.memo && String(rec.memo).trim()) ? [{ time: '', text: String(rec.memo).trim() }] : [];
+  if (Array.isArray(rec.memos) && rec.memos.length) {
+    // 与最后一条完全相同则不重复追加
+    const last = rec.memos[rec.memos.length - 1] || {};
+    if (last.text === t) return true;
+  }
+  rec.memos.push({ time: _cdSaveNowStr(), text: t });
+  rec.memo = '';  // 新追加进 memos，memo 单条不再承载（保留空）
+  const slots = (await cdSaveGetSlots(rec.charName)).slice();
+  for (let i = 0; i < slots.length; i++) if (slots[i] && slots[i].id === rec.id) slots[i] = rec;
+  await cdSaveSetSlots(rec.charName, slots);
+  return true;
+}
+function cdSaveAppendMemo(id, charName, text) {
+  const t = (text && String(text).trim()) ? String(text).trim() : '';
+  if (!t) { if (typeof toastr !== 'undefined') toastr.warning('[角色日记] 感言内容不能为空'); return; }
+  (async function () {
+    try {
+      const rec = await cdSaveFind(charName, id);
+      if (!rec) return;
+      await _cdSaveAppendMemoCore(rec, t);
+      if (typeof toastr !== 'undefined') toastr.success('[角色日记] 已追加感言');
+      cdSaveShowMemo(id, charName);
+    } catch (e) { if (typeof cdAddLog === 'function') cdAddLog('error', '[存档] 追加感言失败: ' + (e && e.message)); }
+  })();
+}
 async function cdSaveToggleStar(id, charName) {
   if (typeof cdAddLog === 'function') cdAddLog('info', '[存档] 星标切换', { id: id });
   const rec = await cdSaveFind(charName, id);
@@ -21363,7 +21497,7 @@ async function cdSaveToggleStar(id, charName) {
 
 
 /* 显式挂到 window（存档条目感言图标内联 onclick 需要全局） */
-if (typeof window !== 'undefined') { window.cdSaveAskMemo = cdSaveAskMemo; window.cdSaveSetMemo = cdSaveSetMemo; window.cdSaveShowMemo = cdSaveShowMemo; window.cdSaveToggleStar = cdSaveToggleStar; window.cdSaveConfirmLoad = cdSaveConfirmLoad; window.cdSaveConfirmDialDone = cdSaveConfirmDialDone; }
+if (typeof window !== 'undefined') { window.cdSaveAskMemo = cdSaveAskMemo; window.cdSaveSetMemo = cdSaveSetMemo; window.cdSaveAppendMemo = cdSaveAppendMemo; window._cdSaveAppendMemoCore = _cdSaveAppendMemoCore; window.cdSaveShowMemo = cdSaveShowMemo; window.cdMemoFocusBox = cdMemoFocusBox; window.cdMemoCancelBox = cdMemoCancelBox; window._cdMemoBoxTa = _cdMemoBoxTa; window._cdMemoAddBoxHtml = _cdMemoAddBoxHtml; window.cdMemoDoSave = cdMemoDoSave; window.cdSaveToggleStar = cdSaveToggleStar; window.cdSaveConfirmLoad = cdSaveConfirmLoad; window.cdSaveConfirmDialDone = cdSaveConfirmDialDone; }
 
 /* ===== [v2.16] 存档命名弹窗：照 cdShowDedupeConfirm 成功写法（挂 body / inset:0 / z-index CD_TOP_Z / flex 居中 / remove 销毁）===== */
 var _cdSaveNameCb = null;
