@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.15.4';
+const PLUGIN_VERSION = '2.17.0';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -220,6 +220,8 @@ const DEFAULT_SETTINGS = {
   injectDiary     : true,         // 注入角色日记到AI上下文
   injectRelation  : false,        // 注入人物关系到AI上下文（跟随关系生成默认关）
   injectArchive   : true,         // 注入剧情档案到AI上下文
+  summarizeInjectDiary  : false,       // [总结] 自动/手动总结时是否把历史角色日记一并发送（默认关=只发要总结的楼层，省token）
+  summarizeInjectArchive: false,       // [总结] 自动/手动总结时是否把历史剧情档案一并发送（默认关=只发要总结的楼层，省token）
   worldbookLink   : true,         // 世界书联动：写日记/总结时注入重点角色的世界书设定
   diaryCharFilter : false,       // 按登场人物注入近期日记（正则捕获剧情中出现的角色，只推这些角色的近期日记，替代全量/向量）
   diaryCharLimit  : 3,           // 按登场人物时，每个角色的近期日记篇数
@@ -833,12 +835,12 @@ async function cdBuildDiaryPrompt(windowFloors, data, s) {
   });
   // ★ 每角色注入多条最近历史（默认 vectorTopK 条），避免只注入每个角色最新一条
   const memLimit = Math.max(1, parseInt(s.vectorTopK, 10) || 5);
-  const memory = Object.entries(data.diaries).map(([name, list]) => {
+  const memory = (s.summarizeInjectDiary ? Object.entries(data.diaries).map(([name, list]) => {
     if (!Array.isArray(list) || !list.length) return '';
     return list.slice(-memLimit).map(function (e) {
       return `【${name}】${e.date ? '第' + e.date : '第' + e.turn + '楼'}: ${(e.entry || '').trim()}`;
     }).join('\n');
-  }).filter(Boolean).join('\n');
+  }).filter(Boolean).join('\n') : '');
   // ★ 楼层文本经过标签过滤
   const tags = s.filterTags || [];
   const scene = windowFloors.map(m => `[#${m.message_id} ${m.name}] ${cdFilterTags(m.mes, tags)}`).join('\n\n');
@@ -909,7 +911,7 @@ async function cdBuildDiaryPrompt(windowFloors, data, s) {
   ].filter(Boolean).join('\n');
   // ★ 世界书联动：在函数体顶部异步获取登场角色的世界书设定（loadWorldInfo 为异步 API）
   let _worldbookTxtDiary = '';
-  if (s && s.worldbookLink !== false) {
+  if (s && s.summarizeInjectDiary && s.worldbookLink !== false) {
     try {
       const _wr = cdSceneWorldbookRoles(windowFloors, data);
       if (_wr.length) _worldbookTxtDiary = await cdGetWorldbookForRoles(_wr);
@@ -1120,6 +1122,7 @@ const ARCHIVE_SYSTEM = [
   '',
   '钱财追踪（覆盖式+追加式，用来精确跟踪钱财）：',
   '当前金额（覆盖式，只输出当前主角手里的具体钱数，纯数字，如 5000；若没有明确金额可留空）：',
+  '【铁律】当前金额只能填纯数字金额（如 5000、-200），禁止出现地点/环境/方位文字、禁止写句子里带地点名；写了非金额内容会被插件直接丢弃只留数字）：',
   '当前金额：5000',
   '钱财变动（追加式，逐条记录本次剧情里金钱的收入与支出，一条一行，写明具体数额与事由；本次无变动输出"无"）：',
   '（格式：减/加具体数额（事由），带时间，如：-200（买干粮）2026年3月15日 14:30 | +1000（完成护送任务酬金）2026年3月15日 16:00）',
@@ -1225,6 +1228,7 @@ const ARCHIVE_SYSTEM_FULL = [
   '',
   '钱财追踪（覆盖式+追加式，用来精确跟踪钱财）：',
   '当前金额（覆盖式，只输出当前主角手里的具体钱数，纯数字，如 5000；若没有明确金额可留空）：',
+  '【铁律】当前金额只能填纯数字金额（如 5000、-200），禁止出现地点/环境/方位文字、禁止写句子里带地点名；写了非金额内容会被插件直接丢弃只留数字）：',
   '当前金额：5000',
   '钱财变动（追加式，逐条记录本次剧情里金钱的收入与支出，一条一行，写明具体数额与事由；本次无变动输出"无"）：',
   '（格式：减/加具体数额（事由），带时间，如：-200（买干粮）2026年3月15日 14:30 | +1000（完成护送任务酬金）2026年3月15日 16:00）',
@@ -1333,16 +1337,18 @@ async function cdBuildArchivePrompt(windowFloors, data, _s, archiveFull) {
       ? '【首次记录特别要求】本次输入含开头的【第0楼开场白】。请把它中的背景/时间/地点/登场人物及其当前彼此的关系状态，作为"主线起点/重要状态"优先写入档案，不要因它是静态描述、非事件而遗漏。'
       : '',
     archiveFull ? '**（全量重建模式）请基于下方全部楼层完整输出当前剧情档案，覆盖旧值，不要遗漏早期剧情**：' : '**已有剧情进展（请做增量扩展，不要重复）**：',
-    existing.mainline ? `已知主线：${existing.mainline}` : '已知主线：（暂无，这是初见）',
-    existing.sideline ? `已知支线：${existing.sideline}` : '',
-    existing.states ? `已知重要状态：${existing.states}` : '',
-    existing.unresolved ? `已知未解决事项：${existing.unresolved}` : '',
-    existingCustomTxt ? `\n${existingCustomTxt}` : '',
+    ...(s.summarizeInjectArchive ? [
+      existing.mainline ? `已知主线：${existing.mainline}` : '已知主线：（暂无，这是初见）',
+      existing.sideline ? `已知支线：${existing.sideline}` : '',
+      existing.states ? `已知重要状态：${existing.states}` : '',
+      existing.unresolved ? `已知未解决事项：${existing.unresolved}` : '',
+      existingCustomTxt ? `\n${existingCustomTxt}` : '',
+    ] : []),
     customFormatBlock ? '\n自定义追踪项（同样严格按格式输出，与主线等字段并列）：\n' + customFormatBlock : '',
   ].filter(Boolean).join('\n');
   // ★ 世界书联动：异步获取登场角色的世界书设定（loadWorldInfo 为异步 API）
   let _worldbookTxtArchive = '';
-  if (_s && _s.worldbookLink !== false) {
+  if (_s && _s.summarizeInjectArchive && _s.worldbookLink !== false) {
     try {
       const _wr2 = cdSceneWorldbookRoles(windowFloors, data);
       if (_wr2.length) _worldbookTxtArchive = await cdGetWorldbookForRoles(_wr2);
@@ -1517,6 +1523,9 @@ function parseArchiveJson(text, customDefs) {
   // ===== 钱财追踪：当前金额(覆盖式) + 钱财变动日志(追加式) =====
   var money = (parts['当前金额'] || '').split('\n').map(function(_x){return _x.trim();}).filter(Boolean).join(' ').trim();
   money = String(money).replace(/^当前金额[：:]?/,'').trim();
+  // ★ [v2.16] 金额白名单清洗：仅保留数字±金额，剥离【时间】/(说明)/地名段落
+  money = money.split(/[\n，,、 ；;]+/).map(function(_t){ return String(_t).replace(/^【[^】]*】\s*/,'').trim(); })
+    .filter(function(_t){ return /^[+-]?\d/.test(_t); }).join(' ').trim();
   const _moneyLog = [];
   var _mlk = parts['钱财变动'] || '';
   var _mllines = String(_mlk).split('\n');
@@ -2388,6 +2397,9 @@ async function cdGetData() {
         if (result.lastFloor > chat.length - 1) {
           cdLog('cdGetData: 修复 lastFloor', {old: result.lastFloor, new: chat.length - 1});
           result.lastFloor = chat.length - 1;
+          // ★ 方案甲：读档/楼层缩水后游标超前(原聊天只剩最近N条)，同步清空 processedFloors，避免残留的高 message_id 让新聊天"全部楼层显示已总结"、不再自动总结。
+          if (Array.isArray(result.processedFloors)) result.processedFloors = [];
+          try { if (typeof cdLog==='function') cdLog('cdGetData: 游标对齐(方案甲)', {chatLen: chat.length, lastFloor: result.lastFloor, pf长: Array.isArray(result.processedFloors)?result.processedFloors.length:0}); } catch(e2) {}
         }
         if ((result._lastDiaryChatLength ?? 0) > chat.length) result._lastDiaryChatLength = chat.length;
         if ((result._baselineChatLength ?? -1) > chat.length) result._baselineChatLength = chat.length;
@@ -4874,7 +4886,7 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
     // ★ 合并模式：角色日记 + 剧情档案 用一次 API 调用（提示词动态拼接，勾哪个拼哪个）
     const _needDiary = s.enableDiary !== false;
     const _needArch  = s.enableArchive !== false;
-    const _archiveFull = manual && Array.isArray(extraFloors) && extraFloors.length > 0;
+    const _archiveFull = false;   // 区间补写不触发全量重建（只总结本次楼层，不塞全部历史）
     if (_archiveFull && _needArch) cdAddLog('info', '[档案] 手动补写 → 全量重建模式（完整总结全部楼层）');
     if (_needDiary || _needArch) {
       const comboMsgs = await cdBuildDiaryArchiveCombined(windowFloors, data, s, _archiveFull);
@@ -5149,7 +5161,11 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
             if (_dl.length > 30) _dl = _dl.slice(_dl.length - 30);  // 只留最近30
             data.archive.locations = _dl;
           }
-          if (arc.unresolved !== undefined) data.archive.unresolved = _overwriteKeepMissed((data.archive && data.archive.unresolved) || '', arc.unresolved);
+          // ★ [v2.16] 未解决事项改「真覆盖」：新值直接替换旧值（AI 判定无待办则清空），废除 _overwriteKeepMissed 的"保留遗漏=变相追加"
+if (arc.unresolved !== undefined) {
+  const _un = String(arc.unresolved || '').trim();
+  data.archive.unresolved = (!_un || _un === '无' || _un === '无。' || _un === '暂无') ? '' : _un;
+}
           // ★ 物品清单（变动日志，追加去重，防重复结算）
           if (arc.items && Array.isArray(arc.items) && arc.items.length) {
             if (!Array.isArray(data.archive.items)) data.archive.items = [];
@@ -6041,6 +6057,7 @@ async function _cdDoInit() {
   try {
     cdLog('[init] 注入FAB按钮...');
     cdInjectFab();
+    cdStartMesSaveObserver();
     cdLog('[init] FAB按钮完成');
   } catch (e) { console.error('[CD] cdInjectFab 失败', e); if (typeof toastr !== 'undefined') toastr.error('[角色日记] FAB按钮注入失败'); }
 
@@ -6456,6 +6473,65 @@ function cdInjectFab() {
   });
 }
 
+
+/* ===== 每条聊天消息左下角「存档」小图标（遍历 #chat .mes 注入，点图标直接弹命名窗、不先开插件面板） ===== */
+var _cdMesSaveObserver = null;
+var _cdMesSaveStyleDone = false;
+function cdEnsureMesSaveStyle() {
+  if (_cdMesSaveStyleDone) return;
+  _cdMesSaveStyleDone = true;
+  if (!document.getElementById('cd-save-quick-style')) {
+    var _st = document.createElement('style'); _st.id = 'cd-save-quick-style';
+    _st.textContent = [
+      '#chat .mes{position:relative;}' +
+      '#chat .cd-mes-save{position:absolute;left:6px;bottom:4px;z-index:30;width:22px;height:22px;border-radius:7px;cursor:pointer;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.72);border:1px solid rgba(185,196,207,.6);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-sizing:border-box;opacity:.35;transition:opacity .15s, background .15s, box-shadow .15s;}' +
+      '#chat .cd-mes-save:hover{opacity:1;background:rgba(255,255,255,.95);box-shadow:0 3px 10px rgba(110,125,145,.25);}' +
+      '#chat .cd-mes-save svg{width:12px;height:12px;display:block;pointer-events:none;flex-shrink:0;}'
+    ].join('\n');
+    (document.head || document.documentElement).appendChild(_st);
+  }
+}
+function cdInjectMesSaveBtns() {
+  try {
+    cdEnsureMesSaveStyle();
+    var list = Array.prototype.slice.call(document.querySelectorAll('#chat .mes, #chat .message'));
+    list.forEach(function (mes) {
+      if (!mes || mes.querySelector('.cd-mes-save')) return;
+      if (mes.classList && (mes.classList.contains('mes_system') || mes.classList.contains('system_mes'))) return;
+      var btn = document.createElement('span');
+      btn.className = 'cd-mes-save';
+      btn.title = '存档到此刻';
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="#6e7e90" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>';
+      btn.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); cdQuickSaveClick(); });
+      mes.appendChild(btn);
+    });
+  } catch (e) { if (typeof cdAddLog === 'function') cdAddLog('error', '[存档] 消息图标注入异常: ' + (e && e.message)); }
+}
+function cdStartMesSaveObserver() {
+  if (_cdMesSaveObserver) return;
+  var chatEl = document.getElementById('chat') || document.querySelector('.mes_container') || document.body;
+  _cdMesSaveObserver = new MutationObserver(function (muts) {
+    var need = false;
+    for (var i = 0; i < muts.length; i++) {
+      var m = muts[i];
+      if (m.type === 'childList' && m.addedNodes && m.addedNodes.length) { need = true; break; }
+    }
+    if (need) { try { cdInjectMesSaveBtns(); } catch (e) {} }
+  });
+  try { _cdMesSaveObserver.observe(chatEl, { childList: true, subtree: true }); } catch (e) {}
+  cdInjectMesSaveBtns();
+}
+function cdQuickSaveClick() {
+  try {
+    if (typeof cdAddLog === 'function') cdAddLog('info', '[存档][消息图标] cdQuickSaveClick 进入');
+
+    if (typeof cdSaveNewCurrent === 'function') cdSaveNewCurrent();
+    else if (typeof toastr !== 'undefined') toastr.error('[角色日记] 存档入口未挂载');
+  } catch (e) {
+    if (typeof cdAddLog === 'function') cdAddLog('error', '[存档] 快捷存档点击异常: ' + (e && e.message));
+  }
+}
+
 function cdOnFabTouchMove(ev) {
   if (!cdFabDragState) return;
   const ex = ev.touches[0].clientX, ey = ev.touches[0].clientY;
@@ -6525,7 +6601,7 @@ function cdInjectModal() {
           <button class="cd-tb-btn cd-tb-active" id="cd-tb-browse" data-mode="browse"><i class="fa-regular fa-list"></i> 日记</button>
           <button class="cd-tb-btn" id="cd-tb-archive" data-mode="archive"><i class="fa-regular fa-timeline"></i> 剧情</button>
           <button class="cd-tb-btn" id="cd-tb-graph" data-mode="graph"><i class="fa-regular fa-address-book"></i> 状态</button>
-          <button class="cd-tb-btn" id="cd-tb-table" data-mode="table"><i class="fa-regular fa-table"></i> 表</button>
+          <button class="cd-tb-btn" id="cd-tb-save" data-mode="save"><i class="fa-regular fa-floppy-disk"></i> 存档</button>
           <button class="cd-tb-btn" id="cd-tb-inject" data-mode="inject"><i class="fa-solid fa-scroll"></i> 注入</button>
 
           <!-- 更多（低频 / 工具 / 信息收纳） -->
@@ -6558,6 +6634,12 @@ function cdInjectModal() {
             <span class="cd-more-li"><i class="fa-regular fa-database"></i></span>
             <div class="cd-more-tx"><div class="cd-more-t1">数据管理</div><div class="cd-more-t2">备份 · 恢复 · 清理</div></div>
             <div class="cd-more-desc">备份/恢复/清理本局日记数据，可导出 JSON 防丢失，管理快照与历史备份。</div>
+          </div>
+          <div class="cd-more-card" data-mode="table">
+            <div class="cd-more-tgl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div>
+            <span class="cd-more-li"><i class="fa-regular fa-table"></i></span>
+            <div class="cd-more-tx"><div class="cd-more-t1">情报表</div><div class="cd-more-t2">填表情报表 · 快照管理</div></div>
+            <div class="cd-more-desc">情报表（填表）：设置表结构、查看/管理当前聊天的填表内容与自动快照。</div>
           </div>
           <div class="cd-more-card" data-mode="export">
             <div class="cd-more-tgl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div>
@@ -6642,7 +6724,7 @@ function cdInjectModal() {
   $('#cd-tb-log').on('click',    () => cdSwitchView('log'));
   $('#cd-tb-changelog').on('click', () => cdSwitchView('changelog'));
   $('#cd-tb-help').on('click',     () => cdSwitchView('help'));
-  $('#cd-tb-table').on('click', function(){ cdSwitchView('table', this); });
+  $('#cd-tb-save').on('click', function(){ cdSwitchView('save', this); });
 $('#cd-tb-inject').on('click', function(){ cdSwitchView('inject', this); });
   $('#cd-tb-vector').on('click',   () => cdSwitchView('vector'));
   $('#cd-tb-manage').on('click',  () => cdSwitchView('manage'));
@@ -6707,6 +6789,7 @@ async function cdRefreshPanelContent() {
     case 'changelog': cdRenderChangelog(); break;
     case 'help':     cdRenderHelp(); break;
     case 'table':    cdRenderTable(); break;
+    case 'save':     cdRenderSave(); break;
     case 'inject':   cdRenderInject(); break;
     case 'theatre':  cdRenderTheatre(); break;
     case 'vector':   cdRenderVector(); break;
@@ -6831,7 +6914,7 @@ function cdTgInjectStyle() {
     '#cd-content .cd-tg-top .cd-tg-plus svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2.2;}',
     '#cd-content .cd-tg-top .cd-tg-tip{flex:1;font-size:11px;color:#8b8f96;text-align:center;}',
     '#cd-content,#cd-theatre-content .cd-tg-no{font-size:12px;color:#a7adb2;text-align:center;padding:40px 10px;line-height:1.8;}',
-    '.cd-tg-modal{position:fixed;inset:0;background:rgba(20,24,30,.45);z-index:999999;display:none;align-items:center;justify-content:center;padding:20px;}',
+    '.cd-tg-modal{position:fixed;inset:0;background:rgba(20,24,30,.45);z-index:2147483647;display:none;align-items:center;justify-content:center;padding:20px;}',
     '.cd-tg-modal.on{display:flex;}',
     '.cd-tg-modal .cd-tg-box{background:#fbfaf7;border-radius:14px;width:100%;max-width:320px;padding:16px;box-shadow:0 18px 50px rgba(20,24,30,.3);}',
     '.cd-tg-modal .cd-tg-box input[type=text],.cd-tg-modal .cd-tg-box textarea{width:100%;border:1px solid #e3e2dd;border-radius:9px;padding:7px 9px;font-size:12.5px;outline:none;background:#fff;color:#26292e;margin-bottom:10px;resize:vertical;box-sizing:border-box;font-family:inherit;}',
@@ -8973,13 +9056,17 @@ async function cdRenderGraph() {
 
   // ===== 【钱财卡：当前金额 + 变动日志，来自 archive.money / archive.moneyLog】（深色，主角状态下面）=====
   const _moneyVal = (data.archive && String(data.archive.money||'').trim()) || '';
+  // ★ [v2.16] 钱财卡渲染兜底：仅显示纯数字金额；非金额则标记异常（防地名字段漏进来）
+  const _moneyValClean = _moneyVal.split(/[\n，,、 ；;]+/).map(function(_t){ return String(_t).replace(/^【[^】]*】\s*/,'').trim(); })
+    .filter(function(_t){ return /^[+-]?\d/.test(_t); }).join(' ').trim();
+  const _moneyDisp = _moneyValClean || (_moneyVal ? '（记录异常）' : '');
   const _moneyLog = (data.archive && Array.isArray(data.archive.moneyLog)) ? data.archive.moneyLog : [];
   const moneyLogHtml = _moneyLog.length ? _moneyLog.slice(-30).reverse().map(function(ml,mi){ var _mlt=ml&&ml.time||''; var _mld=ml&&ml.desc||''; return '<div class="cd-st-money-log-row">'+( _mlt?'<span class="t">'+escapeHtml(_mlt)+'</span>':'')+'<span class="d">'+escapeHtml(_mld)+'</span></div>'; }).join('') : '';
   var _moneyCount = _moneyLog.length;
   const moneyCard = (_moneyVal || _moneyCount) ? `
     <div class="cd-st-money">
       <div class="cd-st-money-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> 钱财</div>
-      <div class="cd-st-money-cur">${_moneyVal ? escapeHtml(_moneyVal) : '（未记录）'}</div>
+      <div class="cd-st-money-cur">${_moneyDisp ? escapeHtml(_moneyDisp) : '（未记录）'}</div>
       ${moneyLogHtml ? '<details><summary class="cd-st-money-toggle">钱财变动日志（' + _moneyCount + ' 条）</summary><div class="cd-st-money-log">' + moneyLogHtml + '</div></details>' : '<div class="cd-st-money-empty">（暂无钱财变动记录）</div>'}
     </div>` : '';
   // ===== 环境卡（地图下方）=====
@@ -11315,6 +11402,13 @@ async function cdRenderSettings() {
           <div class="cds-row"><span class="cds-lab">层内深度</span><span class="cds-ctrl"><input type="number" id="cd-s-injdepth" value="${s.injectDepth || 1}" min="0" max="999" step="1" class="cd-input" style="width:52px;"></span></div>
         </div>
       </details>
+      <details class="cds-collapse"><summary><i class="fa-regular fa-clock-rotate-left"></i> 总结时注入历史 <span style="color:#98a1ad;font-weight:400;font-size:calc(0.58rem*var(--cd-fs,1));">（角色日记 / 剧情档案）</span></summary>
+        <div>
+          <div class="cds-row"><span class="cds-lab">角色日记</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-sum-inject-diary" ${s.summarizeInjectDiary ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+          <div class="cds-row"><span class="cds-lab">剧情档案</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-sum-inject-archive" ${s.summarizeInjectArchive ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+          <div class="cds-row" style="opacity:.65;"><span class="cds-lab" style="font-size: calc(0.6rem * var(--cd-fs, 1));">默认都不勾（最省 token）：自动/手动总结只发送要总结的楼层，不携带历史日记与剧情档案。勾选哪项，总结时就把它一并发送（更全但更耗 token）。</span><span class="cds-ctrl"></span></div>
+        </div>
+      </details>
     </div>
 
     <div class="cds-card">
@@ -11595,6 +11689,8 @@ async function cdRenderSettings() {
       diaryCharWindow: Math.max(2, parseInt($('#cd-s-diarycharwindow').val(), 10) || 16),
       injectRelation: $('#cd-s-inject-relation').is(':checked'),
       injectArchive: $('#cd-s-inject-archive').is(':checked'),
+      summarizeInjectDiary: $('#cd-s-sum-inject-diary').is(':checked'),
+      summarizeInjectArchive: $('#cd-s-sum-inject-archive').is(':checked'),
       autoHideEnabled: $('#cd-s-autohide').is(':checked'),
       autoHideKeep: parseInt($('#cd-s-autohide-keep').val(), 10) || 5,
       autoHideMode: $('#cd-s-autohide-mode').val() || 'b',
@@ -11919,6 +12015,28 @@ async function cdRenderEgg() {
 
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
+    {
+    version: 'v2.17.0',
+    date: '2026-09-10',
+    items: [
+      '【存档】存档存储迁至 IndexedDB（库 cd-save-db，告别 localStorage 容量瓶颈）；存档改为「快照」结构（还原楼层只留最近可配置条数默认10、剧情/日记/关系等 memory 全量快照）；追加不覆盖语义。',
+      '【存档】界面改「游戏存档盘」游戏感两屏结构（第一屏角色卡墙 + 第二屏纵向槽位盘），UI 统一为玻璃拟态浅灰·紧凑密排，图标全 FontAwesome 无 emoji；新增星标置顶、每角色100格容量条、居中命名弹窗（纯白不透明卡片）。',
+      '【存档】每条消息左下角新增常驻存档小图标（点它直接弹命名窗，可不打开插件面板）；读档前居中确认弹窗；读档后楼层「已总结、不自动总结」根治（清空进度游标）。',
+      '【总结】总结瘦身默认关：总结时默认只发要总结的楼层，不带历史角色日记/剧情档案/世界书（省 token），可在设置「总结时注入历史」开启。',
+      '【存档】导出改 zip 包（内含 data.json）、导入兼容 zip 与老 json。',
+      '删除此前 v2.16.0 中的存档封面快照与锁逻辑（按主人要求移除）。',
+    ],
+  },
+    {
+    version: 'v2.16.0',
+    date: '2026-09-09',
+    items: [
+      '【存档】新增「游戏存档盘」主 tab（顶替原「表」位置）：全局共用存档库、按角色一排存档槽（空格槽点存新档 + 已存槽点读档，读档=新建聊天并恢复到该时刻、原聊天保留）；每个存档可改备注名/删除/悬停操作；支持导出存档包成文件长期保存、从文件导入恢复。表（情报表）移到「更多→工具中心」。全图标为 FontAwesome、无 emoji，贴合现有 UI 范式。',
+      '【存档】数据存本地 localStorage（key=cd-save-library），内容复用全量迁移打包/回填（楼层+回忆），容量满时提示先导出腾空间。',
+      '【修复】未解决事项改「真覆盖」：新值直接替换旧值（AI 判定无待办则清空），废除原先 _overwriteKeepMissed 的"保留遗漏=变相追加"，未解决不再越积越多。',
+      '【治理】钱财追踪 4 层防地名污染：写档提示词「当前金额」加仅限纯数字铁律 + 解析端金额白名单清洗（剥离【时间】/括号/地名句，只留数字±金额）+ 状态界面钱财卡渲染兜底（非金额显示"记录异常"）+ 脏金额随写档案自动收敛。今后 AI 即便把地名写进"当前金额"，钱财卡也只显示钱数不再吐一长串地名。',
+    ],
+  },
     {
     version: 'v2.14.0',
     date: '2026-09-08',
@@ -12381,7 +12499,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.14.0 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.17.0 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
@@ -20551,3 +20669,794 @@ function cdBindOnce(el, fn){
 }
 /* HTML 转义（esc0，供世界详情等用） */
 function esc0(s){ s=String(s==null?'':s); return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'"'); }
+/* ============ [v2.16] 存档功能（游戏存档盘） ============ */
+const CD_SAVE_KEY  = 'cd-save-key';                // 保留（语义名）
+const CD_SAVE_SLOTS = 8;                          // 兼容
+const CD_SAVE_CHAT_KEEP = 10;  // 每份存档只保留最近楼数（用户+AI）默认值
+const CD_SAVE_KEEP_MIN = 1;
+const CD_SAVE_KEEP_MAX = 200;
+/* 读用户自定义的"保留楼层数"（localStorage，默认10，clamp 1~200） */
+function cdSaveKeepFloorsGet() {
+  try { var v = parseInt(localStorage.getItem('cd-save-keep-floors'), 10); if (!isNaN(v) && v >= CD_SAVE_KEEP_MIN && v <= CD_SAVE_KEEP_MAX) return v; } catch (e) {}
+  return CD_SAVE_CHAT_KEEP;
+}
+/* 写用户自定义的"保留楼层数"（存 localStorage，记住直到再改） */
+function cdSaveKeepFloorsSet(n) {
+  try { var v = parseInt(n, 10); if (isNaN(v)) v = CD_SAVE_CHAT_KEEP; v = Math.max(CD_SAVE_KEEP_MIN, Math.min(CD_SAVE_KEEP_MAX, v)); localStorage.setItem('cd-save-keep-floors', String(v)); return v; } catch (e) { return CD_SAVE_CHAT_KEEP; }
+}
+/* ---------- 存档库改存 IndexedDB（大容量，可存20份+图片；参照论坛 cdForumImgDB 模式） ---------- */
+var _cdSaveDbName = 'cd-save-db';
+var _cdSaveStore = 'lib';
+function cdSaveDB() {
+  return new Promise(function (res) {
+    if (!window.indexedDB) return res(null);
+    try {
+      var req = indexedDB.open(_cdSaveDbName, 1);
+      req.onupgradeneeded = function (e) { var db = e.target.result; if (!db.objectStoreNames.contains(_cdSaveStore)) db.createObjectStore(_cdSaveStore, { keyPath: 'k' }); };
+      req.onsuccess = function (e) { res(e.target.result); };
+      req.onerror = function () { res(null); };
+    } catch (e) { res(null); }
+  });
+}
+async function cdSaveGetLib() {
+  try {
+    var db = await cdSaveDB();
+    if (!db) return {};
+    return await new Promise(function (res) {
+      try {
+        var tx = db.transaction(_cdSaveStore, 'readonly');
+        var r = tx.objectStore(_cdSaveStore).get('main');
+        r.onsuccess = function () { res(r.result ? (r.result.v || {}) : {}); };
+        r.onerror = function () { res({}); };
+      } catch (e) { res({}); }
+    });
+  } catch (e) { return {}; }
+}
+async function cdSaveSetLib(lib) {
+  try {
+    var db = await cdSaveDB();
+    if (!db) throw new Error('无法打开存档库');
+    return await new Promise(function (res, rej) {
+      var tx = db.transaction(_cdSaveStore, 'readwrite');
+      tx.objectStore(_cdSaveStore).put({ k: 'main', v: lib || {} });
+      tx.oncomplete = function () { res(true); };
+      tx.onerror = function () { rej(tx.error || new Error('写入失败')); };
+    });
+  } catch (e) {
+    if (typeof cdAddLog === 'function') cdAddLog('error', '[存档] 写库失败: ' + (e && e.message));
+    if (typeof toastr !== 'undefined') toastr.error('[角色日记] 存档库写入失败，请检查存储空间');
+    throw e;
+  }
+}
+// 角色名 → 存档数组
+async function cdSaveGetSlots(charName) {
+  const lib = await cdSaveGetLib();
+  if (!charName) return lib.__anon__ || [];
+  return lib[charName] || [];
+}
+async function cdSaveSetSlots(charName, slots) {
+  const lib = await cdSaveGetLib();
+  if (!charName) charName = '__anon__';
+  lib[charName] = slots;
+  await cdSaveSetLib(lib);
+}
+function _cdSaveNowStr() {
+  const d = new Date();
+  const p = function(n){ return n < 10 ? '0' + n : String(n); };
+  return (d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+function _cdSaveCurChar() {
+  try { const ctx = SillyTavern.getContext();
+        return (ctx && (ctx.characterName || ctx.name2)) ? String(ctx.characterName || ctx.name2) : ''; } catch (e) {}
+  return '';
+}
+function _cdSaveChapterTitle() {
+  // 从剧情档案章回标题提取，用于存档槽显示
+  try {
+    const dRaw = getVariables ? getVariables({ type: 'chat' }) : null;
+  } catch (e) {}
+  return '';
+}
+/* 存档：把当前聊天楼层 + 回忆打包成一条存档，落到指定槽位 */
+async function cdSaveWrite(slotIdx, note, memo) {
+  if (typeof cdAddLog === 'function') cdAddLog('info', '[存档][D] cdSaveWrite 进入', { slotIdx, note, t: Date.now() });
+  try {
+    const _t0 = Date.now();
+    const data = await cdGetData();
+    if (typeof cdAddLog === 'function') cdAddLog('info', '[存档][D] cdGetData 完成', { 耗时Ms: Date.now() - _t0 });
+    const chat = _cdGetChat() || [];
+    const charName = _cdSaveCurChar() || '未命名';
+    const nm = note && String(note).trim() ? String(note).trim() : ('存档 · ' + _cdSaveNowStr());
+    // ★ 快照存档：保留最近 N 楼（N 可自定义，默认10，用户可在命名弹窗里改，存 localStorage 记住）；只保留用户+AI 对话（过滤系统/被隐藏楼层），memory 完整快照
+    const _keepNum = (typeof cdSaveKeepFloorsGet === 'function') ? cdSaveKeepFloorsGet() : CD_SAVE_CHAT_KEEP;
+    const _c10 = [];
+    for (let _k = chat.length - 1; _k >= 0 && _c10.length < _keepNum; _k--) {
+      const _mk = chat[_k];
+      if (!_mk || _mk.is_system === true) continue;
+      if (_mk.extra && _mk.extra.cd_hidden) continue;
+      if (_mk.is_hidden === true) continue;
+      _c10.unshift(_mk);
+    }
+    const rec = {
+      id: 's' + Date.now() + '_' + Math.floor(Math.random() * 9999),
+      note: nm,
+      star: false,
+      memo: (memo && String(memo).trim()) ? String(memo).trim() : '',
+      cover: String(data && data.archive && data.archive.mainline ? String(data.archive.mainline).replace(/\n/g, ' ').slice(0, 40) : ''),
+      charName: charName,
+      time: _cdSaveNowStr(),
+      floorCount: chat.length,
+      keptFloorCount: _c10.length,
+      chat: _c10.map(function (m) {
+        if (!m) return null;
+        return {
+          name: m.name || '', is_user: !!m.is_user, is_system: !!m.is_system,
+          mes: m.mes || '', extra: m.extra || {},
+          swipes: Array.isArray(m.swipes) ? m.swipes : undefined,
+          swipe_id: m.swipe_id != null ? m.swipe_id : undefined
+        };
+      }).filter(Boolean),
+      memory: data
+    };
+    let slots = (await cdSaveGetSlots(charName)).slice();
+    // ★ 追加不覆盖：新存档 push 到末尾，绝不覆盖已有存档
+    slots = slots.filter(function (x) { return !!x; });
+    slots.push(rec);
+    await cdSaveSetSlots(charName, slots);
+    if (typeof cdAddLog === 'function') cdAddLog('info', '[存档] 已存档(追加)', { 角色: charName, 备注: nm, 楼层: rec.floorCount, 总存档数: slots.length, 总耗时Ms: Date.now() - _t0 });
+    if (typeof toastr !== 'undefined') toastr.success('[角色日记] 已存入「' + nm + '」（楼 ' + rec.floorCount + '）');
+    return rec;
+  } catch (e) {
+    if (typeof cdAddLog === 'function') cdAddLog('error', '[存档] 存档失败: ' + (e && e.message));
+    if (typeof toastr !== 'undefined') toastr.error('存档失败: ' + (e && e.message));
+    return null;
+  }
+}
+/* 读档：新建聊天（保留原聊天）+ 写入楼层 + 恢复回忆，参照全量迁移导入 */
+async function cdSaveLoad(rec) {
+  if (!rec) return;
+  try {
+    const ctx = SillyTavern.getContext();
+    if (!ctx) { if (typeof toastr !== 'undefined') toastr.error('无法获取 ST 上下文'); return; }
+    let fn = null;
+    try { const mod = await import('/script.js'); fn = mod && typeof mod.doNewChat === 'function' ? mod.doNewChat : null; } catch (e) {}
+    if (!fn) { if (typeof toastr !== 'undefined') toastr.error('当前 ST 不提供 doNewChat，无法新建聊天'); return; }
+    try { await ctx.saveChat(); } catch (e) {}
+    await fn({ deleteCurrentChat: false });
+    const targetCtx = SillyTavern.getContext();
+    const chat = targetCtx && Array.isArray(targetCtx.chat) ? targetCtx.chat : [];
+    const msgs = Array.isArray(rec.chat) ? rec.chat : [];
+    if (chat.length) chat.splice(0, chat.length);
+    for (const m of msgs) {
+      if (!m) continue;
+      chat.push({
+        name: m.name || '', is_user: !!m.is_user, is_system: !!m.is_system, mes: m.mes || '', extra: m.extra || {},
+        ...(Array.isArray(m.swipes) ? { swipes: m.swipes } : {}),
+        ...(m.swipe_id != null ? { swipe_id: m.swipe_id } : {})
+      });
+    }
+    if (rec.memory && typeof rec.memory === 'object') {
+      if (!targetCtx || !targetCtx.chatMetadata) { if (typeof toastr !== 'undefined') toastr.error('无法写入回忆'); return; }
+      if (!targetCtx.chatMetadata.extensions || typeof targetCtx.chatMetadata.extensions !== 'object') targetCtx.chatMetadata.extensions = {};
+      // ★ 读档后重置总结游标：楼层只剩最近N条，旧 message_id 全失效；清空 processedFloors + lastFloor 复位，避免新聊天楼层显示"已总结"、不自动总结。(不污染存档原数据，深拷贝后再改)
+      var _m0 = rec.memory;
+      var _post = null;
+      try { _post = JSON.parse(JSON.stringify(_m0)); } catch(e) { _post = _m0; }
+      if (_post && Array.isArray(_post.processedFloors)) _post.processedFloors = [];
+      if (_post) _post.lastFloor = -1;
+      try { if (_post) { _post._baselineChatLength = chat.length; _post._lastDiaryChatLength = chat.length; _post._baselineInitialized = true; } } catch(e3){}
+      targetCtx.chatMetadata.extensions[PLUGIN_ID] = _post;
+    }
+    if (typeof targetCtx.saveChat === 'function') { try { await targetCtx.saveChat(); } catch (e) {} }
+    if (typeof targetCtx.saveMetadata === 'function') { try { await targetCtx.saveMetadata(); } catch (e) {} }
+    if (typeof targetCtx.reloadCurrentChat === 'function') { try { await targetCtx.reloadCurrentChat(); } catch (e) {} }
+    if (typeof toastr !== 'undefined') toastr.success('[角色日记] 已读档「' + (rec.note || '') + '」：新建聊天 ' + msgs.length + ' 楼');
+    try { if (typeof cdAddLog==='function') cdAddLog('info', '[存档] 读档完成-诊断', { 楼层数: msgs.length, lastFloor: (rec.memory && rec.memory.lastFloor) != null ? rec.memory.lastFloor : 'undef', pf长: (rec.memory && Array.isArray(rec.memory.processedFloors)) ? rec.memory.processedFloors.length : 0 }); } catch(e2){}
+    if (typeof cdRenderSave === 'function') cdRenderSave();
+    try { if (typeof cdHideDedupeLoading === 'function') cdHideDedupeLoading(); } catch (e2) {}
+  } catch (e) {
+    if (typeof cdAddLog === 'function') cdAddLog('error', '[存档] 读档失败: ' + (e && e.message));
+    if (typeof toastr !== 'undefined') toastr.error('读档失败: ' + (e && e.message));
+    try { if (typeof cdHideDedupeLoading === 'function') cdHideDedupeLoading(); } catch (e2) {}
+  }
+}
+async function cdSaveRename(rec, newNote) {
+  if (!rec) return;
+  rec.note = (newNote && String(newNote).trim()) ? String(newNote).trim() : rec.note;
+  const slots = (await cdSaveGetSlots(rec.charName)).slice();
+  for (var i = 0; i < slots.length; i++) if (slots[i] && slots[i].id === rec.id) slots[i] = rec;
+  await cdSaveSetSlots(rec.charName, slots);
+}
+async function cdSaveDelete(charName, id) {
+  const slots = (await cdSaveGetSlots(charName)).slice();
+  for (var i = 0; i < slots.length; i++) if (slots[i] && slots[i].id === id) slots[i] = null;
+  await cdSaveSetSlots(charName, slots);
+}
+async function cdSaveGetAllGroups() {
+  const lib = await cdSaveGetLib();
+  const out = [];
+  Object.keys(lib).forEach(function (k) {
+    if (k === '__anon__') return;
+    if (Array.isArray(lib[k])) out.push({ charName: k, slots: lib[k] });
+  });
+  out.sort(function (a, b) { return a.charName.localeCompare(b.charName, 'zh'); });
+  return out;
+}
+/* 导出存档包为 json 文件 */
+
+/* ===== 存档导出 zip（STORE 无压缩，纯原生，中文内置 data.json）===== */
+function _cdLE16(b, o) { return b[o] | (b[o+1] << 8); }
+function _cdLE32(b, o) { return (b[o] | (b[o+1] << 8) | (b[o+2] << 16) | (b[o+3] << 24)) >>> 0; }
+function _cdCrc32(bytes) {
+  var table = _cdCrc32.table;
+  if (!table) {
+    table = _cdCrc32.table = new Int32Array(256);
+    for (var n = 0; n < 256; n++) { var c = n; for (var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); table[n] = c; }
+  }
+  var crc = 0 ^ -1;
+  for (var i = 0; i < bytes.length; i++) crc = (crc >>> 8) ^ table[(crc ^ bytes[i]) & 0xFF];
+  return (crc ^ -1) >>> 0;
+}
+function _cdZipHeader(b, sig) { b[0]=0x50; b[1]=0x4b; b[2]=sig[0]; b[3]=sig[1]; }
+function _cdW16(b,o,v){ b[o]=v&0xff; b[o+1]=(v>>>8)&0xff; }
+function _cdW32(b,o,v){ b[o]=v&0xff; b[o+1]=(v>>>8)&0xff; b[o+2]=(v>>>16)&0xff; b[o+3]=(v>>>24)&0xff; }
+function cdMakeSaveZip(lib) {
+  // 生成包含 data.json 的 STORE zip
+  var jsonStr = JSON.stringify(lib || {}, null, 2);
+  var enc = new TextEncoder();
+  var nameBytes = enc.encode('data.json');
+  var dataBytes = enc.encode(jsonStr);
+  var crc = _cdCrc32(dataBytes);
+  var parts = [];
+  // Local file header (30)+name+data
+  var lfh = new Uint8Array(30); _cdZipHeader(lfh, [0x03,0x04]); _cdW16(lfh,4,20); _cdW16(lfh,6,0); _cdW16(lfh,8,0);
+  _cdW16(lfh,10,0); _cdW16(lfh,12,0); _cdW32(lfh,14,crc); _cdW32(lfh,18,dataBytes.length); _cdW32(lfh,22,dataBytes.length);
+  _cdW16(lfh,26,nameBytes.length); _cdW16(lfh,28,0);
+  parts.push(lfh); parts.push(nameBytes); parts.push(dataBytes);
+  var dataOffset = 30 + nameBytes.length;
+  // Central header (46)+name
+  var ce = new Uint8Array(46); _cdZipHeader(ce, [0x01,0x02]); _cdW16(ce,4,20); _cdW16(ce,6,20); _cdW16(ce,8,0); _cdW16(ce,10,0);
+  _cdW16(ce,12,0); _cdW16(ce,14,0); _cdW32(ce,16,crc); _cdW32(ce,20,dataBytes.length); _cdW32(ce,24,dataBytes.length);
+  _cdW16(ce,28,nameBytes.length); _cdW16(ce,30,0); _cdW16(ce,32,0); _cdW16(ce,34,0); _cdW16(ce,36,0); _cdW32(ce,38,0);
+  _cdW32(ce,42,0); // local header offset
+  parts.push(ce); parts.push(nameBytes);
+  var centralSize = 46 + nameBytes.length;
+  var centralOffset = dataOffset + dataBytes.length;
+  // EOCD (22)
+  var eocd = new Uint8Array(22); _cdZipHeader(eocd, [0x05,0x06]); _cdW16(eocd,4,0); _cdW16(eocd,6,0); _cdW16(eocd,8,1); _cdW16(eocd,10,1);
+  _cdW32(eocd,12,centralSize); _cdW32(eocd,16,centralOffset); _cdW16(eocd,20,0);
+  return new Blob(parts.concat([eocd]), { type: 'application/zip' });
+}
+function cdReadSaveZip(bytes, wanted) {
+  // EOCD 定位
+  var L = bytes.length, eocd = -1;
+  for (var i = L - 22; i >= 0 && i > L - 22 - 65536; i--) { if (bytes[i]===0x50&&bytes[i+1]===0x4b&&bytes[i+2]===0x05&&bytes[i+3]===0x06){ eocd=i; break; } }
+  if (eocd < 0) return null;
+  var cdOffset = _cdLE32(bytes, eocd+16);
+  var cdCount = _cdLE16(bytes, eocd+10);
+  var pos = cdOffset, dec = new TextDecoder();
+  for (var n = 0; n < cdCount; n++) {
+    if (bytes[pos]!==0x50||bytes[pos+1]!==0x4b||bytes[pos+2]!==0x01||bytes[pos+3]!==0x02) break;
+    var nameLen = _cdLE16(bytes, pos+28), extraLen = _cdLE16(bytes, pos+30), cmtLen = _cdLE16(bytes, pos+32);
+    var compSize = _cdLE32(bytes, pos+20);
+    var localOff = _cdLE32(bytes, pos+42);
+    var nameStr = dec.decode(bytes.subarray(pos+46, pos+46+nameLen));
+    if (nameStr === wanted) {
+      var lNameLen = _cdLE16(bytes, localOff+26), lExtraLen = _cdLE16(bytes, localOff+28);
+      var dataStart = localOff + 30 + lNameLen + lExtraLen;
+      return dec.decode(bytes.subarray(dataStart, dataStart + compSize));
+    }
+    pos += 46 + nameLen + extraLen + cmtLen;
+  }
+  return null;
+}
+
+async function cdSaveExport() {
+  try {
+    const lib = await cdSaveGetLib();
+    // 导出 zip（内含 data.json）；若 zip 不可用则回退老 json
+    const blob = (typeof cdMakeSaveZip === 'function')
+      ? cdMakeSaveZip(lib)
+      : new Blob([JSON.stringify(lib, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const ext = (typeof cdMakeSaveZip === 'function') ? 'zip' : 'json';
+    a.href = url; a.download = '角色日记_存档库_' + new Date().toISOString().slice(0, 10) + '.' + ext;
+    a.click(); URL.revokeObjectURL(url);
+    if (typeof toastr !== 'undefined') toastr.success('已导出存档包(' + ext + ')');
+  } catch (e) { if (typeof toastr !== 'undefined') toastr.error('导出失败: ' + (e && e.message)); }
+}
+async function cdSaveImportFile(file) {
+  if (!file) return;
+  try {
+    const r = new FileReader();
+    r.onload = async function () {
+      try {
+        const buf = r.result;
+        const bytes = new Uint8Array(buf);
+        // 判断是否为 zip（PK 魔数），兼容 zip 与老 json
+        const isZip = bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b;
+        let text = null;
+        if (isZip) {
+          text = (typeof cdReadSaveZip === 'function') ? cdReadSaveZip(bytes, 'data.json') : null;
+        } else {
+          try { text = new TextDecoder().decode(bytes); } catch (_e) { text = null; }
+        }
+        const o = JSON.parse(text);
+        if (typeof o !== 'object') throw new Error('格式错误');
+        await cdSaveSetLib(o);
+        if (typeof toastr !== 'undefined') toastr.success('存档库已导入');
+        cdRenderSave();
+      } catch (e) { if (typeof toastr !== 'undefined') toastr.error('导入失败: ' + (e && e.message)); }
+    };
+    r.readAsArrayBuffer(file);
+  } catch (e) { if (typeof toastr !== 'undefined') toastr.error('导入失败: ' + (e && e.message)); }
+}
+/* 存档界面渲染：游戏存档盘（按角色一排槽位，空格槽+已存槽） */
+
+/* ============ [v2.16] 存档界面（游戏存档盘 · 单一大 Grid 格子墙） ============ */
+/* 主渲染：全角色混同一个 Grid 存档盘；空位格子 + 已存格子并排 */
+
+/* ============ 存档界面（玻璃浅灰·紧凑密排：角色卡墙） ============ */
+/* ===== 角色感言：整角色留言（存 lib.__groupMemo = {角色名:感言}）===== */
+async function cdSaveGroupMemoGet(name) {
+  try { const lib = await cdSaveGetLib(); if (lib && lib.__groupMemo && lib.__groupMemo[name]) return String(lib.__groupMemo[name]); } catch (e) {}
+  return '';
+}
+async function cdSaveGroupMemoSet(name, text) {
+  try {
+    const lib = await cdSaveGetLib();
+    if (!lib.__groupMemo || typeof lib.__groupMemo !== 'object') lib.__groupMemo = {};
+    lib.__groupMemo[name] = (text && String(text).trim()) ? String(text).trim() : '';
+    await cdSaveSetLib(lib);
+  } catch (e) { if (typeof cdAddLog === 'function') cdAddLog('error', '[存档] 角色感言保存失败: ' + (e && e.message)); }
+}
+function cdSaveGroupMemoSave() {
+  const ta = document.getElementById('cd-gs-groupmemo-input');
+  if (!ta) return;
+  const cur = window.__cdCurCharForMemo || '';
+  if (!cur) return;
+  cdSaveGroupMemoSet(cur, ta.value).then(function () {
+    if (typeof toastr !== 'undefined') toastr.success('角色感言已保存');
+  });
+}
+if (typeof window !== 'undefined') { window.cdSaveGroupMemoGet = cdSaveGroupMemoGet; window.cdSaveGroupMemoSet = cdSaveGroupMemoSet; window.cdSaveGroupMemoSave = cdSaveGroupMemoSave; }
+
+async function cdRenderSave() {
+  try {
+    const groups = await cdSaveGetAllGroups();
+    const curChar = _cdSaveCurChar();
+    let html = '';
+    html += '<input type="file" id="cd-save-import" accept="application/json,.json" style="display:none;" onchange="cdSaveImportFile(this.files&&this.files[0]);this.value=\'\';">';
+    // 批5：存档容量显示
+    var _capUsed=0, _capPer=100;
+    try { groups.forEach(function (g){ _capUsed += (Array.isArray(g.slots) ? g.slots : []).filter(function (x){ return !!x; }).length; }); } catch(e) {}
+    var _capTotal = groups.length ? (groups.length * _capPer) : _capPer;
+    var _capPct = _capTotal > 0 ? Math.min(100, Math.round(_capUsed/_capTotal*100)) : 0;
+    html += '<div class="cd-gs-cap"><span class="cd-gs-cap-lbl"><i class="fa-regular fa-floppy-disk"></i> 存档容量</span><span class="cd-gs-cap-num">已用 '+_capUsed+' 格 / 可存 '+_capTotal+' 格</span><span class="cd-gs-cap-track"><span class="cd-gs-cap-fill" style="width:'+_capPct+'%;"></span></span></div>';
+    // 角色卡墙（紧凑密排）
+    html += '<div class="cd-gs-grid">';
+    if (!groups.length) {
+      html += '<div class="cd-gs-empty"><i class="fa-regular fa-floppy-disk"></i><span>还没有存档</span>'
+        + '<button class="cd-gs-new" onclick="cdSaveNewCurrent()"><i class="fa-regular fa-plus"></i> 存一个新档</button></div>';
+    } else {
+      var _hasFilled = false;
+      groups.forEach(function (g) {
+        var filled = (Array.isArray(g.slots) ? g.slots : []).filter(function (x) { return !!x; }).length;
+        if (filled) _hasFilled = true;
+        const isCur = (g.charName === curChar);
+        html += '<div class="cd-gs-card" onclick="cdSaveGoSlots(\'' + String(g.charName || '').replace(/'/g, "\'") + '\')">'
+          + '<div class="cd-gs-row"><i class="fa-regular fa-user cd-gs-ava"></i>'
+          + '<span class="cd-gs-nm">' + escapeHtml(g.charName || '未命名') + (isCur ? ' <em class="cd-gs-cur">当前</em>' : '') + '</span>'
+          + '<span class="cd-gs-ld">读档</span></div>'
+          + '<div class="cd-gs-chips">'
+          + (filled ? '<span class="cd-gs-chip cd-gs-chip-hl">' + filled + ' 档</span>' : '<span class="cd-gs-chip cd-gs-chip-empty">0 档</span>')
+          + (isCur ? '<span class="cd-gs-chip cd-gs-chip-now">进行中</span>' : '')
+          + '</div></div>';
+      });
+      // 末尾补 2 个空白矮档位，让"还能存"可见
+      html += '<div class="cd-gs-card cd-gs-blank" onclick="cdSaveNewCurrent()"><span class="cd-gs-plus">＋</span><span class="cd-gs-tx">新档</span></div>';
+      html += '<div class="cd-gs-card cd-gs-blank" onclick="cdSaveNewCurrent()"><span class="cd-gs-plus">＋</span><span class="cd-gs-tx">新档</span></div>';
+    }
+    html += '</div>';
+    // 底部工具条
+    html += '<div class="cd-gs-footbar">'
+      + '<button class="cd-gs-fbtn cd-gs-fbtn-primary" onclick="cdSaveNewCurrent()"><i class="fa-regular fa-plus"></i> 新档</button>'
+      + '<button class="cd-gs-fbtn" onclick="cdSaveExport()"><i class="fa-regular fa-download"></i> 导出</button>'
+      + '<button class="cd-gs-fbtn" onclick="document.getElementById(\'cd-save-import\').click()"><i class="fa-regular fa-upload"></i> 导入</button>'
+      + '</div>';
+    document.getElementById('cd-content').innerHTML = html;
+    // 注入玻璃浅灰样式
+    if (!document.getElementById('cd-gs-style')) {
+      const st = document.createElement('style'); st.id = 'cd-gs-style';
+      st.textContent = [
+        '#cd-content .cd-gs-head{display:flex;justify-content:space-between;align-items:baseline;margin:2px 2px 12px;}',
+        '#cd-content .cd-gs-tt{font-size:19px;font-weight:700;color:#2c3540;}',
+        '#cd-content .cd-gs-stat{font-size:12px;color:#98a1ad;}',
+        '#cd-content .cd-gs-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:10px;}',
+        '#cd-content .cd-gs-card{position:relative;overflow:hidden;background:rgba(255,255,255,.62);border:1px solid rgba(255,255,255,.75);border-radius:12px;padding:12px 12px 10px;cursor:pointer;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 4px 16px rgba(110,125,145,.12);transition:box-shadow .15s,transform .15s;}',
+        '#cd-content .cd-gs-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(110,125,145,.22);border-color:rgba(185,196,207,.9);}',
+        '#cd-content .cd-gs-row{display:flex;align-items:center;gap:7px;margin-bottom:8px;}',
+        '#cd-content .cd-gs-ava{width:26px;height:26px;border-radius:8px;font-size:13px;color:#fff;display:flex;align-items:center;justify-content:center;background:linear-gradient(150deg,#8d9bab,#6e7e90);flex-shrink:0;font-style:normal;}',
+        '#cd-content .cd-gs-nm{font-weight:700;font-size:12.5px;color:#2c3540;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
+        '#cd-content .cd-gs-nm em{font-style:normal;font-size:9px;color:#7f8da0;background:rgba(127,141,160,.14);border-radius:10px;padding:1px 6px;margin-left:4px;}',
+        '#cd-content .cd-gs-ld{font-size:10.5px;color:#8393a6;flex-shrink:0;}',
+        '#cd-content .cd-gs-chips{display:flex;gap:4px;flex-wrap:wrap;}',
+        '#cd-content .cd-gs-chip{border:1px solid rgba(185,196,207,.5);background:rgba(255,255,255,.5);border-radius:6px;padding:2px 7px;font-size:10px;color:#5b6a78;}',
+        '#cd-content .cd-gs-chip-hl{background:linear-gradient(150deg,#8797aa,#6b7b8e);color:#fff;border:none;font-weight:600;}',
+        '#cd-content .cd-gs-chip-empty{border-style:dashed;color:#a8b2bc;background:transparent;}',
+        '#cd-content .cd-gs-chip-now{border-color:#c8d3de;color:#43505f;background:rgba(200,211,222,.3);}',
+        '#cd-content .cd-gs-card.cd-gs-blank{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:66px;border-style:dashed;color:#a8b2bc;background:rgba(255,255,255,.3);}',
+        '#cd-content .cd-gs-blank .cd-gs-plus{font-size:20px;color:#98a4b0;}',
+        '#cd-content .cd-gs-blank .cd-gs-tx{font-size:9.5px;letter-spacing:.12em;margin-top:2px;}',
+        '#cd-content .cd-gs-empty{display:flex;flex-direction:column;align-items:center;gap:10px;padding:30px 0;color:#98a1ad;grid-column:1/-1;}',
+        '#cd-content .cd-gs-footbar{display:flex;gap:8px;justify-content:center;margin-top:16px;border-top:1px solid rgba(130,145,162,.16);padding-top:14px;}',
+        '#cd-content .cd-gs-fbtn{border:1px solid rgba(185,196,207,.6);background:rgba(255,255,255,.6);color:#3b4650;padding:7px 20px;border-radius:11px;cursor:pointer;font-size:12px;backdrop-filter:blur(8px);display:inline-flex;align-items:center;gap:5px;font-family:inherit;}',
+        '#cd-content .cd-gs-fbtn:hover{background:rgba(255,255,255,.92);color:#2c3540;box-shadow:0 5px 16px rgba(110,125,145,.16);}',
+        '#cd-content .cd-gs-fbtn-primary{background:linear-gradient(150deg,#8d9bab,#6e7e90);color:#fff;border:none;}'
+      ].join('\n');
+      (document.head || document.documentElement).appendChild(st);
+    }
+  } catch (e) {
+    document.getElementById('cd-content').innerHTML = '<div class="cd-empty"><p>存档界面渲染失败</p><p class="cd-empty-sub">' + escapeHtml(e && e.message) + '</p></div>';
+  }
+}
+/* 第一屏：为当前角色直接存一个新档 */
+function cdSaveNewCurrent() {
+  if (typeof cdAddLog === 'function') cdAddLog('info', '[存档][消息图标] cdSaveNewCurrent 进入');
+  const curChar = _cdSaveCurChar();
+  if (!curChar) {
+    if (typeof toastr !== 'undefined') toastr.warning('[角色日记] 当前不在某个角色的聊天中，无法存档');
+    return;
+  }
+  cdSaveDial('存一个新档', '为这份存档起个备注名（角色：' + curChar + '），留空用默认', '', '', function (nm, memo) {
+    if (nm === null) return;   // 取消
+    cdSaveWrite(0, nm, memo).then(function () { try { cdRenderSave(); } catch (e) {} }).catch(function (e) { if (typeof cdAddLog === 'function') cdAddLog('error', '[存档][D] 保存失败: ' + (e && e.stack || e && e.message)); });
+  });
+}
+/* 进入某角色存档盘（第二屏） */
+async function cdSaveGoSlots(name) {
+  try {
+    const _sl = await cdSaveGetSlots(name);
+    const slots = (_sl || []).filter(function (x) { return !!x; }).sort(function (a, b) { return ((b && b.star) ? 1 : 0) - ((a && a.star) ? 1 : 0); });
+    const filled = slots.length;
+    let html = '';
+    html += '<div class="cd-save-back" onclick="cdRenderSave()"><i class="fa-regular fa-chevron-left"></i> 返回角色列表</div>';
+    html += '<div class="cd-save-slot-head">'
+      + '<div class="cd-save-slot-ava"><i class="fa-regular fa-user"></i></div>'
+      + '<div class="cd-save-slot-headinfo">'
+      + '<div class="cd-save-slot-hn">' + escapeHtml(name) + '</div>'
+      + '<div class="cd-save-slot-hs">已存 ' + filled + ' / 100 格</div>'
+      + '</div>'
+      + '<button class="cd-save-newbtn" onclick="cdSaveNewIn(\'' + String(name).replace(/'/g, "\'") + '\')"><i class="fa-regular fa-plus"></i> 存一个新档</button>'
+      + '</div>';
+    // 批5：单角色容量条
+    var _c2w = Math.min(100, Math.round(filled / 100 * 100));
+    html += '<div class="cd-save-cap2"><span class="cd-save-cap2-lbl"><i class="fa-regular fa-floppy-disk"></i> 存档格</span><span class="cd-save-cap2-num">' + filled + ' / 100 格</span><span class="cd-save-cap2-track"><span class="cd-save-cap2-fill" style="width:' + _c2w + '%;"></span></span></div>';
+
+    html += '<div class="cd-save-slot-grid">';
+    slots.forEach(function (rec, i) {
+      if (rec) {
+        const nm = escapeHtml(rec.note || '未命名');
+        const floors = rec.floorCount != null ? ('<span class="floors">楼 ' + rec.floorCount + '</span>') : '';
+        const tm = rec.time ? ('<span class="time">' + escapeHtml(rec.time) + '</span>') : '';
+        const id = String(rec.id || '').replace(/'/g, "\\'");
+        const cnA = String(name || '').replace(/'/g, "\\'");
+        html += '<div class="cd-save-slot filled" onclick="cdSaveLoadById(\'' + id + '\',\'' + cnA + '\')">'
+          + '<div class="cd-save-slot-thumb" onclick="event.stopPropagation();cdSaveShowMemo(\'' + id + '\',\'' + cnA + '\')" title="感言"><i class="fa-regular fa-floppy-disk"></i></div>'
+          + '<div class="info"><div class="nm">' + nm + '</div>'
+          + '<div class="meta">' + floors + tm + '</div></div>'
+          + '<div class="ops">'
+
+          + '<button class="ob' + (rec.star ? ' star-on' : '') + '" title="' + (rec.star ? '取消置顶' : '置顶') + '" onclick="event.stopPropagation();cdSaveToggleStar(\'' + id + '\',\'' + cnA + '\')"><i class="' + (rec.star ? 'fa-solid fa-star' : 'fa-regular fa-star') + '"></i></button>'
+          + '<button class="ob" title="改名" onclick="event.stopPropagation();cdSaveAskRename(\'' + id + '\',\'' + cnA + '\')"><i class="fa-regular fa-pen"></i></button>'
+          + '<button class="ob danger" title="删除" onclick="event.stopPropagation();cdSaveDelete(\'' + cnA + '\',\'' + id + '\');cdSaveGoSlots(\'' + cnA + '\');"><i class="fa-regular fa-trash-can"></i></button>'
+          + '</div></div>';
+      }
+    });
+    html += '<div class="cd-save-slot empty" onclick="cdSaveNewIn(\'' + String(name).replace(/'/g, "\'") + '\')">'
+      + '<i class="fa-regular fa-plus"></i> 空白存档槽（点此存一个新档）</div>';
+    html += '</div>';
+
+    html += '<div class="cd-save-hint"><i class="fa-regular fa-circle-info"></i> 点空格槽＝存档到该位 · 点已存槽＝读档并进入该时刻（新建聊天，原聊天保留）<br>悬停一份存档可：改名 / 删除</div>';
+    // 底部：角色感言折叠（整个角色的留言）
+    var _gMemo = '';
+    try { _gMemo = await cdSaveGroupMemoGet(name); window.__cdCurCharForMemo = name; } catch (e) {}
+    html += '<details style="margin-top:12px;border:1px solid #cbd4dd;border-radius:10px;background:rgba(255,255,255,.62);padding:8px 12px;"><summary style="cursor:pointer;font-size:12.5px;color:#2c3540;font-weight:600;"><i class="fa-regular fa-note-sticky" style="color:#6e7e90;margin-right:6px;"></i>角色感言<span style="font-size:11px;color:#98a1ad;font-weight:400;margin-left:6px;">' + escapeHtml(name) + '</span></summary>'
+      + '<div style="margin-top:8px;"><textarea id="cd-gs-groupmemo-input" rows="3" maxlength="500" placeholder="写一段话作为这个角色的备注…" style="width:100%;border:1px solid #cbd4dd;border-radius:8px;padding:8px 10px;font-size:calc(0.76rem*var(--cd-fs,1));background:#fff;color:#2c3540;outline:none;box-sizing:border-box;resize:vertical;font-family:inherit;">' + String(_gMemo || '').replace(/</g, '&lt;') + '</textarea>'
+      + '<div style="display:flex;justify-content:flex-end;margin-top:8px;"><button onclick="cdSaveGroupMemoSave()" style="border:1px solid #cbd4dd;background:rgba(255,255,255,.62);color:#2c3540;padding:7px 20px;border-radius:11px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:5px;font-family:inherit;"><i class="fa-regular fa-floppy-disk"></i> 保存感言</button></div></div></details>';
+    document.getElementById('cd-content').innerHTML = html;
+  } catch (e) {
+    document.getElementById('cd-content').innerHTML = '<div class="cd-empty"><p>存档盘渲染失败</p><p class="cd-empty-sub">' + escapeHtml(e && e.message) + '</p></div>';
+  }
+}
+
+/* 在该角色存一个新档（空格槽 / 顶部按钮） */
+function cdSaveNewIn(charName) {
+  cdSaveDial('存一个新档', '为这份存档起个备注名（角色：' + (charName || '') + '），留空用默认', '', '', function (nm, memo) {
+    if (nm === null) return;
+    cdSaveWrite(0, nm, memo).then(function () { try { cdSaveGoSlots(charName); } catch (e) {} }).catch(function (e) { if (typeof cdAddLog === 'function') cdAddLog('error', '[存档][D] 保存失败: ' + (e && e.stack || e && e.message)); });
+  });
+}
+
+async function cdSaveFind(charName, id) {
+  const slots = (await cdSaveGetSlots(charName)) || [];
+  for (var i = 0; i < slots.length; i++) if (slots[i] && slots[i].id === id) return slots[i];
+  return null;
+}
+function cdSaveNewAt(charName, i) {
+  cdSaveDial('存一个新档', '为这份存档起个名字', '', '', function (nm, memo) {
+    if (nm === null) return;
+    cdSaveWrite(i, nm, memo).then(function () { cdRenderSave(); }).catch(function (e) { if (typeof cdAddLog === 'function') cdAddLog('error', '[存档][D] 保存失败: ' + (e && e.stack || e && e.message)); });
+  });
+}
+async function cdSaveLoadById(id, charName) {
+  const rec = await cdSaveFind(charName, id);
+  if (rec) { cdSaveConfirmLoad(rec); }
+}
+
+/* 批6：读档确认弹窗（居中玻璃浅灰，替代 window.confirm）+ 确认回调 */
+function cdSaveConfirmLoad(rec) {
+  if (!rec) return;
+  try {
+    var content = document.getElementById('cd-content');
+    if (!content) return;
+    var ov = document.getElementById('cd-save-confirm-dial');
+    if (!ov) { ov = document.createElement('div'); ov.id = 'cd-save-confirm-dial'; content.appendChild(ov); }
+    ov.style.cssText = 'position:fixed;left:0;top:0;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;z-index:2147483646;background:rgba(205,213,222,.45);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);';
+    ov.innerHTML =
+      '<div style="width:100%;max-width:360px;background:#fff;border:1px solid #dfe4ea;border-radius:16px;padding:26px 20px 18px;box-shadow:0 18px 50px rgba(110,125,145,.25);box-sizing:border-box;text-align:center;">'
+      + '<div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(150deg,#8d9bab,#6e7e90);color:#fff;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:17px;"><i class="fa-solid fa-rotate-left"></i></div>'
+      + '<div style="font-weight:700;font-size:calc(0.86rem*var(--cd-fs,1));color:#2c3540;margin-bottom:8px;">读档确认</div>'
+      + '<div style="font-size:calc(0.72rem*var(--cd-fs,1));color:#5b6a78;line-height:1.6;margin-bottom:18px;">将回到「' + escapeHtml(String(rec.note || '未命名')) + '」的这一刻。<br>新建一个聊天并恢复当时状态，原聊天保留。</div>'
+      + '<div style="display:flex;gap:8px;justify-content:center;">'
+      + '<button style="border:1px solid #cbd4dd;background:rgba(255,255,255,.6);color:#3b4650;border-radius:8px;padding:7px 16px;font-size:calc(0.72rem*var(--cd-fs,1));cursor:pointer;font-family:inherit;" onclick="cdSaveConfirmDialDone(0)">取消</button>'
+      + '<button style="border:none;background:linear-gradient(150deg,#8d9bab,#6e7e90);color:#fff;border-radius:8px;padding:7px 18px;font-size:calc(0.72rem*var(--cd-fs,1));font-weight:600;cursor:pointer;font-family:inherit;" onclick="cdSaveConfirmDialDone(1)"><i class="fa-solid fa-rotate-left"></i> 确认读档</button>'
+      + '</div></div>';
+    ov.style.display = 'flex';
+    window._cdLoadConfirmRec = rec;
+  } catch (e) { if (typeof cdAddLog === 'function') cdAddLog('error', '[存档] 读档确认弹窗打开失败: ' + (e && e.message)); }
+}
+function cdSaveConfirmDialDone(ok) {
+  var ov = null; try { ov = document.getElementById('cd-save-confirm-dial'); if (ov) ov.style.display = 'none'; } catch (e) {}
+  var rec = window._cdLoadConfirmRec; window._cdLoadConfirmRec = null;
+  if (ok && rec && typeof cdSaveLoad === 'function') cdSaveLoad(rec);
+}
+
+async function cdSaveAskRename(id, charName) {
+  const rec = await cdSaveFind(charName, id);
+  if (!rec) return;
+  cdSaveDial('修改备注名', '改这份存档的名字', rec.note || '', '', async function (nm, memo) {
+    if (nm === null) return;
+    if (!String(nm || '').trim()) { if (typeof toastr !== 'undefined') toastr.warning('[角色日记] 名称不能为空'); return; }
+    await cdSaveRename(rec, nm); cdRenderSave();
+    if (typeof toastr !== 'undefined') toastr.success('[角色日记] 已改名');
+  });
+}
+/* ---- 存档界面 CSS（照 Html2：两屏 角色卡墙 + 存档盘一列槽位） ---- */
+
+(function () {
+  if (document.getElementById('cd-save-style')) return;
+  const st = document.createElement('style'); st.id = 'cd-save-style';
+  st.textContent = [
+    '#cd-content .cd-save-topbar{display:flex;align-items:center;gap:8px;padding:6px 2px 10px;}',
+    '#cd-content .cd-save-top-title{font-size:calc(0.9rem*var(--cd-fs,1));font-weight:700;color:#5a4a3a;}',
+    '#cd-content .cd-save-top-title i{color:#6e7e90;}',
+    '#cd-content .cd-save-top-ops{margin-left:auto;display:flex;gap:6px;}',
+    '#cd-content .cd-save-top-new{border:none;background:#6e7e90;color:#fff;border-radius:8px;padding:7px 12px;cursor:pointer;font-size:calc(0.7rem*var(--cd-fs,1));font-weight:600;display:inline-flex;align-items:center;gap:5px;font-family:inherit;}',
+    '#cd-content .cd-save-top-new:hover{background:#7a5c31;}',
+    '#cd-content .cd-save-top-btn{border:1px solid #cbd4dd;background:rgba(255,255,255,.62);color:#5a4a3a;border-radius:8px;width:28px;height:28px;cursor:pointer;font-size:calc(0.66rem*var(--cd-fs,1));display:flex;align-items:center;justify-content:center;}',
+    '#cd-content .cd-save-currentbar{display:flex;align-items:center;gap:8px;border:1px solid #cbd4dd;border-radius:10px;background:rgba(255,255,255,.5);padding:8px 12px;margin-bottom:12px;}',
+    '#cd-content .cd-save-current-lbl{font-size:calc(0.7rem*var(--cd-fs,1));color:#98a1ad;}',
+    '#cd-content .cd-save-current-lbl b{color:#5a4a3a;}',
+    '#cd-content .cd-save-current-act{margin-left:auto;font-size:calc(0.68rem*var(--cd-fs,1));color:#6e7e90;background:#f1eadb;border:1px solid #cbd4dd;border-radius:8px;padding:5px 10px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-weight:600;}',
+    '#cd-content .cd-save-current-act:hover{background:#e9dfc8;}',
+    '#cd-content .cd-save-top-btn:hover{border-color:#6e7e90;color:#6e7e90;}',
+    /* 第一屏 */
+    '#cd-content .cd-save-pick-title{font-size:calc(0.9rem*var(--cd-fs,1));font-weight:700;margin:6px 2px 12px;display:flex;align-items:center;gap:8px;}',
+    '#cd-content .cd-save-pick-sub{font-size:calc(0.66rem*var(--cd-fs,1));color:#98a1ad;font-weight:400;}',
+    '#cd-content .cd-save-char-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}',
+    '#cd-content .cd-save-char{border:1px solid #cbd4dd;border-radius:12px;background:rgba(255,255,255,.62);padding:14px;cursor:pointer;transition:all .15s;overflow:hidden;display:flex;flex-direction:column;gap:4px;}',
+    '#cd-content .cd-save-char:hover{transform:translateY(-2px);box-shadow:0 4px 14px rgba(70,55,30,.1);border-color:#6e7e90;}',
+    '#cd-content .cd-save-char-ava{width:40px;height:40px;border-radius:10px;background:#f1eadb;color:#6e7e90;display:flex;align-items:center;justify-content:center;font-size:calc(1rem*var(--cd-fs,1));margin-bottom:6px;}',
+    '#cd-content .cd-save-char-name{font-weight:700;font-size:calc(0.82rem*var(--cd-fs,1));}',
+    '#cd-content .cd-save-char-cur{font-size:calc(0.56rem*var(--cd-fs,1));color:#fff;background:#5b7a4e;border-radius:10px;padding:1px 6px;}',
+    '#cd-content .cd-save-char-sub{font-size:calc(0.64rem*var(--cd-fs,1));color:#98a1ad;margin-top:2px;}',
+    '#cd-content .cd-save-char-badge{margin-top:8px;font-size:calc(0.62rem*var(--cd-fs,1));color:#6e7e90;background:#f1eadb;padding:2px 8px;border-radius:20px;align-self:flex-start;}',
+    '#cd-content .cd-save-char-play{margin-left:auto;color:#98a1ad;font-size:calc(0.7rem*var(--cd-fs,1));display:flex;align-items:center;gap:4px;}',
+    '#cd-content .cd-save-char.has-save{border-style:solid;}',
+    '#cd-content .cd-save-char.no-save{opacity:.75;border-style:dashed;}',
+    '#cd-content .cd-save-empty-wrap{grid-column:1/-1;text-align:center;color:#98a1ad;padding:26px 0;border:1px dashed #cbd4dd;border-radius:12px;}',
+    '#cd-content .cd-save-empty i{font-size:calc(1.5rem*var(--cd-fs,1));opacity:.4;}',
+    '#cd-content .cd-save-empty-sub{font-size:calc(0.62rem*var(--cd-fs,1));opacity:.8;margin-top:4px;}',
+    /* 第二屏 */
+    '#cd-content .cd-save-back{display:inline-flex;align-items:center;gap:5px;cursor:pointer;color:#98a1ad;font-size:calc(0.72rem*var(--cd-fs,1));padding:4px 8px;border-radius:8px;margin-bottom:10px;background:rgba(255,255,255,.62);border:1px solid #cbd4dd;}',
+    '#cd-content .cd-save-back:hover{color:#6e7e90;border-color:#6e7e90;}',
+    '#cd-content .cd-save-slot-head{display:flex;align-items:center;gap:10px;margin-bottom:12px;}',
+    '#cd-content .cd-save-slot-ava{width:38px;height:38px;border-radius:10px;background:#f1eadb;color:#6e7e90;display:flex;align-items:center;justify-content:center;font-size:calc(1rem*var(--cd-fs,1));}',
+    '#cd-content .cd-save-slot-hn{font-weight:700;font-size:calc(0.9rem*var(--cd-fs,1));}',
+    '#cd-content .cd-save-slot-hs{font-size:calc(0.66rem*var(--cd-fs,1));color:#98a1ad;}',
+    '#cd-content .cd-save-newbtn{margin-left:auto;background:#6e7e90;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:calc(0.74rem*var(--cd-fs,1));cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-family:inherit;}',
+    '#cd-content .cd-save-slot-grid{display:flex;flex-direction:column;gap:10px;}',
+    '#cd-content .cd-save-slot{border:1px solid rgba(185,196,207,.6);border-radius:12px;background:rgba(255,255,255,.62);padding:13px 14px;cursor:pointer;transition:all .15s;position:relative;overflow:hidden;display:flex;align-items:center;gap:13px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 4px 16px rgba(110,125,145,.12);}',
+    '#cd-content .cd-save-slot:hover{transform:translateY(-2px);box-shadow:0 4px 14px rgba(70,55,30,.1);border-color:#6e7e90;}',
+    '#cd-content .cd-save-slot.empty{border-style:dashed;justify-content:center;min-height:64px;color:#98a1ad;font-size:calc(0.76rem*var(--cd-fs,1));gap:8px;opacity:.8;}',
+    '#cd-content .cd-save-slot.empty:hover{opacity:1;border-color:#6e7e90;color:#6e7e90;}',
+        '#cd-content .cd-save-slot-thumb{width:56px;height:44px;border-radius:8px;background:#f1eadb;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#6e7e90;font-size:calc(1rem*var(--cd-fs,1));}',
+    '#cd-content .cd-save-slot .info{flex:1;min-width:0;}',
+    '#cd-content .cd-save-slot .nm{font-weight:700;font-size:calc(0.8rem*var(--cd-fs,1));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
+    '#cd-content .cd-save-slot .meta{display:flex;align-items:center;gap:10px;margin-top:3px;font-size:calc(0.64rem*var(--cd-fs,1));color:#98a1ad;flex-wrap:wrap;}',
+    '#cd-content .cd-save-slot .floors{color:#98a1ad;}',
+    '#cd-content .cd-save-slot .time{color:#98a1ad;opacity:.8;}',
+    '#cd-content .cd-save-slot .ops{display:flex;gap:5px;flex-shrink:0;opacity:0;transition:opacity .15s;}',
+    '#cd-content .cd-save-slot:hover .ops{opacity:1;}',
+    '#cd-content .cd-save-slot .ops .ob{border:1px solid #cbd4dd;background:rgba(255,255,255,.62);color:#3d3527;width:26px;height:26px;border-radius:7px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:calc(0.66rem*var(--cd-fs,1));}',
+    '#cd-content .cd-save-slot .ops .ob.danger{color:#b0473a;border-color:#e3c9c2;}',
+    '#cd-content .cd-save-slot .ops .ob.star-on{color:#e8a33d;border-color:#f0d9a8;}',
+    '#cd-content .cd-save-hint{font-size:calc(0.62rem*var(--cd-fs,1));color:#98a1ad;opacity:.85;margin-top:16px;text-align:center;line-height:1.6;}',
+    /* 底部工具条 */
+    '#cd-content .cd-save-footbar{display:flex;align-items:center;gap:8px;border:1px solid #cbd4dd;border-radius:10px;background:rgba(255,255,255,.5);padding:10px 12px;margin-top:14px;}',
+    '#cd-content .cd-save-foot-new{border:none;background:#6e7e90;color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:calc(0.74rem*var(--cd-fs,1));font-weight:600;display:inline-flex;align-items:center;gap:6px;font-family:inherit;}',
+    '#cd-content .cd-save-foot-new:hover{background:#7a5c31;}',
+    '#cd-content .cd-save-foot-btn{border:1px solid #cbd4dd;background:rgba(255,255,255,.62);color:#5a4a3a;border-radius:8px;padding:8px 12px;cursor:pointer;font-size:calc(0.7rem*var(--cd-fs,1));display:inline-flex;align-items:center;gap:5px;font-family:inherit;}',
+    '#cd-content .cd-save-foot-btn:hover{border-color:#6e7e90;color:#6e7e90;}',
+    '#cd-content .cd-save-hint i{font-style:normal;}',
+    '#cd-content .cd-gs-cap{display:flex;align-items:center;gap:8px;border:1px solid rgba(185,196,207,.5);background:rgba(255,255,255,.55);border-radius:10px;padding:8px 12px;margin-bottom:12px;backdrop-filter:blur(8px);}',
+    '#cd-content .cd-gs-cap-lbl{font-size:11px;color:#5b6a78;font-weight:600;white-space:nowrap;display:inline-flex;align-items:center;gap:5px;}',
+    '#cd-content .cd-gs-cap-num{font-size:10.5px;color:#8393a6;white-space:nowrap;margin-left:auto;}',
+    '#cd-content .cd-gs-cap-track{flex:1;height:5px;background:rgba(185,196,207,.35);border-radius:5px;overflow:hidden;min-width:40px;}',
+    '#cd-content .cd-gs-cap-fill{display:block;height:100%;background:linear-gradient(90deg,#8d9bab,#6e7e90);border-radius:5px;transition:width .3s;}',
+    '#cd-content .cd-save-cap2{display:flex;align-items:center;gap:8px;border:1px solid rgba(185,196,207,.5);background:rgba(255,255,255,.55);border-radius:10px;padding:8px 12px;margin:2px 0 12px;backdrop-filter:blur(8px);}',
+    '#cd-content .cd-save-cap2-lbl{font-size:11px;color:#5b6a78;font-weight:600;white-space:nowrap;display:inline-flex;align-items:center;gap:5px;}',
+    '#cd-content .cd-save-cap2-num{font-size:10.5px;color:#8393a6;white-space:nowrap;margin-left:auto;}',
+    '#cd-content .cd-save-cap2-track{flex:1;height:5px;background:rgba(185,196,207,.35);border-radius:5px;overflow:hidden;min-width:40px;}',
+    '#cd-content .cd-save-cap2-fill{display:block;height:100%;background:linear-gradient(90deg,#8d9bab,#6e7e90);border-radius:5px;transition:width .3s;}',
+    '#cd-content .cd-save-memo-on{border-color:#6e7e90;color:#6e7e90;}',
+  ].join('\n');
+  document.head.appendChild(st);
+})();
+
+/* ===== 感言界面：存档条目左侧深色图标点入；显示备注+感言，右下角铅笔编辑 ===== */
+async function cdSaveShowMemo(id, charName) {
+  const rec = await cdSaveFind(charName, id);
+  if (!rec) return;
+  const nm = rec.note || '未命名';
+  const memoText = (rec.memo && String(rec.memo).trim()) ? rec.memo : '（还没有写感言）';
+  let html = '';
+  html += '<div class="cd-gs-memo-back" onclick="cdSaveGoSlots(\'' + String(charName||'').replace(/'/g,"\\'") + '\')" style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;color:#8a7d66;font-size:12px;padding:4px 8px;border:1px solid #e2d9c6;border-radius:8px;background:#fffdf8;margin-bottom:10px;"><i class="fa-regular fa-chevron-left"></i> 返回存档列表</div>';
+  html += '<div style="border:1px solid #e2d9c6;border-radius:12px;background:#fffdf8;padding:16px;position:relative;">'
+    + '<div style="font-weight:700;font-size:15px;color:#5b4a3a;">' + escapeHtml(nm) + '</div>'
+    + '<div style="font-size:11px;color:#8a7d66;margin:4px 0 12px;">感言</div>'
+    + '<div style="font-size:calc(0.82rem*var(--cd-fs,1));color:#3c2f1f;line-height:1.6;white-space:pre-wrap;word-break:break-word;">' + escapeHtml(memoText) + '</div>'
+    + '<div style="position:absolute;right:10px;bottom:10px;display:flex;gap:6px;">'
+    + '<button onclick="event.stopPropagation();cdSaveAskMemo(\'' + id + '\',\'' + String(charName||'').replace(/'/g,"\\'") + '\')" title="编辑感言" style="width:30px;height:30px;border-radius:8px;border:1px solid #e2d9c6;background:#fffdf8;color:#8a6a3b;cursor:pointer;"><i class="fa-regular fa-pen"></i></button>'
+    + '</div></div>';
+  document.getElementById('cd-content').innerHTML = html;
+}
+/* ===== 感言：查看/编辑某份存档的感言 ===== */
+async function cdSaveAskMemo(id, charName) {
+  const rec = await cdSaveFind(charName, id);
+  if (!rec) return;
+  cdSaveDial('感言', '写一段话给这份存档', '', rec.memo || '', async function (nm, memo) {
+    if (nm === null) return;
+    await cdSaveSetMemo(rec, memo);
+    cdSaveGoSlots(charName);
+  });
+}
+async function cdSaveSetMemo(rec, memo) {
+  if (!rec) return;
+  rec.memo = (memo && String(memo).trim()) ? String(memo).trim() : '';
+  const slots = (await cdSaveGetSlots(rec.charName)).slice();
+  for (var i = 0; i < slots.length; i++) if (slots[i] && slots[i].id === rec.id) slots[i] = rec;
+  await cdSaveSetSlots(rec.charName, slots);
+}
+async function cdSaveToggleStar(id, charName) {
+  if (typeof cdAddLog === 'function') cdAddLog('info', '[存档] 星标切换', { id: id });
+  const rec = await cdSaveFind(charName, id);
+  if (!rec) return;
+  rec.star = !rec.star;
+  const slots = (await cdSaveGetSlots(charName)).slice();
+  for (var i = 0; i < slots.length; i++) if (slots[i] && slots[i].id === id) slots[i] = rec;
+  await cdSaveSetSlots(charName, slots);
+  if (typeof cdSaveGoSlots === 'function') cdSaveGoSlots(charName);
+}
+
+
+/* 显式挂到 window（存档条目感言图标内联 onclick 需要全局） */
+if (typeof window !== 'undefined') { window.cdSaveAskMemo = cdSaveAskMemo; window.cdSaveSetMemo = cdSaveSetMemo; window.cdSaveShowMemo = cdSaveShowMemo; window.cdSaveToggleStar = cdSaveToggleStar; window.cdSaveConfirmLoad = cdSaveConfirmLoad; window.cdSaveConfirmDialDone = cdSaveConfirmDialDone; }
+
+/* ===== [v2.16] 存档命名弹窗：照 cdShowDedupeConfirm 成功写法（挂 body / inset:0 / z-index CD_TOP_Z / flex 居中 / remove 销毁）===== */
+var _cdSaveNameCb = null;
+function cdSaveDial(title, hint, initial, initialMemo, cb) {
+  if (typeof cdAddLog === 'function') cdAddLog('info', '[存档][消息图标] cdSaveDial 进入, title=' + String(title).slice(0,10));
+  _cdSaveNameCb = cb || null;
+  try {
+    // ★ 关键修复：不挂 document.body 顶层、不 remove() —— 改在 #cd-content 面板内渲染 + display 切换，
+    //    避免 Tauri 对"body 顶层高 z-index 弹窗 remove"触发视图重建而白屏。
+    // ★ 挂载点：优先 #cd-content 面板内；点消息左下角图标直接弹时可能无面板，回退挂 document.body 顶层（display 切换不 remove 防白屏）
+    // ★ 挂载点：面板打开时挂 #cd-content 面板内（避免弹窗被面板压在后面）；面板关闭时挂 document.body 顶层（点消息图标直接弹，不先开面板）。display 切换不 remove 防白屏。
+    var _panelOn = (typeof cdPanelOpen !== 'undefined' && !!cdPanelOpen);
+    var _contEl = document.getElementById('cd-content');
+    var _mountEl = (_panelOn && _contEl) ? _contEl : document.body;
+    var overlay = document.getElementById('cd-save-dial');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'cd-save-dial';
+      (_mountEl.appendChild ? _mountEl : document.body).appendChild(overlay);
+    } else if (overlay.parentNode && overlay.parentNode !== _mountEl) {
+      (_mountEl.appendChild ? _mountEl : document.body).appendChild(overlay);
+    }
+    // ★ 居中弹窗：全屏遮罩 + flex 居中卡片（覆盖在存档列表上，易编辑）；仍 display 切换不 remove 防白屏
+    overlay.style.cssText = 'position:fixed;left:0;top:0;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;z-index:2147483647;background:rgba(205,213,222,.45);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);';
+    overlay.innerHTML =
+      '<div style="width:100%;max-width:380px;background:#ffffff;border:1px solid #dfe4ea;border-radius:16px;padding:20px;box-shadow:0 18px 50px rgba(110,125,145,.25);box-sizing:border-box;">'
+      + '<div style="font-weight:700;font-size:calc(0.86rem*var(--cd-fs,1));color:#2c3540;margin-bottom:8px;display:flex;align-items:center;gap:7px;"><i class="fa-regular fa-floppy-disk" style="color:#6e7e90;"></i> ' + String(title || '保存') + '</div>'
+      + (hint ? '<div style="font-size:calc(0.66rem*var(--cd-fs,1));color:#98a1ad;margin-bottom:10px;">' + String(hint) + '</div>' : '')
+      + '<input id="cd-save-dial-v" type="text" maxlength="40" style="width:100%;border:1px solid #cbd4dd;border-radius:8px;padding:8px 10px;font-size:calc(0.8rem*var(--cd-fs,1));background:rgba(255,255,255,.8);color:#2c3540;outline:none;box-sizing:border-box;margin-bottom:8px;font-family:inherit;" value="' + String(initial || '').replace(/"/g,'"') + '" placeholder="给这份存档起个名">'
+      + '<details style="margin-bottom:8px;border:1px solid #cbd4dd;border-radius:8px;padding:6px 8px;"><summary style="font-size:calc(0.66rem*var(--cd-fs,1));color:#5b6a78;cursor:pointer;font-family:inherit;"><i class="fa-regular fa-note-sticky" style="color:#6e7e90;margin-right:4px;"></i>感言</summary>'
+      + '<textarea id="cd-save-dial-m" rows="3" maxlength="200" style="width:100%;border:1px solid #cbd4dd;border-radius:8px;padding:7px 9px;font-size:calc(0.72rem*var(--cd-fs,1));background:rgba(255,255,255,.8);color:#2c3540;outline:none;box-sizing:border-box;margin-top:6px;resize:vertical;font-family:inherit;" placeholder="留一段话给这一刻…">' + String(initialMemo || '').replace(/</g,'&lt;') + '</textarea></details>'
+      + '<details style="margin-bottom:8px;border:1px solid #cbd4dd;border-radius:8px;padding:6px 8px;"><summary style="font-size:calc(0.66rem*var(--cd-fs,1));color:#5b6a78;cursor:pointer;font-family:inherit;"><i class="fa-regular fa-layer-group" style="color:#6e7e90;margin-right:4px;"></i>保留楼层数</summary>'
+      + '<div style="margin-top:6px;display:flex;align-items:center;gap:8px;"><input id="cd-save-dial-k" type="number" min="1" max="200" value="' + (typeof cdSaveKeepFloorsGet==='function'?cdSaveKeepFloorsGet():10) + '" style="width:70px;border:1px solid #cbd4dd;border-radius:8px;padding:6px 8px;font-size:calc(0.74rem*var(--cd-fs,1));background:rgba(255,255,255,.8);color:#2c3540;outline:none;box-sizing:border-box;font-family:inherit;"><span style="font-size:calc(0.6rem*var(--cd-fs,1));color:#98a1ad;">楼(1~200，默认10，改了会记住)</span></div></details>'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px;">'
+      + '<button style="border:1px solid #cbd4dd;background:rgba(255,255,255,.6);color:#3b4650;border-radius:8px;padding:7px 14px;font-size:calc(0.72rem*var(--cd-fs,1));cursor:pointer;font-family:inherit;" onclick="cdSaveDialDone(0)">取消</button>'
+      + '<button style="border:none;background:linear-gradient(150deg,#8d9bab,#6e7e90);color:#fff;border-radius:8px;padding:7px 16px;font-size:calc(0.72rem*var(--cd-fs,1));font-weight:600;cursor:pointer;font-family:inherit;" onclick="cdSaveDialDone(1)"><i class="fa-regular fa-check"></i> 确认</button>'
+      + '</div></div>';
+    overlay.style.display = 'flex';
+    var inp = overlay.querySelector('#cd-save-dial-v');
+    if (inp) { setTimeout(function(){ if (inp && inp.focus) inp.focus(); }, 40); inp.addEventListener('keydown', function (e){ if (e.key === 'Enter') cdSaveDialDone(1); }); }
+  } catch (e) {
+    if (typeof cdAddLog === 'function') cdAddLog('error', '[存档] 命名输入打开失败: ' + (e && e.message));
+    if (cb) cb(null);
+  }
+}
+function cdSaveDialDone(ok) {
+  if (typeof cdAddLog === 'function') cdAddLog('info', '[存档][D2] cdSaveDialDone 进入', { ok: ok, t: Date.now() });
+  try {
+    var val = '';
+    var inp = document.getElementById('cd-save-dial-v');
+    if (inp) val = String(inp.value || '').trim();
+    var memo = '';
+    var mm = document.getElementById('cd-save-dial-m');
+    if (mm) memo = String(mm.value || '').trim();
+    // 保留楼层数：用户若改了则存回 localStorage（记住）
+    try { var _kInp = document.getElementById('cd-save-dial-k'); if (_kInp) { var _kv = parseInt(_kInp.value, 10); if (!isNaN(_kv) && typeof cdSaveKeepFloorsSet === 'function') cdSaveKeepFloorsSet(_kv); } } catch(_e){}
+    var cb = _cdSaveNameCb; _cdSaveNameCb = null;
+    var ov = document.getElementById('cd-save-dial');
+    if (typeof cdAddLog === 'function') cdAddLog('info', '[存档][D2] remove前 overlay?', { has: !!ov, inParent: !!(ov && ov.parentNode) });
+    try { if (ov) ov.style.display = 'none'; } catch (_eR) { if (typeof cdAddLog === 'function') cdAddLog('error', '[存档][D2] 隐藏异常: ' + (_eR && _eR.message)); }
+    if (typeof cdAddLog === 'function') cdAddLog('info', '[存档][D2] remove后', { cbIsFn: typeof cb === 'function', val: String(val).slice(0,20) });
+    if (typeof cb === 'function') cb(ok ? val : null, ok ? memo : null);
+    if (typeof cdAddLog === 'function') cdAddLog('info', '[存档][D2] cb 已调用', { t2: Date.now() });
+  } catch (e) {
+    if (typeof cdAddLog === 'function') cdAddLog('error', '[存档] 命名弹窗关闭异常: ' + (e && e.stack || e && e.message), { stack: e && e.stack });
+  }
+}
+
+/* ===== 全局错误探针：白屏排查用，捕获未捕获异常/未处理 Promise 错误并写入插件日志 ===== */
+(function () {
+  var _prevErr = window.onerror;
+  window.onerror = function (msg, src, line, col, err) {
+    try { if (typeof cdAddLog === 'function') cdAddLog('error', '[全局错误] ' + (msg || '') + ' @' + src + ':' + line + ':' + col, { stack: err && err.stack }); } catch (e) {}
+    if (typeof _prevErr === 'function') { try { return _prevErr.apply(window, arguments); } catch (e) {} }
+    return false;
+  };
+  window.addEventListener('unhandledrejection', function (ev) {
+    try { var r = ev && ev.reason; if (typeof cdAddLog === 'function') cdAddLog('error', '[全局Promise错误] ' + (r && r.stack || r && r.message || String(r))); } catch (e) {}
+  });
+})();
+
+/* ===== 存档函数暴露到全局 window（修复内联 onclick 找不到：Tauri 模块加载下顶层 function 不自动进 window）===== */
+if (typeof window !== 'undefined') {
+  var _cdSaveMounts = [
+    cdRenderSave, cdSaveGoSlots, cdSaveNewCurrent, cdSaveNewIn, cdSaveNewAt,
+    cdSaveDelete, cdSaveLoadById, cdSaveAskRename, cdSaveRename,
+    cdSaveExport, cdSaveImportFile, cdSaveFind, cdSaveWrite,
+    cdSaveGetSlots, cdSaveSetSlots, cdSaveGetLib, cdSaveSetLib, cdSaveGetAllGroups,
+    cdSaveDial, cdSaveDialDone,
+    cdStartMesSaveObserver, cdQuickSaveClick
+  ];
+  for (var _si = 0; _si < _cdSaveMounts.length; _si++) {
+    var _fn = _cdSaveMounts[_si];
+    if (typeof _fn === 'function' && _fn.name) { try { window[_fn.name] = _fn; } catch (e) {} }
+  }
+}
