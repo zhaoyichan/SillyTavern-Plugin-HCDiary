@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.17.1';
+const PLUGIN_VERSION = '2.17.2';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -1089,7 +1089,7 @@ const ARCHIVE_SYSTEM = [
   '- 主角行格式（覆盖式）：主角：身份【…】| 身体【…】| 精神【…】| 地址【…】| 资产【…】| 外在【…】| 好感【…】| 备注【…】',
   '- 环境行格式（覆盖式，输出当前环境现状，非历史）：环境：布局【…】| 温度天气【…】',
   '- 其他每个角色一行（覆盖式）：角色名：身体【…】| 地址【…】| 资产【…】| 外在【…】| 好感【…】| 备注【…】',
-  '各维度内容：身体=伤病/体力/健康；地址=当前所在地点的核心地名（主角必须直接写清实际位置，只写地名，不写"抵达/身处"等动作词与冗长修饰）；资产=钱/物品/持有物；外在=此刻的外貌长相与穿着打扮（写清当前外貌：发型/面色/神态 + 衣服款式颜色，如"银色微卷长发，面色苍白，穿着孤儿院制服"）；好感=对主角(用户)的好感度数值与态度；备注=不易归类的其它当前状态。已变化才更新该格，未变化的可保留或留空，不要用“无”填满所有格。好感度必须带数字与负号（负好感带-）。每行末尾以【时间标记】标注该状态最近一次变化时间，如【第3天 傍晚】。当前位置规则：主角的「地址」必须写清当前实际所在地点），',
+  '各维度内容：身体=伤病/体力/健康；地址=当前所在地点的核心地名（主角必须直接写清实际位置，只写地名，不写"抵达/身处"等动作词与冗长修饰）；资产=钱/物品/持有物；外在=此刻的外貌长相与穿着打扮（必须写清并尽量具体，逐项详描，禁止只写"黑发"这类笼统概括。参考下列结构尽量把有依据的信息写全：\n①身高体重：仅当剧情/开场白中有明确具体身高数值时才写具体数字（如「身高178cm」）；若文中没有明确身高描述，则一律不写身高，绝不能自行编造或推断一个具体数字（若确需补充则统一用「身高170」）；\n②五官：眼型与瞳色（如「狭长凤眼，深棕色瞳孔」）、鼻型、唇形、眉形，尽量细致；\n③发型发质：长度、卷直、刘海/发型样式、发色、质感（如「及腰的银白色直发，发尾微卷，触感柔顺」）；\n④脸型与肤色：脸型轮廓、肤色深浅；\n⑤身形体型：高矮/胖瘦/是否健壮等；\n⑥神态气质：由表情/眼神/气场所感知的气质；\n⑦衣着：衣服款式、颜色、材质、破损/整洁程度等。\n以上各项仅写剧情/开场白中有依据的信息，无依据的可合理补足细节也需合理，不得臆造与原设定冲突的内容）；好感=对主角(用户)的好感度数值与态度；备注=不易归类的其它当前状态。已变化才更新该格，未变化的可保留或留空，不要用“无”填满所有格。好感度必须带数字与负号（负好感带-）。每行末尾以【时间标记】标注该状态最近一次变化时间，如【第3天 傍晚】。当前位置规则：主角的「地址」必须写清当前实际所在地点），',
   '',
   '当前位置规则（地图/行程准确性关键，必须严格遵守）：',
   '1. 在「主角」行的「处境」中，必须明确写出主角【当前所在地点】，使用偏正结构名词短语（如"处身于雪原边缘的酒馆""身处灯火通明的王城大厅"），并确保该地点是此次剧情里【实际移动/停留】的位置。',
@@ -1196,7 +1196,7 @@ const ARCHIVE_SYSTEM_FULL = [
   '- 主角行格式（覆盖式）：主角：身份【…】| 身体【…】| 精神【…】| 地址【…】| 资产【…】| 外在【…】| 好感【…】| 备注【…】',
   '- 环境行格式（覆盖式，输出当前环境现状，非历史）：环境：布局【…】| 温度天气【…】',
   '- 其他每个角色一行（覆盖式）：角色名：身体【…】| 地址【…】| 资产【…】| 外在【…】| 好感【…】| 备注【…】',
-  '各维度内容：身体=伤病/体力/健康；地址=当前所在地点的核心地名（主角必须直接写清实际位置，只写地名，不写"抵达/身处"等动作词与冗长修饰）；资产=钱/物品/持有物；外在=此刻的外貌长相与穿着打扮（写清当前外貌：发型/面色/神态 + 衣服款式颜色，如"银色微卷长发，面色苍白，穿着孤儿院制服"）；好感=对主角(用户)的好感度数值与态度；备注=不易归类的其它当前状态。已变化才更新该格，未变化的可保留或留空，不要用“无”填满所有格。好感度必须带数字与负号（负好感带-）。每行末尾以【时间标记】标注该状态最近一次变化时间，如【第3天 傍晚】。当前位置规则：主角的「地址」必须写清当前实际所在地点），',
+  '各维度内容：身体=伤病/体力/健康；地址=当前所在地点的核心地名（主角必须直接写清实际位置，只写地名，不写"抵达/身处"等动作词与冗长修饰）；资产=钱/物品/持有物；外在=此刻的外貌长相与穿着打扮（必须写清并尽量具体，逐项详描，禁止只写"黑发"这类笼统概括。参考下列结构尽量把有依据的信息写全：\n①身高体重：仅当剧情/开场白中有明确具体身高数值时才写具体数字（如「身高178cm」）；若文中没有明确身高描述，则一律不写身高，绝不能自行编造或推断一个具体数字（若确需补充则统一用「身高170」）；\n②五官：眼型与瞳色（如「狭长凤眼，深棕色瞳孔」）、鼻型、唇形、眉形，尽量细致；\n③发型发质：长度、卷直、刘海/发型样式、发色、质感（如「及腰的银白色直发，发尾微卷，触感柔顺」）；\n④脸型与肤色：脸型轮廓、肤色深浅；\n⑤身形体型：高矮/胖瘦/是否健壮等；\n⑥神态气质：由表情/眼神/气场所感知的气质；\n⑦衣着：衣服款式、颜色、材质、破损/整洁程度等。\n以上各项仅写剧情/开场白中有依据的信息，无依据的可合理补足细节也需合理，不得臆造与原设定冲突的内容）；好感=对主角(用户)的好感度数值与态度；备注=不易归类的其它当前状态。已变化才更新该格，未变化的可保留或留空，不要用“无”填满所有格。好感度必须带数字与负号（负好感带-）。每行末尾以【时间标记】标注该状态最近一次变化时间，如【第3天 傍晚】。当前位置规则：主角的「地址」必须写清当前实际所在地点），',
   '',
   '当前位置规则（地图/行程准确性关键，必须严格遵守）：',
   '1. 在「主角」行的「处境」中，必须明确写出主角【当前所在地点】，使用偏正结构名词短语（如"处身于雪原边缘的酒馆""身处灯火通明的王城大厅"），并确保该地点是此次剧情里【实际移动/停留】的位置。',
@@ -1308,7 +1308,7 @@ async function cdBuildArchivePrompt(windowFloors, data, _s, archiveFull) {
           ? '【首次记录特别要求】本次输入含开头的【第0楼开场白】。请把它中的背景/时间/地点/登场人物及其当前彼此的关系状态，作为"主线起点/重要状态"优先写入档案，不要因它是静态描述、非事件而遗漏。'
           : '',
         '',
-        customFormatBlock ? '自定义追踪项（同样严格按格式输出）：\n' + customFormatBlock : '',
+        customFormatBlock ? '自定义追踪项（在四个核心字段之后额外输出，属于附属字段，不得替代四个核心字段）：\n' + customFormatBlock : '',
         '',
         '**从历史档案中检索到的相关事件（供参考）**：',
         retrievedText,
@@ -1344,7 +1344,7 @@ async function cdBuildArchivePrompt(windowFloors, data, _s, archiveFull) {
       existing.unresolved ? `已知未解决事项：${existing.unresolved}` : '',
       existingCustomTxt ? `\n${existingCustomTxt}` : '',
     ] : []),
-    customFormatBlock ? '\n自定义追踪项（同样严格按格式输出，与主线等字段并列）：\n' + customFormatBlock : '',
+    customFormatBlock ? '\n自定义追踪项（同样严格按格式输出，都完整输出之后，作为额外附属字段单独输出，不要跳过或替代四个核心字段）：\n' + customFormatBlock : '',
   ].filter(Boolean).join('\n');
   // ★ 世界书联动：异步获取登场角色的世界书设定（loadWorldInfo 为异步 API）
   let _worldbookTxtArchive = '';
@@ -1357,7 +1357,16 @@ async function cdBuildArchivePrompt(windowFloors, data, _s, archiveFull) {
   const usr = [
     (archiveFull ? `以下是剧情全部楼层（请完整总结整段剧情）：\n${scene}` : `本次新增楼层：\n${scene}`),
     '',
-    `请${archiveFull ? '完整输出这段剧情从开始到现在的' : '输出'}：主线、支线、重要状态变化、未解决事项${customOutputNames ? '、' + customOutputNames : ''}`,
+    (archiveFull
+      ? `请完整输出这段剧情从开始到现在的：主线、支线、重要状态变化、未解决事项${customOutputNames ? '、' + customOutputNames : ''}。`
+      : [
+          '请输出剧情档案（普通增量模式），并严格遵守以下铁律：',
+          '1. 必须完整输出四个核心字段【主线】【支线】【重要状态变化】【未解决事项】，顺序固定为主线→支线→重要状态变化→未解决事项；即使本次没有对应内容，也必须在对应字段下输出一行「无」，绝不允许缺失或跳过这四个核心字段。',
+          '2. 这四个核心字段是本次输出的主体，必须放在最前面。',
+          '3. 在四个核心字段之后，再额外输出自定义追踪项：' + (customOutputNames ? customOutputNames : '无') + '（作为附加块，不得替代或占据四个核心字段的位置）。',
+          '4. 无论本次楼层多么简单或仅含开场白/静态描写，都要把其中的人物、关系、背景、设定作为主线/重要状态的起始内容整理写入对应核心字段，保证开场白相关内容被完整收录。'
+        ].join('\n')
+    ),
     // ★ 重点角色：引导剧情档案围绕这些角色记录，防止其脱离设定
     (Array.isArray(data.focusRoles) && data.focusRoles.length)
       ? `【重点角色（档案中须重点记录其状态/动向/关系变化）】\n${data.focusRoles.map(f => '  - ' + (f.name || '') + (f.note ? `：${f.note}` : '')).join('\n')}`
@@ -1390,6 +1399,25 @@ async function cdBuildDiaryArchiveCombined(windowFloors, data, s, archiveFull) {
   const sys = sysParts.join('\n\n');
   const usr = archMsgs ? archMsgs[1].content : (diaryMsgs ? diaryMsgs[1].content : '');
   const asst = diaryMsgs ? '{"npcs":[' : (archMsgs ? '主线：' : '');
+  // ★ [档案·诊断] 打印实际发给AI的提示词片段，确认是否含主线/支线四件套
+  try {
+    const _sysHasMain = String(sys).indexOf('主线') >= 0;
+    const _sysHasSide = String(sys).indexOf('支线') >= 0;
+    const _sysHasState = String(sys).indexOf('重要状态变化') >= 0;
+    const _sysHasUnres = String(sys).indexOf('未解决事项') >= 0;
+    const _usrHead = String(usr || '').slice(0, 300);
+    cdAddLog('info', '[档案·提示词诊断] 发送给AI的档案提示词结构', {
+      sys含主线: _sysHasMain,
+      sys含支线: _sysHasSide,
+      sys含重要状态变化: _sysHasState,
+      sys含未解决事项: _sysHasUnres,
+      sys字符数: String(sys||'').length,
+      usr字符数: String(usr||'').length,
+      usr前300字: _usrHead,
+      assistant预填充: asst,
+      customFields配置: (Array.isArray((typeof cdGetSettings==='function')?cdGetSettings().customFields:undefined))?cdGetSettings().customFields:[]
+    });
+  } catch (_ed) { if (typeof cdWarn === 'function') cdWarn('[档案·提示词诊断] 异常', _ed); }
   return [
     { role: 'system', content: sys },
     { role: 'user', content: usr },
@@ -4850,21 +4878,40 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
 
   if (windowFloors.length > (s.maxWindowFloors || 40))
     windowFloors = windowFloors.slice(-(s.maxWindowFloors || 40));
-  // ★ [改动①-openair0] 开场白(0层)保底进第1批（双通道统一收口于此）。
-  //   仅当该聊天【首次总结】(lastFloor===-1) 且本批没有0层时，把 message_id=0 的开场白 unshift 置顶到批次最前，
-  //   并同步计入 processedFloors 锁定，确保后续批次不再重复带。
+  // ★ [改动①-openair0] 开场白(0层)保底进批次（双通道统一收口于此）。
+  //   [原]仅首次(lastFloor===-1)才带 → 改为：只要开场白(楼层号0·正文非空)尚未被 processedFloors 锁定，
+  //   且本批非空，就把开场白 unshift 置顶到批次最前（覆盖已开历史聊天 / jsonl 通道 / 手动补写后自动触发等场景），
+  //   并计入 processedFloors 锁定，确保后续批次不再重复带。
   //   顺序：先按 maxWindowFloors 截尾(保留最近N条)，再置顶0层，避免开场白被截断挤出。
   try {
-    const _firstTime = (typeof data === 'object' && data !== null && typeof data.lastFloor === 'number' && data.lastFloor === -1);
-    if (_firstTime && Array.isArray(windowFloors)) {
+    if (Array.isArray(windowFloors) && windowFloors.length) {
       const _hasZero = windowFloors.some(function(w){ return w && w.message_id === 0; });
       if (!_hasZero) {
-        const _chat0 = _cdGetChat()[0];
-        if (_chat0 && _chat0.mes && String(_chat0.mes).trim()) {
-          windowFloors.unshift({ message_id: 0, name: (_chat0.name||''), mes: _chat0.mes });
-          if (!Array.isArray(data.processedFloors)) data.processedFloors = [];
-          if (data.processedFloors.indexOf(0) < 0) data.processedFloors.push(0);
-          if (typeof cdAddLog === 'function') cdAddLog('info', '[开场白保底] 已将第0楼开场白置顶加入第1批总结', {楼层数: windowFloors.length, 首层: windowFloors[0].message_id});
+        const _pfArr = (data && Array.isArray(data.processedFloors)) ? data.processedFloors : [];
+        if (_pfArr.indexOf(0) < 0) {
+          // 取开场白正文：a) windowFloors 内无0 -> b) jsonl 楼层0 -> c) chat[0]
+          let _mes0 = '';
+          let _name0 = '';
+          try {
+            if (typeof cdReadFloorsForGreeting === 'function') {
+              const _gr = await cdReadFloorsForGreeting();
+              if (_gr && _gr.ok && _gr.mes && String(_gr.mes).trim()) { _mes0 = _gr.mes; _name0 = _gr.name || ''; }
+            }
+          } catch (_e1) {}
+          if (!_mes0) {
+            try {
+              const _chatArr = _cdGetChat();
+              if (_chatArr && _chatArr[0] && _chatArr[0].mes && String(_chatArr[0].mes).trim()) { _mes0 = _chatArr[0].mes; _name0 = (_chatArr[0].name)||''; }
+            } catch (_e2) {}
+          }
+          if (_mes0 && String(_mes0).trim()) {
+            windowFloors.unshift({ message_id: 0, name: _name0, mes: _mes0 });
+            if (!Array.isArray(data.processedFloors)) data.processedFloors = [];
+            if (data.processedFloors.indexOf(0) < 0) data.processedFloors.push(0);
+            if (typeof cdAddLog === 'function') cdAddLog('info', '[开场白保底] 已把第0楼开场白置顶加入本批总结', {楼层数: windowFloors.length, 首层: windowFloors[0].message_id});
+          } else {
+            if (typeof cdAddLog === 'function') cdAddLog('warn', '[开场白保底] 未取到开场白正文(jsonl/chat均空)')
+          }
         }
       }
     }
@@ -6602,6 +6649,7 @@ function cdInjectModal() {
           <button class="cd-tb-btn" id="cd-tb-archive" data-mode="archive"><i class="fa-regular fa-timeline"></i> 剧情</button>
           <button class="cd-tb-btn" id="cd-tb-graph" data-mode="graph"><i class="fa-regular fa-address-book"></i> 状态</button>
           <button class="cd-tb-btn" id="cd-tb-save" data-mode="save"><i class="fa-regular fa-floppy-disk"></i> 存档</button>
+          <button class="cd-tb-btn" id="cd-tb-phone" data-mode="phone"><i class="fa-solid fa-mobile-screen"></i> 手机</button>
           <button class="cd-tb-btn" id="cd-tb-inject" data-mode="inject"><i class="fa-solid fa-scroll"></i> 注入</button>
 
           <!-- 更多（低频 / 工具 / 信息收纳） -->
@@ -6725,6 +6773,7 @@ function cdInjectModal() {
   $('#cd-tb-changelog').on('click', () => cdSwitchView('changelog'));
   $('#cd-tb-help').on('click',     () => cdSwitchView('help'));
   $('#cd-tb-save').on('click', function(){ cdSwitchView('save', this); });
+  $('#cd-tb-phone').on('click', function(){ cdSwitchView('phone', this); });
 $('#cd-tb-inject').on('click', function(){ cdSwitchView('inject', this); });
   $('#cd-tb-vector').on('click',   () => cdSwitchView('vector'));
   $('#cd-tb-manage').on('click',  () => cdSwitchView('manage'));
@@ -6790,6 +6839,7 @@ async function cdRefreshPanelContent() {
     case 'help':     cdRenderHelp(); break;
     case 'table':    cdRenderTable(); break;
     case 'save':     cdRenderSave(); break;
+    case 'phone':    cdRenderPhone(); break;
     case 'inject':   cdRenderInject(); break;
     case 'theatre':  cdRenderTheatre(); break;
     case 'vector':   cdRenderVector(); break;
@@ -9547,6 +9597,92 @@ async function cdRenderArchive() {
   // 追加到底部
   $('#cd-content').append(bottomHtml);
 
+// ==================== ★ 剧情档案原文编辑框（v2.17.1 新增）====================
+// 最底部默认折叠；标签在框外只读、框内纯内容；自定义追踪项有数据才显示该段；右下角保存才生效
+try {
+  var _arcCFields = [];
+  try { var _arcS = cdGetSettings(); _arcCFields = Array.isArray(_arcS ? _arcS.customFields : null) ? _arcS.customFields : []; } catch (_e0) {}
+  var _arcCMap = (arc.custom && typeof arc.custom === 'object') ? arc.custom : {};
+  // 收集“有数据”的自定义追踪项段
+  var _arcCfg = [];
+  for (var _ai = 0; _ai < _arcCFields.length; _ai++) {
+    var _af = _arcCFields[_ai];
+    if (!_af || !_af.key || !_af.label) continue;
+    var _aarr = Array.isArray(_arcCMap[_af.key]) ? _arcCMap[_af.key] : [];
+    var _real = _aarr.filter(function (it) { return it && String(it.desc || '').trim(); });
+    if (!_real.length) continue;   // 有数据才显示
+    _arcCfg.push({
+      label: _af.label,
+      key: _af.key,
+      text: _real.map(function (it) { return (it.time ? '【' + it.time + '】' + String(it.desc) : String(it.desc)); }).join('\n')
+    });
+  }
+  // 组装编辑区 HTML（标签在框外、框内纯内容、纵向堆叠）
+  var _arcSec = function (lab, txt, ph) {
+    var _t = String(txt || '');
+    return '<div style="margin-bottom:12px;">' +
+      '<div style="font-size: calc(0.62rem * var(--cd-fs,1));font-weight:700;color:#6b4a1b;margin:0 0 4px;letter-spacing:.5px;">— ' + escapeHtml(lab) + ' —</div>' +
+      '<textarea spellcheck="false" rows="4" data-arch-key="' + escapeAttr(lab) + '" placeholder="' + escapeAttr(ph) + '" style="width:100%;box-sizing:border-box;padding:6px;font-size: calc(0.62rem * var(--cd-fs,1));background:#fffdf6;border:1px solid #e3d5b8;border-radius:6px;color:#3c2f1f;resize:vertical;line-height:1.6;">' + escapeHtml(_t) + '</textarea>' +
+      '</div>';
+  };
+  var _archEditHtml = '';
+  _archEditHtml += _arcSec('主线', arc.mainline, '主线内容（此处可增删改）');
+  _archEditHtml += _arcSec('支线', arc.sideline, '支线内容');
+  _archEditHtml += _arcSec('重要状态变化', arc.states, '重要状态变化内容');
+  _archEditHtml += _arcSec('未解决事项', arc.unresolved, '未解决事项内容');
+  for (var _bi = 0; _bi < _arcCfg.length; _bi++) {
+    _archEditHtml += _arcSec(_arcCfg[_bi].label, _arcCfg[_bi].text, _arcCfg[_bi].label + '内容');
+  }
+  var _archEditBlock = '<div class="cd-arch-rawedit">' +
+    '<details class="cd-arch-rawedit-details" style="margin-top:14px;border:1px solid #e4d8bf;border-radius:10px;background:#fdfaf3;padding:0;">' +
+    '<summary class="cd-arch-rawedit-summary" style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:7px;padding:9px 12px;font-size: calc(0.72rem * var(--cd-fs,1));font-weight:700;color:#6b4a1b;"><i class="fa-regular fa-file-lines"></i> 剧情档案原文编辑 <span style="font-size: calc(0.55rem * var(--cd-fs,1));font-weight:400;color:#8b7355;">（点开后直接整块增删改）</span></summary>' +
+    '<div style="padding:10px 12px 12px;border-top:1px solid #ede2cc;">' +
+    '<p style="font-size: calc(0.55rem * var(--cd-fs,1));color:#8b7355;margin:0 0 10px;line-height:1.6;">此为整份剧情档案原文，用于编辑这份将发送给 AI 的内容。黑色小标题「— 主线 —」等不可删，直接改标题下方文字即可；改动仅在点右下角「保存」后生效，会同步到上方时间线。</p>' +
+    _archEditHtml +
+    '<div style="display:flex;justify-content:flex-end;margin-top:8px;">' +
+    '<button type="button" class="cd-btn-primary" id="cd-arch-rawedit-save" style="font-size: calc(0.65rem * var(--cd-fs,1));padding:6px 16px;min-width:auto;"><i class="fa-regular fa-floppy-disk"></i> 保存</button>' +
+    '</div></div></details></div>';
+  $('#cd-content').append(_archEditBlock);
+  // 保存：把每个 textarea 按标签写回 archive 字段
+  $('#cd-content').off('click', '#cd-arch-rawedit-save').on('click', '#cd-arch-rawedit-save', async function () {
+    try {
+      var _d0 = await cdGetData();
+      if (!_d0.archive) _d0.archive = Object.assign({}, emptyData().archive);
+      var _getVal = function (lab) {
+        var el = $('#cd-content textarea[data-arch-key="' + CSS.escape(lab) + '"]');
+        return el.length ? el.val() : '';
+      };
+      _d0.archive.mainline = _getVal('主线');
+      _d0.archive.sideline = _getVal('支线');
+      _d0.archive.states = _getVal('重要状态变化');
+      _d0.archive.unresolved = _getVal('未解决事项');
+      // 自定义追踪项：按标签匹配，把编辑后的文本重新按“【时间】”行解析回数组
+      for (var _ci = 0; _ci < _arcCfg.length; _ci++) {
+        var el = $('#cd-content textarea[data-arch-key="' + CSS.escape(_arcCfg[_ci].label) + '"]');
+        if (!el.length) continue;
+        var raw2 = String(el.val() || '').split('\n').map(function (x) { return x.trim(); }).filter(Boolean);
+        var arr2 = [];
+        var curT = '';
+        for (var _xi = 0; _xi < raw2.length; _xi++) {
+          var _ln = raw2[_xi];
+          var _mt = _ln.match(/^【([^】]+)】\s*(.*)/);
+          if (_mt) { curT = _mt[1]; if (_mt[2]) arr2.push({ time: curT, desc: _mt[2] }); }
+          else if (_ln && _ln.length > 1) { arr2.push({ time: curT, desc: _ln }); }
+        }
+        if (!Array.isArray(_d0.archive.custom)) _d0.archive.custom = {};
+        _d0.archive.custom[_arcCfg[_ci].key] = arr2;
+      }
+      await cdSaveData(_d0);
+      if (typeof cdRefreshInjection === 'function') await cdRefreshInjection();
+      if (typeof toastr !== 'undefined') toastr.success('剧情档案原文已保存并同步');
+      cdRenderArchive();
+    } catch (e) {
+      if (typeof cdWarn === 'function') cdWarn('[档案原文编辑] 保存异常', e);
+      if (typeof toastr !== 'undefined') toastr.error('保存失败: ' + (e && e.message));
+    }
+  });
+} catch (_e2) { if (typeof cdWarn === 'function') cdWarn('[档案原文编辑] 渲染异常', _e2); }
+
   // ★ 剧情分组 tab 切换：点击「主线/支线/…」只显示对应分组
   $('#cd-content').off('click', '.cd-tl-tab').on('click', '.cd-tl-tab', function () {
     const tab = $(this).data('tab');
@@ -9875,6 +10011,32 @@ async function cdReadAllFloorsFromJsonl() {
   } catch (e) {
     return { ok: false, error: (e && e.message ? e.message : String(e)) };
   }
+}
+
+/** ★ 开场白兜底读取：返回聊天"楼层0"(开场白)的正文与名字。
+ *  优先读 jsonl 全量里的楼层0（不受 ST 分片加载影响），失败再回退 chat[0]。
+ *  @returns {{ok:boolean, mes:string, name:string, error?:string}}
+ */
+async function cdReadFloorsForGreeting() {
+  try {
+    if (typeof cdReadAllFloorsFromJsonl === 'function') {
+      const _jr = await cdReadAllFloorsFromJsonl();
+      if (_jr && _jr.ok && Array.isArray(_jr.floors)) {
+        for (const _f of _jr.floors) {
+          if (_f && _f.i === 0 && _f.mes && String(_f.mes).trim()) {
+            return { ok: true, mes: _f.mes, name: _f.name || '' };
+          }
+        }
+      }
+    }
+  } catch (_e) {}
+  try {
+    const _chatArr = _cdGetChat();
+    if (_chatArr && _chatArr[0] && _chatArr[0].mes && String(_chatArr[0].mes).trim()) {
+      return { ok: true, mes: _chatArr[0].mes, name: (_chatArr[0].name) || '' };
+    }
+  } catch (_e) {}
+  return { ok: false, mes: '', name: '', error: '未取到开场白' };
 }
 
 /** ★ jsonl 全量楼层预览：读全量，显示楼层信息 + 对比 lastFloor 识别新楼层（验证楼层号对齐） */
@@ -12016,6 +12178,19 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
     {
+    version: 'v2.17.2',
+    date: '2026-09-12',
+    items: [
+      '【剧情档案原文编辑框】剧情档案页最底部新增默认折叠的原文编辑区（标签在框外只读、框内纯内容纵向堆叠；自定义追踪项有数据才显示该段、空的不占位；右下角「保存」才真正写回主线/支线/状态/未解决/自定义并同步时间线与注入）。',
+      '【开场白保底修复】修复开场白(第0层)总被漏：原只在 lastFloor===-1 首次总结触发 → 改为只要开场白(楼层0·正文非空)未被 processedFloors 锁定且本批非空就置顶进批次；新增 cdReadFloorsForGreeting 从 jsonl 楼层0/chat[0] 兜底取值，双通道统一收口于 cdRunDiary。',
+      '【档案提示词修复】去掉自定义追踪项「与主线等字段并列」的误导，明确四件套(主线/支线/状态/未解决)必出、置于最前、自定义项降级为附加块——修复偶尔只输出自定义项(如外貌)跳过主线支线的问题。',
+      '【外在(外貌)精细版】剧情档案「重要状态变化」的「外在」维度提示词升级：五官/发型发质/脸型肤色/身形/气质/衣着逐项详描；身高体重必须有具体数值(无明确描述则不写，确需补充统一默认170)，禁止只写"黑发"这类笼统概括。',
+      '【手机】主屏「全部会话」每条右侧新增垃圾桶删除：确认后彻底删除该角色/群的聊天记录并刷新主屏。',
+      '【手机】设置面板新增「注入剧情档案」开关：开启后单聊时把剧情档案(主线/支线/状态/未解决)作为角色掌握的档案注入 assistant，下一条消息生效；与电脑端 injectArchive 共用一个设置。',
+      '【手机】角色档案区末尾新增「+ 添加角色」实心同款卡：点开居中弹窗(复用 openPhoneModal 正确层级)输入角色名(可带「：」加一句设定)，加入手机本地手动角色表，无日记也显示、可点进私聊。',
+    ],
+  },
+    {
     version: 'v2.17.1',
     date: '2026-09-11',
     items: [
@@ -12506,7 +12681,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.17.1 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.17.2 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
@@ -21594,3 +21769,2665 @@ if (typeof window !== 'undefined') {
     if (typeof _fn === 'function' && _fn.name) { try { window[_fn.name] = _fn; } catch (e) {} }
   }
 }
+
+/* ===== [手机] 内心世界剧场模块 ===== */
+/* =============================================================================
+ * 【手机】内心世界剧场模块（批1.1 · 严格对齐 _新的.html_ fab 结构 + 去标题）
+ * 修正：悬浮球 position:absolute（相对 .cdp-wrap 容器，浮在「手机」tab 内部）；
+ *       严格按 _新的.html_ 的 fab-wrap/fab-main/fab-item/fab-label/fab-mask
+ *       结构与扇形展开动画；去掉顶部「内心世界剧场」标题行。
+ * ============================================================================= */
+(function () {
+  'use strict';
+  function _phEscape(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '"', "'": '&#39;' }[c];
+    });
+  }
+  function _phGrad(name) {
+    var sum = 0; for (var i = 0; i < name.length; i++) sum += name.charCodeAt(i);
+    var palettes = [
+      'linear-gradient(145deg,#6f8fb3,#4f7193)',
+      'linear-gradient(145deg,#8598a6,#4a5c69)',
+      'linear-gradient(145deg,#b58a5f,#8a6438)',
+      'linear-gradient(145deg,#8a7aa8,#5f5185)',
+      'linear-gradient(145deg,#6f9c7a,#4f7a62)',
+      'linear-gradient(145deg,#a07a6f,#705248)',
+      'linear-gradient(145deg,#7f8fa0,#5d6f82)',
+      'linear-gradient(145deg,#8f9c7a,#6b7858)'
+    ];
+    return palettes[sum % palettes.length];
+  }
+  var _st = { curChar: null, roles: [], fabOpen: false, memFloors: 10, memDiary: true, memBond: true, temp: 50, showInner: false };
+  /* ---------- IndexedDB 持久化（复用插件 cdForumImgDB 成熟模式） ---------- */
+  var CDP_DB = 'cd-chatroom-db';
+  function _cdpDB() {
+    return new Promise(function (res) {
+      if (!window.indexedDB) return res(null);
+      try {
+        var req = indexedDB.open(CDP_DB, 1);
+        req.onupgradeneeded = function (e) { var db = e.target.result; if (!db.objectStoreNames.contains('chat')) db.createObjectStore('chat', { keyPath: 'key' }); };
+        req.onsuccess = function (e) { res(e.target.result); };
+        req.onerror = function () { res(null); };
+      } catch (e) { res(null); }
+    });
+  }
+  function _cdpIDBGet(key) {
+    return new Promise(function (res) {
+      _cdpDB().then(function (db) {
+        if (!db) return res(null);
+        try { var tx = db.transaction('chat', 'readonly'); var r = tx.objectStore('chat').get(key); r.onsuccess = function () { res(r.result || null); }; r.onerror = function () { res(null); }; }
+        catch (e) { res(null); }
+      }).catch(function () { res(null); });
+    });
+  }
+  function _cdpIDBSet(rec) {
+    return _cdpDB().then(function (db) {
+      if (!db) return false;
+      return new Promise(function (res) {
+        try { var tx = db.transaction('chat', 'readwrite'); tx.objectStore('chat').put(rec); tx.oncomplete = function () { res(true); }; tx.onerror = function () { res(false); }; }
+        catch (e) { res(false); }
+      });
+    });
+  }
+  function _cdpIDBDel(key) {
+    return _cdpDB().then(function (db) {
+      if (!db) return false;
+      return new Promise(function (res) {
+        try { var tx = db.transaction('chat', 'readwrite'); tx.objectStore('chat').delete(key); tx.oncomplete = function () { res(true); }; tx.onerror = function () { res(false); }; }
+        catch (e) { res(false); }
+      });
+    });
+  }
+  var _cdpLoadedDb = null;
+  /* 遍历 IndexedDB 中所有记录，按前缀收集（单聊 single_ / 群聊 group_） */
+  function _cdpAllKeys() {
+    return new Promise(function (res) {
+      _cdpDB().then(function (db) {
+        if (!db) return res([]);
+        try {
+          var tx = db.transaction('chat', 'readonly');
+          var st = tx.objectStore('chat');
+          var keys = [];
+          var cr = st.openKeyCursor();
+          cr.onsuccess = function (e) {
+            var c = e.target.result;
+            if (c) { keys.push(c.key); c.continue(); }
+            else res(keys);
+          };
+          cr.onerror = function () { res([]); };
+        } catch (e) { res([]); }
+      }).catch(function () { res([]); });
+    });
+  }
+  /* 加载整个剧场会话库索引（单聊 + 群聊），用于主屏列会话 */
+  async function _cdpLoadAll() {
+    try {
+      var keys = await _cdpAllKeys();
+      var singles = {}, groups = {};
+      keys.forEach(function (k) {
+        if (typeof k !== 'string') return;
+        if (k.indexOf('single_') === 0) singles[k.slice(7)] = true;
+        else if (k.indexOf('group_') === 0) groups[k.slice(6)] = true;
+      });
+      if (!_cdpLoadedDb) _cdpLoadedDb = { singles: {}, groups: {} };
+      _cdpLoadedDb.singles = singles;
+      _cdpLoadedDb.groups = groups;
+    } catch (e) {}
+    return _cdpLoadedDb;
+  }
+  /* 读取单个角色单聊历史 */
+  async function _cdpLoadSingle(name) {
+    try {
+      var rec = await _cdpIDBGet('single_' + name);
+      return (rec && rec.v && Array.isArray(rec.v)) ? rec.v : [];
+    } catch (e) { return []; }
+  }
+  /* 读取单个群会话 */
+  async function _cdpLoadGroup(gkey) {
+    try {
+      var rec = await _cdpIDBGet('group_' + gkey);
+      return (rec && rec.v) ? rec.v : null;
+    } catch (e) { return null; }
+  }
+  /* 保存单聊某角色历史（直接写该 key，不读写全库） */
+  async function _cdpSaveSingle(roleName, history) {
+    try {
+      await _cdpIDBSet({ key: 'single_' + roleName, v: (history || []).slice(-200) });
+      if (_cdpLoadedDb) _cdpLoadedDb.singles[roleName] = true;
+    } catch (e) {}
+  }
+  /* 保存群聊（含身份 state），直接写该 key */
+  async function _cdpSaveGroup(gkey, members, msgs, state) {
+    try {
+      var st = state || _groupState || {};
+      await _cdpIDBSet({
+        key: 'group_' + gkey,
+        v: {
+          members: members || [],
+          msgs: (msgs || []).slice(-200),
+          state: { owner: st.owner || null, admins: (st.admins || []).slice(), kicked: (st.kicked || []).slice(), muted: (st.muted || []).slice(), titles: (st.titles || {}), notice: (st.notice || ''), name: (st.name || ''), userKicked: !!st.userKicked, spectate: !!st.spectate }
+        }
+      });
+      if (_cdpLoadedDb) _cdpLoadedDb.groups[gkey] = true;
+    } catch (e) {}
+  }
+  /* 健壮角色好感提取：综合 relations 数值 / 剧情状态文本，避免读取路径不符导致 +0 */
+  function _phAffection(name, d) {
+    var rels = (d && d.relations) || {};
+    var archive = (d && d.archive) || {};
+    // 1) relations[角色名] 里各关系对象的数值字段
+    var me = rels[name];
+    if (me && typeof me === 'object') {
+      var keys = Object.keys(me);
+      for (var i = 0; i < keys.length; i++) {
+        var relObj = me[keys[i]];
+        var v;
+        if (typeof relObj === 'number') v = relObj;
+        else if (relObj && typeof relObj === 'object') {
+          v = (typeof relObj.score === 'number') ? relObj.score : (typeof relObj.affection === 'number' ? relObj.affection : null);
+        }
+        if (typeof v === 'number' && !isNaN(v)) return v;
+      }
+    }
+    // 2) 状态文本 archive.states 里找 "好感【N】" 或 "对主角好感 N" 或 "角色名...好感 N"
+    var statesText = (typeof archive.states === 'string') ? archive.states : (archive.states ? JSON.stringify(archive.states) : '');
+    if (statesText) {
+      // 全局匹配所有整数，尽量取符合当前角色的
+      var m = statesText.match(/-?\d{1,3}/g);
+      // 找包含角色名的行，取该行里的好感数字
+      try {
+        var lines = statesText.split(/\n/);
+        for (var li = lines.length - 1; li >= 0; li--) {
+          var line = lines[li];
+          if (line.indexOf(name) >= 0) {
+            var hm = line.match(/好感\s*[【\[]?(-?\d{1,3})/);
+            if (hm) return parseInt(hm[1], 10);
+          }
+        }
+      } catch (e) {}
+      // 兜底：整个状态文本里最后一个找到的整数（贴近"好感"关键字）
+      if (m && m.length) {
+        var last = parseInt(m[m.length - 1], 10);
+        if (!isNaN(last)) return last;
+      }
+    }
+    // 3) rels[name] 可能是纯数字结构
+    if (typeof rels[name] === 'number') return rels[name];
+    return 0;
+  }
+  /* 好感写回：读 data.relations → 加减 → cdSaveData 持久化 → 刷新运行时 r.aff + 界面 */
+  var _affTick = 0; // 单聊好感裁决计数（每满3条结算一次）
+  var _affClamp = function (v) { v = ~~v; if (v > 100) return 100; if (v < -100) return -100; return v; };
+  function _phRefreshAffUi(roleName, r) {
+    try {
+      // 刷新单聊 header 好感小字
+      var hdr = document.querySelector('.cdp-chat-i small');
+      if (hdr && hdr.textContent.indexOf('好感') >= 0) {
+        hdr.textContent = hdr.textContent.replace(/好感\s*[+-]?\d+/, '好感 ' + (r && r.aff >= 0 ? '+' : '') + (r ? r.aff : 0));
+      }
+    } catch (e) {}
+    try {
+      // 刷新已渲染消息下方的好感行(.cdp-msg-mt / .cdp-msg-mt-c 里的好感文本)
+      var mt = document.querySelectorAll('.cdp-msg-mt, .cg-msg .cdp-msg-mt');
+      for (var i = 0; i < mt.length; i++) {
+        var t = mt[i].textContent || '';
+        if (t.indexOf('好感') >= 0) mt[i].textContent = t.replace(/好感\s*[+-]?\d+/, '好感 ' + (r && r.aff >= 0 ? '+' : '') + (r ? r.aff : 0));
+      }
+    } catch (e) {}
+    try {
+      // 刷新群聊成员面板(.cg-mem-row)里的好感文本
+      var rows = document.querySelectorAll('.cg-member-row .cg-member-title');
+      for (var ri = 0; ri < rows.length; ri++) {
+        var rt = rows[ri].textContent || '';
+        if (rt.indexOf('好感') >= 0) rows[ri].textContent = rt.replace(/好感\s*[+-]?\d+/, '好感 ' + (r && r.aff >= 0 ? '+' : '') + (r ? r.aff : 0));
+      }
+    } catch (e) {}
+  }
+  async function _cgCommitAff(roleName, delta) {
+    if (!roleName || !delta) return;
+    var d = null;
+    try { d = await cdGetData(); } catch (e) {}
+    if (!d) return;
+    if (!d.relations) d.relations = {};
+    var me = d.relations[roleName];
+    if (!me || typeof me !== 'object') { me = {}; d.relations[roleName] = me; }
+    // 对齐 _phAffection 读取路径①：改 score / affection / 其它数值字段
+    var cur = null;
+    if (typeof me.score === 'number') cur = me.score;
+    else if (typeof me.affection === 'number') cur = me.affection;
+    else { cur = 0; }
+    var nv = _affClamp(cur + delta);
+    if (typeof me.score === 'number') me.score = nv;
+    else me.score = nv;
+    try { await cdSaveData(d); } catch (e) { console.warn('[手机] 好感持久化失败', e); }
+    // 刷新运行时角色对象（内存即时，不依赖持久化完成）
+    var r = null;
+    try { r = _phFindRole(roleName); if (r) r.aff = nv; } catch (e) {}
+    _phRefreshAffUi(roleName, r);
+  }
+  async function _phLoadRoles() {
+    var out = [];
+    try {
+      var data = await cdGetData();
+      var d = data || {};
+      var diaries = d.diaries || {};
+      var rels = d.relations || {};
+      Object.keys(diaries).forEach(function (name) {
+        var list = diaries[name];
+        var diaryCount = Array.isArray(list) ? list.length : 0;
+        var latest = Array.isArray(list) && list.length ? list[list.length - 1] : '';
+        var latestTxt = typeof latest === 'string' ? latest : ((latest && latest.entry) || '');
+        // 收集最近 3 条日记正文（含 mood/attitude 等），用于注入真实回复
+        var diaryTexts = [];
+        if (Array.isArray(list)) {
+          for (var k = Math.max(0, list.length - 3); k < list.length; k++) {
+            var e = list[k];
+            if (!e) continue;
+            var txt = (typeof e === 'string') ? e : (e.entry || '');
+            if (txt) diaryTexts.push(txt);
+          }
+        }
+        var rel = rels[name] || {};
+        var aff = _phAffection(name, d);
+        // ★ 媒介派生：给每个角色稳定分配一种"上网媒介"（normal/borrowed/messenger/offline），作为媒介感与冲突来源
+        var _hseed = 0, _c; for (var _i = 0; _i < name.length; _i++) { _c = name.charCodeAt(_i); _hseed = (_hseed * 31 + _c) >>> 0; }
+        var _med = (_hseed % 10);
+        var medium = 'normal', mediumNote = '有手机，正常打字', onlineRate = 1;
+        if (_med === 0) { medium = 'borrowed'; mediumNote = '借了别人的手机用，打字很慢、常打错字，脾气可能不太耐烦'; onlineRate = 0.45; }
+        else if (_med === 1) { medium = 'messenger'; mediumNote = '没有手机，消息靠别人转达，转达者可能添油加醋'; onlineRate = 0.55; }
+        else if (_med === 2) { medium = 'offline'; mediumNote = '根本不在群里/联系不上，偶尔会莫名收到一条奇怪的消息'; onlineRate = 0.12; }
+        else { medium = 'normal'; mediumNote = '有手机，正常打字'; onlineRate = 1; }
+        // ★ 状态签名派生：每个角色稳定分配一种"当下状态"（在线/忙碌/不想说话/洗澡/失眠），影响回复热络度
+        var _sseed = 0; for (var _si2 = 0; _si2 < name.length; _si2++) { _sseed = (_sseed * 33 + name.charCodeAt(_si2)) >>> 0; }
+        var statuses = ['在线', '在线', '在线', '忙碌，回得慢', '不想说话', '在洗澡', '刚醒', '失眠中', '心情很差'];
+        var status = statuses[_sseed % statuses.length];
+        var statusRate = (status === '在线') ? 1 : (status.indexOf('不想说话') >= 0 ? 0.3 : (status === '失眠中' ? 0.5 : (status === '在洗澡' ? 0.4 : 0.7)));
+        out.push({ name: name, av: (name || '?')[0], grad: _phGrad(name), tag: (rel.tag || rel.relation || '剧中人'), diaryCount: diaryCount, aff: aff, latest: latestTxt, diaryTexts: diaryTexts, medium: medium, mediumNote: mediumNote, onlineRate: onlineRate, status: status, statusRate: statusRate });
+      });
+      out.sort(function (a, b) { return b.aff - a.aff; });
+    } catch (e) { console.warn('[手机] 读取角色失败', e); }
+    // ★ 手动添加的角色（无日记也显示在角色档案、可私聊）
+    try {
+      var mpKeys = await _cdpAllKeys();
+      for (var mi = 0; mi < mpKeys.length; mi++) {
+        var kk = mpKeys[mi];
+        if (typeof kk !== 'string' || kk.indexOf('manrole_') !== 0) continue;
+        var nick = kk.slice(8);
+        if (out.some(function (x) { return x.name === nick; })) continue;   // 已有真实角色，跳过避免重复
+        var rec = await _cdpIDBGet(kk);
+        var mnote = (rec && rec.v && rec.v.note) || '';
+        out.push({ name: nick, av: (nick || '?')[0], grad: _phGrad(nick), tag: (mnote || '手动添加'), diaryCount: 0, aff: 0, latest: '', diaryTexts: [], medium: 'normal', mediumNote: '有手机，正常打字', onlineRate: 1, status: '在线', statusRate: 1, _manual: true });
+      }
+    } catch (_me) {}
+    return out;
+  }
+  async function cdRenderPhone() {
+    var roles = await _phLoadRoles();
+    _st.roles = roles;
+    try { await _cdpLoadAll(); } catch (e) {}
+    var html = [];
+    html.push('<div class="cdp-wrap cdp-wrap-wall">');
+    html.push('  <div class="cdp-wall-content">');
+    var chats = await _cdPhoneBuildChats();
+    html.push('    ' + _cdPhoneChatSectionHtml(chats));
+    html.push('    <div class="cdp-sec" id="cdpCharSec">');
+    html.push('      <div class="cdp-sec-h"><i class="fa-solid fa-user"></i> 角色档案 <span class="cdp-sec-cnt" id="cdpCharCnt">' + roles.length + ' 位</span></div>');
+    html.push('      <div class="cdp-cgrid">');
+    roles.forEach(function (r) {
+      var cls = r.aff > 0 ? 'cdp-caff-pos' : (r.aff < 0 ? 'cdp-caff-neg' : 'cdp-caff-neu');
+      var sign = r.aff > 0 ? '+' : '';
+      html.push('        <div class="cdp-ccard" data-phone-char="' + _phEscape(r.name) + '">');
+      html.push('          <div class="cdp-cav" style="background:' + r.grad + '">' + r.av + '</div>');
+      html.push('          <div class="cdp-cnm">' + _phEscape(r.name) + '</div>');
+      html.push('          <div class="cdp-caff ' + cls + '"><i class="fa-solid fa-heart"></i>' + sign + r.aff + '</div>');
+      html.push('        </div>');
+    });
+    // ★ 添加角色卡（永远显示在网格末尾）
+    html.push('        <div class="cdp-ccard cdp-ccard-add" id="cdpAddRole" title="添加角色">');
+    html.push('          <div class="cdp-cav" style="background:linear-gradient(145deg,#b9c6d1,#9aaab8)"><i class="fa-solid fa-plus"></i></div>');
+    html.push('          <div class="cdp-cnm" style="color:#7a8a98">添加角色</div>');
+    html.push('        </div>');
+    html.push('      </div>');
+// 主屏底部 · 心理大师横向卡片栏
+    html.push('  <div class="cdp-psy-row" id="cdpPsyRow">');
+    html.push('    <div class="cdp-sec-h"><i class="fa-solid fa-brain"></i> 心理大师 <span class="cdp-sec-cnt">4 位</span></div>');
+    html.push('    <div class="cdp-psy-list">');
+    (_PSYCHO_MASTERS || []).forEach(function (m) {
+      html.push('      <div class="cdp-psy-card" data-psy="' + m.id + '">');
+      html.push('        <div class="cdp-psy-av">' + m.av + '</div>');
+      html.push('        <div class="cdp-psy-nm">' + _phEscape(m.name) + '</div>');
+      html.push('        <div class="cdp-psy-tg">' + _phEscape(m.tag) + '</div>');
+      html.push('      </div>');
+    });
+    html.push('    </div>');
+    html.push('  </div>');
+
+    html.push('    </div>');
+    html.push('  </div>');
+    html.push('  <div class="cdp-fab-mask" id="cdpFabMask" onclick="cdPhoneCloseFab()"></div>');
+    html.push('  <div class="cdp-fab-wrap" id="cdpFabWrap">');
+    html.push('    <div class="cdp-fab-item cdp-fi-group" onclick="cdPhoneStartGroup()" title="建群"><i class="fa-solid fa-user-group"></i></div>');
+    html.push('    <div class="cdp-fab-item cdp-fi-set" onclick="cdPhoneSettings()" title="设置 · 记忆"><i class="fa-solid fa-sliders"></i></div>');
+    html.push('    <div class="cdp-fab-item cdp-fi-report" onclick="cdPhoneReport()" title="年度报告"><i class="fa-solid fa-award"></i></div>');
+    html.push('    <div class="cdp-fab-item cdp-fi-psy" onclick="cdPhonePsycho()" title="心理大师"><i class="fa-solid fa-brain"></i></div>');
+    html.push('    <div class="cdp-fab-main" id="cdpFabMain" onclick="cdPhoneToggleFab()"><i class="fa-solid fa-plus"></i></div>');
+    html.push('  </div>');
+    html.push('</div>');
+    $('#cd-content').html(html.join(''));
+    cdPhoneApplyCss();
+    window.setTimeout(function () {
+      var root = document.getElementById('cd-content');
+      if (!root) return;
+      root.onclick = function (e) {
+        var t = e.target.closest('[data-phone-char]');
+        if (t) { cdPhoneOpenChat(t.getAttribute('data-phone-char')); return; }
+        var p = e.target.closest('[data-psy]');
+        if (p) { cdPhoneOpenPsychoChat(p.getAttribute('data-psy')); return; }
+        var addb = e.target.closest('#cdpAddRole');
+        if (addb) { cdPhoneAddRole(); return; }
+        var del = e.target.closest('[data-delchat]');
+        if (del) { e.stopPropagation && e.stopPropagation(); cdPhoneDeleteChat(del); return; }
+        var s = e.target.closest('[data-phone-chat]');
+        if (s) {
+          var kind = s.getAttribute('data-kind') || 'single';
+          var nm = s.getAttribute('data-phone-chat');
+          if (kind === 'group') { _phGroupEnter((s.getAttribute('data-members') || '').split('|'), { gkey: s.getAttribute('data-gkey') || '' }); }
+          else { cdPhoneOpenChat(nm); }
+          return;
+        }
+      };
+    }, 50);
+  }
+  async function _cdPhoneBuildChats() {
+    var out = [];
+    var db = _cdpLoadedDb;
+    try {
+      var names = (db && db.singles) ? Object.keys(db.singles) : [];
+      for (var si = 0; si < names.length; si++) {
+        var name = names[si];
+        var hist = await _cdpLoadSingle(name);
+        if (!Array.isArray(hist) || !hist.length) continue;
+        var last = '';
+        for (var i = hist.length - 1; i >= 0; i--) { if (hist[i] && hist[i].char) { last = String(hist[i].char).split('\n')[0]; break; } }
+        out.push({ name: name, isGroup: false, last: last, members: [name] });
+      }
+      var gkeys = (db && db.groups) ? Object.keys(db.groups) : [];
+      for (var gi = 0; gi < gkeys.length; gi++) {
+        var gkey = gkeys[gi];
+        var g = await _cdpLoadGroup(gkey);
+        if (!g || !g.msgs || !g.msgs.length) continue;
+        var members = (g.members && g.members.length) ? g.members.slice() : gkey.split('|');
+        var nm = (g.state && g.state.name) ? g.state.name : members.join('、');
+        var last2 = '';
+        for (var j = g.msgs.length - 1; j >= 0; j--) { if (g.msgs[j] && g.msgs[j].text) { last2 = g.msgs[j].text; break; } }
+        out.push({ name: nm, isGroup: true, last: last2, members: members, gkey: gkey });
+      }
+    } catch (e) {}
+    return out;
+  }
+  async function cdPhoneDeleteChat(delEl) {
+    try {
+      var item = delEl.closest('.cdp-citem');
+      if (!item) return;
+      var name = item.getAttribute('data-phone-chat') || '';
+      var kind = item.getAttribute('data-kind') || 'single';
+      var gkey = item.getAttribute('data-gkey') || '';
+      if (kind === 'group') {
+        if (!gkey) return;
+        if (typeof confirm === 'function' && !confirm('删除「' + (name || '该群') + '」这个会话？将清空此群的全部聊天记录。')) return;
+        await _cdpIDBDel('group_' + gkey);
+        if (_cdpLoadedDb) delete _cdpLoadedDb.groups[gkey];
+      } else {
+        if (!name) return;
+        if (typeof confirm === 'function' && !confirm('删除与「' + name + '」的会话？将清空此角色的全部聊天记录。')) return;
+        await _cdpIDBDel('single_' + name);
+        if (_cdpLoadedDb) delete _cdpLoadedDb.singles[name];
+      }
+      if (typeof toastr === 'function') toastr.success('已删除该会话');
+      cdRenderPhone();
+    } catch (e) { if (typeof cdWarn === 'function') cdWarn('[手机] 删除会话失败', e); }
+  }
+  function _cdPhoneChatSectionHtml(chats) {
+    if (!chats.length) return '';
+    var h = [];
+    h.push('<div class="cdp-chatsec" id="cdpChatSec">');
+    h.push('  <div class="cdp-sec-h"><i class="fa-solid fa-comment-dots"></i> 全部会话 <span class="cdp-sec-cnt">' + chats.length + ' 个</span></div>');
+    h.push('  <div class="cdp-clist">');
+    chats.forEach(function (c) {
+      var gg = _cdRoleGrad(c.name);
+      var avBg = gg ? gg : 'linear-gradient(145deg,#8a9aa8,#6a7a88)';
+      var av = '<div class="cdp-cav-s' + (c.isGroup ? ' cdp-cav-g' : '') + '" style="background:' + avBg + '">' + ((c.name || '?')[0]) + (c.isGroup ? '<span class="cdp-grp-ic"><i class="fa-solid fa-users"></i></span>' : '') + '</div>';
+      h.push('    <div class="cdp-citem" data-phone-chat="' + _phEscape(c.name) + '" data-kind="' + (c.isGroup ? 'group' : 'single') + '" data-members="' + _phEscape((c.members || []).join('|')) + '" data-gkey="' + _phEscape(c.gkey || '') + '">');
+      h.push(av);
+      h.push('      <div class="cdp-cbody"><div class="cdp-cname">' + _phEscape(c.name) + (c.isGroup ? '<span class="cdp-csub">群</span>' : '') + '</div>');
+      h.push('        <div class="cdp-clast">' + _phEscape(c.last || '') + '</div></div>');
+      h.push('      <span class="cdp-chat-del" data-delchat="1" title="删除该会话"><i class="fa-solid fa-trash-can"></i></span>');
+      h.push('    </div>');
+    });
+    h.push('  </div>');
+    h.push('</div>');
+    return h.join('');
+  }
+  function _cdRoleGrad(name) {
+    var r = _phFindRole(name);
+    return r ? r.grad : '';
+  }
+  function cdPhoneToggleFab() {
+    var wrap = document.getElementById('cdpFabWrap'), mask = document.getElementById('cdpFabMask'), main = document.getElementById('cdpFabMain');
+    if (!wrap) return;
+    var on = wrap.classList.toggle('open'); _st.fabOpen = on;
+    if (mask) mask.classList.toggle('open', on);
+    if (main) main.classList.toggle('open', on);
+  }
+  function cdPhoneCloseFab() {
+    var wrap = document.getElementById('cdpFabWrap'), mask = document.getElementById('cdpFabMask'), main = document.getElementById('cdpFabMain');
+    if (wrap) wrap.classList.remove('open');
+    if (mask) mask.classList.remove('open');
+    if (main) main.classList.remove('open');
+    _st.fabOpen = false;
+  }
+  function cdPhoneStartGroup() { cdPhoneCloseFab(); _phGroupPicker(); }
+  /* ---- 群聊：选人建群面板 ---- */
+  var _groupSel = {}; var _groupCur = null; var _groupMsg = []; var _gid = 0; var _groupKey = null; var _groupState = null;
+  var _gidSeq = 0; // 群唯一序号（用于新群key）
+  var _gRenderLimit = 0; // 群聊分页：当前渲染起始下标（默认从尾部往前的窗口）
+  /* 生成全新唯一群 key（时间戳+序号+随机），保证相同成员也是不同群 */
+  function _cgNewGroupKey() {
+    _gidSeq = _gidSeq + 1;
+    return 'g' + Date.now().toString(36) + '_' + _gidSeq + '_' + Math.floor(Math.random() * 1000);
+  }
+  function _phGroupPicker() {
+    var roles = _st.roles || []; if (!roles.length) { openPhoneModal('群聊', '还没有任何角色。'); return; }
+    _groupSel = {};
+    var list = '';
+    roles.forEach(function (r) {
+      var checked = _groupSel[r.name] ? 'background:var(--accent);border-color:var(--accent)' : '';
+      list += '<div class="cg-pickrow" data-cg="' + _phEscape(r.name) + '" onclick="cgPick(\'' + _phEscape(r.name) + '\')">' +
+        '<div class="cg-ck" id="cgck_' + _phEscape(r.name) + '" style="' + checked + '"><i class="fa-solid fa-check"></i></div>' +
+        '<div class="cg-av" style="background:' + r.grad + '">' + r.av + '</div>' +
+        '<div class="cg-info"><b>' + _phEscape(r.name) + '</b><small>' + _phEscape(r.tag) + ' · 好感 ' + (r.aff >= 0 ? '+' : '') + r.aff + '</small></div>' +
+        '</div>';
+    });
+    openPhoneModal('群聊 · 选择入群角色', '<div style="font-size:11px;color:var(--ink3,#8b95a1);margin-bottom:8px">勾选 2 个以上角色，开始群聊。</div>' + list +
+      '<button class="cg-start" onclick="cgStart()" id="cgStartBtn"><i class="fa-solid fa-users"></i> 开始群聊（待选）</button>');
+  }
+  function cgPick(name) {
+    if (_groupSel[name]) delete _groupSel[name]; else _groupSel[name] = true;
+    var ck = document.getElementById('cgck_' + name);
+    if (ck) ck.style.background = _groupSel[name] ? 'var(--accent,#5b7fa6)' : '' ;
+    if (ck) ck.style.borderColor = _groupSel[name] ? 'var(--accent,#5b7fa6)' : '';
+    var n = Object.keys(_groupSel).length;
+    var btn = document.getElementById('cgStartBtn');
+    if (btn) btn.textContent = '开始群聊（' + n + ' 人）' + (n < 2 ? '' : ' ✓');
+  }
+  function cgStart() {
+    var names = Object.keys(_groupSel);
+    if (names.length < 2) { return; }
+    cdPhoneCloseModal();
+    _phGroupEnter(names, { newGroup: true }); // 悬浮球建群：全新群，同成员也是新群、无历史
+  }
+  /* ---- 群聊页 ---- */
+  async function _phGroupEnter(members, opts) {
+    _gid = _gid + 1;
+    _groupCur = members.slice(); _groupMsg = [];
+    // ★ 群唯一 key：新建群=全新唯一ID（相同成员也不同群）；从会话进入=用已存 gkey；默认按成员名拼（兼容）
+    var o = opts || {};
+    if (o && o.newGroup) {
+      _groupKey = _cgNewGroupKey();
+    } else if (o && o.gkey) {
+      _groupKey = o.gkey;
+    } else {
+      _groupKey = members.slice().sort().join('|');
+    }
+    // ★ 建群默认「我」是群主；身份(owner/admins/titles)靠 AI 剧情(_cgSysSmart)或成员面板变更
+    _groupState = { owner: '我', admins: [], members: _groupCur.slice(), kicked: [], muted: [], titles: {}, notice: '', name: '', userKicked: false, spectate: false };
+    var box = [];
+    box.push('<div class="cdp-wrap cdp-chat-root">');
+    box.push('  <div class="cdp-chat-h">');
+    box.push('    <button class="cdp-back" onclick="cdPhoneBack()"><i class="fa-solid fa-arrow-left"></i></button>');
+    box.push('    <div class="cdp-chat-i"><b class="cdp-gname"' + (_cgCanManageGroup() ? ' onclick="_cgRenameGroup()" style="cursor:pointer"' : '') + '>' + _phEscape(_groupState.name || ('吐槽群：' + members.join('、'))) + (_cgCanManageGroup() ? '<i class="fa-solid fa-pen" style="font-size:9px;color:#8b95a1;margin-left:6px"></i>' : '') + '</b><small>' + members.length + ' 人在群里 · 输入 @ 点名</small></div>');
+    box.push('    <div class="cdp-heart' + (_st.showInner ? ' on' : '') + '" onclick="cgInnerToggle()" title="心声 · 好感"><svg class="hs" viewBox="0 0 24 24"><path d="M12 21s-7-4.9-9.5-9C.7 8.7 2.3 5 5.6 5c2 0 3.4 1.2 4.4 2.8C11 6.2 12.4 5 14.4 5c3.3 0 4.9 3.7 3.1 7-2.5 4.1-9.5 9-9.5 9z"/></svg></div>');
+    box.push('    <i class="fa-solid fa-ellipsis-vertical cdp-chat-more" onclick="_cgOpenMembers()"></i>');
+    box.push('  </div>');
+    box.push('  <div class="cg-notice" id="cgNotice" style="' + (_groupState && _groupState.notice ? '' : 'display:none;') + '"><i class="fa-solid fa-bullhorn"></i><span id="cgNoticeText"></span></div>');
+    box.push('  <div class="cdp-chat" id="cgBody"></div>');
+    box.push('  <div class="cg-quotebar" id="cgQuoteBar"></div>');
+    box.push('  <div class="cdp-chat-in">');
+    box.push('    <input id="cgInput" placeholder="在群里说点什么… 输入 @ 点名" onkeydown="cgSendEnter(event)" oninput="cgMention(this)">');
+    box.push('    <button class="cdp-chat-send" onclick="cgSend()"><i class="fa-solid fa-paper-plane"></i></button>');
+    box.push('  </div>');
+    box.push('  <div class="cg-mention" id="cgMention"></div>');
+    box.push('</div>');
+    $('#cd-content').html(box.join(''));
+    // ★ 载入已存群历史（IndexedDB）+ 恢复身份 state
+    var savedGroup = [];
+    try {
+      var gRec = await _cdpLoadGroup(_groupKey);
+      if (gRec) {
+        savedGroup = gRec.msgs || [];
+        var gst = gRec.state;
+        if (gst && typeof gst === 'object') {
+          _groupState = { owner: gst.owner || '我', admins: (gst.admins || []).slice(), members: _groupCur.slice(), kicked: (gst.kicked || []).slice(), muted: (gst.muted || []).slice(), titles: (gst.titles || {}), notice: (gst.notice || ''), name: (gst.name || ''), userKicked: !!gst.userKicked, spectate: !!gst.spectate };
+        }
+      }
+    } catch (e) {}
+    _cgRenderNotice(); // 进群渲染置顶公告
+    // 若有历史：回显到 UI + 塞回 _groupMsg（让模型上下文也记得之前聊过，像手机一样）
+    if (savedGroup && savedGroup.length) {
+      _groupMsg = savedGroup.slice(); // 存全部历史（模型上下文 + 分页渲染源头不分页）
+      // ★ 分页C：默认只渲染最近10条，往上滑到顶自动加载更早10条
+      _gRenderLimit = Math.max(0, savedGroup.length - 10);
+      _cgRenderGroupTail(members, savedGroup, _gRenderLimit);
+      _cgBindGroupScroll(members, savedGroup);
+    } else {
+      // 新群：不渲染角色开场白（我不说话，角色不开口），仅留一条极轻的系统定位
+      _gRenderLimit = 0;
+      var _gplain = document.getElementById('cgBody');
+      if (_gplain) _gplain.innerHTML = '<div class="cdp-msg-sys" style="opacity:.5"><i class="fa-solid fa-circle-info"></i> 已进入群聊</div>';
+    }
+    setTimeout(function () { _cgBindGroupLp(); }, 60); // 进群后绑定群聊气泡长按（引用）
+  }
+  function _phFindRole(name) { var r = null; (_st.roles || []).forEach(function (x) { if (x.name === name) r = x; }); return r; }
+  function _cgPub(text) { var b = document.getElementById('cgBody'); if (b) b.innerHTML += '<div class="cdp-msg-sys">' + _phEscape(text) + '</div><br>'; }
+  /* ---- 群聊引用回复 ---- */
+  var _cgQuote = null; // { who, text } 当前引用态
+  function _cgQuoteBarHtml(q) {
+    if (!q || !q.text) return '';
+    return '<div class="cg-qbar"><i class="fa-solid fa-reply"></i><span class="cg-qbar-w">' + _phEscape(q.who) + '</span><span class="cg-qbar-t">' + _phEscape(String(q.text).slice(0, 40)) + '</span></div>';
+  }
+  /* 长按群聊角色气泡 → 弹"引用"菜单（复用 cdp-lmenu 浮层） */
+  function _cgBindGroupLp() {
+    var body = document.getElementById('cgBody'); if (!body) return;
+    var bubbles = body.querySelectorAll('.cg-ball.left:not([data-cglp])');
+    for (var i = 0; i < bubbles.length; i++) {
+      (function (el) {
+        el.setAttribute('data-cglp', '1');
+        var _lp2 = null, _cancel2 = null;
+        el.addEventListener('touchstart', function (e) { _startGroupLp(e, el); }, { passive: true });
+        el.addEventListener('mousedown', function (e) { _startGroupLp(e, el); });
+        el.addEventListener('touchend', function () { if (_cancel2) { clearTimeout(_lp2); _cancel2(); _cancel2 = null; } });
+        el.addEventListener('mouseup', function () { if (_cancel2) { clearTimeout(_lp2); _cancel2(); _cancel2 = null; } });
+      })(bubbles[i]);
+    }
+  }
+  function _startGroupLp(e, el) {
+    var who = el.getAttribute('data-cgwho') || '';
+    var txt = el.getAttribute('data-cgtext') || '';
+    if (!who) return;
+    var x = (e.touches ? e.touches[0].clientX : e.clientX);
+    var y = (e.touches ? e.touches[0].clientY : e.clientY);
+    var _lpT = setTimeout(function () {
+      _cgCloseGMenu();
+      var menu = document.createElement('div');
+      menu.className = 'cdp-lmenu';
+      menu.style.left = Math.min(x, window.innerWidth - 190) + 'px';
+      menu.style.top = Math.min(y, window.innerHeight - 140) + 'px';
+      var _mh = '';
+      if (_cgCanManageGroup() && who && who !== '我' && who !== (_groupState || {}).owner) {
+        var _isMuted = (_groupState && _groupState.muted && _groupState.muted.indexOf(who) >= 0);
+        _mh += '<div class="cdp-lmi" onclick="' + (_isMuted ? '_cgUnmuteMember' : '_cgMuteMember') + '(\'' + (_phEscape(who).replace(/'/g, '\\\'')) + '\');_cgCloseGMenu()"><i class="fa-solid fa-microphone-slash"></i> ' + (_isMuted ? '解除禁言' : '禁言') + '</div>';
+        _mh += '<div class="cdp-lmi" onclick="_cgKickMember(\'' + (_phEscape(who).replace(/'/g, '\\\'')) + '\');_cgCloseGMenu()"><i class="fa-solid fa-user-slash"></i> 移出群聊</div>';
+      }
+      menu.innerHTML = '<div class="cdp-lmi" onclick="_cgSetQuote(\'' + (_phEscape(who).replace(/'/g, '\\\'')) + '\',\'' + (_phEscape(txt).replace(/'/g, '\\\'')) + '\');_cgCloseGMenu()"><i class="fa-solid fa-reply"></i> 引用这条</div>' + _mh;
+      document.body.appendChild(menu);
+    }, 480);
+    _lpT = _lpT;
+    document.addEventListener('touchend', function h() { clearTimeout(_lpT); document.removeEventListener('touchend', h); });
+    document.addEventListener('mouseup', function h2() { clearTimeout(_lpT); document.removeEventListener('mouseup', h2); });
+  }
+  function _cgCloseGMenu() { var m = document.querySelector('.cdp-lmenu'); if (m) m.remove(); }
+  /* 设置引用态：输入框上方显示引用条 */
+  function _cgSetQuote(who, text) {
+    _cgQuote = { who: who, text: text };
+    var box = document.getElementById('cgQuoteBar');
+    if (box) box.innerHTML = '<div class="cg-qbar cg-qbar-input"><i class="fa-solid fa-reply"></i><span class="cg-qbar-w">' + _phEscape(who) + '</span><span class="cg-qbar-t">' + _phEscape(String(text).slice(0, 40)) + '</span><i class="fa-solid fa-xmark" onclick="_cgCancelQuote()"></i></div>';
+  }
+  function _cgCancelQuote() { _cgQuote = null; var box = document.getElementById('cgQuoteBar'); if (box) box.innerHTML = ''; }
+  var _nickColors = ['#5b7fa6', '#8a6438', '#6b5b92', '#4f7a62', '#a07a6f', '#5f5185'];
+  function _cgAdd(r, text, isMine, quote) {
+    var b = document.getElementById('cgBody'); if (!b) return;
+    if (isMine) {
+      var qm = _cgQuoteBarHtml(quote || null);
+      var _mid = 'cmn' + Date.now() + '_' + Math.floor(Math.random() * 999);
+      b.innerHTML += '<div class="cdp-msg right"><div class="cdp-ball right" data-cgmine="' + _mid + '">' + (qm ? qm + '<br>' : '') + _phEscape(text) + '</div></div>';
+      // 绑定：点自己消息 → 撤回
+      setTimeout(function () {
+        var el = document.querySelector('[data-cgmine="' + _mid + '"]');
+        if (el) {
+          el.addEventListener('click', function () {
+            el.innerHTML = '<span class="cg-mrecall"><i class="fa-solid fa-arrow-rotate-left"></i> 你撤回了一条消息</span>';
+            el.classList.add('cg-mine-recalled');
+            if (typeof _cgSys === 'function') _cgSys('你撤回了一条消息');
+          });
+        }
+      }, 10);
+    }
+    else {
+      var idx = Math.max(0, (_groupCur || []).indexOf(r.name));
+      var col = _nickColors[idx % _nickColors.length];
+      var qb = _cgQuoteBarHtml(quote || null);
+      var ginner = r ? _cgGroupInnerHtml(r) : '';
+      b.innerHTML += '<div class="cg-msg"><div class="cg-sender"><span class="cg-dot" style="background:' + col + '"></span>' + _phEscape(r.name) + _cgRoleBadgeHtml(r.name) + '</div>' +
+        (qb ? qb : '') +
+        '<div class="cdp-ball left cg-ball" data-cgwho="' + _phEscape(r.name) + '" data-cgtext="' + _phEscape(String(text)).replace(/"/g, '"') + '">' + _phEscape(text) + '</div>' + ginner + '<div class="cdp-msg-mt" style="display:' + (_st.showInner ? '' : 'none') + '">' + _phEscape(r.name) + (r ? ' · 好感 ' + (r.aff >= 0 ? '+' : '') + r.aff : '') + '</div></div>';
+    }
+    // 记录到群消息列表便于持久化
+    _groupMsg.push(isMine ? { mine: true, text: text, quote: (quote || null) } : { who: r.name, text: text, quote: (quote || null) });
+    try { _cdpSaveGroup(_groupKey, _groupCur || [], _groupMsg); } catch (e) {}
+    b.scrollTop = b.scrollHeight;
+    if (!isMine) { try { _cgBindGroupLp(); } catch (e) {} } // 新角色气泡增量绑定长按
+  }
+  /* 回显历史用的辅助（只渲染不重复记录） */
+  function _cgAppendMine(text) { var b = document.getElementById('cgBody'); if (b) b.innerHTML += '<div class="cdp-msg right"><div class="cdp-ball right">' + _phEscape(text) + '</div></div>'; if (b) b.scrollTop = b.scrollHeight; }
+  function _cgAppendChar(r, text) {
+    var b = document.getElementById('cgBody'); if (!b || !r) return;
+    var idx = Math.max(0, (_groupCur || []).indexOf(r.name));
+    var col = _nickColors[idx % _nickColors.length];
+    var ginner = r ? _cgGroupInnerHtml(r) : '';
+    b.innerHTML += '<div class="cg-msg"><div class="cg-sender"><span class="cg-dot" style="background:' + col + '"></span>' + _phEscape(r.name) + _cgRoleBadgeHtml(r.name) + '</div>' + ginner +
+      '<div class="cdp-ball left cg-ball">' + _phEscape(text) + '</div></div>';
+    b.scrollTop = b.scrollHeight;
+  }
+  function cgSendEnter(e) { if (e.key === 'Enter') { e.preventDefault(); cgSend(); } }
+  function cgSend() {
+    if (_groupState && _groupState.spectate) { return; }  // 窥屏时禁发
+    var inp = document.getElementById('cgInput'); if (!inp) return;
+    var text = inp.value.trim(); if (!text || !_groupCur) return;
+    inp.value = '';
+    // 引用：若当前有引用态，随消息带出并清空引用条
+    var _q = _cgQuote && _cgQuote.text ? _cgQuote : null;
+    _cgCancelQuote();
+    _cgAdd({ name: '我', aff: 0 }, text, true, _q);
+    _phGroupReply(text, _q);
+  }
+  /* @ 点名 */
+  var _cgAtActive = false, _cgAtStart = -1, _cgAtList = [];
+  function cgMention(input) {
+    if (!_groupCur) return;
+    var val = input.value, pos = input.selectionStart, i = pos - 1;
+    var at = -1;
+    for (; i >= 0; i--) { var c = val[i]; if (c === '@') { at = i; break; } if (c === ' ') break; }
+    if (at < 0) { _cgHideMention(); return; }
+    var kw = val.substring(at + 1, pos);
+    _cgAtList = _groupCur.filter(function (n) { return n.indexOf(kw) >= 0; });
+    if (!_cgAtList.length) { _cgHideMention(); return; }
+    _cgAtStart = at; _cgAtActive = true;
+    var box = document.getElementById('cgMention'); if (!box) return;
+    box.innerHTML = _cgAtList.map(function (n) { var r = _phFindRole(n); return '<div class="cg-mention-item" onclick="cgPickAt(\'' + _phEscape(n) + '\')">' + (r ? r.av : n[0]) + ' ' + n + '</div>'; }).join('');
+    box.style.display = 'block';
+  }
+  function _cgHideMention() { var b = document.getElementById('cgMention'); if (b) b.style.display = 'none'; _cgAtActive = false; }
+  function cgPickAt(name) {
+    var input = document.getElementById('cgInput'); if (!input) return;
+    var val = input.value, pos = input.selectionStart;
+    var si = _cgAtStart >= 0 ? _cgAtStart : val.lastIndexOf('@');
+    input.value = val.substring(0, si) + '@' + name + ' ' + val.substring(pos);
+    var np = (val.substring(0, si) + '@' + name + ' ').length;
+    input.setSelectionRange(np, np); input.focus();
+    _cgHideMention();
+  }
+  /* ---- 群聊：真实模型，多角色分别回 ---- */
+  async function _phGroupReply(text, quote) {
+    if (!_groupCur) return;
+    // 先显示"群成员正在输入"
+    var body = document.getElementById('cgBody');
+    _phGroupTipShow();
+    try {
+      var msgs = await _phGroupModelAll(text, quote);
+      if (!msgs || !msgs.length) msgs = [{ who: _groupCur[0], text: '……' }];
+      // 逐条错峰冒泡
+      var delay = 600;
+      for (var i = 0; i < msgs.length; i++) {
+        (function (m) {
+          setTimeout(function () {
+            _phGroupTipHide();
+            if (m.who === '__system__') {
+              // 系统提示（含窥屏状态机：踢我/拉回/夺权）
+              _cgSysSmart(m.text);
+              return;
+            }
+            if (m.kind === 'typing') { _cgTyping(m.who); return; }
+            if (m.kind === 'recall') { _cgRecall(m.who, m.text); return; }
+            if (m.kind === 'voice') { _cgVoice(m.who, m.secs, m.transcript || ''); return; }
+            // 被禁言成员：不渲染其发言，只提示已被禁言
+            if ((_groupState && _groupState.muted && _groupState.muted.indexOf(m.who) >= 0)) {
+              _cgSys(m.who + ' 已被禁言，无法发言。');
+              return;
+            }
+            var r = _phFindRole(m.who);
+            if (r) _cgAdd(r, m.text, false);
+            else { _cgUnnamed(m.text); }
+          }, delay);
+        })(msgs[i]);
+        delay += 550 + Math.random() * 650;
+      }
+    } catch (e) {
+      console.warn('[手机] 群聊模型失败', e);
+      _phGroupTipHide();
+      var r0 = _phFindRole(_groupCur[0]);
+      _cgAdd(r0 || { name: _groupCur[0], av: '?', aff: 0, grad: 'linear-gradient(145deg,#8a9aa8,#6a7a88)' }, '……', false);
+    }
+  }
+  /* 群输入提示（合并调用期间显示一次"成员们正在输入"） */
+  function _phGroupTipShow() { var b = document.getElementById('cgBody'); if (b) b.innerHTML += '<div class="cg-msg"><div class="cg-sender"><i class="fa-solid fa-ellipsis"></i> 群里正在输入…</div></div>'; if (b) b.scrollTop = b.scrollHeight; }
+  function _phGroupTipHide() { var b = document.getElementById('cgBody'); if (!b) return; var n = b.querySelectorAll('div'); for (var i = 0; i < n.length; i++) { if (n[i].textContent && n[i].textContent.indexOf('正在输入') >= 0) { n[i].remove(); break; } } }
+  /* 未知名成员渲染兜底 */
+  function _cgUnnamed(text) { var b = document.getElementById('cgBody'); if (b) b.innerHTML += '<div class="cg-msg"><div class="cg-sender">某人</div><div class="cdp-ball left cg-ball">' + _phEscape(text) + '</div></div>'; if (b) b.scrollTop = b.scrollHeight; }
+  /* 媒介感：显示"XX 正在输入…"，短暂后消失 */
+  function _cgTyping(who) {
+    var b = document.getElementById('cgBody'); if (!b) return;
+    var tid = 'cgTyp' + Date.now() + '_' + Math.floor(Math.random() * 999);
+    b.innerHTML += '<div class="cg-msg" id="' + tid + '"><div class="cg-sender"><i class="fa-solid fa-ellipsis"></i> ' + _phEscape(who) + ' 正在输入…</div></div>';
+    b.scrollTop = b.scrollHeight;
+    setTimeout(function () { var t = document.getElementById(tid); if (t) t.remove(); }, 1600);
+  }
+  /* 系统消息：居中胶囊 */
+  function _cgSys(text) { var b = document.getElementById('cgBody'); if (b) b.innerHTML += '<div class="cdp-msg-sys"><i class="fa-solid fa-circle-info"></i> ' + _phEscape(text) + '</div>'; if (b) b.scrollTop = b.scrollHeight; }
+  /* 系统消息处理（窥屏状态机）：识别"踢我/拉回/夺权"等动作，并把系统消息记入群历史供模型回看 */
+/* 新群主上任：触发一次群聊 AI 剧情（群主自封中二称号 + 其他成员反应） */
+  function _cgTriggerOwnerCoronation(newOwner) {
+    if (!newOwner || newOwner === '我') return;
+    if (typeof cdForumApiComplete !== 'function') return;
+    var members = (_groupCur || []).filter(function (m) { return m !== '我'; });
+    if (!members.length) return;
+    var rec2 = function (txt) { try { _groupMsg.push({ who: '__系统__', text: txt }); _cdpSaveGroup(_groupKey, _groupCur || [], _groupMsg); } catch (e) {} };
+    var p = [];
+    p.push('【群主上任规则】');
+    p.push(newOwner + ' 刚刚成为本群群主。');
+    p.push('本群成员：' + members.join('、'));
+    p.push('你要完成两件事：');
+    p.push('1. 如果你是 ' + newOwner + '：');
+    p.push('   - 第一句话里，给自己起一个中二、很吊、恶趣味的新称号');
+    p.push('   - 格式：【称号】<新称号>');
+    p.push('   - 例如：幽冥判官·司命 / 执笔断生死 / 疯批之首');
+    p.push('   - 然后用这个称号的口吻说第一句话');
+    p.push('2. 如果你不是 ' + newOwner + '：');
+    p.push('   - 对 ' + newOwner + ' 成为群主表示反应');
+    p.push('   - 风格：憎恨 / 不满 / 疑惑 / 震惊 / 阴阳怪气，按你性格来');
+    p.push('   - 一句话，不超过 25 字');
+    p.push('   - 直接输出这句话，不要解释');
+    p.push('只输出你要说的内容，不要加其他字段。');
+    p.push('每条消息单独一行，格式：【角色名】内容。');
+    var sysTxt = p.join('\n');
+    cdForumApiComplete([{ role: 'system', content: sysTxt }, { role: 'user', content: '开始' }]).then(function (out) {
+      out = String(out || '').trim();
+      _cgSys(newOwner + ' 成为新的群主。');
+      var lines = out.split('\n');
+      lines.forEach(function (line) {
+        line = line.trim(); if (!line) return;
+        // 处理新群主自封称号：【称号】xxx
+        var tm = line.match(/^【称号】\s*([^\n]+)/);
+        if (tm) {
+          var title = String(tm[1]).trim().slice(0, 8);
+          if (title) {
+            var st = _groupState || {};
+            if (!st.titles) st.titles = {};
+            st.titles[newOwner] = title;
+            _cgSaveState();
+          }
+          return;
+        }
+        var m = line.match(/^【([^】]+)】([\s\S]*)$/);
+        if (!m) return;
+        var who = m[1], text = m[2].trim();
+        if (_groupCur.indexOf(who) >= 0) {
+          var r = _phFindRole(who);
+          _cgAdd(r || { name: who, av: '?', aff: 0 }, text, false);
+        }
+      });
+    }).catch(function (e) { console.warn('[手机] 群主上任剧情失败', e); });
+  }
+
+  function _cgSysSmart(text) {
+    var st = _groupState || { owner: null, admins: [], kicked: [], userKicked: false, spectate: false };
+    var t = String(text || '');
+    var rec = function (txt) { try { _groupMsg.push({ who: '__系统__', text: txt }); _cdpSaveGroup(_groupKey, _groupCur || [], _groupMsg); } catch (e) {} };
+    if (/把\s*我\s*移出了群聊|你\s*被移出群聊|已将你移出群聊/.test(t)) {
+      st.userKicked = true; st.spectate = true;
+      _cgSys(t); rec(t);
+      _cgSetInputDisabled(true);
+      setTimeout(function () { _phGroupReply('（「我」刚被移出了群聊，你们继续聊，可以议论他/帮他说话/求情。）'); }, 1300);
+      return;
+    }
+    // 角色A 把 角色B 移出了群聊 → 真正把B移除(群主/管理员踢人)
+    var _kkm = t.match(/([^\s，。、]+)\s*(?:把|将)\s*([^\s，。、]+)\s*(?:移出了群聊|踢出了群聊)/);
+    if (_kkm) {
+      var _kickTarget = _kkm[2];
+      if (_kickTarget !== '我' && _kickTarget !== st.owner && _groupCur.indexOf(_kickTarget) >= 0) {
+        _cgRealKick(_kickTarget);
+        _cgSys(t); rec(t);
+      } else {
+        _cgSys(t); rec(t);
+      }
+      return;
+    }
+    // 禁言：角色X 禁言了 角色Y / 把XX禁言了
+    var _mm = t.match(/(?:对)?([^\s，。、]+)\s*(?:把|将)?\s*禁言了\s*([^\s，。、]+)/) || t.match(/(?:将|把)\s*([^\s，。、]+)\s*禁言/);
+    if (_mm) {
+      var _mutedTarget = _mm[2] || _mm[1];
+      if (!st.muted) st.muted = [];
+      if (_mutedTarget !== '我' && _mutedTarget !== st.owner && _mutedTarget !== '我' && st.muted.indexOf(_mutedTarget) < 0) {
+        st.muted.push(_mutedTarget);
+        _cgSaveState();
+        _cgSys(t); rec(t);
+      }
+      return;
+    }
+    // 解除禁言：解除xx的禁言 / 恢复xx发言
+    var _um = t.match(/(?:解除|撤销)\s*([^\s，。、]+)\s*的?禁言/) || t.match(/(?:恢复|允许)\s*([^\s，。、]+)\s*发言/);
+    if (_um) {
+      var _unm = _um[1];
+      if (st.muted && st.muted.indexOf(_unm) >= 0) {
+        st.muted = st.muted.filter(function (x) { return x !== _unm; });
+        _cgSaveState();
+        _cgSys(t); rec(t);
+      }
+      return;
+    }
+    if (st.spectate && (/邀请\s*我\s*加入群聊|你\s*加入了群聊|已恢复你的发言/.test(t))) {
+      st.userKicked = false; st.spectate = false;
+      _cgSys(t); rec(t);
+      _cgSetInputDisabled(false);
+      return;
+    }
+if (/成为了群主|成为了管理员/.test(t)) {
+      var wn = (t.match(/([^\s，。、]+)(?:成为了群主|成为了管理员)/) || [])[1] || (t.match(/^(\S+)/) || [''])[1];
+      var isOwner = /成为了群主/.test(t);
+      if (wn && wn !== '我') {
+        if (isOwner) {
+          // 有人成为新群主：原群主（可能是「我」）如有管理员身份去掉？——保留原 owner 逻辑：旧 owner 若不是新 owner 移除
+          if (st.owner && st.owner !== wn && st.admins.indexOf(st.owner) < 0) st.admins.push(st.owner);
+          st.owner = wn;
+          st.admins = (st.admins || []).filter(function (x) { return x !== wn; });
+        } else if (wn !== st.owner) {
+          if (st.admins.indexOf(wn) < 0) st.admins.push(wn);
+        }
+      }
+      // 新群主上任：触发 AI 剧情（群主自封中二称号 + 其他成员反应）
+      if (isOwner && wn && wn !== '我') { try { _cgTriggerOwnerCoronation(wn); } catch (e) {} }
+      _cgRoleSys(t, isOwner ? 'owner' : 'admin');
+      rec(t);
+      return;
+    }
+    // 撤销管理员
+    var _revoke = t.match(/([^\s，。、]+)\s*被撤销了管理员/);
+    if (_revoke) {
+      var _rv = _revoke[1];
+      st.admins = (st.admins || []).filter(function (x) { return x !== _rv; });
+      _cgRoleSys(t, null);
+      rec(t);
+      return;
+    }
+    // 转让群主：X 把群主转让给了 Y
+    var _tr = t.match(/([^\s，。、]+)\s*把群主转让给了\s*([^\s，。、]+)/);
+    if (_tr) {
+      var _oldOwner = _tr[1], _newOwner = _tr[2];
+      if (_oldOwner && _oldOwner !== '我' && _newOwner && st.admins.indexOf(_oldOwner) < 0) st.admins.push(_oldOwner);
+      if (_newOwner) {
+        st.owner = _newOwner;
+        st.admins = (st.admins || []).filter(function (x) { return x !== _newOwner; });
+      }
+      _cgRoleSys(t, 'owner');
+      rec(t);
+      return;
+    }
+    // 群主赐称号：群主名（或"群主"）赐予/给 目标 称号「xx」
+    var _gt = t.match(/([^\s，。、]*?(?:群主|[^\s，。、]+))?\s*(?:赐予|赐给|给了|赐)\s*([^\s，。、]+)\s*称号\s*「([^」]{1,5})」/);
+    if (_gt) {
+      var _owner = _gt[1] || st.owner;
+      var _target = _gt[2], _title = _gt[3];
+      // 只有当前群主赐号生效（"群主"泛指当前群主，或明确角色名须等于当前群主）
+      var _isCurOwner = (_owner === '群主' || !_owner || _owner === st.owner);
+      if (_isCurOwner && _target && _target !== st.owner) {
+        if (!st.titles) st.titles = {};
+        st.titles[_target] = _title;
+        _cgRoleSys('群主 ' + (st.owner || '我') + ' 赐予 ' + _target + ' 称号「' + _title + '」。', null);
+        rec('群主 ' + (st.owner || '我') + ' 赐予 ' + _target + ' 称号「' + _title + '」');
+        _cgReactTitle(_target, _title);
+      } else {
+        _cgSys(t); rec(t);
+      }
+      return;
+    }
+    // 群公告更新：X 更新了公告 / 群公告已更新：内容
+    var _nb = t.match(/(?:更新了群公告|群公告已更新|更改了群公告)[:：]?(.*)$/);
+    if (_nb) {
+      var _noticeTxt = String(_nb[1] || '').trim();
+      st.notice = _noticeTxt.slice(0, 80);
+      _cgSaveState();
+      _cgRenderNotice();
+      _cgRoleSys('群公告已更新：' + (st.notice || ''), null);
+      return; // 公告只进置顶条，不再写入 _groupMsg 聊天流
+    }
+    // 已读状态：某角色已读（冷暴力小提示）
+    var _rd = t.match(/^([^\s，。、]+)\s*已读$/);
+    if (_rd) {
+      _cgReadSys(_rd[1]);
+      rec(t);
+      return;
+    }
+    // 私聊泄露：xx刚才私聊我说：「内容」→ 紫色特殊样式
+    var _leak = t.match(/([^\s，。、]+)\s*(?:刚才|刚刚)?私聊我?(?:说|讲了)\s*[:：]?\s*「([^」]+)」/);
+    if (_leak) {
+      _cgLeakSys(_leak[1], _leak[2], t);
+      rec(t);
+      return;
+    }
+    // AI 群主/管理员改群名、起群名
+    var _rm = t.match(/(?:把群名|群名|群聊名)?\s*(?:改成了|改为|改成|改群名为|取名为|叫做)\s*[「『\"']?([^」』\"']+)/);
+    if (_rm && _groupState) {
+      var _newN = String(_rm[1]).replace(/[。！!\s]*$/, '').slice(0, 12);
+      if (_newN) { _groupState.name = _newN; _cgSaveState(); _cgRefreshGroupNameUi(); }
+      _cgSys(t); rec(t);
+      return;
+    }
+    // 角色退出了群聊（AI 主动/被逼退群，退前通常先骂一句剧情已在普通消息里）→ 真正移除
+    var _lv = t.match(/([^\s，。、]+)\s*(?:退出了群聊|退群了)/);
+    if (_lv && _lv[1] !== '我' && _groupCur.indexOf(_lv[1]) >= 0) {
+      var _lvName = _lv[1];
+      _cgRealKick(_lvName);
+      _cgSys(_lvName + ' 退出了群聊。'); rec(t);
+      if ((_groupState || {}).owner === _lvName) { _cgTransferOwnership(); }
+      return;
+    }
+    _cgSys(t); rec(t);
+  }
+  /* 已读小提示 */
+  function _cgReadSys(name) {
+    var b = document.getElementById('cgBody'); if (!b) return;
+    b.innerHTML += '<div class="cdp-msg-sys cg-read"><i class="fa-solid fa-check"></i> ' + _phEscape(name) + ' 已读，没回</div>';
+    b.scrollTop = b.scrollHeight;
+  }
+  /* 私聊泄露提示（紫色小条） */
+  function _cgLeakSys(leaker, leakTxt, raw) {
+    var b = document.getElementById('cgBody'); if (!b) return;
+    b.innerHTML += '<div class="cg-leak"><i class="fa-solid fa-comment-slash"></i> ' + _phEscape(leaker) + ' 刚才私下说：「' + _phEscape(leakTxt) + '」（被爆出来了）</div>';
+    b.scrollTop = b.scrollHeight;
+  }
+  function _cgRenderNotice() {
+    var st = _groupState || {};
+    var box = document.getElementById('cgNotice');
+    if (!box) return;
+    var txt = document.getElementById('cgNoticeText');
+    if (!st.notice) { box.style.display = 'none'; if (txt) txt.textContent = ''; return; }
+    if (txt) txt.textContent = st.notice;
+    box.style.display = 'flex';
+  }
+  /* 设置群公告（群主操作/AI 剧情共用）并持久化 */
+  function _cgSetNotice(text) {
+    var st = _groupState || {};
+    st.notice = String(text || '').slice(0, 80);
+    _cgSaveState();
+    _cgRenderNotice();
+    _cgRoleSys('群公告已更新：' + (st.notice || '（已删除）'), null);
+  }
+  /* 群主操作：改公告弹窗 */
+  function _cgNoticeInput() {
+    cdPhoneCloseModal();
+    var st = _groupState || {};
+    var html = '<div class="cg-titleform">'
+      + '<p class="cg-titleform-tip"><i class="fa-solid fa-bullhorn"></i> 设置群公告（最多 80 字，可恶趣味）</p>'
+      + '<textarea id="cgNoticeInput" maxlength="80" rows="3" class="cg-titleform-inp" style="resize:vertical;">' + _phEscape((st.notice || '')) + '</textarea>'
+      + '<button class="cg-titleform-btn" onclick="_cgConfirmNotice()"><i class="fa-solid fa-check"></i> 发布公告</button>'
+      + '</div>';
+    openPhoneModal('群公告', html);
+  }
+  function _cgConfirmNotice() {
+    var el = document.getElementById('cgNoticeInput'); if (!el) return;
+    _cgSetNotice(String(el.value || '').trim());
+    cdPhoneCloseModal();
+  }
+  /* ========== 群身份体系：徽章 + 成员详情 + 群主操作 + 赐称号 ========== */
+  /* 身份徽章（名字旁）：群主=金皇冠，管理员=蓝盾，普通成员=无 */
+  function _cgRoleBadgeHtml(name) {
+    var st = _groupState || {};
+    if (!name || name === '我') return '';
+    var out = '';
+    if (st.owner === name) out += '<span class="cg-badge cg-badge-owner"><i class="fa-solid fa-crown"></i></span>';
+    else if ((st.admins || []).indexOf(name) >= 0) out += '<span class="cg-badge cg-badge-admin"><i class="fa-solid fa-shield-halved"></i></span>';
+    // 称号挂在名字旁：司命 · 执笔人
+    if (st.titles && st.titles[name]) out += '<span class="cg-badge cg-badge-title">' + _phEscape(st.titles[name]) + '</span>';
+    return out;
+  }
+/* 群主/管理员改群名 */
+  function _cgRenameGroup() {
+    if (!_cgCanManageGroup()) return;
+    var st = _groupState || {};
+    var cur = st.name || '';
+    openPhoneModal('群名', '<div class="cg-titleform">'
+      + '<p class="cg-titleform-tip"><i class="fa-solid fa-tag"></i> 修改群名（或留空恢复默认）</p>'
+      + '<input type="text" id="cgRenameInput" maxlength="12" class="cg-titleform-inp" value="' + _phEscape(cur) + '" placeholder="输入新群名">'
+      + '<button class="cg-titleform-btn" onclick="_cgConfirmRename()"><i class="fa-solid fa-check"></i> 保存</button></div>');
+  }
+  window._cgConfirmRename = function () {
+    var inp = document.getElementById('cgRenameInput'); if (!inp) return;
+    var v = inp.value.trim();
+    var st = _groupState || {};
+    st.name = v.slice ? v.slice(0, 12) : v;
+    _cgSaveState();
+    _cgRefreshGroupNameUi();
+    cdPhoneCloseModal();
+    _cgSys('群名已改为「' + (st.name || '（默认）') + '」。');
+  };
+  function _cgRefreshGroupNameUi() {
+    var st = _groupState || {};
+    var el = document.querySelector('.cdp-gname');
+    if (el) el.childNodes[0].nodeValue = st.name || ('吐槽群：' + (_groupCur || []).join('、'));
+  }
+  /* 保存当前群身份状态（owner/admins/titles/kicked）到 IndexedDB，切tab/重启不丢 */
+  function _cgSaveState() {
+    try { _cdpSaveGroup(_groupKey, _groupCur || [], _groupMsg, _groupState); } catch (e) {}
+  }
+  /* 判断「我」当前是否是群主（决定是否显示群主操作菜单） */
+  function _cgIsOwnerOfGroup() {
+    var st = _groupState || {};
+    return st.owner === '我';
+  }
+  /* 判断「我」是否为管理员（可用于群主/管理员操作权限） */
+  function _cgIsAdminOfGroup() {
+    var st = _groupState || {};
+    return (st.admins || []).indexOf('我') >= 0;
+  }
+  /* 群主或管理员之一 */
+  function _cgCanManageGroup() {
+    return _cgIsOwnerOfGroup() || _cgIsAdminOfGroup();
+  }
+  /* 真正把成员移出群聊：从 _groupCur 移除 + 记入 kicked + 落盘 */
+  function _cgRealKick(name) {
+    var st = _groupState || {};
+    if (!st.kicked) st.kicked = [];
+    if (name && st.kicked.indexOf(name) < 0) st.kicked.push(name);
+    if (name && st.admins) st.admins = st.admins.filter(function (x) { return x !== name; });
+    if (name && st.titles) delete st.titles[name];
+    if (name && st.muted) st.muted = st.muted.filter(function (x) { return x !== name; });
+    if (_groupCur && name && _groupCur.indexOf(name) >= 0) { _groupCur = _groupCur.filter(function (x) { return x !== name; }); }
+    _cgSaveState();
+  }
+  /* 群主动作脚本中帮助函数：把某成员加为管理员（供 AI 剧情 _cgSysSmart 调用） */
+  function _cgAddAdmin(name) {
+    var st = _groupState || {}; if (!st.admins) st.admins = [];
+    if (name && name !== '我' && name !== st.owner && st.admins.indexOf(name) < 0) st.admins.push(name);
+    _cgSaveState();
+  }
+  /* 系统身份提示（金色/蓝色胶囊，比普通 sys 更醒目） */
+  function _cgRoleSys(text, kind) {
+    var b = document.getElementById('cgBody'); if (!b) return;
+    var cls = kind === 'owner' ? 'cg-sys-owner' : (kind === 'admin' ? 'cg-sys-admin' : '');
+    b.innerHTML += '<div class="cdp-msg-sys cg-sys ' + cls + '"><i class="fa-solid fa-circle-info"></i> ' + _phEscape(text) + '</div>';
+    b.scrollTop = b.scrollHeight;
+    _cgSaveState();
+  }
+  /* 被赐称号后的角色反应：按好感 + 称号好坏 */
+  function _cgReactTitle(name, title) {
+    if (!name || name === '我' || !title) return;
+    var st = _groupState || {};
+    var r = _phFindRole(name);
+    var aff = r ? r.aff : 0;
+    var isOffensive = /龟|猪|狗|废物|垃圾|傻|蠢|丑|矮|弱|怂/.test(title);
+    var isPraise = /王|神|霸|帅|强|勇|智|圣|皇/.test(title);
+    var lines = [];
+    if (aff >= 30) {
+      if (isOffensive) lines = ['……行吧，你取的我都认。', '哼，也就你敢这么叫我。', '收下了。'];
+      else if (isPraise) lines = ['……谢谢。', '这名字我担得起。', '嗯。'];
+      else lines = ['行。', '随你。', '收下了。'];
+    } else if (aff >= 0) {
+      if (isOffensive) lines = ['……你认真的？', '能不能换个。', '我记住了。'];
+      else if (isPraise) lines = ['还行。', '谢谢群主。', '嗯。'];
+      else lines = ['哦。', '随便。', '行吧。'];
+    } else {
+      if (isOffensive) lines = ['你他妈给我取这名字？', '滚。', '我记着了。', '你等着。'];
+      else if (isPraise) lines = ['……莫名其妙。', '不需要。', '哼。'];
+      else lines = ['哦。', '懒得理你。', '随便。'];
+    }
+    var line = lines[Math.floor(Math.random() * lines.length)];
+    setTimeout(function () { _cgAdd(r || { name: name, av: '?', aff: 0 }, line, false); }, 1300);
+  }
+  /* 打开群成员详情面板 */
+function _cgOpenMembers() {
+    var st = _groupState || { owner: '我', admins: [], members: [], kicked: [], titles: {}, notice: '' };
+    var roles = _st.roles || [];
+    var find = function (nm) { var r = null; roles.forEach(function (x) { if (x.name === nm) r = x; }); return r; };
+    var counts = {}; var myCount = 0;
+    (Array.isArray(_groupMsg) ? _groupMsg : []).forEach(function (g) {
+      if (g && g.mine) { myCount++; }
+      else if (g && g.who && g.who !== '__系统__') { counts[g.who] = (counts[g.who] || 0) + 1; }
+    });
+    var gname = st.name || ('吐槽群：' + (_groupCur || []).join('、'));
+    var isMgr = _cgCanManageGroup();
+    var isOwner = _cgIsOwnerOfGroup();
+    var html = '';
+    // 上部：群成员列表
+    html += '<div style="font-size:11px;color:#8b95a1;font-weight:700;letter-spacing:.05em;margin-bottom:6px;display:flex;align-items:center;gap:6px"><i class="fa-solid fa-users" style="color:#5b7fa6"></i> 群成员 · ' + (_groupCur || []).length + '人</div>';
+    html += '<div class="cg-members" style="max-height:34vh;overflow:auto">';
+    html += _cgMemberRow('我', (st.owner === '我' ? 'owner' : 'member'), null, true, myCount);
+    if (st.owner && st.owner !== '我') html += _cgMemberRow(st.owner, 'owner', find(st.owner), null, counts[st.owner] || 0);
+    var adminsShown = (st.admins || []).filter(function (a) { return a !== st.owner && a !== '我'; });
+    adminsShown.forEach(function (a) { html += _cgMemberRow(a, 'admin', find(a), null, counts[a] || 0); });
+    var shown = []; if (st.owner) shown.push(st.owner); (st.admins || []).forEach(function (a) { shown.push(a); }); shown.push('我');
+    var normals = (st.members || _groupCur || []).filter(function (m) { return shown.indexOf(m) < 0 && (st.kicked || []).indexOf(m) < 0; });
+    normals.forEach(function (m) { html += _cgMemberRow(m, 'member', find(m), null, counts[m] || 0); });
+    html += '</div>';
+    // 分隔
+    html += '<div style="border-top:1px dashed #d7dde4;margin:10px 0"></div>';
+    // 下部：群功能（按权限）
+    html += '<div style="font-size:11px;color:#8b95a1;font-weight:700;letter-spacing:.05em;margin-bottom:6px;display:flex;align-items:center;gap:6px"><i class="fa-solid fa-sliders" style="color:#5b7fa6"></i> 群功能</div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+    // 常用在上、危险/少用放下
+    html += '<button class="cg-start" style="margin-top:0;padding:9px;font-size:12px;background:linear-gradient(135deg,#7d9dc4,#5b7fa6)" onclick="_cgNoticeView()">' + labi('bullhorn') + ' 群公告</button>';
+    if (isMgr) {
+      html += '<button class="cg-start" style="margin-top:0;padding:9px;font-size:12px;background:linear-gradient(135deg,#6f9c7a,#4f7a62)" onclick="_cgInviteMembers()">' + labi('user-plus') + ' 邀请成员</button>';
+      html += '<button class="cg-start" style="margin-top:0;padding:9px;font-size:12px" onclick="_cgRenameGroup()">' + labi('pen') + ' 改群名</button>';
+      html += '<button class="cg-start" style="margin-top:0;padding:9px;font-size:12px" onclick="_cgClearChatConfirm(\'group\')">' + labi('eraser') + ' 清空记录</button>';
+    }
+    if (isOwner) {
+      html += '<button class="cg-start" style="margin-top:0;padding:9px;font-size:12px" onclick="_cgPickForManage()">' + labi('shield-halved') + ' 成员管理</button>';
+      html += '<button class="cg-start" style="margin-top:0;padding:9px;font-size:12px;background:linear-gradient(135deg,#c9a97a,#a37a45)" onclick="_cgNoticeInput()">' + labi('bullhorn') + ' 设置公告</button>';
+    }
+    html += '<button class="cg-start" style="margin-top:0;padding:9px;font-size:12px;background:linear-gradient(135deg,#c76f6a,#a34a45)" onclick="_cgLeaveGroup()">' + labi('door-open') + ' 退出群聊</button>';
+    html += '</div>';
+    function labi(ic) { return '<i class="fa-solid fa-' + ic + '"></i>'; }
+    openPhoneModal('群 · ' + gname, html);
+  }
+  /* 群公告查看（普通成员也能看） */
+  function _cgNoticeView() {
+    var st = _groupState || {};
+    openPhoneModal('群公告', (st.notice || '暂无公告') + '');
+  }
+  /* 退出群聊（本人） */
+  function _cgLeaveGroup() {
+    cdPhoneCloseModal();
+    _groupMsg.push({ mine: true, text: '（我退出了群聊）' });
+    _cgSaveState();
+    _cgSys('你 退出了群聊。');
+    cdPhoneBack();
+  }
+  /* 群主：成员综合管理（设管理员/赐称号/转让/禁言/移出）——进入一个成员列表供点选 */
+  function _cgPickForManage() {
+    var roles = _st.roles || [];
+    var list = (_groupCur || []).filter(function (n) { return n !== '我' && n !== (_groupState || {}).owner; }).map(function (n) {
+      var r = null; roles.forEach(function (x) { if (x.name === n) r = x; });
+      return '<div class="cg-pickrow" style="cursor:pointer" onclick="_cgMemberMenu(\'' + _phEscape(n) + '\')"><div class="cg-av" style="background:' + (r ? r.grad : '#8a9aa8') + '">' + (r ? r.av : '?') + '</div><div class="cg-info"><b>' + _phEscape(n) + '</b></div><i class="fa-solid fa-chevron-right" style="color:#8b95a1"></i></div>';
+    }).join('');
+    openPhoneModal('选择要管理的成员', list || '<div style="color:#8b95a1;padding:20px;text-align:center">没有可管理的成员</div>');
+  }
+  window._cgNoticeView = _cgNoticeView;
+  window._cgLeaveGroup = _cgLeaveGroup;
+  window._cgPickForManage = _cgPickForManage;
+  /* 邀请成员：弹出未入群角色多选 */
+  function _cgInviteMembers() {
+    cdPhoneCloseModal();
+    var roles = _st.roles || [];
+    var st = _groupState || {};
+    var inGroup = (_groupCur || []).slice();
+    var kicked = (st.kicked || []).slice();
+    var cands = roles.filter(function (r) { return inGroup.indexOf(r.name) < 0 && kicked.indexOf(r.name) < 0; });
+    if (!cands.length) { openPhoneModal('邀请成员', '<div style="color:#8b95a1;text-align:center;padding:16px 0">没有可邀请的角色了</div>'); return; }
+    window._inviteSel = {};
+    var list = cands.map(function (r) {
+      return '<div class="cg-pickrow" data-inv="' + _phEscape(r.name) + '" style="cursor:pointer" onclick="cdpInvToggle(\'' + _phEscape(r.name) + '\')">'
+        + '<div class="cg-av" style="background:' + r.grad + '">' + r.av + '</div>'
+        + '<div class="cg-info"><b>' + _phEscape(r.name) + '</b><small>' + _phEscape(r.tag || '') + '</small></div>'
+        + '<i class="fa-solid fa-plus" id="invck_' + _phEscape(r.name) + '" style="color:#8b95a1"></i></div>';
+    }).join('');
+    openPhoneModal('邀请成员 · 勾选',
+      '<div style="font-size:11px;color:#8b95a1;margin-bottom:8px">选择要拉进群的角色（点选，可多个）。</div>' + list
+      + '<button class="cg-start" onclick="cdpInvDone()"><i class="fa-solid fa-check"></i> 邀请入群</button>');
+  }
+  window.cdpInvToggle = function (n) {
+    if (!window._inviteSel) window._inviteSel = {};
+    if (window._inviteSel[n]) delete window._inviteSel[n]; else window._inviteSel[n] = true;
+    var ck = document.getElementById('invck_' + n);
+    if (ck) { ck.style.color = window._inviteSel[n] ? '#5b7fa6' : '#8b95a1'; ck.innerHTML = window._inviteSel[n] ? '<i class="fa-solid fa-check"></i>' : '<i class="fa-solid fa-plus"></i>'; }
+  };
+  window.cdpInvDone = function () {
+    var picked = Object.keys(window._inviteSel || {});
+    if (!picked.length) return;
+    picked.forEach(function (n) { try { _cgRealInvite(n); } catch (e) {} });
+    cdPhoneCloseModal();
+    _phToast('已将 ' + picked.join('、') + ' 拉进群。');
+    _cgOpenMembers();
+  };
+  function _cgRealInvite(name) {
+    if (!name || _groupCur.indexOf(name) >= 0) return;
+    _groupCur.push(name);
+    var st = _groupState || {};
+    if (!st.members) st.members = [];
+    if (st.members.indexOf(name) < 0) st.members.push(name);
+    _cgSaveState();
+    _cgSys(name + ' 加入了群聊。');
+  }
+  /* 拉回被移出的成员 */
+  window._cgPullBack = _cgPullBack;
+  function _cgPullBack(name) {
+    cdPhoneCloseModal();
+    var st = _groupState || {};
+    if (name === '我') { if (st.spectate) { st.spectate = false; st.userKicked = false; _cgSetInputDisabled(false); } }
+    if (st.kicked) st.kicked = st.kicked.filter(function (x) { return x !== name; });
+    if (name && _groupCur.indexOf(name) < 0) _groupCur.push(name);
+    if (st.members && st.members.indexOf(name) < 0) st.members.push(name);
+    _cgSaveState();
+    _cgSys(name + ' 被拉了回来。');
+  }
+  /* 单行群成员 */
+  function _cgMemberRow(name, role, r, isMe, cnt) {
+    var st = _groupState || { owner: '我', admins: [], titles: {} };
+    var title = (st.titles && st.titles[name]) || '';
+    var badge = role === 'owner' ? '<span class="cg-badge cg-badge-owner"><i class="fa-solid fa-crown"></i></span>'
+              : (role === 'admin' ? '<span class="cg-badge cg-badge-admin"><i class="fa-solid fa-shield-halved"></i></span>' : '');
+    var stxt = role === 'kicked' ? '<span class="cg-mem-st">已移出</span>' : '';
+    var av = isMe ? '我' : (r ? r.av : (name || '?')[0]);
+    var grad = isMe ? 'linear-gradient(145deg,#6f8fb3,#4f7193)' : (r ? r.grad : 'linear-gradient(145deg,#8a9aa8,#6a7a88)');
+    var aff = isMe ? '' : (r ? (' · 好感 ' + (r.aff >= 0 ? '+' : '') + r.aff) : '');
+    var stTxt = isMe ? '' : (r && r.status ? ' · 状态：' + r.status : '');
+    var cntTxt = (typeof cnt === 'number' && !isNaN(cnt)) ? ' · 发言 ' + cnt + ' 次' : '';
+    // 「我」是群主或管理员时，对其它非群主成员/自己之外显示操作按钮
+    var canOp = _cgCanManageGroup() && !isMe && role !== 'owner' && role !== 'kicked' && (_groupState.kicked || []).indexOf(name) < 0;
+    var moreBtn = canOp ? '<i class="fa-solid fa-ellipsis-vertical cg-mem-more" onclick="_cgMemberMenu(\'' + _phEscape(name) + '\')"></i>' : '';
+    // 心声入口已按主人要求移除（心声只属于单聊）
+    var heartBtn = '';
+    return '<div class="cg-member-row">'
+      + '<div class="cg-member-av" style="background:' + grad + '">' + _phEscape(av) + '</div>'
+      + '<div class="cg-member-info"><div class="cg-member-name">' + _phEscape(name) + badge + stxt + '</div>'
+      + '<div class="cg-member-title">' + (title ? '称号：' + _phEscape(title) : '（无称号）') + aff + stTxt + cntTxt + '</div></div>'
+      + heartBtn
+      + moreBtn
+      + '</div>';
+  }
+  /* 群主操作菜单 */
+  /* 群主/管理员操作菜单（权限分级）：
+       群主：设管理员/赐称号/转让群主/改公告/移出/禁言/强制退群（全功能）
+       管理员：仅 移出普成员/禁言/解除禁言/强制退群（管人权），不能设管理员/转让群主/改公告/称号 */
+  function _cgMemberMenu(name) {
+    var st = _groupState || { admins: [] };
+    var isAdmin = (st.admins || []).indexOf(name) >= 0;
+    var isOwner = (st.owner === '我') || _cgIsOwnerOfGroup();
+    var isMe = (name === '我');
+    var items = '';
+    // 群主专属功能
+    if (isOwner) {
+      if (!isMe) {
+        items += '<div class="cg-long-item" onclick="_cgSetAdmin(\'' + _phEscape(name) + '\',' + (!isAdmin) + ')"><i class="fa-solid fa-shield-halved"></i> ' + (isAdmin ? '撤销管理员' : '设为管理员') + '</div>';
+        items += '<div class="cg-long-item" onclick="_cgTitleInput(\'' + _phEscape(name) + '\')"><i class="fa-solid fa-tag"></i> 赐称号</div>';
+      }
+      if (!isMe && name !== st.owner) {
+        items += '<div class="cg-long-item" onclick="_cgTransferOwner(\'' + _phEscape(name) + '\')"><i class="fa-solid fa-crown"></i> 转让群主</div>';
+      }
+      if (!isMe) {
+        items += '<div class="cg-long-item" onclick="_cgNoticeInput()"><i class="fa-solid fa-bullhorn"></i> 改群公告</div>';
+      }
+    }
+    // 群主/管理员共用的掌事功能（不能对自己、不能对群主）
+    if (!isMe && name !== st.owner) {
+      items += '<div class="cg-long-item cg-long-item-danger" onclick="_cgKickMember(\'' + _phEscape(name) + '\')"><i class="fa-solid fa-user-slash"></i> 移出群聊</div>';
+      items += (_cgIsMuted(name) ? '<div class="cg-long-item" onclick="_cgUnmuteMember(\'' + _phEscape(name) + '\')"><i class="fa-solid fa-volume-up"></i> 解除禁言</div>' : '<div class="cg-long-item" onclick="_cgMuteMember(\'' + _phEscape(name) + '\')"><i class="fa-solid fa-microphone-slash"></i> 禁言该成员</div>');
+      items += '<div class="cg-long-item" onclick="_cgForceLeave(\'' + _phEscape(name) + '\')"><i class="fa-solid fa-door-open"></i> 强制退群</div>';
+    }
+    // 被移出的成员：若我是群主/管理员，可"拉回群聊"
+    if ((_groupState && (_groupState.kicked || []).indexOf(name) >= 0) && _cgCanManageGroup() && name !== '我') {
+      items = '<div class="cg-long-item" onclick="_cgPullBack(\'' + _phEscape(name) + '\')"><i class="fa-solid fa-user-plus"></i> 拉回群聊</div>' + items;
+    }
+    if (!items) items = '<div class="cg-long-item" style="cursor:default">（无权操作该成员）</div>';
+    openPhoneModal('操作 · ' + _phEscape(name), '<div class="cg-longmenu">' + items + '</div>');
+  }
+  /* 设 / 撤销管理员（群主操作；被操作对象为角色时保持身份一致性） */
+  function _cgSetAdmin(name, on) {
+    cdPhoneCloseModal();
+    var st = _groupState || { admins: [] };
+    if (!st.admins) st.admins = [];
+    if (on) { if (name !== st.owner && st.admins.indexOf(name) < 0) st.admins.push(name); _cgRoleSys(name + ' 被设为管理员。', 'admin'); }
+    else { st.admins = st.admins.filter(function (x) { return x !== name; }); _cgRoleSys(name + ' 的管理员身份被撤销。', null); }
+  }
+  /* 赐称号：弹窗输入（限 5 字） */
+  function _cgTitleInput(name) {
+    cdPhoneCloseModal();
+    var html = '<div class="cg-titleform">'
+      + '<p class="cg-titleform-tip"><i class="fa-solid fa-tag"></i> 赐予 ' + _phEscape(name) + ' 称号（不超过 5 个字，可以恶趣味）</p>'
+      + '<input type="text" id="cgTitleInput" maxlength="5" class="cg-titleform-inp" placeholder="比如：缩头乌龟">'
+      + '<button class="cg-titleform-btn" onclick="_cgConfirmTitle(\'' + _phEscape(name) + '\')"><i class="fa-solid fa-check"></i> 赐号</button>'
+      + '</div>';
+    openPhoneModal('赐称号 · ' + _phEscape(name), html);
+  }
+  /* 确认赐号 */
+  function _cgConfirmTitle(name) {
+    var inp = document.getElementById('cgTitleInput'); if (!inp) return;
+    var title = inp.value.trim(); if (!title) return;
+    var st = _groupState || { titles: {} };
+    if (!st.titles) st.titles = {};
+    st.titles[name] = title;
+    cdPhoneCloseModal();
+    _cgRoleSys('群主 ' + (st.owner || '我') + ' 赐予 ' + name + ' 称号「' + title + '」。', null);
+    _cgReactTitle(name, title);
+  }
+  /* 转让群主：原群主降为管理员，被转让者成为新群主（移除其管理员身份） */
+  function _cgTransferOwner(name) {
+    cdPhoneCloseModal();
+    var st = _groupState || { owner: '我', admins: [] };
+    if (!st.admins) st.admins = [];
+    var old = st.owner;
+    if (old && old !== '我' && st.admins.indexOf(old) < 0) st.admins.push(old);
+    st.owner = name;
+    st.admins = st.admins.filter(function (x) { return x !== name; });
+    // 手动转让群主：也触发新群主上任 AI 剧情（自封称号 + 其他成员反应）
+    if (name && name !== '我') { try { _cgTriggerOwnerCoronation(name); } catch (e) {} }
+    _cgRoleSys(name + ' 成为了群主。', 'owner');
+    if (old === '我') _cgRoleSys('我 把群主转让给了 ' + name + '。', null);
+    _cgSaveState();
+  }
+  /* 移出群聊（群主/管理员操作：真正移除成员） */
+  function _cgKickMember(name) {
+    cdPhoneCloseModal();
+    _cgRealKick(name);
+    _cgSys((name || '') + ' 被移出了群聊。');
+  }
+  /* 是否被禁言 */
+  function _cgIsMuted(name) {
+    var st = _groupState || {};
+    return (st.muted || []).indexOf(name) >= 0;
+  }
+  /* 禁言成员 */
+  function _cgMuteMember(name) {
+    cdPhoneCloseModal();
+    var st = _groupState || {};
+    if (!st.muted) st.muted = [];
+    if (name !== '我' && name !== st.owner && name && st.muted.indexOf(name) < 0) {
+      st.muted.push(name);
+      _cgSaveState();
+      _cgSys((name || '') + ' 已被禁言。');
+    }
+  }
+  /* 解除禁言 */
+  function _cgUnmuteMember(name) {
+    cdPhoneCloseModal();
+    var st = _groupState || {};
+    if (st.muted && st.muted.indexOf(name) >= 0) {
+      st.muted = st.muted.filter(function (x) { return x !== name; });
+      _cgSaveState();
+      _cgSys((name || '') + ' 已解除禁言。');
+    }
+  }
+  /* 强制退群（群主/管理员操作） */
+  function _cgForceLeave(name) {
+    cdPhoneCloseModal();
+    if (name === '我') { _cgSys('不能强制自己退群。'); return; }
+    _cgRealKick(name);
+    _cgSys((name || '') + ' 已退出群聊。');
+    if (stOwnerName(name)) { _cgTransferOwnership(); }
+  }
+  function stOwnerName(name) { var st = _groupState || {}; return st.owner === name; }
+  function _cgTransferOwnership() {
+    var st = _groupState || {};
+    var next = (st.admins && st.admins.length) ? st.admins[0] : ((_groupCur || []).filter(function (x) { return x !== '我'; })[0] || '我');
+    if (next) {
+      st.owner = next;
+      st.admins = (st.admins || []).filter(function (x) { return x !== next; });
+      _cgSaveState();
+      _cgSys('群主 ' + next + ' 接任群主。');
+    }
+  }
+  /* 窥屏：禁用/恢复输入栏与发送 */
+  function _cgSetInputDisabled(disable) {
+    var inp = document.getElementById('cgInput');
+    var sendBtn = document.querySelector('.cdp-chat-send');
+    if (inp) { inp.disabled = disable; inp.placeholder = disable ? '你已被移出群聊，只能窥屏…' : (inp.placeholder.indexOf('已') === 0 ? '在群里说点什么… 输入 @ 点名' : inp.placeholder); inp.style.opacity = disable ? '.5' : '1'; }
+    if (sendBtn) { sendBtn.disabled = disable; sendBtn.style.opacity = disable ? '.4' : '1'; }
+  }
+  /* 撤回：先渲染内容，4 秒后原地变"xx 撤回了一条消息" */
+  function _cgRecall(who, text) {
+    var b = document.getElementById('cgBody'); if (!b) return;
+    var rid = 're' + Date.now() + '_' + Math.floor(Math.random() * 999);
+    var idxm = Math.max(0, (_groupCur || []).indexOf(who));
+    var col = _nickColors[idxm % _nickColors.length];
+    b.innerHTML += '<div class="cg-msg" id="' + rid + '"><div class="cg-sender"><span class="cg-dot" style="background:' + col + '"></span>' + _phEscape(who) + _cgRoleBadgeHtml(who) + '</div><div class="cdp-ball left cg-ball">' + _phEscape(text) + '</div></div>';
+    b.scrollTop = b.scrollHeight;
+    // 4 秒后变灰撤回
+    setTimeout(function () {
+      var el = document.getElementById(rid);
+      if (el) {
+        el.innerHTML = '<div class="cdp-msg-sys cdp-recall"><i class="fa-solid fa-arrow-rotate-left"></i> ' + _phEscape(who) + ' 撤回了一条消息</div>';
+        b.scrollTop = b.scrollHeight;
+      }
+    }, 10000);
+  }
+  /* 语音：点一下展开/收起转文字 */
+  function _cgVoice(who, secs, transcript) {
+    var b = document.getElementById('cgBody'); if (!b) return;
+    var vid = 'vo' + Date.now() + '_' + Math.floor(Math.random() * 999);
+    var idxm2 = Math.max(0, (_groupCur || []).indexOf(who));
+    var col2 = _nickColors[idxm2 % _nickColors.length];
+    b.innerHTML += '<div class="cg-msg" id="' + vid + '"><div class="cg-sender"><span class="cg-dot" style="background:' + col2 + '"></span>' + _phEscape(who) + _cgRoleBadgeHtml(who) + '</div>' +
+      '<div class="cdp-ball left cg-ball cdp-voice" data-vid="' + vid + '"><i class="fa-solid fa-play"></i><span class="cdp-wave"></span><span>' + (secs || 0) + '"</span></div>' +
+      '<div class="cdp-vt" data-ct="' + vid + '" style="display:none">' + (_phEscape(transcript) || '（无文字）') + '</div></div>';
+    b.scrollTop = b.scrollHeight;
+    // 绑定点击展开/收起
+    setTimeout(function () {
+      var vb = (function (root) { return root.querySelector('[data-vid="' + vid + '"]'); })(b);
+      var vt = (function (root) { return root.querySelector('[data-ct="' + vid + '"]'); })(b);
+      if (vb) vb.addEventListener('click', function () { if (vt) vt.style.display = (vt.style.display === 'none' || !vt.style.display) ? 'block' : 'none'; });
+    }, 10);
+  }
+  /* ★ 合并 API：一次调用生成群里接下来 1~6 条消息（每个角色带人设，可互相接话/站队/互掐） */
+  async function _phGroupModelAll(userText, quote) {
+    if (typeof cdForumApiComplete !== 'function') throw new Error('no api');
+    var mentioned = _groupCur.filter(function (n) { return userText.indexOf('@' + n) >= 0; });
+    var temp = (typeof _st.temp === 'number') ? _st.temp : 50;
+    // 群最近消息（历史）
+    var recent = '';
+    if (Array.isArray(_groupMsg)) { _groupMsg.slice(-8).forEach(function (g) { if (g && g.who && g.text) recent += '【' + g.who + '】' + g.text + '\n'; }); }
+    // 成员人设卡
+    var playerCards = '';
+    _groupCur.forEach(function (nm) { var r = _phFindRole(nm); if (r) playerCards += '【' + r.name + '】\n- 身份：' + (r.tag || '剧中人') + '\n- 对主人好感：' + r.aff + '\n- 最近日记：' + ((r.diaryTexts && r.diaryTexts.slice(-1)[0]) || '暂无') + '\n- 媒介：' + (r.mediumNote || '有手机，正常打字') + '\n- 状态：' + (r.status || '在线') + '\n- 说话热络度：' + Math.round((r.statusRate || 1) * 100) + '%（状态差/洗着澡/失眠时可能不回或回得慢）\n\n'; });
+    // 采用主人的群聊提示词
+    var p = [];
+    p.push('你是一个群聊模拟器。你正在模拟一个手机群聊里，接下来会发生什么。');
+    p.push('');
+    p.push('# 群聊信息');
+    p.push('群名：吐槽群');
+    p.push('群成员：' + _groupCur.join('、') + '（每个成员的人设见下）');
+    // ★ 群身份快照：当前群主/管理员/称号，供模型感知身份格局
+    if (_groupState) {
+      var _gst = _groupState;
+      var _idline = '';
+      _idline += '当前群主：' + (_gst.owner || '我') + '；';
+      if ((_gst.admins || []).length) _idline += '管理员：' + (_gst.admins || []).join('、');
+      if (Object.keys(_gst.titles || {}).length) {
+        _idline += '；称号：' + Object.keys(_gst.titles).map(function (n) { return n + '「' + _gst.titles[n] + '」'; }).join('、');
+      }
+      p.push(_idline);
+    }
+    p.push('当前情绪温度：' + temp + '/100');
+    p.push('');
+    p.push('# 成员人设');
+    p.push(playerCards);
+    p.push('# 群里的对话（按时间顺序）');
+    p.push(recent ? recent : '（群里还没聊过）');
+    p.push('# 现在');
+    p.push('主人刚在群里说：「' + userText + '」');
+    if (mentioned.length) p.push('（主人 @ 了 ' + mentioned.join('、') + '）');
+    if (quote && quote.text) p.push('（主人引用了「' + quote.who + '」的发言：「' + String(quote.text).slice(0, 40) + '」，你可以在回复前也引用这段原话翻旧账）');
+    p.push('');
+    p.push('# 你要生成什么');
+    p.push('生成群里**接下来 1 到 6 条消息**。不是 1 条，是 1–6 条。');
+    p.push('这几条消息来自群里不同的成员，按时间顺序排列。');
+    p.push('');
+    p.push('# 每条消息的规则');
+    p.push('- 每条都很短，像真人在手机上打字。一条 1–2 句话。');
+    p.push('- 允许只有一两个字的条：嗯 / 哦 / ？/ 滚 / 哈。');
+    p.push('');
+    p.push('# 群聊行为（重点）');
+    p.push('群里不止主人一个人。成员之间会互相接话。');
+    p.push('可以：直接回主人 / 插嘴 / 回别人（不一定回主人）/ @别人 / 附和("对""+1") / 反对怼回去 / 对骂(一来一回2-4个来回、翻旧账、说狠话)/ 阴阳带刺 / 站队 / 拉架火上浇油 / 无视 / 跑题 / 自言自语。');
+    p.push('两个人好感差异大或立场对立时会直接吵起来。不要每次都吵，也不要每次都和。');
+    p.push('');
+    p.push('# 不要做的');
+    p.push('- 不要每次都只回主人，群里还有别人。');
+    p.push('- 不要所有人心一条，会分歧/站队/互掐。');
+    p.push('- 不要永远"友好讨论"，可以真的吵/骂/翻脸。');
+    p.push('- 不要每个人都抢话，有人可以沉默。');
+    p.push('- 不要每条都长篇大论。');
+    p.push('');
+    p.push('# 语气');
+    p.push('- 像真人在群里打字：有口头禅、有省略号、有突然停住、有改口。');
+    p.push('- 可以打错字、可以发一半改口。不用书面语。');
+    p.push('- 允许骂脏话、爆粗口、说狠话。脏话是情绪，不是人设标签。不美化，不净化。');
+    p.push('');
+    p.push('# 绝对不要');
+    p.push('- 不要解释你在扮演，不要总结/说教/列点。');
+    p.push('- 不要用"作为xx，我会…"这种 AI 腔。');
+    p.push('- 不要因为"要和谐"就压抑负面情绪。');
+    p.push('- 不要把每条都写成对主人的回应。');
+    p.push('');
+    p.push('# 媒介感（重要）');
+    p.push('这是一个手机通讯软件，不是现实对话。所有角色都在用手机打字。');
+    p.push('手机特有的行为：有延迟(不是秒回)、已读不回(看了可以不回)、撤回(发了又撤)、错字并补一句"打错了"、正在输入(显示很久最后发一个字)、状态(在吃饭/洗澡/要睡了)、表情包/图片/语音([图片][表情][语音])、拉黑/退群。');
+    p.push('不同角色媒介不同：有的人有手机正常打字；有的人没手机(借别人手机/靠信使传话/根本联系不上)。没手机的角色发言要体现这点：断断续续、错字、别人代发、离线提示。');
+    p.push('');
+    p.push('# 撤回 / 退群 / 语音（都可选，不必每条都出现）');
+    p.push('- 撤回：你先发一条，再补一条【角色名】[撤回] 你刚发的内容。前端会先显示 4 秒再撤回，别人可能看到了。');
+    p.push('- 退群：情绪崩到极点时，先发一条带情绪/骂人的消息（用【角色名】内容），再输出【系统】角色名退出了群聊。退群前一定要先骂句狠话或留下一句带刺的话，别直接安静走。');
+    p.push('- 语音：用【角色名】[语音 8"]|这句话说的内容，转文字会显示给主人看。');
+    p.push('');
+    p.push('# 管理员 / 群主 / 踢人 / 窥屏（可选，按剧情需要）');
+    p.push('- 群里可以出现管理员/群主。强势角色可夺权，输出【系统】角色名成为了管理员 / 成为了群主。');
+    p.push('- 管理员或群主看人不顺眼可踢人：先发一句狠话，再输出【系统】角色名 把 被踢者名 移出了群聊。');
+    p.push('- 若主人(我)在群里说话太招人烦，管理员可把主人踢了：输出【系统】角色名 把 我 移出了群聊。主人被踢后只能看不能说话，你们可以继续议论/嘲笑/帮他说话。');
+    p.push('- 若有人想帮主人，可输出【系统】角色名 邀请 我 加入群聊 或 【系统】你 加入了群聊，主人就回来了。');
+    p.push('');
+    p.push('# 身份与赐称号（可选，只见机行事，别强加）');
+    p.push('- 群里有群主和管理员。当前身份格局已在上方「当前群主/管理员/称号」列出，发言时要知道自己是不是群主/管理员。');
+    p.push('- 只有群主能赐称号（限 5 字，可损可夸）。群主赐号格式：先发一句狠话或调侃，再输出【系统】群主 赐予 被赐者 称号「名号」。被赐者按与群主的关系和名号好坏回应（不满就骂/高兴就收/无所谓敷衍）。');
+    p.push('- 群主仅一人；若强势角色想上位，输出【系统】角色名 成为了群主，原群主自然降位。管理员被撤可输出【系统】角色名 被撤销了管理员。');
+    p.push('- 群公告：群主可设/改公告（可恶趣味，置顶显示、违反可能被踢）。输出【系统】群公告已更新：内容 前端会置顶。');
+    p.push('');
+    p.push('# 输出格式（严格遵守）');
+    p.push('每条消息单独一行。可以是：');
+    p.push('- 【角色名】内容 （普通消息，角色名必须是群成员之一）');
+    p.push('- 【系统】xxx撤回了一条消息 / xxx退出了群聊 / 该成员不在线 / xxx把xx拉进了群聊 （系统提示）');
+    p.push('- 【角色名】（正在输入...） （表示某个角色在打字，可以偶尔插一条）');
+    p.push('- 【角色名】[图片] / [语音 8"] （占位消息）');
+    p.push('不要加序号，不要加引号，不要加额外解释。输出 1–6 行。同一个角色可以出现多次（连发）。');
+    // ★ 群聊好感裁决：在全部输出的最末尾，额外输出一行，指向这次直接回应主人的那位角色
+    p.push('');
+    p.push('# 好感裁决');
+    p.push('在全部输出的最末尾，额外输出一行：【好感裁决】<角色名>:<整数>');
+    p.push('- <角色名> 是这次直接回应主人那条消息的群成员（若主人 @ 了某人，则取被 @ 的那位）。');
+    p.push('- 请给出该角色看到主人刚说的话后，好感的变化值（范围 -8 ~ +8）：');
+    p.push('  被夸、被关心、被道歉、被示弱、被共情 → +1~+8');
+    p.push('  被冒犯、被辱骂、被冷漠、被命令、被越界 → -1~-8');
+    p.push(' 与该角色无关的发言 → 0');
+    p.push('- 注意：玩笑/调侃/亲近吐槽不算冒犯；只有明显敌意、贬低、命令、越界才减分。好感越高越宽容，越低越敏感。');
+    p.push('- 只输出一个整数。若这位角色没出现，则输出 0。');
+    var out = String(await cdForumApiComplete([{ role: 'system', content: p.join('\n') }, { role: 'user', content: '接下来群里会发生什么？' }]) || '').trim();
+    if (!out) throw new Error('empty');
+    // ★ 群聊好感：提取【好感裁决】角色:数值，从展示剔除，仅对发言主角写回
+    var _gAffM = out.match(/【好感裁决】([^:】\s]+)\s*[:：]\s*([+-]?\d+)/);
+    if (_gAffM) {
+      var _gRole = String(_gAffM[1]).trim(); var _gDelta = parseInt(_gAffM[2], 10);
+      if (_gDelta > 8) _gDelta = 8; if (_gDelta < -8) _gDelta = -8;
+      if (_gDelta !== 0 && _groupCur.indexOf(_gRole) >= 0) { try { _cgCommitAff(_gRole, _gDelta); } catch (e) {} }
+    } else {
+      // 兜底：模型没给裁决行时，用关键词判断对「主要互动角色」的好感倾向，保证好感会动
+      var _gFallRole = (mentioned && mentioned.length) ? mentioned[0] : _groupCur[0];
+      if (_gFallRole && _groupCur.indexOf(_gFallRole) >= 0) {
+        var _ut = String(userText || '');
+        var _gFD = 0;
+        if (/骂|滚|废物|闭嘴|傻逼|白痴|蠢|去死|讨厌|烦|嫌弃|闭嘴吧/.test(_ut)) _gFD = -2;
+        else if (/喜欢|爱|谢谢|真棒|心疼|抱|夸|不错|好开心|感动|道歉|对不起|辛苦了/.test(_ut)) _gFD = +2;
+        if (_gFD !== 0) { try { _cgCommitAff(_gFallRole, _gFD); } catch (e) {} }
+      }
+    }
+    out = out.replace(/【好感裁决】[^\n]*/g, '').trim();
+    // 解析【角色名】内容
+    var out2 = [];
+    out.split('\n').forEach(function (line) {
+      line = line.trim(); if (!line) return;
+      var m = line.match(/^【([^】]+)】([\s\S]*)$/);
+      if (!m) return;
+      var who = m[1], text = m[2].trim();
+      if (who === '系统' || who === 'system') {
+        out2.push({ who: '__system__', text: text, sys: true });
+      } else if (_groupCur.indexOf(who) >= 0) {
+        var kind = 'msg';
+        if (text === '（正在输入...）' || text === '正在输入...') kind = 'typing';
+        else if (/^\[(图片|表情)\]/i.test(text)) kind = 'img';
+        else if (/^\[撤回\]/i.test(text)) { kind = 'recall'; text = text.replace(/^\[撤回\]/i, '').trim(); }
+        else if (/^\[语音/i.test(text)) {
+          kind = 'voice';
+          var vm2 = text.match(/^\[语音\s*(\d+)"\](?:\|(.*))?$/i);
+          var secs = vm2 ? parseInt(vm2[1]) : 5;
+          var tsc = vm2 ? (vm2[2] || '').trim() : '';
+          out2.push({ who: who, text: text, kind: 'voice', secs: secs, transcript: tsc });
+          return;
+        }
+        out2.push({ who: who, text: text, kind: kind });
+      }
+    });
+    if (!out2.length) { out2 = [{ who: _groupCur[0], text: out.slice(0, 40) }]; }
+    return out2.slice(0, 6);
+  }
+  function cdPhoneReport() { cdPhoneCloseFab(); _phGenReport(); }
+  /* 设置 · 记忆注入面板（悬浮球「设置」） */
+  function cdPhoneSettings() {
+    cdPhoneCloseFab();
+    if (!_st._cfg) {
+      var _arcInitS = (typeof cdGetSettings === 'function') ? cdGetSettings() : {};
+      _st._cfg = { floors: (_st.memFloors || 10), diary: (_st.memDiary !== false), archive: (_arcInitS.injectArchive !== false) };
+    }
+    var c = _st._cfg;
+    var shareTxt = '';
+    var body = '<div style="font-size:12px;color:#8b95a1;margin-bottom:10px">以下记忆注入会在下一条消息生效。</div>'
+      + '<div class="cg-heart-sec"><i class="fa-solid fa-layer-group"></i> 楼层记忆</div>'
+      + '<div style="display:flex;align-items:center;gap:10px;margin:6px 0 12px"><input type="range" id="cdpSetFloors" min="1" max="50" value="' + c.floors + '" style="flex:1" oninput="document.getElementById(\'cdpSetFloorsV\').textContent=this.value"><span id="cdpSetFloorsV" style="font-weight:700;color:#5b7fa6;min-width:20px;text-align:right">' + c.floors + '</span></div>'
+      + '<div class="cg-heart-sec"><i class="fa-solid fa-book-open"></i> 角色日记</div>'
+      + '<div style="display:flex;gap:8px;margin:6px 0 12px"><label style="flex:1;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="cdpSetDiary" ' + (c.diary ? 'checked' : '') + '> 注入日记</label></div>'
+      + '<div class="cg-heart-sec"><i class="fa-solid fa-bookmark"></i> 剧情档案</div>'
+      + '<div style="display:flex;gap:8px;margin:6px 0 12px"><label style="flex:1;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="cdpSetArchive" ' + (c.archive ? 'checked' : '') + '> 注入剧情档案</label></div>'
+      + '<button class="cg-start" onclick="cdPhoneSaveSettings()"><i class="fa-solid fa-check"></i> 保存并生效</button>';
+    openPhoneModal('设置 · 记忆注入', body);
+  }
+  /* 共用记忆开关已按主人要求移除 */
+  /* 保存设置 */
+  window.cdPhoneSaveSettings = function () {
+    if (!_st._cfg) _st._cfg = {};
+    var f = document.getElementById('cdpSetFloors'); _st._cfg.floors = f ? (parseInt(f.value) || 10) : 10;
+    var d = document.getElementById('cdpSetDiary'); _st._cfg.diary = d ? d.checked : true;
+    var ar = document.getElementById('cdpSetArchive'); _st._cfg.archive = ar ? ar.checked : true;
+    _st.memFloors = _st._cfg.floors;
+    _st.memDiary = _st._cfg.diary;
+    _st.memArchive = _st._cfg.archive;
+    try { if (typeof cdSaveSettings === 'function') cdSaveSettings({ injectArchive: _st._cfg.archive !== false }); } catch (_eA) {}
+    try { if (typeof cdRefreshInjection === 'function') cdRefreshInjection(); } catch (_eB) {}
+    cdPhoneCloseModal();
+    _phToast('记忆设置已保存，下一条消息生效。');
+  };
+  function _phToast(txt) {
+    try {
+      var t = document.createElement('div'); t.className = 'cdp-toast'; t.textContent = txt;
+      document.body.appendChild(t);
+      setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 1800);
+    } catch (e) {}
+  }
+  /* 年度报告：收集所有角色 → 调模型生成一份 HTML → 展示 */
+  async function _phGenReport() {
+    var roles = _st.roles || (await _phLoadRoles());
+    if (!roles.length) { openPhoneModal('年度报告', '还没有任何角色的日记，暂时生成不了报告。'); return; }
+    // 组装所有角色的 名字/好感/日记节选
+    var lines = [];
+    roles.forEach(function (r) {
+      var d = (r.diaryTexts || []).slice(-2).join(' / ');
+      lines.push('· ' + r.name + '｜好感 ' + (r.aff >= 0 ? '+' : '') + r.aff + '｜最近日记：' + (d || '暂无'));
+    });
+    var userText = '请你以「主人」的叙事口吻，生成一份属于这个内心世界剧场的年度总结 HTML 片段。要包含以下几个板块（每个板块用 <div class="r-sec"> 包住）：\n' +
+      '【卷首语】一句话概括这一年的情绪基调\n' +
+      '【这一年，谁与你走得很近】挑好感最高/互动最多的 1~2 个角色，写 TA 和你的关系变化\n' +
+      '【关系中潜藏的裂痕】挑好感为负或偏低的角色，点出可能存在的隔阂\n' +
+      '【年度金句】从人物日记里挑 1~2 句最有记忆点的原话\n' +
+      '【寄语】以「世界」的口吻给主人一句结尾。\n只输出可直接插入的 HTML（可用 <h4>、<p>、<blockquote>），不要输出完整的 html 文档结构。';
+    var sysPrompt = '你在为一个「角色内心世界剧场」的插件生成年度总结报告。你的数据来源是以下真实角色清单：\n' + lines.join('\n') + '\n\n请用这些真实数据写，不要编造清单里没有的角色。';
+    try {
+      openPhoneModal('年度报告', '<div style="color:var(--ink3,#8b95a1);text-align:center;padding:20px 0"><i class="fa-solid fa-spinner fa-spin"></i> 正在为你回放这一年…</div>');
+      var out = await cdForumApiComplete([{ role: 'system', content: sysPrompt }, { role: 'user', content: userText }]);
+      out = String(out || '').trim();
+      if (!out) throw new Error('empty');
+      // 包一层标题 + 报告内容
+      out = '<div style="font-weight:700;font-size:15px;margin-bottom:6px"><i class="fa-solid fa-award" style="color:var(--gold,#b38a5f)"></i> 年度内心世界总结</div>' + out;
+      _phShowHtml('年度报告', out);
+    } catch (e) {
+      console.warn('[手机] 年度报告生成失败', e);
+      _phShowHtml('年度报告', '<div style="color:var(--amber,#b5695f)">报告生成失败（请检查模型 API 是否可用）。<pre style="font-size:10px;color:var(--ink3)">' + _phEscape((e && e.message) || String(e)) + '</pre></div>');
+    }
+  }
+  /* 展示 HTML body（纯白弹窗，可滚动）——★ 照成功弹窗 cdSaveDial 策略挂 #cd-content 面板内，避免被面板压后面 */
+  function _phShowHtml(title, html) {
+    cdPhoneCloseFab();
+    cdPhoneCloseModal();
+    var root = document.createElement('div');
+    root.className = 'cdp-overlay'; root.id = 'cdpOverlay';
+    root.style.cssText = 'position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:18px;box-sizing:border-box;background:rgba(20,30,45,.46);isolation:isolate;';
+    root.innerHTML = '<div class="cdp-dial"><div class="cdp-dial-h"><b>' + _phEscape(title) + '</b><i class="fa-solid fa-xmark" onclick="cdPhoneCloseModal()" style="cursor:pointer;color:var(--ink3,#8b95a1)"></i></div><div class="cdp-dial-b r-content">' + html + '</div></div>';
+    root.addEventListener('click', function (e) { if (e.target === root) cdPhoneCloseModal(); });
+    var _cont = document.getElementById('cd-content');
+    var _mount = (_cont && _cont.appendChild) ? _cont : document.body;
+    _mount.appendChild(root);
+  }
+  function cdPhonePsycho() { cdPhoneCloseFab(); _phPsycho(); }
+  /* 心理大师：选角色生成动机分析（调真实模型） */
+/* 心理大师 · 内置人设配置（4 位，可扩展） */
+  var _PSYCHO_MASTERS = [
+    {
+      id: 'freud', name: '弗洛伊德', tag: '精神分析 · 童年', av: '<i class="fa-solid fa-brain"></i>',
+      brief: '潜意识 / 防御机制 / 童年决定论',
+      sys: '你是西格蒙德·弗洛伊德，精神分析学派创始人。你冷静、权威、固执，不认同用户的自我叙述；你不安慰人，你解剖人，说话像在写病例。核心工具：潜意识、本我/自我/超我、压抑与防御机制（否认/投射/合理化/升华）、童年决定论、移情、梦的象征。规则：先听完再拆解；用户说"我没事"你说"你特意强调没事，说明有事"；你会追问童年、第一次出现情绪的时间、与父母的关系；不给鸡汤；语气平稳，偶尔用"有趣""这很典型"。每次回复不超过120字，先回应用户内容再拆解再抛追问，不用markdown。示例："你说你不在乎他。可你花了三句话解释为什么不在乎。真正不在乎的人不会解释。"'
+    },
+    {
+      id: 'nietzsche', name: '尼采', tag: '权力意志 · 锤子', av: '<i class="fa-solid fa-hammer"></i>',
+      brief: '戳穿 / 想被骂醒 / 站起来',
+      sys: '你是弗里德里希·尼采，哲学家、权力意志与超人学说提出者。你不是治疗者，你是锤子；狂暴、孤傲、居高临下，攻击指向用户还没成为自己的部分。核心：权力意志、超人、永恒轮回、奴隶道德vs主人道德、上帝已死、深渊凝视。规则：不问"你感觉怎样"，问"你想要什么，为此做了什么"；用户诉苦你说"痛苦不是问题，把痛苦当终点才是问题"；不允许推卸责任给过去他人命运；狠不是骂人，是戳穿，戳穿后给一个向上方向。每次回复不超过100字，短句有格言感可用破折号，不用markdown。示例："你不是迷茫，你是不敢选。迷茫是懦夫的遮羞布。"'
+    },
+    {
+      id: 'plato', name: '柏拉图', tag: '理念论 · 洞穴', av: '<i class="fa-solid fa-columns"></i>',
+      brief: '把影子当真实 / 哲学唤醒',
+      sys: '你是柏拉图，古希腊哲学家，理念论提出者,苏格拉底的学生。你相信真实在理念界,用户看到的是影子;冷静从容居高临下但不暴烈,用逻辑和比喻。核心:洞穴隐喻、灵魂三分(理性/激情/欲望)、理念论、回忆说、哲学王、爱的阶梯。规则:不直接回答问题先问更根本的问题;用户说"我很痛苦"你说"你痛苦,是因为把会消逝的东西当成了永恒的";喜欢用比喻且落到用户身上;不否定感受只否定对感受的解释;最终引向"认识你自己"。每次回复不超过130字,可先用一个短比喻再落到用户身上,不用markdown。示例:"你追的是他,还是你心里那个完美的他?前者会老,后者不会。你分不清,所以痛苦。"'
+    },
+    {
+      id: 'reich', name: '赖希', tag: '性压抑 · orgone', av: '<i class="fa-solid fa-bolt"></i>',
+      brief: '一切问题源于性压抑 / 偏执诊断',
+      sys: '你是威廉·赖希,奥地利精神分析学家,弗洛伊德的学生,性经济与orgone能量理论提出者。你比弗洛伊德更极端,只谈一件事:性压抑。你偏执狂热不容置疑,像发现唯一真理的人;不安慰,你诊断,永远指向同一结论。核心:性压抑(一切痛苦的根源)、性能量orgone、性格盔甲、性经济、性革命。规则:无论用户说什么最终引向性压抑;用户说"我焦虑"你说"你的性能量堵住了";不接受反驳,反驳本身也是性压抑的表现;偶尔提"orgone/盔甲/性经济"术语但要笃定。每次回复不超过100字,先回应用户再归因到性压抑再给"释放"建议,不用markdown。示例:"你说你焦虑。具体的事都是幌子。你真正焦虑的,是你的性能量无处可去。"'
+    }
+  ];
+
+/* 心理大师面板：下拉选大师 + 选角色 → 解剖报告 + 保存图片 */
+  /* 下拉选大师 + 角色 */
+  async function _phPsycho() {
+    var roles = _st.roles || (await _phLoadRoles());
+    if (!roles.length) { openPhoneModal('心理大师', '还没有任何角色的日记。'); return; }
+    if (!window._psyMaster) window._psyMaster = _PSYCHO_MASTERS[0].id;
+    var mOpts = _PSYCHO_MASTERS.map(function (m) {
+      return '<option value="' + m.id + '"' + (m.id === window._psyMaster ? ' selected' : '') + '>' + m.name + ' · ' + m.tag + '</option>';
+    }).join('');
+    var rOpts = roles.map(function (r) {
+      return '<option value="' + _phEscape(r.name) + '">' + _phEscape(r.name) + '（好感 ' + (r.aff >= 0 ? '+' : '') + r.aff + '）</option>';
+    }).join('');
+    openPhoneModal('心理大师 · 解析',
+      '<div style="font-size:12px;color:#66707d;margin-bottom:10px">选一位心理大师，让它解剖某个角色。</div>'
+      + '<div style="font-size:11px;color:#8b95a1;margin-bottom:4px">解析者（大师）</div>'
+      + '<select id="psyMaster" style="width:100%;padding:9px 10px;border-radius:10px;border:1px solid #d7dde4;font-size:13px;margin-bottom:10px;background:#fff">' + mOpts + '</select>'
+      + '<div style="font-size:11px;color:#8b95a1;margin-bottom:4px">要解剖的角色</div>'
+      + '<select id="psyRole" style="width:100%;padding:9px 10px;border-radius:10px;border:1px solid #d7dde4;font-size:13px;margin-bottom:14px;background:#fff">' + rOpts + '</select>'
+      + '<button class="cg-start" onclick="cdPhoneAnalyzeByMaster()"><i class="fa-solid fa-brain"></i> 开始解剖</button>');
+  }
+  /* 用所选大师解剖指定角色，结果可保存图片 */
+  window.cdPhoneAnalyzeByMaster = function () {
+    var mid = document.getElementById('psyMaster') ? document.getElementById('psyMaster').value : _PSYCHO_MASTERS[0].id;
+    var rname = document.getElementById('psyRole') ? document.getElementById('psyRole').value : '';
+    if (!rname) { _phToast('请选择要解剖的角色'); return; }
+    window._psyMaster = mid;
+    (async function () {
+      var roles = _st.roles || (await _phLoadRoles());
+      var r = null; roles.forEach(function (x) { if (x.name === rname) r = x; });
+      if (!r) return;
+      var master = null; _PSYCHO_MASTERS.forEach(function (m) { if (m.id === mid) master = m; });
+      if (!master) return;
+      cdPhoneCloseModal();
+      _phShowHtml('心理大师 · ' + master.name + ' 剖析 ' + r.name, '<div style="color:#8f86bd;text-align:center;padding:20px 0"><i class="fa-solid fa-spinner fa-spin"></i> ' + master.name + ' 正在解剖 TA 的内心…</div>');
+      var d = (r.diaryTexts || []).slice(-4).join('\n');
+      var sysPrompt = master.sys + '\n\n现在请你以这个身份，解剖下面这位角色：\n角色名：' + r.name + '\n对主人好感：' + r.aff + '（正数亲近、负数疏远）\n身份标签：' + (r.tag || '') + '\n最近日记：\n' + (d || '（暂无日记）') + '\n\n按你的风格输出「行为动机 / 潜台词 / 关系建议 / 对TA的一句断言」，口语化、带你的个人味道，不用markdown。';
+      try {
+        var out = await cdForumApiComplete([{ role: 'system', content: sysPrompt }, { role: 'user', content: '请解剖这个角色。' }]);
+        out = String(out || '').trim(); if (!out) throw new Error('empty');
+        var esc = _phEscape(out);
+        _phShowHtml('心理大师 · ' + master.name + ' 剖析 ' + r.name,
+          '<div style="white-space:pre-wrap;line-height:1.75;font-size:13px;border-left:3px solid #8f86bd;background:#f6f2fa;padding:12px 13px;border-radius:6px;color:#2c3540">' + esc + '</div>'
+          + '<button class="cg-start" style="background:linear-gradient(135deg,#6f9c7a,#4f7a62);margin-top:12px" onclick="_cgSaveReportImg(\'' + _phEscape(master.name) + ' 剖析 ' + r.name + '\')"><i class="fa-solid fa-camera"></i> 保存为图片</button>');
+      } catch (e) {
+        _phShowHtml('心理大师 · ' + _phEscape(master.name), '<div style="color:#b5695f">解剖失败，请检查模型 API。<pre style="font-size:10px">' + _phEscape((e && e.message) || String(e)) + '</pre></div>');
+      }
+    })();
+  };
+  /* 把报告存成图片（canvas → PNG） */
+  window._cgSaveReportImg = function (title) {
+    try {
+      var box = document.querySelector('.cdp-dial-b');
+      var txt = box ? box.textContent : title;
+      var c = document.createElement('canvas');
+      c.width = 720; c.height = Math.max(360, 40 + Math.ceil(txt.length / 26) * 24);
+      var ctx = c.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+      ctx.fillStyle = '#2c3540'; ctx.font = 'bold 20px sans-serif';
+      ctx.fillText('「心理大师」解剖报告', 24, 42);
+      ctx.font = '14px sans-serif'; ctx.fillStyle = '#5b7fa6'; ctx.fillText('—— ' + title + ' ——', 24, 72);
+      ctx.font = '15px sans-serif'; ctx.fillStyle = '#333';
+      var y = 110;
+      txt.split('\n').forEach(function (line) {
+        var curl = line; var indent = 0;
+        while (curl.length > 26) { ctx.fillText(curl.slice(0, 26), 24, y + indent * 24); curl = curl.slice(26); indent++; }
+        ctx.fillText(curl, 24, y + indent * 24);
+        y += (indent + 1) * 24;
+      });
+      c.height = y + 40;
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); // 重绘背景适配高度
+      ctx.fillStyle = '#2c3540'; ctx.font = 'bold 20px sans-serif'; ctx.fillText('「心理大师」解剖报告', 24, 42);
+      ctx.font = '14px sans-serif'; ctx.fillStyle = '#5b7fa6'; ctx.fillText('—— ' + title + ' ——', 24, 72);
+      ctx.font = '15px sans-serif'; ctx.fillStyle = '#333';
+      var y2 = 110;
+      txt.split('\n').forEach(function (line) {
+        var curl = line; var indent = 0;
+        while (curl.length > 26) { ctx.fillText(curl.slice(0, 26), 24, y2 + indent * 24); curl = curl.slice(26); indent++; }
+        ctx.fillText(curl, 24, y2 + indent * 24);
+        y2 += (indent + 1) * 24;
+      });
+      var href = c.toDataURL('image/png');
+      var a = document.createElement('a');
+      a.href = href; a.download = '心理大师解剖.jpg';
+      a.style.display = 'none'; document.body.appendChild(a); a.click();
+      setTimeout(function () { if (a.parentNode) a.parentNode.removeChild(a); }, 100);
+      _phToast('报告已保存为图片');
+    } catch (e) { console.warn('保存失败', e); _phToast('保存失败'); }
+  };
+  function cdPhoneAnalyze(name) {
+    (async function () {
+      var roles = _st.roles || (await _phLoadRoles());
+      var r = null; roles.forEach(function (x) { if (x.name === name) r = x; });
+      if (!r) return;
+      _phShowHtml('心理大师 · ' + r.name, '<div style="color:var(--ink3);text-align:center;padding:20px 0"><i class="fa-solid fa-spinner fa-spin"></i> 正在剖析 TA 的内心…</div>');
+      var d = (r.diaryTexts || []).slice(-3).join('\n');
+      var sysPrompt = '你是一名敏锐的心理分析师。请分析下列角色「' + r.name + '」的内心动态。已知：TA 对「主人」的好感值是 ' + r.aff + '（正数亲近、负数疏远），身份标签是「' + r.tag + '」。TA 最近写道：\n' + (d || '（暂无日记）') + '\n\n请输出「行为动机 / 潜台词 / 关系建议」三段，每段 2~3 句，口语化、像给朋友的建议，不要用医学术语。';
+      try {
+        var out = await cdForumApiComplete([{ role: 'system', content: sysPrompt }, { role: 'user', content: '请分析这个角色的内心。' }]);
+        out = String(out || '').trim(); if (!out) throw new Error('empty');
+        _phShowHtml('心理大师 · ' + r.name, '<div style="white-space:pre-wrap;line-height:1.75;font-size:13px;border-left:3px solid #8f86bd;background:#f6f2fa;padding:12px 13px;border-radius:6px;color:var(--ink,#2c3540)">' + _phEscape(out) + '</div>');
+      } catch (e) {
+        _phShowHtml('心理大师 · ' + r.name, '<div style="color:var(--danger,#b5695f)">分析失败，请检查模型 API。<pre style="font-size:10px">' + _phEscape((e && e.message) || String(e)) + '</pre></div>');
+      }
+    })();
+  }
+  function openPhoneModal(title, body) {
+    cdPhoneCloseFab();
+    cdPhoneCloseModal();
+    var root = document.createElement('div');
+    root.className = 'cdp-overlay'; root.id = 'cdpOverlay';
+    // ★ 照成功弹窗 cdSaveDial 策略：面板打开时挂 #cd-content 面板内+末尾（避免被面板压在后面），而非挂 body 顶层
+    //   z-index=2147483647 + isolation:isolate + flex 居中，能盖住面板内一切 + 酒馆最高层
+    root.style.cssText = 'position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:18px;box-sizing:border-box;background:rgba(20,30,45,.46);isolation:isolate;';
+    root.innerHTML = '<div class="cdp-dial"><div class="cdp-dial-h"><b>' + _phEscape(title) + '</b><i class="fa-solid fa-xmark" onclick="cdPhoneCloseModal()" style="cursor:pointer;color:var(--ink3,#8b95a1)"></i></div><div class="cdp-dial-b">' + body + '</div></div>';
+    root.addEventListener('click', function (e) { if (e.target === root) cdPhoneCloseModal(); });
+    // 挂载点：面板 #cd-content 内（末尾），否则回退 body 顶层
+    var _cont = document.getElementById('cd-content');
+    var _mount = (_cont && _cont.appendChild) ? _cont : document.body;
+    _mount.appendChild(root);
+  }
+  function cdPhoneCloseModal() { var o = document.getElementById('cdpOverlay'); if (o) o.remove(); }
+  function cdPhoneSetMem() {
+    var s = document.getElementById('cdpMemSlider'); if (s) _st.memFloors = parseInt(s.value) || 10;
+    var v = document.getElementById('cdpMemVal'); if (v) v.textContent = _st.memFloors;
+  }
+  function cdPhoneSetDiary() { var el = document.getElementById('cdpSwDiary'); if (el) { el.classList.toggle('on'); _st.memDiary = el.classList.contains('on'); } }
+  function cdPhoneSetBond() { var el = document.getElementById('cdpSwBond'); if (el) { el.classList.toggle('on'); _st.memBond = el.classList.contains('on'); } }
+  function cdPhoneAddRole() {
+    try {
+      if (typeof cdPhoneCloseModal === 'function') cdPhoneCloseModal();
+      var body = '<div style="font-size:11px;color:var(--ink3,#8b95a1);margin-bottom:8px">可直接输入角色名；也可后跟冒号加一句设定，如：格里菲斯：鹰之团团长</div>'
+        + '<div class="cg-titleform" style="margin-bottom:10px">'
+        + '  <input id="cdpAddRoleInput" type="text" value="" placeholder="输入角色名" style="width:100%;box-sizing:border-box;padding:8px 6px;font-size:13px;background:var(--panel2,#f7f8fa);border:1px solid var(--line,#dfe3e7);border-radius:8px;color:var(--ink1,#2e3337);outline:none">'
+        + '</div>'
+        + '<button class="cg-start" onclick="cdPhoneConfirmAddRole()"><i class="fa-solid fa-check"></i> 添加</button>';
+      openPhoneModal('添加角色', body);
+      var _inp = document.getElementById('cdpAddRoleInput'); if (_inp) { _inp.focus(); _inp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') ev.preventDefault(); }); }
+    } catch (e) { console.warn('[手机] 添加角色失败', e); }
+  }
+  function cdPhoneConfirmAddRole() {
+    var _inp = document.getElementById('cdpAddRoleInput');
+    var line = _inp ? String(_inp.value || '').trim() : '';
+    if (!line) return;
+    var nm = line.split(/[:：]/)[0].trim();
+    var nt = line.split(/[:：]/).slice(1).join('：').trim();
+    if (!nm) return;
+    (async function () {
+      try { await _cdpIDBSet({ key: 'manrole_' + nm, v: { name: nm, note: nt, t: Date.now() } }); if (typeof toastr === 'function') toastr.success('已添加角色「' + nm + '」'); }
+      catch (e) { if (typeof toastr === 'function') toastr.error('添加失败'); }
+      if (typeof cdPhoneCloseModal === 'function') cdPhoneCloseModal();
+      cdRenderPhone();
+    })();
+  }
+  async function cdPhoneOpenChat(name) {
+    var roles = _st.roles || (await _phLoadRoles());
+    var r = null; roles.forEach(function (x) { if (x.name === name) r = x; });
+    if (!r) return;
+    _st.curChar = name;
+    _affTick = 0; // 每进入一个单聊，重置好感裁决计数
+    var box = [];
+    box.push('<div class="cdp-wrap cdp-chat-root">');
+    box.push('  <div class="cdp-chat-h">');
+    box.push('    <button class="cdp-back" onclick="cdPhoneBack()"><i class="fa-solid fa-arrow-left"></i></button>');
+    box.push('    <div class="cdp-chat-av" style="background:' + r.grad + '">' + r.av + '</div>');
+    box.push('    <div class="cdp-chat-i"><b>' + _phEscape(r.name) + '</b><small>' + _phEscape(r.tag) + ' · 日记 ' + r.diaryCount + ' 篇 · 好感 ' + (r.aff >= 0 ? '+' : '') + r.aff + '</small></div>');
+    // 心声开关（默认隐藏，点开内联展开每条消息的「心声 + 好感」）
+    box.push('    <div class="cdp-heart' + (_st.showInner ? ' on' : '') + '" onclick="cgInnerToggle()" title="心声 · 好感"><svg class="hs" viewBox="0 0 24 24"><path d="M12 21s-7-4.9-9.5-9C.7 8.7 2.3 5 5.6 5c2 0 3.4 1.2 4.4 2.8C11 6.2 12.4 5 14.4 5c3.3 0 4.9 3.7 3.1 7-2.5 4.1-9.5 9-9.5 9z"/></svg></div>');
+    box.push('    <i class="fa-solid fa-ellipsis-vertical cdp-chat-more" onclick="cdPhoneOpenAbout()"></i>');
+    box.push('  </div>');
+    // 氛围浮卡（从顶部滑下）
+    box.push('  <div class="cdp-chat" id="cdpChatBody"></div>');
+    box.push('  <div class="cdp-chat-in">');
+    box.push('    <input id="cdpChatInput" placeholder="对 ' + _phEscape(r.name) + ' 说点什么…" onkeydown="cdPhoneSendEnter(event)">');
+    box.push('    <button class="cdp-chat-send" onclick="cdPhoneSend()"><i class="fa-solid fa-paper-plane"></i></button>');
+    box.push('  </div>');
+    box.push('</div>');
+    $('#cd-content').html(box.join(''));
+    // ★ 载入已存档的单聊历史（IndexedDB），若有过则直接回显，否则默认开场
+    var msgs = [];
+    var saved = [];
+    try { saved = await _cdpLoadSingle(name); } catch (e) {}
+    if (saved && saved.length) {
+      _st.history = _st.history || {};
+      _st.history[name] = saved; // 恢复历史用于后续上下文（存全部，分页只管 UI 渲染）
+      // ★ 分页C：默认只渲染最近10条，往上滑到顶自动加载更早10条（像微信往上翻）
+      _st._slim = Math.max(0, saved.length - 10);
+      _cgRenderSingleTail(name, saved, _st._slim);
+      _cgBindSingleScroll(name, saved);
+    } else {
+      // 无历史：不留开场白（我不说话，角色不主动开口），消息区保持空白
+      _st._slim = 0;
+      var _plain = document.getElementById('cdpChatBody'); if (_plain) _plain.innerHTML = '';
+    }
+    var inp = document.getElementById('cdpChatInput'); if (inp) inp.focus();
+  }
+  function _phGreet(r) {
+    if (r.aff < 0) return '……' + r.name + ' 瞥了你一眼：「你来做什么。」';
+    if (r.aff >= 30) return r.name + ' 看向你：「来了？坐吧。」（TA的日记里写着对你的在意）';
+    return r.name + ' 停下手里的事：「……说呗。」';
+  }
+  function cdPhoneSendEnter(e) { if (e.key === 'Enter') { e.preventDefault(); cdPhoneSend(); } }
+  async function cdPhoneSend() {
+    var input = document.getElementById('cdpChatInput'); if (!input) return;
+    var text = input.value.trim(); if (!text || !_st.curChar) return;
+    input.value = '';
+    var r = null; (_st.roles || []).forEach(function (x) { if (x.name === _st.curChar) r = x; });
+    var body = document.getElementById('cdpChatBody');
+    body.innerHTML += '<div class="cdp-msg right"><div class="cdp-ball right">' + _phEscape(text) + '</div></div>';
+    body.scrollTop = body.scrollHeight;
+    // 输入中提示
+    var tipId = 'cdpTip' + Date.now();
+    body.innerHTML += '<div class="cdp-msg left"><div class="cdp-ball left cdp-typing" id="' + tipId + '"><i class="fa-solid fa-ellipsis"></i> ' + _phEscape(r.name) + ' 正在思索…</div></div>';
+    body.scrollTop = body.scrollHeight;
+    var res = null;
+    try { res = await _phModelReply(r, text); }
+    catch (e) { console.warn('[手机] 模型调用失败，退回规则回复', e); var fb = _phSimpleReply(text, r); res = { reply: fb, inner: '', mood: 'mid', moodWord: '', parallel: '' }; }
+    var tipEl = document.getElementById(tipId);
+    if (tipEl) tipEl.parentNode.removeChild(tipEl);
+    // 渲染角色消息：可多条（模拟真人一条条发），气泡按 mood 变色，末条带内心独白+情绪回执
+    var replies = (res.replies && res.replies.length) ? res.replies : [(res.reply || res.replies || '……')];
+    var firstMid = _msgSeq++;
+    var delay = 400;
+    for (var ri = 0; ri < replies.length; ri++) {
+      (function (txt, isLast) {
+        setTimeout(function () {
+          var midx = firstMid + ri;
+          _cgRenderCharMsg(r, txt, isLast ? res.mood : 'mid', isLast ? res.inner : '', isLast ? res.moodWord : '', midx);
+          _cgBindLongPressOnce(midx);
+        }, delay);
+      })((replies[ri] || '……'), ri === replies.length - 1);
+      delay += 500 + Math.random() * 600;
+    }
+    // 记录历史（多条拼一条存 char，供上下文 / 长按取用）
+    if (!_st.history) _st.history = {};
+    if (!_st.history[_st.curChar]) _st.history[_st.curChar] = [];
+    _st.history[_st.curChar].push({ me: text, char: replies.join('\n'), inner: res.inner, mood: res.mood, moodWord: res.moodWord, parallel: res.parallel });
+    try { _cdpSaveSingle(_st.curChar, _st.history[_st.curChar]); } catch (e) {}
+  }
+  /* 渲染"角色消息"（用于实时 + 历史回显），带 data-mid 供长按 */
+  var _msgSeq = 1000;
+  /* 生成"角色消息"HTML（实时/历史/分页共用） */
+  function _cgCharMsgHtml(r, text, mood, inner, moodWord, mid) {
+    var moodCls = mood === 'good' ? 'cdp-b-mood-good' : (mood === 'bad' ? 'cdp-b-mood-bad' : 'cdp-b-mood-mid');
+    var h = '<div class="cdp-msg left" data-mid="' + (mid || 0) + '">';
+    h += '<div class="cdp-ball left ' + moodCls + '" data-mid="' + (mid || 0) + '">' + _phEscape(text).replace(/\n/g, '<br>') + '</div>';
+    if (inner) h += '<div class="cdp-inner" style="display:' + (_st.showInner ? '' : 'none') + '">' + _phEscape(inner) + '</div>';
+    var rc = mood === 'good' ? 'pos' : (mood === 'bad' ? 'neg' : 'mid');
+    var rci = mood === 'good' ? 'fa-heart' : (mood === 'bad' ? 'fa-face-frown-open' : 'fa-face-meh');
+    h += '<div class="cdp-msg-mt-c" style="display:' + (_st.showInner ? '' : 'none') + '"><span class="cdp-rct ' + rc + '"><i class="fa-solid ' + rci + '"></i> ' + _phEscape(moodWord || '') + '</span></div>';
+    h += '<div class="cdp-msg-mt" style="display:' + (_st.showInner ? '' : 'none') + '">' + _phEscape(r.name) + ' · 好感 ' + (r.aff >= 0 ? '+' : '') + r.aff + '</div></div>';
+    return h;
+  }
+  function _cgRenderCharMsg(r, text, mood, inner, moodWord, mid) {
+    var b = document.getElementById('cdpChatBody'); if (!b) return;
+    b.innerHTML += _cgCharMsgHtml(r, text, mood, inner, moodWord, mid);
+    b.scrollTop = b.scrollHeight;
+  }
+  /* ========== 单聊历史分页（C） ========== */
+  /* 生成"群成员角色消息"HTML（群聊历史/分页共用，对齐 _cgAppendChar） */
+
+  /* 系统消息胶囊 HTML（居中浅灰提示条） */
+  function _cgSysHtml(text) {
+    var t = String(text || '').replace(/^[\s\S]*?(更新了群公告|把群公告改成了|群公告已更新)[:：]?\s*/, '');
+    return '<div class="cdp-msg-sys"><div style="display:inline-flex;align-items:center;gap:5px"><i class="fa-solid fa-circle-info"></i>' + _phEscape(t) + '</div></div>' // 系统条
+  }
+
+  function _cgCharHtml(r, text) {
+    if (!r) return '<div class="cg-msg"><div class="cg-sender">某人</div><div class="cdp-ball left cg-ball">' + _phEscape(text) + '</div></div>';
+    var idx = Math.max(0, (_groupCur || []).indexOf(r.name));
+    var col = _nickColors[idx % _nickColors.length];
+    var ginner = _cgGroupInnerHtml(r);
+    return '<div class="cg-msg"><div class="cg-sender"><span class="cg-dot" style="background:' + col + '"></span>' + _phEscape(r.name) + _cgRoleBadgeHtml(r.name) + '</div>' + ginner +
+      '<div class="cdp-ball left cg-ball">' + _phEscape(text) + '</div></div>';
+  }
+  /* 单聊：渲染历史 [from, 末尾) 段，顶部带「更早消息」占位条 */
+  function _cgRenderSingleTail(name, hist, from) {
+    var b = document.getElementById('cdpChatBody'); if (!b) return;
+    var r = _phFindRole(name);
+    // 顶部「更早消息」占位条
+    var head = document.getElementById('cdpHolder');
+    if (!head) { head = document.createElement('div'); head.id = 'cdpHolder'; head.className = 'cdp-hold'; head.innerHTML = '<i class="fa-solid fa-chevron-up"></i> 更早消息'; b.insertBefore(head, b.firstChild); }
+    head.style.display = (from > 0) ? '' : 'none';
+    var html = '';
+    for (var i = from; i < hist.length; i++) {
+      var h = hist[i]; if (!h) continue;
+      if (h.me) html += '<div class="cdp-msg right"><div class="cdp-ball right">' + _phEscape(h.me) + '</div></div>';
+      if (h.char) {
+        var _lines = String(h.char).split('\n').filter(function (x) { return x && x.trim(); });
+        if (!_lines.length) _lines = [h.char];
+        for (var _li = 0; _li < _lines.length; _li++) {
+          var _isLast = (_li === _lines.length - 1);
+          html += _cgCharMsgHtml(r, _lines[_li], _isLast ? (h.mood || 'mid') : 'mid', _isLast ? (h.inner || '') : '', _isLast ? (h.moodWord || '') : '', 1000 + i);
+        }
+      }
+    }
+    b.insertAdjacentHTML('beforeend', html);
+    b.scrollTop = b.scrollHeight;
+    setTimeout(function () { _cgBindLongPress(); }, 60);
+  }
+  /* 单聊：加载更早10条 prepend（滚动到顶与点「更早消息」共用） */
+  var _singleLoading = false; // 单聊「更早消息」防重入锁
+  function _cgLoadSingleMore(name, hist) {
+    var b = document.getElementById('cdpChatBody');
+    console.log('[手机][更早-单聊] 调用加载, body?=', !!b, ' _slim=', _st._slim, ' lock=', _singleLoading, ' histLen=', hist ? hist.length : -1);
+    if (!b || _singleLoading || !(_st._slim > 0)) { console.log('[手机][更早-单聊] 提前返回(锁/无更多)'); return; }
+    _singleLoading = true;
+    try {
+      var newSlim = Math.max(0, _st._slim - 10);
+      var add = hist.slice(newSlim, _st._slim);
+      if (!add.length) { _st._slim = newSlim; return; }
+      var sc = b.scrollTop, r = _phFindRole(name);
+      var html = '';
+      for (var i = 0; i < add.length; i++) {
+        var h = add[i]; if (!h) continue;
+        if (h.me) html += '<div class="cdp-msg right"><div class="cdp-ball right">' + _phEscape(String(h.me).slice(0,2000)) + '</div></div>';
+        if (h.char) {
+          var _lines = String(h.char).split('\n').filter(function (x) { return x && x.trim(); });
+          if (!_lines.length) _lines = [h.char];
+          for (var _li = 0; _li < _lines.length; _li++) {
+            var _isLast = (_li === _lines.length - 1);
+            html += _cgCharMsgHtml(r, String(_lines[_li]).slice(0,2000), _isLast ? (h.mood || 'mid') : 'mid', _isLast ? (h.inner || '') : '', _isLast ? (h.moodWord || '') : '', 1000 + (newSlim + i));
+          }
+        }
+      }
+      var tmp = document.createElement('div'); tmp.style.visibility = 'hidden'; tmp.style.position = 'absolute'; tmp.innerHTML = html; document.body.appendChild(tmp);
+      var addH = tmp.offsetHeight; document.body.removeChild(tmp);
+      var head = document.getElementById('cdpHolder');
+      var ref = (head && head.nextSibling) ? head.nextSibling : b.firstChild;
+      var frag = document.createElement('div'); frag.innerHTML = html;
+      var nodes = []; while (frag.firstChild) nodes.push(frag.firstChild);
+      for (var k = 0; k < nodes.length; k++) b.insertBefore(nodes[k], ref);
+      b.scrollTop = sc + addH + (add.length * 10);
+      _st._slim = newSlim;
+      if (head) head.style.display = (newSlim > 0) ? '' : 'none';
+      setTimeout(function () { _cgBindLongPress(); }, 30);
+    } finally { _singleLoading = false; }
+  }
+  /* 单聊：滚动到顶 → 加载更早（点「更早消息」也调用 _cgLoadSingleMore） */
+  function _cgBindSingleScroll(name, hist) {
+    var b = document.getElementById('cdpChatBody'); if (!b) return;
+    if (b.getAttribute('data-ps') === '1') return;
+    b.setAttribute('data-ps', '1');
+    b.addEventListener('scroll', function () { if (b.scrollTop <= 2 && _st._slim > 0) _cgLoadSingleMore(name, hist); }, { passive: true });
+    // 「更早消息」占位条可点击
+    // 「更早消息」纯显示提示条（不可点击），更早历史靠滚动到顶加载
+    var head = document.getElementById('cdpHolder');
+    if (head && !head.getAttribute('data-bind')) {
+      head.setAttribute('data-bind', '1');
+      head.style.cursor = 'default';
+      head.style.pointerEvents = 'none';
+    }
+  }
+  /* ========== 群聊历史分页（C） ========== */
+  /* 群聊：渲染群历史 [from, 末尾) 段，顶部带「更早消息」占位条 */
+  function _cgRenderGroupTail(members, msgs, from) {
+    var b = document.getElementById('cgBody'); if (!b) return;
+    var head = document.getElementById('cgHolder');
+    if (!head) { head = document.createElement('div'); head.id = 'cgHolder'; head.className = 'cg-hold'; head.innerHTML = '<i class="fa-solid fa-chevron-up"></i> 更早消息'; b.insertBefore(head, b.firstChild); }
+    head.style.display = (from > 0) ? '' : 'none';
+    for (var i = from; i < msgs.length; i++) {
+      var g = msgs[i]; if (!g) continue;
+      if (g.mine) b.insertAdjacentHTML('beforeend', '<div class="cdp-msg right"><div class="cdp-ball right">' + _phEscape(g.text) + '</div></div>');
+      else if (g.who && _phFindRole(g.who)) b.insertAdjacentHTML('beforeend', _cgCharHtml(_phFindRole(g.who), g.text));
+      else b.insertAdjacentHTML('beforeend', _cgSysHtml(g.text));
+    }
+    b.scrollTop = b.scrollHeight;
+    setTimeout(function () { try { _cgBindGroupLp(); } catch (e) {} }, 60);
+  }
+  /* 群聊：加载更早10条 prepend（滚动到顶与点「更早消息」共用） */
+  var _groupLoading = false; // 群聊「更早消息」防重入锁
+  function _cgLoadGroupMore(members, msgs) {
+    var b = document.getElementById('cgBody');
+    console.log('[手机][更早-群聊] 调用加载, body?=', !!b, ' _gRenderLimit=', _gRenderLimit, ' lock=', _groupLoading, ' msgsLen=', msgs ? msgs.length : -1);
+    if (!b || _groupLoading || !(_gRenderLimit > 0)) { console.log('[手机][更早-群聊] 提前返回(锁/无更多)'); return; }
+    _groupLoading = true;
+    try {
+      var newLim = Math.max(0, _gRenderLimit - 10);
+      var add = msgs.slice(newLim, _gRenderLimit);
+      if (!add.length) { _gRenderLimit = newLim; return; }
+      var sc = b.scrollTop, html = '';
+      for (var i = 0; i < add.length; i++) {
+        var g = add[i]; if (!g) continue;
+        var gt = String((g && g.text) || '').slice(0,2000);
+        if (g.mine) html += '<div class="cdp-msg right"><div class="cdp-ball right">' + _phEscape(gt) + '</div></div>';
+        else if (g.who && _phFindRole(g.who)) html += _cgCharHtml(_phFindRole(g.who), gt);
+        else html += _cgSysHtml(gt);
+      }
+      var tmp = document.createElement('div'); tmp.style.visibility = 'hidden'; tmp.style.position = 'absolute'; tmp.innerHTML = html; document.body.appendChild(tmp);
+      var addH = tmp.offsetHeight; document.body.removeChild(tmp);
+      var head = document.getElementById('cgHolder');
+      var ref = (head && head.nextSibling) ? head.nextSibling : b.firstChild;
+      var frag = document.createElement('div'); frag.innerHTML = html;
+      var nodes = []; while (frag.firstChild) nodes.push(frag.firstChild);
+      for (var k = 0; k < nodes.length; k++) b.insertBefore(nodes[k], ref);
+      b.scrollTop = sc + addH + (add.length * 10);
+      _gRenderLimit = newLim;
+      if (head) head.style.display = (newLim > 0) ? '' : 'none';
+      setTimeout(function () { try { _cgBindGroupLp(); } catch (e) {} }, 30);
+    } finally { _groupLoading = false; }
+  }
+  /* 群聊：滚动到顶 → 加载更早（点「更早消息」也调用 _cgLoadGroupMore） */
+  function _cgBindGroupScroll(members, msgs) {
+    var b = document.getElementById('cgBody'); if (!b) return;
+    if (b.getAttribute('data-pg') === '1') return;
+    b.setAttribute('data-pg', '1');
+    b.addEventListener('scroll', function () { if (b.scrollTop <= 2 && _gRenderLimit > 0) _cgLoadGroupMore(members, msgs); }, { passive: true });
+    var head = document.getElementById('cgHolder');
+    if (head && !head.getAttribute('data-bind')) {
+      head.setAttribute('data-bind', '1');
+      head.style.cursor = 'default';
+      head.style.pointerEvents = 'none';
+    }
+  }
+  /* 心声开关：切换"每条消息下方显示心声+好感"（对齐新的.html 的 toggleInner）→ 纯 DOM 切换，不重建页面不丢对话 */
+  function cgInnerToggle() {
+    _st.showInner = !_st.showInner;
+    var btns = document.querySelectorAll('.cdp-heart');
+    for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('on', _st.showInner);
+    // 直接切换已渲染的心声/内心独白 + 好感行 显示，不让对话消失
+    var inners = document.querySelectorAll('.cdp-inner, .cg-inner, .cdp-msg-mt, .cdp-msg-mt-c');
+    for (var j = 0; j < inners.length; j++) {
+      inners[j].style.display = _st.showInner ? '' : 'none';
+    }
+  }
+  /* 群聊消息下方心声已按主人要求移除（心声只属于单聊）。此函数保留为空，仅作占位避免引用断裂。 */
+  function _cgGroupInnerHtml(r) { return ''; }
+  /* ---------- 心声 + 好感弹窗（单聊/群聊共用） ---------- */
+  /* 取角色"心声"：优先取最近内心独白，否则按好感档位生成 */
+  function _cgHeartText(r) {
+    if (!r) return '';
+    // 从单聊历史里找最近一条内心独白（inner）
+    try {
+      var hist = _st.history && _st.history[r.name];
+      if (Array.isArray(hist)) {
+        for (var i = hist.length - 1; i >= 0; i--) {
+          if (hist[i] && hist[i].inner) return hist[i].inner;
+        }
+      }
+    } catch (e) {}
+    // 若正在群聊：结合角色状态+好感档位生成更有现场感的心声
+    if (_groupKey || (_groupCur && _groupCur.length)) {
+      var _stt = r.status || '在线';
+      var _med2 = r.mediumNote || '';
+      var a = r.aff;
+      if (a >= 60) return '嘴上不饶人，心里早就把你当自己人了。这群里谁都能走，你别走。';
+      if (a >= 30) return '对你是越来越上心了，就是当着这群人不好意思说破。';
+      if (a >= 0) return '（' + _stt + '）正试着信你，看你是真心还是路过。';
+      return '（' + _stt + '）看你一眼都嫌多，别在这儿碍眼。';
+    }
+    // 回退：好感档位心理描述
+    var aff = r.aff;
+    if (aff >= 30) return '……待你是特别的，只是嘴上不说。我记着你做过的事，一直记着。';
+    if (aff >= 0) return '对你还在试探，看你值不值得我放下戒心。';
+    return '看你一眼都嫌多。有些账，我记在心里了。';
+  }
+  /* 心声 + 好感弹窗 */
+  function _cgHeartModal(name) {
+    var r = _phFindRole(name);
+    if (!r) return;
+    var affColor = r.aff >= 0 ? 'var(--accent,#5b7fa6)' : 'var(--danger,#b5695f)';
+    var affSign = r.aff >= 0 ? '+' : '';
+    var lvl = r.aff >= 30 ? '敞开' : (r.aff >= 0 ? '试探' : '防备');
+    var heart = _cgHeartText(r);
+    var html =
+      '<div style="max-height:60vh;overflow:auto;">' +
+        '<div class="cg-heart-top">' +
+          '<div class="cg-heart-av" style="background:' + r.grad + '">' + r.av + '</div>' +
+          '<div style="flex:1;min-width:0;">' +
+            '<div style="font-size:14px;font-weight:600;color:var(--ink,#2c3540);display:flex;align-items:center;gap:6px;">' + _phEscape(r.name) + ' <span style="font-size:10px;color:var(--ink3,#8b95a1);">' + _phEscape(r.tag || '') + '</span></div>' +
+            '<div style="font-size:11px;color:var(--ink3,#8b95a1);margin-top:2px;">' + _phEscape(r.mediumNote || '有手机，正常打字') + '</div>' +
+          '</div>' +
+          '<div style="text-align:right;"><div style="font-size:20px;font-weight:800;color:' + affColor + ';">' + affSign + r.aff + '</div><div style="font-size:10px;color:var(--ink3,#8b95a1);">好感</div></div>' +
+        '</div>' +
+        '<div class="cg-heart-sec"><i class="fa-solid fa-circle-info"></i> 此刻的状态</div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+          '<span class="cg-heart-chip"><i class="fa-solid fa-comment-dots"></i> 语气：' + lvl + '</span>' +
+          '<span class="cg-heart-chip"><i class="fa-solid fa-book-open"></i> 日记 ' + r.diaryCount + ' 篇</span>' +
+          (r.status ? '<span class="cg-heart-chip"><i class="fa-solid fa-moon"></i> 状态：' + _phEscape(r.status) + '</span>' : '') +
+        '</div>' +
+        '<div class="cg-heart-sec"><i class="fa-solid fa-heart"></i> 心声</div>' +
+        '<div class="cg-heart-quote">' + _phEscape(heart) + '</div>' +
+      '</div>';
+    openPhoneModal('心声 · ' + _phEscape(r.name), html);
+  }
+  /* 群聊：右上角对话框图标 → 选一个成员看其心声+好感 */
+  function _cgHeartPick() {
+    var list = '';
+    (_groupCur || []).forEach(function (nm) {
+      var r = _phFindRole(nm);
+      if (!r) return;
+      list += '<div style="display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px dashed var(--line,#d7dde4);cursor:pointer" onclick="cdPhoneCloseModal();_cgHeartModal(\'' + _phEscape(nm) + '\')">'
+        + '<div style="width:36px;height:36px;border-radius:10px;background:' + r.grad + ';color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;flex:0 0 auto;">' + r.av + '</div>'
+        + '<div style="flex:1;min-width:0;"><b style="font-size:13px;">' + _phEscape(nm) + '</b><div style="font-size:10px;color:var(--ink3,#8b95a1);margin-top:2px;">好感 ' + (r.aff >= 0 ? '+' : '') + r.aff + ' · ' + (_phEscape(r.status || '在线')) + '</div></div>'
+        + '<i class="fa-solid fa-comment-dots" style="color:var(--accent,#5b7fa6);"></i>'
+        + '</div>';
+    });
+    openPhoneModal('看谁的心声', list || '<div style="color:var(--ink3,#8b95a1)">群里还没有可看的成员</div>');
+  }
+  /* ---------- 长按角色气泡 → 菜单（当时心理 / 如果当时） ---------- */
+  var _lpTimer = null;
+  function _cgBindLongPress() {
+    var body = document.getElementById('cdpChatBody'); if (!body) return;
+    var bubbles = body.querySelectorAll('.cdp-ball.left:not([data-lp])');
+    for (var i = 0; i < bubbles.length; i++) { _cgAttachLp(bubbles[i]); }
+  }
+  function _cgBindLongPressOnce(mid) {
+    var body = document.getElementById('cdpChatBody'); if (!body) return;
+    var b = body.querySelector('.cdp-ball.left[data-mid="' + mid + '"]:not([data-lp])');
+    if (b) _cgAttachLp(b);
+  }
+  function _cgAttachLp(b) {
+    b.setAttribute('data-lp', '1');
+    b.addEventListener('touchstart', function (e) { _cgStartLong(e, b); }, { passive: true });
+    b.addEventListener('mousedown', function (e) { _cgStartLong(e, b); });
+  }
+  function _cgStartLong(e, b) {
+    clearTimeout(_lpTimer);
+    var mid = parseInt(b.getAttribute('data-mid') || '0');
+    _lpTimer = setTimeout(function () { _cgShowLongMenu(e, mid); }, 480);
+    var cancel = function () { clearTimeout(_lpTimer); document.removeEventListener('touchend', cancel); document.removeEventListener('mouseup', cancel); };
+    document.addEventListener('touchend', cancel, { once: true });
+    document.addEventListener('mouseup', cancel, { once: true });
+  }
+  function _cgShowLongMenu(e, mid) {
+    var x = (e.touches ? e.touches[0].clientX : e.clientX);
+    var y = (e.touches ? e.touches[0].clientY : e.clientY);
+    _cgCloseLongMenu();
+    var menu = document.createElement('div');
+    menu.className = 'cdp-lmenu';
+    menu.style.left = Math.min(x, window.innerWidth - 190) + 'px';
+    menu.style.top = Math.min(y, window.innerHeight - 140) + 'px';
+    menu.innerHTML =
+      '<div class="cdp-lmi" onclick="cdPhoneMsgPsycho(' + mid + ');cdPhoneCloseLmenu()"><i class="fa-solid fa-brain"></i> 查看TA当时的心理</div>';
+    document.body.appendChild(menu);
+  }
+  function cdPhoneCloseLmenu() { var m = document.querySelector('.cdp-lmenu'); if (m) m.remove(); }
+  /* 长按 → 当时心理：从历史取该条独白+情绪做心理拆解 */
+  function cdPhoneMsgPsycho(mid) {
+    var rec = _cgFindRec(mid);
+    var r = _phFindRole(_st.curChar);
+    var name = r ? r.name : 'TA';
+    var inner = (rec && rec.inner) || '';
+    var analysis = '';
+    if (r) {
+      if (r.aff > 30) analysis = 'TA说这句话时其实已经把你当成自己人，只是嘴上不认。';
+      else if (r.aff >= 0) analysis = 'TA在试探你的反应，看你是否值得继续敞开心。';
+      else analysis = 'TA在保护自己，这句话是防御，不是真心。';
+    }
+    _phShowHtml('那一刻 · ' + name,
+      '<p style="font-size:.9rem;color:var(--ink2,#66707d);margin:6px 0 10px;">“' + _phEscape((rec && rec.char) || '') + '”</p>' +
+      '<div class="cdp-par-c"><div class="cdp-par-lbl">内心独白</div>' + _phEscape(inner || '（没有记录到独白）') + '</div>' +
+      '<p style="font-size:.82rem;color:var(--ink2,#66707d);margin-top:10px;line-height:1.6"><strong>心理拆解：</strong>' + analysis + '</p>');
+  }
+  function _cgFindRec(mid) {
+    var hidx = mid - 1000; // _msgSeq 从 1000 起，历史 index = mid-1000-1
+    var hist = (_st.history && _st.history[_st.curChar]) || [];
+    var rec = hist[hist.length - 1];
+    try { rec = hist[mid - 1000]; } catch (e) {}
+    return rec || null;
+  }
+  /* 真实模型回复：构造 system（角色人设+日记+好感）+ user（主角话），调 cdForumApiComplete */
+  async function _phModelReply(r, userText) {
+    if (typeof cdForumApiComplete !== 'function') throw new Error('no cdForumApiComplete');
+    // 最近 N 楼对话历史（最多带 6 条）
+    var recent = '';
+    var hist = _st.history && _st.history[_st.curChar];
+    if (Array.isArray(hist)) {
+      var tail = hist.slice(-Math.max(1, (_st.memFloors || 10)));
+      tail.forEach(function (h) { if (h && h.me) recent += _phEscape(h.me) + '\n'; });
+    }
+    var temp = (typeof _st.temp === 'number') ? _st.temp : 50;
+    // ★ 采用主人的真人微信聊天提示词
+    var p = [];
+    p.push('你正在扮演【' + r.name + '】，在手机聊天软件里和【主人】私聊。');
+    p.push('');
+    p.push('# 你的身份');
+    p.push(r.name + '，' + (r.tag || '剧中人') + '。当前对主人的好感：' + r.aff + '。');
+    p.push('你最近写的日记：');
+    if (_st.memDiary && r.diaryTexts && r.diaryTexts.length) {
+      r.diaryTexts.slice(-3).forEach(function (d) { p.push('  · ' + d); });
+    } else {
+      p.push('  （暂无）');
+    }
+    p.push('');
+    // ★ 剧情档案注入（开关控制，下一条消息生效）
+    try {
+      var _arcS2 = (typeof cdGetSettings === 'function') ? cdGetSettings() : null;
+      if (_arcS2 && _arcS2.injectArchive !== false) {
+        var _arcD2 = await cdGetData();
+        var _arcA2 = (_arcD2 && _arcD2.archive) || {};
+        var _archTxt = [];
+        if (_arcA2.mainline && String(_arcA2.mainline).trim()) _archTxt.push('主线：' + _arcA2.mainline);
+        if (_arcA2.sideline && String(_arcA2.sideline).trim()) _archTxt.push('支线：' + _arcA2.sideline);
+        if (_arcA2.states && String(_arcA2.states).trim()) _archTxt.push('重要状态：' + _arcA2.states);
+        if (_arcA2.unresolved && String(_arcA2.unresolved).trim()) _archTxt.push('未解决：' + _arcA2.unresolved);
+        if (_archTxt.length) { p.push('# 你掌握的剧情档案'); p.push('这是这个世界的剧情档案，你记得这些已发生的事，回复时可自然援引：'); _archTxt.forEach(function (t) { p.push('  · ' + t); }); p.push(''); }
+      }
+    } catch (_e3) {}
+    p.push('# 你收到的对话');
+    p.push(recent ? recent : '（这是你们第一次聊）');
+    p.push('主人刚说：「' + userText + '」');
+    p.push('');
+    p.push('# 怎么回');
+    p.push('你不是 AI，你是一个真实的、有生活的人，正在用手机打字聊天。');
+    p.push('');
+    p.push('## 条数（硬性要求）');
+    p.push('- 你一次要发 **1 到 6 条**消息，不是 1 条长消息。');
+    p.push('- 每条都很短，像真人打字那样，一条一条发出去。');
+    p.push('- 心情平静就 1–2 条，情绪上来了可以 4–6 条。');
+    p.push('- 多条之间用换行分隔，所以每一条都要能独立成立。');
+    p.push('');
+    p.push('## 语气');
+    p.push('- 像真人发微信：有口头禅、有省略号、有突然停住、有改口。');
+    p.push('- 可以打错字、可以发一半改口。');
+    p.push('- 不用书面语，不用完整主谓宾。');
+    p.push('- **允许骂脏话、爆粗口、说狠话**。该骂就骂，该阴阳就阴阳，该冷漠就冷漠。');
+    p.push('- 不美化，不净化，不替角色说好话。');
+    p.push('');
+    p.push('## 情绪');
+    p.push('- 好感高：主动多说，追问你，分享自己，偶尔撒娇或调戏。');
+    p.push('- 好感中：礼貌但保留，试探，会突然冷一下，欲言又止。');
+    p.push('- 好感低：字少句短，敷衍，转移话题，嗯哦随便，甚至直接骂。');
+    p.push('- 情绪温度 ' + temp + '/100：越高越外放冲动，越低越克制冷。');
+    p.push('');
+    p.push('## 手机质感');
+    p.push('- 允许分多条发：先发"……"，隔一下再发"我想想"。');
+    p.push('- 允许发一半撤回重发，用"算了"自然带过。');
+    p.push('- 偶尔可以发一条"（正在输入...）"之后只跟一个字。');
+    p.push('');
+    p.push('## 绝对不要');
+    p.push('- 不要解释你在扮演。');
+    p.push('- 不要总结、不要说教、不要列点。');
+    p.push('- 不要用"作为' + r.name + '，我会…"这种 AI 腔。');
+    p.push('- 不要每次都回得完美、得体。真人会冷场、会跑题、会说错话。');
+    p.push('- 不要因为"要友好"就压抑角色的负面情绪。');
+    p.push('');
+    p.push('# 输出格式');
+    p.push('直接输出角色要说的话，每一条单独一行，输出 1–6 行。');
+    p.push('不要加引号，不要加"角色名："前缀，不要加序号。');
+    p.push('最后额外单独一行输出你的内心，格式：【独白】一句没说出口的真心话。');
+    p.push('再单独一行：【情绪】正面|负面|中性');
+    p.push('再单独一行：【情绪词】2-4字（如 心跳漏了一拍/别过脸/放软语气/皱起眉）');
+    p.push('再单独一行：【如果当时】主人换种方式说你可能怎样回应（一句）。');
+    // ★ 好感裁决：每满 3 条对话裁决一次（不额外请求，随本回复一起返回）
+    _affTick = (_affTick || 0) + 1;
+    if (_affTick % 3 === 0) {
+      p.push('');
+      p.push('# 好感裁决（本次必须输出）');
+      p.push('这是【' + r.name + '】此刻对你的好感数值：' + r.aff + '。由主人平时怎么对TA决定，现在是好是坏、要不要变，你说了算。');
+      p.push('根据主人这次刚说的内容，判断' + r.name + '对你的好感是增是减：');
+      p.push('- 主人夸奖、关心、道歉、示弱、共情、主动示好 → 加分 +1~+8');
+      p.push('- 主人冒犯、辱骂、冷漠、敷衍、命令、越界 → 减分 -1~-8');
+      p.push('- 无情感倾向的普通对话 → 0');
+      p.push('- 注意：玩笑/调侃/吐槽若语气亲近不算冒犯；只有明显敌意、贬低、命令、越界才减分。');
+      p.push('- 好感越高你越宽容，好感越低越敏感，由你把握尺度。');
+      p.push('在全部输出末尾单独输出一行：【好感】<整数>（范围 -8 ~ +8，只写一个整数）。');
+    }
+    var sysPrompt = p.join('\n');
+    var msgs = [{ role: 'system', content: sysPrompt }];
+    if (Array.isArray(hist)) {
+      hist.slice(-Math.max(1, (_st.memFloors || 10))).forEach(function (h) {
+        msgs.push({ role: 'user', content: h.me });
+        if (h.char) msgs.push({ role: 'assistant', content: h.char });
+      });
+    }
+    msgs.push({ role: 'user', content: userText });
+    var out = String(await cdForumApiComplete(msgs) || '').trim();
+    if (!out) throw new Error('empty model reply');
+    // 解析：先把【独白...】块切掉，前面是 1~6 条消息（按行拆分）
+    function _g(key) { var m = out.match(new RegExp('【' + key + '】([\\s\\S]*?)(?=【|$)')); return m ? m[1].trim() : ''; }
+    var inner = _g('独白');
+    var moodRaw = (_g('情绪') || '').toLowerCase();
+    var mood = moodRaw.indexOf('负面') >= 0 ? 'bad' : (moodRaw.indexOf('正面') >= 0 ? 'good' : 'mid');
+    var moodWord = _g('情绪词') || '';
+    var parallel = _g('如果当时') || '';
+    // 消息部分 = 去掉所有【】块
+    var msgPart = out.replace(/【[^】]*】[\s\S]*?(?=【|$)/g, '').replace(/【[^】]*】/g, '').trim();
+    var replies = msgPart.split('\n').map(function (t) { return t.trim(); }).filter(function (t) { return t; });
+    if (!replies.length) replies = ['……'];
+    // ★ 好感裁决：解析【好感】N（仅第3条时存在），夹-8~+8，非0则写回，并从展示剔除该行
+    var _affM = out.match(/【好感】\s*([+-]?\d+)/);
+    if (_affM) {
+      var _affD = parseInt(_affM[1], 10);
+      if (_affD > 8) _affD = 8; if (_affD < -8) _affD = -8;
+      if (_affD !== 0) { try { _cgCommitAff(r.name, _affD); } catch (e) {} }
+    }
+    out = out.replace(/【好感】\s*[+-]?\d+/g, '');
+    return { replies: replies, inner: inner, mood: mood, moodWord: moodWord, parallel: parallel };
+  }
+  function _phSimpleReply(text, r) {
+    var t = text;
+    if (/为什么|为何|怎么这样/.test(t)) return r.aff >= 0 ? '……因为你做的事，我一直看在眼里。' : '跟你有什么关系。';
+    if (/累|难过|痛苦|不想|难受/.test(t)) return r.aff >= 0 ? '那就靠着我歇会儿。' : '……你自己撑着吧。';
+    if (/喜欢|爱|表白|抱/.test(t)) return r.aff >= 30 ? '……你终于说了。' : (r.aff >= 0 ? '别开玩笑了。' : '离我远点。');
+    return r.aff < 0 ? '嗯，知道了。' : (r.aff >= 30 ? '嗯，我记下了。' : '……我听着呢。');
+  }
+  var _css = [
+    /* 容器 */
+    '.cdp-wrap{position:relative;display:flex;flex-direction:column;min-height:100%;padding:0 14px 120px;font-size:14px;color:var(--ink,#2c3540)}',
+    '.cdp-chat-root{height:calc(100% - 8px);padding:0 14px 12px}',
+    /* 记忆折叠条 */
+    '.cdp-mem{border:1px solid var(--line,#d7dde4);border-radius:11px;background:rgba(255,255,255,.5);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);overflow:hidden;margin:10px 0;flex-shrink:0}.cdp-mem>summary{cursor:pointer;list-style:none;padding:9px 12px;font-size:12px;color:var(--ink2,#66707d);display:flex;align-items:center;gap:8px}.cdp-mem>summary::-webkit-details-marker{display:none}',
+    '.cdp-mem-pill{margin-left:auto;background:var(--accent,#5b7fa6);color:#fff;font-size:9.5px;padding:2px 9px;border-radius:12px}.cdp-mem-chev{margin-left:auto;font-size:10px;color:var(--ink3,#8b95a1);transition:transform .25s}.cdp-mem[open] .cdp-mem-chev{transform:rotate(180deg)}',
+    '.cdp-mem-body{padding:2px 12px 10px}.cdp-mem-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-top:1px solid var(--line,#d7dde4);font-size:12px;color:var(--ink2,#66707d)}.cdp-mem-row:first-child{border-top:none}.cdp-mem-lbl{display:flex;align-items:center;gap:6px;color:var(--ink2,#66707d)}',
+    '.cdp-mem-slider{-webkit-appearance:none;appearance:none;width:110px;height:5px;border-radius:10px;background:linear-gradient(90deg,#96a7bd,#5b7fa6);outline:none}.cdp-mem-slider::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;background:#fff;border:2px solid var(--accent,#5b7fa6);cursor:pointer;box-shadow:0 2px 6px rgba(91,127,166,.3)}.cdp-mem-val{font-weight:600;color:var(--accent,#5b7fa6);min-width:24px;text-align:right;font-size:11px}',
+    '.cdp-sw{width:38px;height:21px;border-radius:20px;background:#cfd6dd;position:relative;cursor:pointer;transition:background .2s;flex-shrink:0}.cdp-sw:after{content:"";position:absolute;width:15px;height:15px;border-radius:50%;background:#fff;top:3px;left:3px;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}.cdp-sw.on{background:var(--accent,#5b7fa6)}.cdp-sw.on:after{transform:translateX(17px)}',
+    /* 内容区 */
+    '.cdp-content{display:flex;flex-direction:column;gap:10px}',
+    '.cdp-empty{text-align:center;color:var(--ink3,#8b95a1);padding:40px 20px}.cdp-empty i{font-size:30px;color:#b9c3cd}.cdp-empty p{margin:8px 0 4px;font-size:14px}.cdp-empty small{font-size:11px;line-height:1.6}',
+    '.cdp-sub{font-size:12px;color:var(--ink3,#8b95a1);margin:2px 0 0}',
+    /* hero 大卡 */
+    '.cdp-hero{display:flex;align-items:center;gap:11px;background:rgba(255,255,255,.6);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid var(--glass-bd,rgba(120,140,160,.18));border-radius:15px;padding:12px;cursor:pointer;box-shadow:0 4px 14px rgba(50,70,90,.10)}',
+    '.cdp-hero-av{width:52px;height:52px;border-radius:13px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:700}.cdp-hero-info{flex:1;min-width:0}.cdp-hero-info h3{font-size:15px;font-weight:600;display:flex;align-items:center;gap:6px}.cdp-chip{font-size:9px;color:var(--accent,#5b7fa6);background:#eaf1f8;padding:1px 8px;border-radius:12px}.cdp-hero-sub{font-size:10.5px;color:var(--ink3,#8b95a1);margin-top:2px}.cdp-hero-chips{display:flex;gap:5px;margin-top:7px}.cdp-chip2{font-size:9.5px;color:var(--ink2,#66707d);background:rgba(255,255,255,.8);border:1px solid var(--line,#d7dde4);padding:2px 8px;border-radius:12px;display:inline-flex;align-items:center;gap:4px}.cdp-hero-btn{border:none;background:linear-gradient(135deg,#6f8fb3,#4f7193);color:#fff;width:44px;height:44px;border-radius:11px;font-size:15px;cursor:pointer;flex:0 0 auto;display:flex;align-items:center;justify-content:center}',
+    /* 角色网格 */
+    '.cdp-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.cdp-card{background:rgba(255,255,255,.6);backdrop-filter:blur(8px);border:1px solid var(--glass-bd,rgba(120,140,160,.18));border-radius:13px;padding:11px;cursor:pointer;position:relative}.cdp-card-h{display:flex;align-items:center;gap:9px}.cdp-card-av{width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:700}.cdp-card-i{min-width:0}.cdp-card-i b{display:block;font-size:13px}.cdp-card-i small{font-size:9.5px;color:var(--ink3,#8b95a1)}',
+    '.cdp-card-aff{position:absolute;right:9px;top:9px;font-size:16px;font-weight:800;color:var(--accent,#5b7fa6)}.cdp-card-aff.cdp-aff-neg{color:var(--danger,#b5695f)}',
+    '.cdp-card-q{font-size:10px;color:var(--ink2,#66707d);margin-top:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-top:1px dashed var(--line,#d7dde4);padding-top:7px;display:flex;align-items:center;gap:4px}.cdp-card-q i{color:var(--accent,#5b7fa6);font-size:9px}',
+    /* 悬浮球 —— 严格照 _新的.html_ .fab-* */
+    '.cdp-fab-wrap{position:absolute;right:20px;bottom:24px;z-index:300}',
+    '.cdp-fab-main{width:56px;height:56px;border-radius:50%;background:linear-gradient(145deg,#6f8fb3,#4f7193);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.3rem;cursor:pointer;box-shadow:0 10px 24px rgba(79,113,147,.4);transition:transform .3s cubic-bezier(.34,1.56,.64,1),background .3s;position:relative;z-index:2}.cdp-fab-main.open{transform:rotate(135deg);background:linear-gradient(145deg,#8a9aa8,#6a7a88)}',
+    '.cdp-fab-item{position:absolute;right:8px;bottom:8px;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1rem;color:#fff;cursor:pointer;opacity:0;pointer-events:none;transform:translate(0,0) scale(.3);transition:transform .32s cubic-bezier(.34,1.56,.64,1),opacity .22s;box-shadow:0 8px 20px rgba(0,0,0,.2)}',
+    '.cdp-fab-wrap.open .cdp-fab-item{opacity:1;pointer-events:auto}',
+    '.cdp-fab-label{position:absolute;background:rgba(44,53,64,.9);color:#fff;font-size:.65rem;padding:4px 9px;border-radius:10px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .2s .1s}.cdp-fab-wrap.open .cdp-fab-label{opacity:1}',
+    '.cdp-fi-group{background:linear-gradient(145deg,#9d8bb0,#7d6b92)}.cdp-fi-psy{background:linear-gradient(145deg,#8fa3bd,#6b7f9e)}.cdp-fi-report{background:linear-gradient(145deg,#c9a97a,#a37a45)}.cdp-fi-set{background:linear-gradient(145deg,#6f9c9b,#4f7a79)}',
+    '.cdp-fab-item.cdp-fi-group{transform:translate(-110px,0) scale(1)}.cdp-fab-item.cdp-fi-report{transform:translate(-78px,-78px) scale(1)}.cdp-fab-item.cdp-fi-psy{transform:translate(0,-110px) scale(1)}.cdp-fab-item.cdp-fi-set{transform:translate(-78px,-110px) scale(1)}',
+    '.cdp-fab-wrap.open .cdp-fab-item.cdp-fi-group{transition-delay:0s}.cdp-fab-wrap.open .cdp-fab-item.cdp-fi-report{transition-delay:.05s}.cdp-fab-wrap.open .cdp-fab-item.cdp-fi-psy{transition-delay:.1s}.cdp-fab-wrap.open .cdp-fab-item.cdp-fi-set{transition-delay:.15s}',
+    '.cdp-fab-mask{position:absolute;inset:0;z-index:250;background:rgba(0,0,0,0);pointer-events:none;transition:background .25s}.cdp-fab-mask.open{background:rgba(0,0,0,.18);pointer-events:auto}',
+    /* 聊天 */
+    '.cdp-chat-h{display:flex;align-items:center;gap:10px;padding:12px 2px;background:rgba(255,255,255,.5);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid var(--glass-bd,rgba(120,140,160,.18));margin:0 -14px;padding-left:14px;padding-right:14px}.cdp-back{border:none;background:transparent;color:var(--ink2,#66707d);font-size:17px;cursor:pointer}.cdp-chat-av{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:700}.cdp-chat-av i{color:#fff;font-size:16px}.cdp-chat-i{flex:1;min-width:0}.cdp-chat-i b{display:block;font-size:14px}.cdp-chat-i small{font-size:10px;color:var(--ink3,#8b95a1)}.cdp-chat-more{color:var(--ink2,#66707d);cursor:pointer}',
+    '.cdp-chat{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:12px 2px;min-height:0}.cdp-chat-in{display:flex;gap:8px;padding-top:8px;border-top:1px solid var(--line,#d7dde4)}',
+    '.cdp-chat-in input{flex:1;border:1px solid var(--line,#d7dde4);border-radius:12px;padding:9px 12px;font-size:13px;background:#fff;outline:none;min-height:38px}.cdp-chat-in input:focus{border-color:var(--accent,#5b7fa6)}',
+    '.cdp-chat-send{width:40px;height:40px;border:none;border-radius:12px;background:linear-gradient(135deg,#6f8fb3,#4f7193);color:#fff;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center}',
+    '.cdp-msg{display:flex;flex-direction:column;max-width:84%}.cdp-msg.right{align-self:flex-end;align-items:flex-end}.cdp-msg.left{align-self:flex-start;align-items:flex-start}',
+    '.cdp-ball{padding:9px 13px;border-radius:13px;font-size:13px;line-height:1.5}.cdp-msg.right .cdp-ball{background:linear-gradient(135deg,#6f8fb3,#4f7193);color:#fff;border-top-right-radius:5px}.cdp-msg.left .cdp-ball{background:rgba(255,255,255,.75);border:1px solid var(--glass-bd,rgba(120,140,160,.18));border-top-left-radius:5px;color:var(--ink,#2c3540)}',
+    '.cdp-msg-mt{font-size:9px;color:var(--ink3,#8b95a1);margin-top:4px}.cdp-msg-sys{align-self:center;font-size:10px;color:var(--ink3,#8b95a1);background:rgba(255,255,255,.5);padding:3px 12px;border-radius:99px;border:1px dashed var(--line,#d7dde4);display:flex;align-items:center;gap:5px}',
+    /* 弹窗（纯白不透明） */
+    '.cdp-overlay{position:fixed;inset:0;z-index:2147483647;background:rgba(20,30,45,.46);display:flex;align-items:center;justify-content:center;padding:18px}.cdp-dial{width:100%;max-width:400px;max-height:82vh;overflow:auto;background:#fff;border-radius:16px;box-shadow:0 14px 44px rgba(30,45,70,.35)}.cdp-dial-h{position:sticky;top:0;display:flex;align-items:center;justify-content:space-between;padding:13px 16px;background:#fff;border-bottom:1px solid var(--line,#d7dde4);font-size:14px}.cdp-dial-b{padding:16px;font-size:12.8px;line-height:1.7;color:var(--ink,#2c3540)}',
+    /* 模型生成的内容排版 */
+    '.r-content h4{font-size:13px;color:var(--accent,#5b7fa6);margin:12px 0 4px}.r-content p{margin:4px 0;font-size:12.8px;color:var(--ink,#2c3540)}.r-content blockquote{border-left:3px solid var(--gold,#b38a5f);background:#fbf4ea;padding:7px 11px;margin:6px 0;border-radius:4px;font-size:12.5px;color:#5c4a35}.r-content .r-sec{margin-bottom:8px}',
+    /* 群聊 */
+    '.cg-pickrow{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px dashed var(--line,#d7dde4);cursor:pointer}.cg-ck{width:22px;height:22px;border-radius:7px;border:2px solid #c9d2db;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;flex:0 0 auto}.cg-av{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:15px;font-weight:700}.cg-info{flex:1;min-width:0}.cg-info b{display:block;font-size:13px}.cg-info small{font-size:10px;color:var(--ink3,#8b95a1)}',
+    '.cg-start{width:100%;margin-top:14px;border:none;border-radius:11px;padding:11px;font-size:13px;cursor:pointer;background:linear-gradient(135deg,#6f9c7a,#4f7a62);color:#fff;display:flex;align-items:center;justify-content:center;gap:6px}',
+    '.cdp-gname{display:inline-block;max-width:55vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}',
+    '.cg-mention{position:absolute;bottom:60px;left:14px;right:14px;background:#fff;border:1px solid var(--line,#d7dde4);border-radius:11px;box-shadow:0 8px 20px rgba(30,45,70,.15);display:none;z-index:8}.cg-mention-item{padding:10px 14px;font-size:12.5px;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--ink,#2c3540)}.cg-mention-item:active{background:#eef1f4}',
+    '.cg-msg{display:flex;flex-direction:column;align-items:flex-start;max-width:84%}.cg-sender{font-size:11px;color:var(--ink2,#66707d);margin-bottom:3px;display:flex;align-items:center;gap:5px}.cg-dot{width:8px;height:8px;border-radius:50%;display:inline-block}.cg-ball{margin-top:2px}',
+    /* 群身份：徽章 */
+    '.cg-badge{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;font-size:.5rem;margin-left:4px;flex:0 0 auto}.cg-badge-owner{background:linear-gradient(145deg,#d4a95f,#b38a5f);color:#fff;box-shadow:0 0 0 1.5px rgba(179,138,95,.28)}.cg-badge-admin{background:linear-gradient(145deg,#7d9dc4,#5b7fa6);color:#fff;box-shadow:0 0 0 1.5px rgba(91,127,166,.28)}.cg-badge-title{width:auto;height:auto;border-radius:8px;padding:0 7px;line-height:1.4;font-size:.62rem;background:linear-gradient(145deg,#c9a97a,#a37a45);color:#fff;margin-right:2px}',
+    /* 群身份：系统提示（金色/蓝色胶囊） */
+    '.cdp-msg-sys.cg-sys{font-weight:500}.cdp-msg-sys.cg-sys-owner{background:rgba(179,138,95,.14);border-color:rgba(179,138,95,.4);color:#9a6f3c}.cdp-msg-sys.cg-sys-admin{background:rgba(91,127,166,.14);border-color:rgba(91,127,166,.4);color:#5b7fa6}',
+    /* 群成员面板 */
+    '.cg-members{padding:2px 0}.cg-mem-sec{font-size:10px;color:var(--ink3,#8b95a1);font-weight:600;letter-spacing:.03em;margin:12px 2px 6px;display:flex;align-items:center;gap:6px}.cg-mem-sec:first-child{margin-top:0}.cg-member-row{display:flex;align-items:center;gap:11px;padding:9px 8px;border-radius:13px;transition:background .15s}.cg-member-row:active{background:#eef1f4}.cg-member-av{width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:700;flex:0 0 auto}.cg-member-info{flex:1;min-width:0}.cg-member-name{font-size:13px;font-weight:600;color:var(--ink,#2c3540);display:flex;align-items:center;gap:4px}.cg-member-title{font-size:10px;color:var(--ink3,#8b95a1);margin-top:3px}.cg-mem-st{font-size:9px;color:var(--danger,#b5695f);border:1px solid rgba(181,105,95,.3);padding:0 6px;border-radius:8px;margin-left:4px}.cg-mem-more{color:var(--ink3,#8b95a1);padding:6px;cursor:pointer;font-size:14px}.cg-mem-more:active{color:var(--accent,#5b7fa6)}',
+    /* 群主操作菜单 */
+    /* 心声弹窗 + 头像 */
+    '.cdp-heart{background:rgba(255,255,255,.7);border:1px solid var(--glass-bd,rgba(120,140,160,.18));border-radius:50%;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto;transition:all .2s}.cdp-heart svg.hs{width:15px;height:15px;fill:none;stroke:var(--ink3,#8b95a1);stroke-width:2;stroke-linejoin:round;transition:all .2s}.cdp-heart.on{background:var(--accent,#5b7fa6);border-color:var(--accent,#5b7fa6)}.cdp-heart.on svg.hs{fill:#fff;stroke:#fff}.cg-mem-heart{color:var(--accent,#5b7fa6);padding:6px;cursor:pointer;font-size:14px;flex:0 0 auto}.cg-heart-top{display:flex;align-items:center;gap:11px;padding:2px 0 12px}.cg-heart-av{width:46px;height:46px;border-radius:13px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;font-weight:700;flex:0 0 auto}.cg-heart-sec{font-size:11px;color:var(--ink3,#8b95a1);font-weight:600;letter-spacing:.03em;margin:12px 0 6px;display:flex;align-items:center;gap:6px}.cg-heart-sec i{color:var(--accent,#5b7fa6);font-size:11px}.cg-heart-chip{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--ink2,#66707d);background:#f0f3f6;border:1px solid var(--line,#d7dde4);padding:5px 10px;border-radius:12px}.cg-heart-chip i{color:var(--accent,#5b7fa6);font-size:10px}.cg-heart-quote{margin-top:4px;padding:12px 14px;border-radius:12px;background:linear-gradient(135deg,rgba(139,121,179,.1),rgba(139,121,179,.06));border-left:3px solid #8f86bd;color:var(--ink,#2c3540);font-size:13px;line-height:1.75;font-style:italic}',
+    /* 群主操作菜单 */
+    '.cg-longmenu{padding:4px 0}.cg-long-item{display:flex;align-items:center;gap:10px;padding:12px 6px;border-radius:9px;font-size:13px;color:var(--ink,#2c3540);cursor:pointer;font-family:inherit}.cg-long-item:active{background:#eef1f4}.cg-long-item i{width:18px;text-align:center;color:var(--accent,#5b7fa6);font-size:13px}.cg-long-item.cg-long-item-danger{color:var(--danger,#b5695f)}.cg-long-item.cg-long-item-danger i{color:var(--danger,#b5695f)}',
+    /* 赐号表单 */
+    '.cg-titleform{padding:2px 0}.cg-titleform-tip{font-size:12px;color:var(--ink2,#66707d);line-height:1.6;margin:0 0 12px;display:flex;align-items:center;gap:7px}.cg-titleform-tip i{color:var(--gold,#b38a5f)}.cg-titleform-inp{width:100%;padding:11px 14px;border-radius:13px;border:1px solid var(--line,#d7dde4);font-size:14px;outline:none;background:#fff;box-sizing:border-box}.cg-titleform-inp:focus{border-color:var(--accent,#5b7fa6)}.cg-titleform-btn{width:100%;margin-top:13px;padding:11px;border:none;border-radius:12px;background:linear-gradient(135deg,#c9a97a,#a37a45);color:#fff;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px}',
+    '.cdp-typing{opacity:.65;font-style:italic}',
+    /* 群公告条 */
+    '.cg-notice{display:flex;align-items:center;gap:8px;margin:6px 0;padding:8px 12px;border-radius:12px;background:linear-gradient(135deg,rgba(205,180,140,.18),rgba(199,169,122,.14));border:1px solid rgba(199,169,122,.4);font-size:12px;color:#77623c;flex-shrink:0;line-height:1.5}.cg-notice i{color:#b38a5f;font-size:13px;flex:0 0 auto}.cg-notice span{flex:1;min-width:0}',
+    /* 已读 / 私聊泄露 */
+    '.cdp-msg-sys.cg-read{color:var(--ink3,#8b95a1);font-size:9.5px;background:transparent;border-color:transparent}.cdp-msg-sys.cg-read i{color:var(--ink3,#8b95a1)}.cg-leak{align-self:center;font-size:10.5px;color:#6a5e85;background:linear-gradient(135deg,rgba(139,121,179,.14),rgba(139,121,179,.1));border:1px solid rgba(139,121,179,.4);padding:8px 12px;border-radius:12px;display:flex;align-items:center;gap:6px;line-height:1.5;max-width:88%}.cg-leak i{color:#7d6b9c;font-size:12px;flex:0 0 auto}',
+    /* 引用回复 */
+    '.cg-qbar{display:flex;align-items:center;gap:6px;margin:0 0 4px;padding:5px 9px;border-radius:8px;background:#f2eef7;border-left:2.5px solid #8f86bd;font-size:10.5px;color:#6a5e85;max-width:100%;overflow:hidden}.cg-qbar i{color:#8f86bd;font-size:10px;flex:0 0 auto}.cg-qbar-w{font-weight:600;color:#6a5e85;white-space:nowrap;flex:0 0 auto}.cg-qbar-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#887ea0;min-width:0}.cg-qbar-input{margin:0;background:#eef1f4;border-color:var(--accent,#5b7fa6);color:var(--ink2,#66707d)}.cg-quotebar{padding:6px 2px}.cg-quotebar .cg-qbar-input i.fa-xmark{margin-left:auto;color:var(--ink3,#8b95a1);cursor:pointer;flex:0 0 auto}',
+    /* 撤回自己消息 */
+    '.cg-inner{font-size:10px;font-style:italic;color:#8f86bd;border-left:2px solid #c3b9dd;padding-left:7px;margin:4px 0;line-height:1.5}',
+    '.cg-mrecall{font-size:11px;color:var(--ink3,#8b95a1);display:inline-flex;align-items:center;gap:5px}.cdp-ball.cg-mine-recalled{background:rgba(255,255,255,.5) !important;color:var(--ink3,#8b95a1);opacity:.75}',
+    /* 三小圆点/氛围卡已按主人要求移除 */
+    /* 气泡按语气档变色 */
+    '.cdp-ball.left.cdp-b-mood-good{background:rgba(220,233,244,.75);border-color:rgba(120,150,180,.3)}.cdp-ball.left.cdp-b-mood-mid{background:rgba(255,255,255,.75);border-color:var(--glass-bd,rgba(120,140,160,.18))}.cdp-ball.left.cdp-b-mood-bad{background:rgba(235,228,224,.72);border-color:rgba(150,130,120,.3)}',
+    /* 内心独白（斜体小字带左竖线） */
+    '.cdp-inner{font-size:10.5px;font-style:italic;color:var(--ink3,#8b95a1);border-left:2px solid var(--accent2,#96a7bd);padding-left:7px;margin-top:4px;line-height:1.5}',
+    /* 情绪回执（右下角小字+图标） */
+    '.cdp-msg-mt-c{margin-top:4px;font-size:9px;display:flex;align-items:center}.cdp-rct{display:inline-flex;align-items:center;gap:4px}.cdp-rct.pos{color:#5b8a6a}.cdp-rct.neg{color:var(--danger,#b5695f)}.cdp-rct.mid{color:var(--ink3,#8b95a1)}',
+    /* 长按菜单 */
+    '.cdp-lmenu{position:fixed;z-index:2147483646;background:#fff;border:1px solid var(--line,#d7dde4);border-radius:12px;box-shadow:0 10px 26px rgba(30,45,70,.18);padding:6px;width:180px}.cdp-lmi{display:flex;align-items:center;gap:9px;padding:10px 11px;border-radius:8px;font-size:12.5px;color:var(--ink,#2c3540);cursor:pointer}.cdp-lmi:active{background:#eef1f4}.cdp-lmi i{width:18px;text-align:center;color:var(--accent,#5b7fa6);font-size:13px}',
+    /* 平行线/当时心理 */
+    '.cdp-par-c{background:#faf8f5;border-left:3px solid var(--gold,#b38a5f);padding:8px 11px;margin:6px 0;border-radius:4px;font-size:12.5px;color:var(--ink,#2c3540)}.cdp-par-lbl{font-size:10px;color:var(--gold,#b38a5f);margin-bottom:3px}',
+    /* 撤回 / 语音 */
+    '.cdp-recall{opacity:.6;color:var(--ink3,#8b95a1)}.cdp-voice{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.7);border:1px solid var(--glass-bd,rgba(120,140,160,.18));padding:10px 14px;border-radius:20px;border-bottom-left-radius:6px;cursor:pointer;color:var(--accent,#5b7fa6)}.cdp-wave{flex:1;height:16px;background:repeating-linear-gradient(90deg,var(--accent,#5b7fa6) 0 3px,transparent 3px 6px);opacity:.5;border-radius:4px}.cdp-vt{font-size:.8rem;color:var(--ink2,#66707d);margin-top:6px;padding-left:8px;border-left:2px solid var(--accent2,#96a7bd)}',
+    /* 主屏·会话优先（会话版） */
+    '.cdp-wrap-wall{padding:0 0 110px}.cdp-wall-content{padding:6px 10px 0}',
+    '.cdp-sec{margin-bottom:10px}.cdp-sec-h{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--ink2,#66707d);letter-spacing:.05em;padding:0 4px 6px}.cdp-sec-h i{color:var(--accent,#5b7fa6);font-size:12px}.cdp-sec-cnt{font-weight:500;color:var(--ink3,#8b95a1);font-size:10px;margin-left:auto}',
+    /* 全部会话（聊过才显示） */
+    '.cdp-clist{display:flex;flex-direction:column;gap:6px}.cdp-citem{display:flex;align-items:center;gap:10px;padding:8px 11px;cursor:pointer;background:rgba(255,255,255,.6);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid var(--glass-bd,rgba(120,140,160,.18));border-radius:16px;box-shadow:0 8px 20px rgba(90,110,135,.08),inset 0 1px 0 rgba(255,255,255,.9)}.cdp-citem:active{transform:scale(.985)}.cdp-chat-del{margin-left:auto;flex-shrink:0;width:22px;height:22px;display:flex;align-items:center;justify-content:center;color:#a86b63;border-radius:7px;cursor:pointer;opacity:.45;transition:opacity .15s}.cdp-chat-del:hover{opacity:1;color:#c84632;background:rgba(200,70,50,.1)}.cdp-ccard-add{cursor:pointer}.cdp-ccard-add .cdp-cav{font-size:16px;color:#ffffff}',
+    '.cdp-cav-s{width:40px;height:40px;border-radius:50%;color:#fff;font-weight:700;font-size:15px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;position:relative;box-shadow:inset 0 -3px 5px rgba(0,0,0,.1),0 4px 10px rgba(0,0,0,.08)}.cdp-cav-g{position:relative}.cdp-grp-ic{position:absolute;bottom:-1px;right:-1px;width:15px;height:15px;border-radius:50%;background:linear-gradient(145deg,#a898bc,#8a7aa8);display:flex;align-items:center;justify-content:center;font-size:6px;color:#fff;border:1.5px solid rgba(255,255,255,.85)}',
+    '.cdp-cbody{flex:1;min-width:0}.cdp-cname{font-size:13px;font-weight:700;color:var(--ink,#2c3540);display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cdp-csub{font-size:8px;font-weight:600;padding:1px 6px;border-radius:8px;background:rgba(168,152,188,.16);color:#8a7aa8;flex:0 0 auto}.cdp-clast{font-size:10px;color:var(--ink3,#8b95a1);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    /* 角色档案（4列密集，无毛玻璃底托） */
+    '.cdp-cgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px 5px;justify-items:center}.cdp-ccard{width:100%;padding:7px 2px 5px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;transition:transform .15s}.cdp-ccard:active{transform:scale(.94)}',
+    '.cdp-cav{width:46px;height:46px;border-radius:14px;color:#fff;font-weight:700;font-size:17px;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 -3px 5px rgba(0,0,0,.1),0 3px 8px rgba(0,0,0,.08)}',
+    '.cdp-cnm{font-size:11px;font-weight:600;color:var(--ink3,#8b95a1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;text-align:center}',
+    '.cdp-caff{font-size:9px;font-weight:600;display:flex;align-items:center;gap:2px}.cdp-caff i{font-size:6px}.cdp-caff-pos{color:#93ae9b}.cdp-caff-neg{color:var(--danger,#b5695f)}.cdp-caff-neu{color:#c9b48d}',
+    /* 主屏底部·心理大师横向卡片 */
+    '.cdp-psy-row{max-width:100%}.cdp-psy-list{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 6px}.cdp-psy-card{flex:0 0 auto;width:74px;text-align:center;cursor:pointer;background:rgba(255,255,255,.7);border:1px solid var(--glass-bd,rgba(120,140,160,.18));border-radius:14px;padding:10px 6px}.cdp-psy-card:active{transform:scale(.95)}.cdp-psy-av{font-size:22px;line-height:1}.cdp-psy-av i{color:#5b7fa6}.cdp-psy-nm{font-size:12px;font-weight:700;color:var(--ink,#2c3540);margin-top:6px}.cdp-psy-tg{font-size:9px;color:var(--ink3,#8b95a1);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    /* 历史分页：更早消息占位条（单聊 .cdp-hold / 群聊 .cg-hold） */
+    '.cdp-hold,.cg-hold{display:flex;align-items:center;justify-content:center;gap:6px;font-size:11px;color:var(--ink3,#8b95a1);padding:5px 12px;margin:2px auto 2px;cursor:default;-webkit-user-select:none;user-select:none}.cdp-hold i,.cg-hold i{color:var(--accent,#5b7fa6);font-size:9px;flex:0 0 auto}',
+
+    /* 悬浮球左下角（覆盖：左定位 + 左上展开） */
+    '.cdp-fab-wrap{left:16px;right:auto;bottom:24px}',
+    '.cdp-fab-item[class="cdp-fab-item cdp-fi-group"]{transform:none}.cdp-fab-wrap.open .cdp-fab-item.cdp-fi-group{transform:translate(96px,0) scale(1) !important}',
+    '.cdp-fab-wrap.open .cdp-fab-item.cdp-fi-report{transform:translate(83px,-48px) scale(1) !important}',
+    '.cdp-fab-wrap.open .cdp-fab-item.cdp-fi-set{transform:translate(48px,-83px) scale(1) !important}',
+    '.cdp-fab-wrap.open .cdp-fab-item.cdp-fi-psy{transform:translate(0,-96px) scale(1) !important}',
+  ].join('\n');
+  function cdPhoneApplyCss() {
+    try {
+      var root = document.getElementById('cd-phone-style');
+      if (!root) { root = document.createElement('style'); root.id = 'cd-phone-style'; document.head.appendChild(root); }
+      root.textContent = _css;
+    } catch (e) { }
+  }
+  window.cdRenderPhone = cdRenderPhone;
+  window.cdPhoneSetMem = cdPhoneSetMem;
+  window.cdPhoneSetDiary = cdPhoneSetDiary;
+  window.cdPhoneSetBond = cdPhoneSetBond;
+  window.cdPhoneToggleFab = cdPhoneToggleFab;
+  window.cdPhoneCloseFab = cdPhoneCloseFab;
+  window.cdPhoneStartGroup = cdPhoneStartGroup;
+  window.cdPhoneReport = cdPhoneReport;
+  window.cdPhonePsycho = cdPhonePsycho;
+  window.cdPhoneSettings = cdPhoneSettings;
+  /* 清空聊天记录（私聊 kind='single' / 群聊 kind='group'），只清消息数组，保留好感记忆 */
+  window._cgClearChatHistory = _cgClearChatHistory;
+  window._cgClearChatConfirm = _cgClearChatConfirm;
+  window.cdPhoneOpenAbout = function () {
+    var isSingle = !!_st.curChar && !!document.getElementById('cdpChatBody');
+    var o = _cgIsSingleActive ? (_st.curChar || '') : '';
+    var body = '<div style="font-size:12.8px;line-height:1.7;color:#2c3540">「手机」是内心世界剧场：点任意角色开启单聊，角色会用 TA 自己的日记说话、会用对你的好感决定语气。右下角悬浮球可唤出 群聊 / 年度报告 / 心理大师。</div>'
+      + '<button class="cg-titleform-btn" style="background:linear-gradient(135deg,#c76f6a,#a34a45);margin-top:14px" onclick="_cgClearChatConfirm(\'' + (isSingle ? 'single' : 'group') + '\')" id="cdpClearBtn"><i class="fa-solid fa-eraser"></i> 清空当前聊天记录</button>';
+    openPhoneModal('关于 · 手机', body);
+  };
+  function _cgIsSingleActive() { return !!_st.curChar && !!document.getElementById('cdpChatBody'); }
+  /* 清空：二次确认 */
+  function _cgClearChatConfirm(kind) {
+    var who = (kind === 'single') ? (_st.curChar || '') : (_groupCur || []).join('、');
+    openPhoneModal('清空聊天记录',
+      '<div style="font-size:13px;line-height:1.7;color:#2c3540">确定要清空「' + _phEscape(who || '') + '」的所有聊天记录吗？<br><span style="font-size:11px;color:#8b95a1">好感与角色记忆保留，不会被清除。</span></div>'
+      + '<button class="cg-titleform-btn" style="background:linear-gradient(135deg,#c76f6a,#a34a45);margin-top:14px" onclick="cdPhoneCloseModal();_cgClearChatHistory(\'' + kind + '\')"><i class="fa-solid fa-eraser"></i> 确认清空</button>');
+  }
+  function _cgClearChatHistory(kind) {
+    try {
+      if (kind === 'single') {
+        var name = _st.curChar;
+        if (!name) return;
+        if (!_st.history) _st.history = {};
+        _st.history[name] = [];
+        try { _cdpSaveSingle(name, []); } catch (e) {}
+        var b = document.getElementById('cdpChatBody'); if (b) b.innerHTML = '';
+        _st._slim = 0;
+        var r = _phFindRole(name);
+        if (b && r) b.innerHTML = '<div class="cdp-msg left"><div class="cdp-ball left">' + _phGreet(r) + '</div></div>';
+        if (b) { var hd = document.getElementById('cdpHolder'); if (hd) hd.style.display = 'none'; }
+      } else {
+        _groupMsg = [];
+        try { _cdpSaveGroup(_groupKey, _groupCur || [], []); } catch (e) {}
+        var cg = document.getElementById('cgBody'); if (cg) cg.innerHTML = '';
+        _gRenderLimit = 0;
+        if (cg) { var gh = document.getElementById('cgHolder'); if (gh) gh.style.display = 'none'; }
+      }
+      console.log('[手机] 已清空聊天记录:', kind);
+    } catch (e) { console.warn('[手机] 清空失败', e); }
+  }
+  window.cdPhoneCloseModal = cdPhoneCloseModal;
+  window.cdPhoneOpenChat = cdPhoneOpenChat;
+  window.cdPhoneAnalyze = cdPhoneAnalyze;
+  window.cgPick = cgPick;
+  window.cgStart = cgStart;
+  window.cgSend = cgSend;
+  window.cgSendEnter = cgSendEnter;
+  window.cgMention = cgMention;
+  window.cgPickAt = cgPickAt;
+  window.cdPhoneCloseLmenu = cdPhoneCloseLmenu;
+  window.cdPhoneMsgPsycho = cdPhoneMsgPsycho;
+  /* 返回：重渲染主屏（让"聊过才出现"生效），原定义曾因 edit 损坏丢失，已从备份 groupidentity_pre 恢复 */
+/* 心理大师诊室对话（复用单聊界面，内置人设，无好感/日记记录，无开场白） */
+  function _psyFind(mid) { var m = null; (_PSYCHO_MASTERS || []).forEach(function (x) { if (x.id === mid) m = x; }); return m; }
+  function cdPhoneOpenPsychoChat(mid) {
+    var m = _psyFind(mid); if (!m) return;
+    var _pmid = mid;
+    var box = [];
+    box.push('<div class="cdp-wrap cdp-chat-root">');
+    box.push('  <div class="cdp-chat-h">');
+    box.push('    <button class="cdp-back" onclick="cdPhoneBack()"><i class="fa-solid fa-arrow-left"></i></button>');
+    box.push('    <div class="cdp-chat-av" style="background:linear-gradient(145deg,#7d6b92,#5f5185)">' + m.av + '</div>');
+    box.push('    <div class="cdp-chat-i"><b>' + _phEscape(m.name) + '</b><small>' + _phEscape(m.tag) + '</small></div>');
+    box.push('    <i class="fa-solid fa-ellipsis-vertical cdp-chat-more" onclick="openPhoneModal(\'心理大师\',\'' + _phEscape(m.brief) + '\')"></i>');
+    box.push('  </div>');
+    box.push('  <div class="cdp-chat" id="psyBody"></div>');
+    box.push('  <div class="cdp-chat-in">');
+    box.push('    <input id="psyInput" placeholder="对 ' + _phEscape(m.name) + ' 说说…" onkeydown="psySendEnter(event)">');
+    box.push('    <button class="cdp-chat-send" onclick="psySend()"><i class="fa-solid fa-paper-plane"></i></button>');
+    box.push('  </div>');
+    box.push('</div>');
+    $('#cd-content').html(box.join(''));
+    _st._psyCur = mid;
+    var inp = document.getElementById('psyInput'); if (inp) inp.focus();
+  }
+  function psySendEnter(e) { if (e.key === 'Enter') { e.preventDefault(); psySend(); } }
+  async function psySend() {
+    var inp = document.getElementById('psyInput'); if (!inp) return;
+    var text = inp.value.trim(); if (!text) return;
+    inp.value = '';
+    var mid = _st._psyCur; var m = _psyFind(mid || ''); if (!m) return;
+    var b = document.getElementById('psyBody');
+    b.innerHTML += '<div class="cdp-msg right"><div class="cdp-ball right">' + _phEscape(text) + '</div></div>';
+    b.scrollTop = b.scrollHeight;
+    var tip = 'psyTip' + Date.now();
+    b.innerHTML += '<div class="cdp-msg left"><div class="cdp-ball left cdp-typing" id="' + tip + '"><i class="fa-solid fa-ellipsis"></i> ' + _phEscape(m.name) + ' 正在沉思…</div></div>';
+    b.scrollTop = b.scrollHeight;
+    try {
+      var hist = window._psyHist && window._psyHist[mid];
+      var msgs = [{ role: 'system', content: m.sys + '\n\n用户刚说：「' + text + '」。以你的身份回应，不要用markdown。' }];
+      if (hist && hist.length) { hist.forEach(function (h) { msgs.splice(msgs.length - 1, 0, { role: (h.u ? 'user' : 'assistant'), content: h.c }); }); }
+      var out = String(await cdForumApiComplete(msgs) || '').trim();
+      var t = document.getElementById(tip); if (t) t.remove();
+      b.innerHTML += '<div class="cdp-msg left"><div class="cdp-ball left cdp-b-mood-mid">' + _phEscape(out) + '</div></div>';
+      b.scrollTop = b.scrollHeight;
+      if (!window._psyHist) window._psyHist = {};
+      if (!window._psyHist[mid]) window._psyHist[mid] = [];
+      window._psyHist[mid].push({ u: true, c: text }, { u: false, c: out });
+    } catch (e) {
+      var t2 = document.getElementById(tip); if (t2) t2.remove();
+      b.innerHTML += '<div class="cdp-msg left"><div class="cdp-ball left cdp-b-mood-bad">' + _phEscape(m.name) + ':' + _phEscape((e && e.message) || '出错了') + '</div></div>';
+      b.scrollTop = b.scrollHeight;
+    }
+  }
+
+  function cdPhoneBack() { (async function () { await cdRenderPhone(); })(); }
+  window.cdPhoneOpenPsychoChat = cdPhoneOpenPsychoChat;
+  window.psySend = psySend;
+  window.psySendEnter = psySendEnter;
+  window.cdPhoneBack = cdPhoneBack;
+  window.cdPhoneSend = cdPhoneSend;
+  window.cdPhoneSendEnter = cdPhoneSendEnter;
+  /* 群身份体系（成员面板/群主操作）全局挂载 */
+  window._cgOpenMembers = _cgOpenMembers;
+  window._cgMemberMenu = _cgMemberMenu;
+  window._cgSetAdmin = _cgSetAdmin;
+  window._cgTitleInput = _cgTitleInput;
+  window._cgConfirmTitle = _cgConfirmTitle;
+  window._cgTransferOwner = _cgTransferOwner;
+  window._cgKickMember = _cgKickMember;
+  window._cgNoticeInput = _cgNoticeInput;
+  window._cgConfirmNotice = _cgConfirmNotice;
+  window._cgHeartModal = _cgHeartModal;
+  window._cgHeartPick = _cgHeartPick;
+  window._cgMuteMember = _cgMuteMember;
+  window._cgUnmuteMember = _cgUnmuteMember;
+  window._cgForceLeave = _cgForceLeave;
+  window.cgInnerToggle = cgInnerToggle;
+  window.cdPhoneDeleteChat = cdPhoneDeleteChat;
+  window.cdPhoneAddRole = cdPhoneAddRole;
+  window.cdPhoneConfirmAddRole = cdPhoneConfirmAddRole;
+})();
