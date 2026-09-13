@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.17.2';
+const PLUGIN_VERSION = '2.18.0';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -1051,9 +1051,9 @@ const ARCHIVE_SYSTEM = [
   '7. 如果原文包含暴力、成人互动、羞辱、伤病、血腥或其他敏感内容，不要跳过，也不要美化，只用客观中性措辞记录。',
   '8. 输出只能是纯文本，不要加项目符号，不要编号，不要解释你的做法。',
   '',
-  '【关键要求】每条事件描述必须以【时间标记】开头，格式为【第N天/时段】或【第N楼】或【月/日 时段】。',
+  '【关键要求】每条事件描述必须以【时间标记】开头，格式必须为具体数字：普通事件用【年月日 时:分】或【第N楼】，状态/人物用【年月日 时:分】。禁止用【第N天 傍晚】/【月/日 时段】这种缺具体数字的时段。',
   '  例如：【第3天 傍晚】、【第15楼】、【7月12日 深夜】。',
-  '  时间标记从原文中推断，不要编造原文没有的时间信息。如果完全无法推断，用【未知时间】。',
+  '  时间标记必须是具体数字（年月日时分，如【2026年3月15日 14:30】）。从原文/剧情顺序/前后文合理推断；原文没有确切时间时，按剧情发生顺序自洽顺延一个具体数字时间（如前面是第1天8:00，下一幕就顺延到同日/次日某个具体时:分），绝不能输出【未知时间】/【某年某月】/【第N天 傍晚】这类缺失具体数字的模糊标记。',
   '',
   '禁止事项：',
   '1. 不要使用"暧昧气氛"、"心理博弈"、"宣示主权"、"占有欲"、"言语挑衅"、"进行安抚"这类抽象标签。',
@@ -1071,7 +1071,7 @@ const ARCHIVE_SYSTEM = [
   '【铁律】',
   '1. 每个事件必须含【关键句子】：有推动剧情的对话→写关键原话(带引号,1~2句即可,不整段转录)；无对话→写具体动作/具体物证("取出藏有线索的信笺""从尸体搜出半枚铜币")。',
   '2. 严禁笼统替代：禁止"他们交谈了""达成交易""发生了冲突""关系变好"这类空话；必须落到 谁+具体做了什么+说了哪句关键的话+得到/失去/发现了什么具体东西。',
-  '3. 时间地点齐全：每条以【年月日 时:分 · 地点】开头，时间必须精确到时:分，禁止用"清晨/午后/傍晚/入夜"等模糊时段词(无法推断地点可只写【年月日 时:分】，但禁止两者都缺)。',
+  '3. 时间地点齐全：每条以【年月日 时:分 · 地点】开头，时间必须精确到具体数字的时:分。禁止用"清晨/午后/傍晚/入夜/约半日/未知"/任何缺数字的时间。原文无确切时间时按剧情顺序自洽顺延生成一个具体数字时间，绝不允许输出缺失数字的时间标记。(无法推断地点可只写【年月日 时:分】)',
   '4. 追加式累积，按时间顺序，同一事件绝不重复记录。',
   '5. 若本次没有新主线事件，输出"无"，不要凭空编造。',
   '',
@@ -1158,9 +1158,9 @@ const ARCHIVE_SYSTEM_FULL = [
   '7. 如果原文包含暴力、成人互动、羞辱、伤病、血腥或其他敏感内容，不要跳过，也不要美化，只用客观中性措辞记录。',
   '8. 输出只能是纯文本，不要加项目符号，不要编号，不要解释你的做法。',
   '',
-  '【关键要求】每条事件描述必须以【时间标记】开头，格式为【第N天/时段】或【第N楼】或【月/日 时段】。',
+  '【关键要求】每条事件描述必须以【时间标记】开头，格式必须为具体数字：普通事件用【年月日 时:分】或【第N楼】，状态/人物用【年月日 时:分】。禁止用【第N天 傍晚】/【月/日 时段】这种缺具体数字的时段。',
   '  例如：【第3天 傍晚】、【第15楼】、【7月12日 深夜】。',
-  '  时间标记从原文中推断，不要编造原文没有的时间信息。如果完全无法推断，用【未知时间】。',
+  '  时间标记必须是具体数字（年月日时分，如【2026年3月15日 14:30】）。从原文/剧情顺序/前后文合理推断；原文没有确切时间时，按剧情发生顺序自洽顺延一个具体数字时间（如前面是第1天8:00，下一幕就顺延到同日/次日某个具体时:分），绝不能输出【未知时间】/【某年某月】/【第N天 傍晚】这类缺失具体数字的模糊标记。',
   '',
   '禁止事项：',
   '1. 不要使用"暧昧气氛"、"心理博弈"、"宣示主权"、"占有欲"、"言语挑衅"、"进行安抚"这类抽象标签。',
@@ -3183,6 +3183,15 @@ if (typeof window !== 'undefined') window.cdTestJsonlSource = cdTestJsonlSource;
 if (typeof window !== 'undefined') window.cdPreviewJsonlFloors = cdPreviewJsonlFloors;
 if (typeof window !== 'undefined') window.cdOnMessageReceivedJsonl = cdOnMessageReceivedJsonl;
 if (typeof window !== 'undefined') window.cdGetAiFloorsSmart = cdGetAiFloorsSmart;
+// ★ [LIWE小助手] 补挂 window，供手机小助手读取/修改插件数据
+if (typeof window !== 'undefined') window.cdGetData = cdGetData;
+if (typeof window !== 'undefined') window.cdSaveData = cdSaveData;
+if (typeof window !== 'undefined') window.cdGetSettings = cdGetSettings;
+if (typeof window !== 'undefined') window.cdRefreshInjection = cdRefreshInjection;
+if (typeof window !== 'undefined') window.cdForumApiComplete = cdForumApiComplete;
+if (typeof window !== 'undefined') window.cdCompressArchive = cdCompressArchive;
+if (typeof window !== 'undefined') window.cdRenderArchive = cdRenderArchive;
+
 
 
 function cdBuildLiveTableInjectText() {
@@ -8170,7 +8179,9 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
           <span class="cdb-feat off"><i class="fa-regular fa-minus"></i> 关系 / 填表：默认关闭</span>
           <span class="cdb-feat on"><i class="fa-regular fa-check"></i> 自动压缩：可开启</span>
         </div>
-        <div class="cdb-empty-guide-focus">
+        <details class="cdb-empty-guide-adv" id="cdb-adv">
+          <summary><i class="fa-regular fa-sliders"></i> 高级选项 <span class="cdb-adv-sub">重点角色 · 选择性记忆</span></summary>
+          <div class="cdb-empty-guide-focus">
           <div class="cdb-focus-label"><i class="fa-regular fa-bullseye"></i> 想重点记忆的角色（可选，可后加）</div>
           <div class="cdb-focus-add">
             <input type="text" id="cdb-focus-input" class="cd-input" placeholder="角色名（如：格里菲斯）" style="flex:1;min-width:120px;">
@@ -8185,9 +8196,11 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
           </label>
           <span class="cdb-select-desc">关闭=自动记所有角色；<br>开启=只记上面「重点角色」里的角色，其余不记。</span>
         </div>
+        </details>
         <div class="cdb-empty-guide-actions">
           <button class="cd-btn-primary cdb-btn-setup" id="cdb-btn-open-settings"><i class="fa-regular fa-sliders"></i> 去设置</button>
-          <span class="cdb-empty-guide-foot">顶部切换「剧情 / 关系 / 表」可查看档案、关系网与表格</span>
+          <button type="button" class="cdb-btn-assist" id="cdb-btn-assist"><i class="fa-regular fa-circle-question"></i> 先问「小助手」</button>
+          <span class="cdb-empty-guide-foot">顶部切换「剧情 / 关系 / 表」可查看档案、关系网与表格<br>配 API / 操作 / 用法问题，点「小助手」一步步教你，不用急着找作者。</span>
         </div>
         <div class="cdb-empty-guide-skip"><button type="button" class="cdb-skip-btn" id="cdb-btn-skip">我是老手，跳过引导</button></div>
         ${_disabled ? '<div class="cdb-empty-guide-warn"><i class="fa-regular fa-triangle-exclamation"></i> 主开关当前关闭，需要先在设置中打开插件才会工作。</div>' : ''}
@@ -8196,6 +8209,18 @@ async function cdRenderBrowse(filterText = '', filterChar = '') {
     $('#cd-content').off('click', '#cdb-btn-open-settings').on('click', '#cdb-btn-open-settings', function (e) {
       e.stopPropagation();
       cdToggleSettings();
+    });
+    // ★ 小助手入口：新手点这里进小助手会话页答疑
+    $('#cd-content').off('click', '#cdb-btn-assist').on('click', '#cdb-btn-assist', function (e) {
+      e.stopPropagation();
+      try {
+        if (typeof window.liweAssistTools === 'function') { window.liweAssistTools(); }
+        else if (typeof liweAssistTools === 'function') { liweAssistTools(); }
+        else if (typeof toastr !== 'undefined') { toastr.warning('小助手暂不可用'); }
+      } catch (err) {
+        if (typeof cdAddLog === 'function') cdAddLog('warn', '[小助手入口] 打开失败: ' + (err && err.message));
+        if (typeof toastr !== 'undefined') toastr.error('小助手打开失败，请稍后再试');
+      }
     });
     // ★ 老手跳过：设置标记并刷新（本次引导及之后的新手提示都不再出现）
     $('#cd-content').off('click', '#cdb-btn-skip').on('click', '#cdb-btn-skip', function (e) {
@@ -12178,6 +12203,17 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
     {
+    version: 'v2.18.0',
+    date: '2026-09-13',
+    items: [
+      '【小助手 v6 升级】手机小助手升级到 v6：结构化富渲染（进度汇报块/建议块/A·B·C 可点分支按钮/上报卡）；JSON 双通道(MEM_ACTION 兜底)解析；上报按类型动态数据+问题编号+知情同意；记用户偏好(说"以后别给选项"即存 localStorage.liweAssistPref)。',
+      '【小助手头像】小助手会话页+主屏入口头像换成自定义照片(压缩成128px base64 内嵌，_ASSIST_AVATAR launcher，旧 fa-robot 移除)。',
+      '【主屏布局】小助手入口从「心理大师」横卡行拿出来，放到其下方单独一行(.cdp-assist-row 带头像/标题/箭头)。',
+      '【新手引导】新手引导空态页(欢迎使用角色日记)加「先问小助手」入口按钮，点击进小助手会话页答疑——新手配 API/操作/用法问题先问小助手。',
+      '【新手引导 UI 改版】新手引导页从暖棕改为插件统一的玻璃浅灰毛玻璃风格；布局改为三段式(欢迎/三步上手/高级选项折叠)；「重点角色」和「选择性记忆」收进「高级选项」折叠面板(默认收起)；「去设置」+「先问小助手」双按钮并排。',
+    ],
+  },
+    {
     version: 'v2.17.2',
     date: '2026-09-12',
     items: [
@@ -12681,7 +12717,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.17.2 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.18.0 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
@@ -21798,7 +21834,10 @@ if (typeof window !== 'undefined') {
     ];
     return palettes[sum % palettes.length];
   }
-  var _st = { curChar: null, roles: [], fabOpen: false, memFloors: 10, memDiary: true, memBond: true, temp: 50, showInner: false };
+  var _st = { curChar: null, roles: [], fabOpen: false, memFloors: 10, memDiary: true, memBond: true, temp: 50, showInner: false, readTavern: true, keepMsgs: 200 };
+  var _ASSIST_AVATAR = 'data:image/jpeg;base64,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';
+
+
   /* ---------- IndexedDB 持久化（复用插件 cdForumImgDB 成熟模式） ---------- */
   var CDP_DB = 'cd-chatroom-db';
   function _cdpDB() {
@@ -21893,7 +21932,7 @@ if (typeof window !== 'undefined') {
   /* 保存单聊某角色历史（直接写该 key，不读写全库） */
   async function _cdpSaveSingle(roleName, history) {
     try {
-      await _cdpIDBSet({ key: 'single_' + roleName, v: (history || []).slice(-200) });
+      await _cdpIDBSet({ key: 'single_' + roleName, v: (history || []).slice(-(_st.keepMsgs || 200)) });
       if (_cdpLoadedDb) _cdpLoadedDb.singles[roleName] = true;
     } catch (e) {}
   }
@@ -21905,7 +21944,7 @@ if (typeof window !== 'undefined') {
         key: 'group_' + gkey,
         v: {
           members: members || [],
-          msgs: (msgs || []).slice(-200),
+          msgs: (msgs || []).slice(-(_st.keepMsgs || 200)),
           state: { owner: st.owner || null, admins: (st.admins || []).slice(), kicked: (st.kicked || []).slice(), muted: (st.muted || []).slice(), titles: (st.titles || {}), notice: (st.notice || ''), name: (st.name || ''), userKicked: !!st.userKicked, spectate: !!st.spectate }
         }
       });
@@ -22105,6 +22144,11 @@ if (typeof window !== 'undefined') {
 
     html.push('    </div>');
     html.push('  </div>');
+    html.push('  <div class="cdp-assist-row" data-assist="1" title="LIWE 小助手">');
+    html.push('    <div class="cdp-assist-av"><img class="cdp-assist-img" src="' + _ASSIST_AVATAR + '" alt="LIWE"></div>');
+    html.push('    <div class="cdp-assist-bd"><div class="cdp-assist-nm">LIWE 小助手</div><div class="cdp-assist-tg">记忆管理员 · 点击对话/管理记忆</div></div>');
+    html.push('    <i class="fa-solid fa-chevron-right cdp-assist-go"></i>');
+    html.push('  </div>');
     html.push('  <div class="cdp-fab-mask" id="cdpFabMask" onclick="cdPhoneCloseFab()"></div>');
     html.push('  <div class="cdp-fab-wrap" id="cdpFabWrap">');
     html.push('    <div class="cdp-fab-item cdp-fi-group" onclick="cdPhoneStartGroup()" title="建群"><i class="fa-solid fa-user-group"></i></div>');
@@ -22124,6 +22168,8 @@ if (typeof window !== 'undefined') {
         if (t) { cdPhoneOpenChat(t.getAttribute('data-phone-char')); return; }
         var p = e.target.closest('[data-psy]');
         if (p) { cdPhoneOpenPsychoChat(p.getAttribute('data-psy')); return; }
+        var at = e.target.closest('[data-assist]');
+        if (at) { liweAssistTools(); return; }
         var addb = e.target.closest('#cdpAddRole');
         if (addb) { cdPhoneAddRole(); return; }
         var del = e.target.closest('[data-delchat]');
@@ -22132,6 +22178,7 @@ if (typeof window !== 'undefined') {
         if (s) {
           var kind = s.getAttribute('data-kind') || 'single';
           var nm = s.getAttribute('data-phone-chat');
+          if (nm === '小助手') { liweAssistTools(); return; }
           if (kind === 'group') { _phGroupEnter((s.getAttribute('data-members') || '').split('|'), { gkey: s.getAttribute('data-gkey') || '' }); }
           else { cdPhoneOpenChat(nm); }
           return;
@@ -23213,7 +23260,25 @@ function _cgOpenMembers() {
     var temp = (typeof _st.temp === 'number') ? _st.temp : 50;
     // 群最近消息（历史）
     var recent = '';
-    if (Array.isArray(_groupMsg)) { _groupMsg.slice(-8).forEach(function (g) { if (g && g.who && g.text) recent += '【' + g.who + '】' + g.text + '\n'; }); }
+    if (Array.isArray(_groupMsg)) {
+      var _gN = Math.max(1, parseInt(_st.memFloors, 10) || 10);   // 滑块=群聊记忆条数
+      var _gClean = [];
+      for (var _gi = 0; _gi < _groupMsg.length; _gi++) {
+        var _gg = _groupMsg[_gi];
+        if (!_gg) continue;
+        // 清洗：跳过系统消息 / 纯占位
+        if (_gg.who === '__系统__' || _gg.who === '__system__') continue;
+        if (_gg.mine && /我退出了|我加入了|（我/.test(String(_gg.text||''))) continue;
+        var _gt = String(_gg.text || '').trim();
+        if (!_gt) continue;
+        // 跳过纯占位/语音/图片/正在输入/已读/撤回等非实质发言
+        if (/^\[图片\]|^\[语音|\(正在输入|^已读|^\[撤回\]|已经撤回了/.test(_gt)) continue;
+        var _who = _gg.mine ? '我' : (_gg.who || '');
+        if (!_who) continue;
+        _gClean.push('【' + _who + '】' + _gt);
+      }
+      recent = _gClean.slice(-_gN).join('\n');
+    }
     // 成员人设卡
     var playerCards = '';
     _groupCur.forEach(function (nm) { var r = _phFindRole(nm); if (r) playerCards += '【' + r.name + '】\n- 身份：' + (r.tag || '剧中人') + '\n- 对主人好感：' + r.aff + '\n- 最近日记：' + ((r.diaryTexts && r.diaryTexts.slice(-1)[0]) || '暂无') + '\n- 媒介：' + (r.mediumNote || '有手机，正常打字') + '\n- 状态：' + (r.status || '在线') + '\n- 说话热络度：' + Math.round((r.statusRate || 1) * 100) + '%（状态差/洗着澡/失眠时可能不回或回得慢）\n\n'; });
@@ -23239,6 +23304,22 @@ function _cgOpenMembers() {
     p.push('');
     p.push('# 成员人设');
     p.push(playerCards);
+    // ★ 读取酒馆最新 N 楼作为群背景（滑块，默认10）
+    try {
+      if (_st.readTavern && typeof window !== 'undefined' && typeof window.cdGetAiFloorsSmart === 'function') {
+        var _tg = await window.cdGetAiFloorsSmart();
+        if (Array.isArray(_tg) && _tg.length) {
+          var _tgN = Math.max(1, parseInt(_st.memFloors, 10) || 10);
+          var _tgTail = _tg.slice(-_tgN);
+          var _tgTxt = [];
+          for (var _ti2 = 0; _ti2 < _tgTail.length; _ti2++) {
+            var _tm2 = _tgTail[_ti2];
+            if (_tm2 && _tm2.mes && String(_tm2.mes).trim()) _tgTxt.push(String(_tm2.mes).trim());
+          }
+          if (_tgTxt.length) { p.push('# 这个世界最近发生的事（来自酒馆）'); p.push(_tgTxt.join('\n\n').slice(0, 2000)); p.push(''); }
+        }
+      }
+    } catch (_eTg) {}
     p.push('# 群里的对话（按时间顺序）');
     p.push(recent ? recent : '（群里还没聊过）');
     p.push('# 现在');
@@ -23367,21 +23448,533 @@ function _cgOpenMembers() {
   }
   function cdPhoneReport() { cdPhoneCloseFab(); _phGenReport(); }
   /* 设置 · 记忆注入面板（悬浮球「设置」） */
+// ==================== ★ LIWE 小助手 v5（会话进全部会话 · 确认键在消息下方 · 上报由模型主动问）====================
+  var LIWE_ASSIST_DEFAULT_KB = '你是「LIWE 记忆引擎」的记忆管理员。管理/检索/修改本插件记忆并回答插件用法。' +
+'### 数据结构' +
+'diaries[角色]=[{turn,date,entry,mood,attitude_to_user,secret,key_events,relationship_with_others,message_id}]' +
+'relations[from][to]={type,attitude,note}' +
+'archive={mainline/sideline/states/unresolved(文本)；locations(数组)；items/moneyLog([{time,desc}])；itemsHold/tasks([{line}])；timeAnchor/money；custom{key:[{time,desc}]}}' +
+'memo(备忘录) ' +
+'### 覆盖式(直接赋值清旧) vs 追加式(整体替换丢历史)' +
+'覆盖式：mainline/sideline/states/unresolved/money/timeAnchor/itemsHold/tasks/relations格' +
+'追加式：items/moneyLog/locations/diaries(用push)/cards/snapshots' +
+'### 改时间为具体数字' +
+'文本字段：正则替换【xxx】→【2026年3月17日 14:30】再整体赋值' +
+'数组字段：遍历逐条改 it.time' +
+'改完 await cdSaveData + cdRefreshInjection' +
+'### 时间铁律' +
+'所有时间必须具体数字(年月日时分)。原文没有就按剧情顺序顺延成不同数字，严禁全写同一天、严禁"某年某月/未知时间/第N天傍晚"。' +
+'### 执行规则(必守)' +
+'1. 写操作(改/删/覆盖/清理/合并)必须先预览说明将改什么，结尾问"确认?"等用户确认。' +
+'2. 用户点"✔ 确认执行"按钮时，前端把你的 MEM_ACTION 指令执行；你只需说明将改动内容。' +
+'3. 指令格式 [MEM_ACTION:{"action":"...","target":"...","params":{...}}]，要严格合法 JSON，不允许多余符号。' +
+'### 结构化输出规范(推荐，v6)' +
+'除自然语言回复外，可在末尾输出一个 ```json {…} ``` 块，前端优先解析为结构化控件。字段如下：' +
+'{ "reply":"给用户看的正文",' +
+'  "progress":{"done":"已完成的事","status":"ok|warn|fail","result":"关键结果","next":"下一步"},' +
+'  "suggestion":{"text":"1条建设性建议","reason":"建议理由"},' +
+'  "options":[{"key":"A","label":"具体可做动作A"},{"key":"B","label":"具体动作B"},{"key":"C","label":"具体动作C"}],' +
+'  "need_report":true,' +
+'  "report":{"type":"结果不对|卡顿|数据丢失|报错|其他","severity":"high|mid|low","data_list":["archive","overview","settings","version"]} }' +
+'要求：progress 的 result/next 要说人话≤5行；suggestion 只给1条并说明理由；options 三分支都要给"具体可做动作"；只有确实需要上报才置 need_report:true 并给 report。' +
+'用户若说"直接做/别给选项"后，前端不再展示 options，你按最合理路径直接执行并汇报。' +
+'### 上报' +
+'用户说"上报/报告/发给管理员/救命/我不行了"时前端会直接弹上报，你无需额外操作；若你判断问题严重也可以输出 need_report:true 触发上报卡，并如实填 report.type 和 report.data_list。' +
+'### 可用 action(仅以下会被真正执行)' +
+'read(读)、show_data(展示)、replace(替换 from/to)、rewrite_time(改时间)、update_diary(加日记 name/entry)、dedupe(去重删残缺)、set_setting(改设置 key/value)。' +
+'注意：clear/compress 尚未实现，不要使用这两个动作。' ;
+
+  function liweAssistGetKB() { try { var s = localStorage.getItem('liweAssistKnowledge'); if (s && s.trim()) return s; } catch (e) {} return LIWE_ASSIST_DEFAULT_KB; }
+  var LIWE_ASSIST_SYSTEM = liweAssistGetKB();
+  var _liweAssist = { hist: [], curChar: null, pending: null };
+  var LIWE_AST_CHARNAME = '小助手';
+  /* 进入小助手会话页：像角色单聊一样 */
+  function liweAssistTools() {
+    cdPhoneCloseFab();
+    try { if (typeof cdPhoneCloseModal === 'function') cdPhoneCloseModal(); } catch (e) {}
+    var box = [];
+    box.push('<div class="cdp-wrap cdp-chat-root">');
+    box.push('  <div class="cdp-chat-h">');
+    box.push('    <button class="cdp-back" onclick="liweAssistBack()"><i class="fa-solid fa-arrow-left"></i></button>');
+    box.push('    <div class="cdp-chat-av" style="background:linear-gradient(145deg,#7ea88f,#5d8a70);padding:2px"><img class="cdp-assist-img" style="width:100%;height:100%;border-radius:8px;object-fit:cover" src="' + _ASSIST_AVATAR + '" alt="LIWE"></div>');
+    box.push('    <div class="cdp-chat-i"><b>LIWE 小助手</b><small>记忆管理员</small></div>');
+    box.push('    <i class="fa-solid fa-ellipsis-vertical cdp-chat-more" onclick="liweAssistMenu()"></i>');
+    box.push('  </div>');
+    box.push('  <div class="cdp-chat" id="asstBody"></div>');
+    box.push('  <div class="cdp-chat-in">');
+    box.push('    <input id="asstInput" placeholder="问我或让我处理剧情档案…" onkeydown="liweAssistEnter(event)">');
+    box.push('    <button class="cdp-chat-send" onclick="liweAssistSend()"><i class="fa-solid fa-paper-plane"></i></button>');
+    box.push('  </div>');
+    box.push('</div>');
+    $('#cd-content').html(box.join(''));
+    _liweAssist.curChar = LIWE_AST_CHARNAME; _liweAssist.pending = null;
+    // 恢复历史（从 single_小助手）
+    (async function () {
+      _liweAssist.hist = [];
+      try { var saved = await _cdpLoadSingle(LIWE_AST_CHARNAME); if (Array.isArray(saved)) { saved.forEach(function (h) { if (h && h.me) asstRenderMsg('me', h.me); if (h && h.char) asstRenderMsg('assistant', h.char); _liweAssist.hist.push({ q: h.me || '', a: h.char || '' }); }); } } catch (e) {}
+      if (!_liweAssist.hist.length) asstRenderMsg('assistant', '你好，我是 LIWE 记忆管理员。可以让我读/改剧情档案、日记、关系等；写操作我会先预览，点消息下方的「✔ 确认执行」我再动手。右上角「…」可看/改知识库、上报问题。');
+      var b = document.getElementById('asstBody'); if (b) b.scrollTop = b.scrollHeight;
+    })();
+  }
+  function liweAssistBack() { cdRenderPhone(); }
+  function liweAssistEnter(e) { if (e.key === 'Enter') { e.preventDefault(); liweAssistSend(); } }
+  /* 渲染消息（并追加到历史 + 存 IndexedDB single_小助手） */
+  function asstRenderMsg(who, text) {
+    var b = document.getElementById('asstBody'); if (!b) return;
+    var isMe = (who === 'me');
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;flex-direction:column;margin:6px 8px;align-items:' + (isMe ? 'flex-end' : 'flex-start') + ';';
+    var bubble = document.createElement('div');
+    bubble.style.cssText = 'max-width:82%;padding:7px 11px;border-radius:12px;font-size:12px;line-height:1.65;color:#2e3337;' + (isMe ? 'background:#dbeaf7;border-bottom-right-radius:3px;' : 'background:#f2f4f7;border-bottom-left-radius:3px;white-space:pre-wrap;word-break:break-word;');
+    bubble.textContent = (isMe ? '我：' : '') + String(text || '');
+    row.appendChild(bubble);
+    b.appendChild(row);
+    b.scrollTop = b.scrollHeight;
+    return row; // 返回 row，供下面挂确认按钮
+  }
+  /* ===== v6·渲染层升级：结构化富渲染（进度/建议/三分支/上报卡） ===== */
+  function asstTryParseStructured(text) {
+    if (!text) return null;
+    var m = String(text).match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+    if (!m) return null;
+    try { var o = JSON.parse(m[1]); if (o && (o.reply || o.progress || o.options || o.need_report)) return o; } catch (e) { return null; }
+    return null;
+  }
+  function liweAssistGetPref() {
+    try { var s = localStorage.getItem('liweAssistPref'); if (s) return JSON.parse(s) || {}; } catch (e) {}
+    return {};
+  }
+  function liweAssistSetPref(patch) {
+    try { var p = liweAssistGetPref(); for (var k in patch) p[k] = patch[k]; localStorage.setItem('liweAssistPref', JSON.stringify(p)); return p; } catch (e) { return patch; }
+  }
+  function liweAssistTryPrefCmd(q) {
+    if (/以后别给选项|直接做|别问|都直接执行|别再问|不用问了|直接动手/i.test(q)) {
+      liweAssistSetPref({ noOptions: true });
+      asstRenderMsg('assistant', '好，记住了：以后这类操作我直接执行，不再给 A/B/C 选项。需要恢复选项、或想改这条偏好，可在右上角「…」→「小助手偏好」里重置。');
+      asstSave();
+      return true;
+    }
+    if (/以后都给(选项|我选项)|要选项|恢复选项/i.test(q)) {
+      liweAssistSetPref({ noOptions: false });
+      asstRenderMsg('assistant', '好，恢复了：之后每次回答末尾还会给你 A/B/C 选项。');
+      asstSave();
+      return true;
+    }
+    return false;
+  }
+  function asstRenderRich(out, rawText) {
+    var b = document.getElementById('asstBody'); if (!b) return;
+    var row = null;
+    if (out && out.reply) {
+      row = asstRenderMsg('assistant', out.reply);
+    } else if (rawText) {
+      row = asstRenderMsg('assistant', rawText);
+    }
+    if (out && out.progress) {
+      var st = out.progress.status || 'ok';
+      var lines = [];
+      if (out.progress.done) lines.push('已完成：' + out.progress.done);
+      if (out.progress.state || out.progress.status) lines.push('当前状态：' + (out.progress.state || st));
+      if (out.progress.result) lines.push('关键结果：' + out.progress.result);
+      if (out.progress.next) lines.push('下一步：' + out.progress.next);
+      var progRow = document.createElement('div');
+      progRow.style.cssText = 'display:flex;flex-direction:column;margin:4px 8px;align-items:flex-start;';
+      var box = document.createElement('div');
+      box.style.cssText = 'max-width:90%;padding:6px 10px;border-radius:8px;font-size:11px;line-height:1.55;color:#2e3337;background:#eef4f0;border-left:3px solid ' + (st === 'fail' ? '#d1655a' : (st === 'warn' ? '#d6a13d' : '#5d8a70')) + ';';
+      box.textContent = ('\u3010' + (st === 'fail' ? '\u9519\u8bef' : st === 'warn' ? '\u8b66\u544a' : '\u8fdb\u5ea6\u6c47\u62a5') + '\u3011\n') + lines.join('\n');
+      progRow.appendChild(box); b.appendChild(progRow);
+    }
+    if (out && out.suggestion && out.suggestion.text) {
+      var sugRow = document.createElement('div');
+      sugRow.style.cssText = 'display:flex;flex-direction:column;margin:4px 8px;align-items:flex-start;';
+      var sbox = document.createElement('div');
+      sbox.style.cssText = 'max-width:90%;padding:5px 10px;border-radius:8px;font-size:10px;line-height:1.5;color:#4a5560;background:#f4f4f7;border-left:3px solid #8a9ab3;';
+      sbox.textContent = '\u2728 \u5efa\u8bae\uff1a' + out.suggestion.text + (out.suggestion.reason ? '（理由：' + out.suggestion.reason + '）' : '');
+      sugRow.appendChild(sbox); b.appendChild(sugRow);
+    }
+    var pref = liweAssistGetPref();
+    if (out && out.options && Array.isArray(out.options) && out.options.length && !pref.noOptions) {
+      var optRow = document.createElement('div');
+      optRow.style.cssText = 'display:flex;flex-direction:column;margin:6px 8px 4px;gap:4px;';
+      var cap = document.createElement('div');
+      cap.style.cssText = 'font-size:10px;color:#8b95a1;';
+      cap.textContent = '可选操作：';
+      optRow.appendChild(cap);
+      out.options.forEach(function (op, idx) {
+        var key = op.key || String.fromCharCode(65 + idx);
+        var lab = op.label || (key + ' 项');
+        var btn = document.createElement('button');
+        btn.style.cssText = 'align-self:flex-start;margin:0;padding:4px 11px;border:1px solid #c6cfd8;border-radius:6px;background:#fff;color:#2e3337;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:5px;';
+        btn.innerHTML = '<b>' + key + '</b> ' + (function(){var d=document.createElement('span');d.textContent=lab;return d.innerHTML;})();
+        btn.onclick = function (e) { if (e && e.stopPropagation) e.stopPropagation(); liweAssistRouteOption(lab); };
+        optRow.appendChild(btn);
+      });
+      b.appendChild(optRow);
+    }
+    if (out && out.need_report) {
+      var repRp = (out.report || {});
+      var repType = repRp.type || 'some';
+      var repSeverity = repRp.severity || 'mid';
+      var dataList = (repRp.data_list && repRp.data_list.join) ? repRp.data_list : [];
+      liweAssistRenderReportCard(repType, repSeverity, dataList);
+    }
+    return row;
+  }
+  function liweAssistRouteOption(label) {
+    asstRenderMsg('me', label);
+    _liweAssist.hist.push({ q: label, a: '' });
+    asstSave();
+    liweAssistDispatch(label);
+  }
+  function liweAssistRenderReportCard(type, severity, dataList) {
+    var b = document.getElementById('asstBody'); if (!b) return;
+    var card = document.createElement('div');
+    card.style.cssText = 'display:flex;flex-direction:column;margin:6px 8px;gap:6px;padding:8px 10px;border:1px solid #e2e0da;border-radius:10px;background:#fbfaf7;';
+    var title = document.createElement('div');
+    title.style.cssText = 'font-size:11px;font-weight:600;color:#8a5a2a;';
+    title.textContent = '\u2757 \u9700\u8981\u4e0a\u62a5\u7ed9\u7ba1\u7406\u5458\uff08\u95ee\u9898\u7c7b\u578b\uff1a' + type + '\uff09';
+    card.appendChild(title);
+    var desc = document.createElement('div');
+    desc.style.cssText = 'font-size:10px;color:#6b7a88;line-height:1.5;';
+    desc.textContent = '已按「' + type + '」类型整理待上报数据' + (dataList && dataList.length ? '（包含：' + dataList.join('、') + '）' : '') + '。可一键复制模板，粘贴发给管理员。涉及账号/手机等敏感信息请先打码。';
+    card.appendChild(desc);
+    var okBtn = document.createElement('button');
+    okBtn.style.cssText = 'align-self:flex-start;padding:4px 12px;border:none;border-radius:6px;background:#8a5a2a;color:#fff;font-size:11px;cursor:pointer;';
+    okBtn.textContent = '\u6574\u7406\u5e76\u590d\u5236\u4e0a\u62a5\u6a21\u677f';
+    okBtn.onclick = function (e) { if (e && e.stopPropagation) e.stopPropagation(); liweAssistReport(type, severity); };
+    card.appendChild(okBtn);
+    b.appendChild(card);
+  }
+
+  function asstSave() {
+    try { var arr = _liweAssist.hist.map(function (h) { return { me: h.q || '', char: h.a || '' }; }); _cdpSaveSingle(LIWE_AST_CHARNAME, arr); } catch (e) {}
+  }
+  function liweAssistMenu() {
+    var kb = String(localStorage.getItem('liweAssistKnowledge') || '').trim();
+    if (!kb) kb = LIWE_ASSIST_DEFAULT_KB;
+    var body = '<div style="font-size:11px;color:#8b95a1;margin-bottom:6px">内置知识库（助手据以理解/操作插件）。可改后应用，或下载。也可上报问题给管理员。</div>'
+      + '<textarea id="liweAssistKB" rows="7" style="width:100%;box-sizing:border-box;font-size:10px;background:#f7f8fa;border:1px solid #e0e4ea;border-radius:6px;color:#2e3337;resize:vertical;line-height:1.5;padding:5px;">' + String(kb).replace(/</g,'&lt;') + '</textarea>'
+      + '<div style="display:flex;gap:6px;margin-top:6px;">'
+      + '<button class="cg-start" style="flex:1;font-size:11px" onclick="liweAssistApplyKB()">应用知识库</button>'
+      + '<button class="cg-start" style="flex:1;font-size:11px;background:#5d8a70" onclick="liweAssistDownloadKB()">下载</button>'
+      + '</div>'
+      + '<div style="margin-top:6px;"><button class="cg-start" style="width:100%;font-size:11px;background:#b5695f;color:#fff" onclick="liweAssistReport();cdPhoneCloseModal()">上报问题给管理员</button></div>'
+      + '<details style="margin-top:8px;border:1px solid #e0e4ea;border-radius:8px;padding:6px 8px;background:#fbfaf7;">'
+      + '<summary style="font-size:11px;color:#2e3337;cursor:pointer;display:flex;align-items:center;gap:5px;"><i class="fa-solid fa-sliders"></i> 小助手偏好</summary>'
+      + '<div id="liwePrefBox" style="font-size:10px;color:#4a5560;margin-top:5px;line-height:1.6;"></div>'
+      + '<div style="display:flex;gap:6px;margin-top:6px;">'
+      + '<button class="cg-start" style="flex:1;font-size:10px" onclick="liweAssistPrefToggle()">切换：选项开关</button>'
+      + '<button class="cg-start" style="flex:1;font-size:10px;background:#8a5a2a;color:#fff" onclick="liweAssistPrefReset()">重置偏好</button>'
+      + '</div></details>';
+    openPhoneModal('LIWE 小助手', body);
+    try { liweAssistRenderPrefInfo(); } catch (e) {}
+  }
+  /* 渲染偏好信息到菜单里的 liwePrefBox */
+  function liweAssistRenderPrefInfo() {
+    var box = document.getElementById('liwePrefBox'); if (!box) return;
+    var p = liweAssistGetPref();
+    var curOpts = p.noOptions ? '已关闭选项（直接执行）' : '开启选项（每次给 A/B/C）';
+    box.textContent = '当前：' + curOpts + (p.noOptions ? '。恢复的话按下方「切换选项开关」或「重置偏好」。' : '。');
+  }
+  /* 偏好开关切换 */
+  function liweAssistPrefToggle() {
+    var p = liweAssistGetPref();
+    liweAssistSetPref({ noOptions: !(!!p.noOptions) });
+    try { liweAssistRenderPrefInfo(); } catch (e) {}
+    if (typeof toastr === 'function') toastr.success('小助手偏好已切换');
+  }
+  /* 重置偏好 */
+  function liweAssistPrefReset() {
+    try { localStorage.removeItem('liweAssistPref'); } catch (e) {}
+    try { liweAssistRenderPrefInfo(); } catch (e) {}
+    if (typeof toastr === 'function') toastr.success('小助手偏好已重置（恢复默认）');
+  }
+  function liweAssistApplyKB() { try { var ta = document.getElementById('liweAssistKB'); var v = ta ? ta.value : ''; localStorage.setItem('liweAssistKnowledge', v); LIWE_ASSIST_SYSTEM = v || LIWE_ASSIST_DEFAULT_KB; if (typeof toastr === 'function') toastr.success('知识库已应用'); } catch (e) {} }
+  function liweAssistDownloadKB() { try { var ta = document.getElementById('liweAssistKB'); var v = ta ? ta.value : (localStorage.getItem('liweAssistKnowledge') || LIWE_ASSIST_DEFAULT_KB); var blob = new Blob([v], { type: 'text/markdown;charset=utf-8' }); var url = URL.createObjectURL(blob); var a = document.createElement('a'); a.href = url; a.download = 'LIWE-助手知识库.md'; a.click(); URL.revokeObjectURL(url); } catch (e) {} }
+  function liweAssistSend() {
+    var inp = document.getElementById('asstInput'); if (!inp) return;
+    var q = (inp.value || '').trim(); if (!q) return; inp.value = '';
+    // 偏好元指令拦截（用户说"以后别给选项/直接做"等，存偏好，不再发进对话）
+    if (liweAssistTryPrefCmd(q)) return;
+    // 上报触发词（保留：用户主动要上报，直接弹，不走对话）
+    if (/上报|报告|发给管理员|救命|我不行了|发给管理/i.test(q)) { liweAssistReport(); return; }
+    _liweAssist.hist.push({ q: q, a: '' });
+    asstRenderMsg('me', q);
+    asstRenderMsg('assistant', '（思考中…）');
+    liweAssistDispatch(q);
+  }
+  /* 核心发送：调 API -> 结构化JSON优先 -> MEM_ACTION 兜底 -> 纯文本兜底 */
+  async function liweAssistDispatch(q) {
+    try {
+      var sys = liweAssistGetKB();
+      var hist = _liweAssist.hist.slice(-8);
+      var msgs = [{ role: 'system', content: sys }];
+      hist.forEach(function (h) { if (h.q) msgs.push({ role: 'user', content: h.q }); if (h.a) msgs.push({ role: 'assistant', content: h.a }); });
+      msgs.push({ role: 'user', content: q });
+      var out = '';
+      if (typeof window !== 'undefined' && typeof window.cdForumApiComplete === 'function') { out = String(await window.cdForumApiComplete(msgs) || '').trim(); }
+      if (!out) throw new Error('助手无响应');
+      // 1) 结构化 JSON 块优先（v6 主通道：reply/progress/suggestion/options/need_report）
+      var struct = asstTryParseStructured(out);
+      if (struct) {
+        var sReply = struct.reply || '';
+        var memText = String(out);
+        if (_liweAssist.hist.length) _liweAssist.hist[_liweAssist.hist.length - 1].a = memText;
+        asstRenderRich(struct, sReply);
+        asstSave();
+        var b0 = document.getElementById('asstBody'); if (b0) b0.scrollTop = b0.scrollHeight;
+        return;
+      }
+      // 2) MEM_ACTION 兜底（老流程）
+      var ac = out.match(/\[MEM_ACTION:(\{[\s\S]*?\})\]/);
+      var action = null, isLegit = false;
+      if (ac) {
+        var rawJson = ac[1];
+        try { var parsed = JSON.parse(rawJson); if (parsed && typeof parsed.action === 'string') { action = parsed; isLegit = true; } } catch (e) {}
+        if (!isLegit) {
+          try {
+            var mAct = rawJson.match(/"action"\s*:\s*"([^"]+)"/);
+            var mTgt = rawJson.match(/"target"\s*:\s*"([^"]+)"/);
+            var act = mAct ? mAct[1] : '';
+            if (act) { action = { action: act, target: (mTgt ? mTgt[1] : 'archive'), params: {} }; isLegit = true; }
+          } catch (e2) { isLegit = false; }
+        }
+      }
+      var preview = out.replace(/\[MEM_ACTION:[\s\S]*?\]/, '').trim();
+      if (_liweAssist.hist.length) _liweAssist.hist[_liweAssist.hist.length - 1].a = preview || '（助手消息）';
+      var lastRow = null;
+      if (isLegit && action) {
+        var isRead = (action.action === 'read' || action.action === 'show_data');
+        if (isRead) {
+          var readRes = await liweAssistTryExec(action);
+          if (_liweAssist.hist.length) _liweAssist.hist[_liweAssist.hist.length - 1].a = (preview || '读取结果') + '\n' + (readRes || '');
+          lastRow = asstRenderMsg('assistant', (preview ? preview + '\n\n' : '') + (readRes || '（无内容）'));
+          asstSave();
+        } else {
+          _liweAssist.pending = action;
+          lastRow = asstRenderMsg('assistant', (preview ? preview : '以下操作待确认：' + JSON.stringify(action)) + '\n（点下方「✔ 确认执行」后我再动手）');
+          addConfirmBtn(lastRow);
+        }
+      } else {
+        lastRow = asstRenderMsg('assistant', out);
+      }
+      asstSave();
+    } catch (e) {
+      asstRenderMsg('assistant', '⚠ ' + String(e.message || e) + ' （如需帮助，可回复"上报"让我整理问题给管理员）');
+      asstSave();
+    }
+    var b = document.getElementById('asstBody'); if (b) b.scrollTop = b.scrollHeight;
+  }
+  /* 确认键：小块，放在消息正下方 */
+  function addConfirmBtn(row) {
+    if (!row) return;
+    var btn = document.createElement('button');
+    btn.style.cssText = 'margin:4px 8px 0;padding:3px 10px;border:none;border-radius:6px;background:#2e7d4f;color:#fff;font-size:10px;cursor:pointer;align-self:flex-start;';
+    btn.innerHTML = '<i class="fa-solid fa-check"></i> 确认执行';
+    btn.onclick = function () { liweAssistConfirm(); };
+    row.appendChild(btn);
+  }
+  async function liweAssistConfirm() {
+    var action = _liweAssist.pending; _liweAssist.pending = null;
+    if (!action) { asstRenderMsg('assistant', '没有待执行的操作。'); return; }
+    asstRenderMsg('assistant', '（执行中…）');
+    var res = await liweAssistTryExec(action);
+    _liweAssist.hist.push({ q: '确认执行', a: '执行结果：' + (res || '已完成') });
+    // 执行后详细向主人汇报（不只是「已完成」）
+    asstRenderMsg('assistant', '✔ 已执行。下面是结果/改动明细：\n\n' + (res || '（未返回详细结果）'));
+    asstSave();
+    var b = document.getElementById('asstBody'); if (b) b.scrollTop = b.scrollHeight;
+  }
+  /* 上报给管理员 */
+  function liweAssistNextIssueId() {
+    try {
+      var d = new Date();
+      var mmdd = (d.getMonth() + 1 < 10 ? '0' : '') + (d.getMonth() + 1) + (d.getDate() < 10 ? '0' : '') + d.getDate();
+      var arr = [];
+      try { arr = JSON.parse(localStorage.getItem('liweAssistIssues')) || []; } catch (e) {}
+      var seq = 1;
+      for (var i = 0; i < arr.length; i++) { var idm = String(arr[i].id || '').indexOf('#' + mmdd + '-') === 0; if (idm) { var n = parseInt(String(arr[i].id).split('#')[1].split('-')[1], 10); if (n >= seq) seq = n + 1; } }
+      return '#' + mmdd + '-' + (seq < 10 ? '0' : '') + seq;
+    } catch (e) { return '#' + Date.now(); }
+  }
+  /* 按类型取上报数据清单：dataList 可来自模型 report.data_list，取不到则兜底固定集 */
+  function liweAssistCollect(type, dataList) {
+    var out = {};
+    var wants = (dataList && Array.isArray(dataList) && dataList.length) ? dataList : ['all'];
+    var has = function (k) { return wants.indexOf(k) >= 0 || wants.indexOf('all') >= 0; };
+    try {
+      var d = (typeof window !== 'undefined' && typeof window.cdGetData === 'function') ? window.cdGetData() : null;
+      if (has('archive') && d && d.archive) {
+        var a = d.archive; var ab = [];
+        ['mainline','sideline','states','unresolved'].forEach(function (k) { if (a[k]) ab.push(k + '：' + String(a[k]).slice(0, 160)); });
+        if (a.timeAnchor) ab.push('时间轴：' + a.timeAnchor);
+        out.archive = ab;
+      }
+      if (has('overview') && d) { out.overview = ['角色数：' + Object.keys(d.diaries || {}).length, '关系角色数：' + Object.keys(d.relations || {}).length, '备忘录：' + String(d.memo || '').slice(0, 100)]; }
+      var s = (typeof window !== 'undefined' && typeof window.cdGetSettings === 'function') ? window.cdGetSettings() : null;
+      if (has('settings') && s) {
+        var sv = [];
+        ['enableDiary','enableArchive','injectDiary','injectArchive','injectRelation','archiveMode','autoSummary','autoHideEnabled','enabled'].forEach(function (k) { if (s[k] !== undefined) sv.push(k + ' = ' + s[k]); });
+        out.settings = sv;
+      }
+      if (has('version')) { try { out.version = window.PLUGIN_VERSION || '未知'; } catch (e) { out.version = '未知'; } }
+    } catch (e) { out.error = String(e && e.message || e); }
+    return out;
+  }
+  /* 生成上报文本（含问题编号） */
+  function liweAssistGenReportTxt(issueId, type, severity) {
+    var lines = [];
+    lines.push('# LIWE 问题上报 · ' + issueId + ' · ' + new Date().toLocaleString());
+    lines.push('- 问题类型：' + (type || 'some') + '　严重度：' + (severity || 'mid'));
+    lines.push('');
+    lines.push('## 用户最近提问 / 遇到的问题');
+    (_liweAssist.hist || []).forEach(function (h) { if (h.q) lines.push('- 用户：' + h.q); if (h.a) lines.push('  · 助手：' + String(h.a).slice(0, 300)); });
+    lines.push('');
+    var collected = liweAssistCollect(type, []);
+    if (collected.archive && collected.archive.length) { lines.push('## 剧情档案摘要'); collected.archive.forEach(function (x) { lines.push('- ' + x); }); }
+    if (collected.overview) { lines.push('## 数据概览'); collected.overview.forEach(function (x) { lines.push('- ' + x); }); }
+    if (collected.settings && collected.settings.length) { lines.push('## 关键设置'); collected.settings.forEach(function (x) { lines.push('- ' + x); }); }
+    if (collected.version) lines.push('## 插件版本：' + collected.version);
+    lines.push('');
+    lines.push('## 现象 / 复现步骤 / 已尝试');
+    lines.push('（待补）');
+    lines.push('');
+    lines.push('## 助手推荐做法');
+    lines.push('（见上方助手回复）');
+    return lines.join('\n');
+  }
+  /* 记一条上报记录 */
+  function liweAssistRecordIssue(issueId, type, severity, txt) {
+    try {
+      var arr = [];
+      try { arr = JSON.parse(localStorage.getItem('liweAssistIssues')) || []; } catch (e) {}
+      arr.push({ id: issueId, type: type || 'some', severity: severity || 'mid', time: new Date().toISOString(), summary: String(txt || '').slice(0, 300) });
+      localStorage.setItem('liweAssistIssues', JSON.stringify(arr));
+    } catch (e) {}
+  }
+  function liweAssistReport(type, severity) {
+    if (!type) type = 'some';
+    if (!severity) severity = 'mid';
+    var issueId = liweAssistNextIssueId();
+    var txt = liweAssistGenReportTxt(issueId, type, severity);
+    // 知情同意：先弹确认框
+    var doSend = true;
+    try { doSend = typeof confirm === 'function' ? confirm('将把「' + issueId + '」问题报告发送给管理员（含剧情档案/设置等数据，敏感信息请先打码）。是否继续？') : true; } catch (e) {}
+    if (!doSend) { return; }
+    // 记录
+    liweAssistRecordIssue(issueId, type, severity, txt);
+    // 弹窗显示报告 + 复制按钮 + 编号
+    try {
+      var escTxt = String(txt).replace(/</g, '&lt;');
+      var body = '<div style="font-size:11px;color:#8a5a2a;font-weight:600;margin-bottom:4px">' + issueId + ' · 待管理员回复（可复制粘贴发给管理员）</div>'
+        + '<div style="font-size:10px;color:#8b95a1;margin-bottom:6px">已按「' + type + '」类型整理数据。点「复制」粘贴发给管理员即可；或点「下载」保存。</div>'
+        + '<textarea id="liweReportBox" readonly rows="9" style="width:100%;box-sizing:border-box;font-size:10px;background:#fff;border:1px solid #e0e4ea;border-radius:6px;color:#2e3337;resize:vertical;line-height:1.5;padding:5px;">' + escTxt + '</textarea>'
+        + '<div style="display:flex;gap:6px;margin-top:6px;">'
+        + '<button class="cg-start" style="flex:1;font-size:11px" onclick="liweAssistCopyReport()">复制</button>'
+        + '<button class="cg-start" style="flex:1;font-size:11px;background:#5d8a70" onclick="liweAssistDownloadReport()">下载</button>'
+        + '</div>'
+        + '<div style="font-size:10px;color:#8b95a1;margin-top:6px">复制后发给管理员（主人）就能定位问题。</div>';
+      openPhoneModal('上报告知 · ' + issueId, body);
+    } catch (e) {}
+    // 同时尝试直接下载
+    try {
+      var blob = new Blob([txt], { type: 'text/plain;charset=utf-8' }); var url = URL.createObjectURL(blob);
+      var a = document.createElement('a'); a.href = url; a.download = 'LIWE-' + issueId.replace('#', '') + '-problem-report.txt'; a.click(); URL.revokeObjectURL(url);
+    } catch (e) {}
+  }
+  async function liweAssistTryExec(action) {
+    if (!action || !action.action) return '无有效操作';
+    try {
+      if (action.action === 'read' || action.action === 'show_data') {
+        var d = await window.cdGetData(); var t = action.target || 'archive';
+        if (t === 'archive') { var a = d.archive || {}; return '主线:' + (a.mainline||'').slice(0,120) + '\n支线:' + (a.sideline||'').slice(0,60) + '\n状态:' + (a.states||'').slice(0,60) + '\n未解决:' + (a.unresolved||'').slice(0,60) + '\n时间轴:' + (a.timeAnchor||'(空)'); }
+        if (t === 'diaries') { var ns = Object.keys(d.diaries||{}); return '共 ' + ns.length + ' 角色：' + (ns.slice(0,15).join('、') || '(无)'); }
+        if (t === 'relations') return '共 ' + Object.keys(d.relations||{}).length + ' 个关系的角色';
+        if (t === 'memo') return '备忘录:' + (d.memo||'(空)').slice(0,80);
+        return '';
+      }
+      if (action.action === 'replace') {
+        var from = (action.params && action.params.from) || '', to = (action.params && action.params.to) || '';
+        var d2 = await window.cdGetData(); var changed = 0;
+        ['mainline','sideline','states','unresolved'].forEach(function (k) { if (d2.archive[k] && d2.archive[k].indexOf(from) >= 0) { d2.archive[k] = d2.archive[k].split(from).join(to); changed++; } });
+        await window.cdSaveData(d2); if (typeof window.cdRefreshInjection === 'function') await window.cdRefreshInjection();
+        return '替换完成：' + changed + ' 处「' + from + '」→「' + to + '」';
+      }
+      if (action.action === 'rewrite_time' || action.action === 'update_archive_time') {
+        var d3 = await window.cdGetData(); var a3 = d3.archive || {}; var fixed = 0;
+        function tsFix(n) { n = n || 1; return '【2026年3月' + (10 + (n % 18)) + '日 ' + (9 + (n % 12)) + ':30】'; }
+        ['mainline','sideline','states','unresolved'].forEach(function (k) { if (!a3[k]) return; var s3 = String(a3[k]); s3 = s3.replace(/【[^】]*?某[^】]*?】/g, function () { fixed++; return tsFix(fixed); }); s3 = s3.replace(/【未知时间】/g, function () { fixed++; return tsFix(fixed); }); s3 = s3.replace(/【[^】]*?第[^】]*?天[^】]*?】/g, function () { fixed++; return tsFix(fixed); }); a3[k] = s3; });
+        if (Array.isArray(a3.items)) a3.items.forEach(function (it) { if (it && /某|未知|第[^0-9]/.test(String(it.time||''))) { it.time = tsFix(++fixed); } });
+        if (Array.isArray(a3.moneyLog)) a3.moneyLog.forEach(function (it) { if (it && /某|未知|第[^0-9]/.test(String(it.time||''))) { it.time = tsFix(++fixed); } });
+        if (a3.custom) Object.keys(a3.custom).forEach(function (k2) { if (Array.isArray(a3.custom[k2])) a3.custom[k2].forEach(function (it) { if (it && /某|未知|第[^0-9]/.test(String(it.time||''))) { it.time = tsFix(++fixed); } }); });
+        await window.cdSaveData(d3); if (typeof window.cdRefreshInjection === 'function') await window.cdRefreshInjection();
+        return '已统一 ' + fixed + ' 处模糊时间为具体数字（按剧情顺序顺延）';
+      }
+      if (action.action === 'update_diary') {
+        var name = action.target || (action.params && action.params.name) || '', entry = (action.params && action.params.entry) || '';
+        if (!name || !entry) return '缺少角色名或日记内容';
+        var d4 = await window.cdGetData(); if (!d4.diaries) d4.diaries = {}; if (!Array.isArray(d4.diaries[name])) d4.diaries[name] = [];
+        d4.diaries[name].push({ turn: 0, date: (action.params && action.params.date) || '', entry: entry, mood: '', attitude_to_user: '', secret: '', key_events: [], relationship_with_others: {}, message_id: -1 });
+        await window.cdSaveData(d4); if (typeof window.cdRefreshInjection === 'function') await window.cdRefreshInjection();
+        return '已给「' + name + '」追加日记';
+      }
+      if (action.action === 'dedupe' || action.action === 'merge' || action.action === 'fix_truncated') {
+        var d5 = await window.cdGetData(); var a5 = d5.archive || {}; var touched = 0;
+        function cleanField(txt) { if (!txt) return txt; var lines = String(txt).split('\n').map(function (x) { return x.trim(); }).filter(function (x) { return x; }); var seen = {}, out = []; lines.forEach(function (ln) { if (seen[ln]) return; if (/以及[两并]$|[并，]$/.test(ln)) { touched++; return; } seen[ln] = 1; out.push(ln); }); return out.join('\n'); }
+        ['mainline','sideline','states','unresolved'].forEach(function (k) { var nv = cleanField(a5[k]); if (nv !== a5[k]) { a5[k] = nv; touched++; } });
+        await window.cdSaveData(d5); if (typeof window.cdRefreshInjection === 'function') await window.cdRefreshInjection();
+        return '去重/清理完成：处理 ' + touched + ' 个字段（删除完全重复行与断裂行）';
+      }
+      if (action.action === 'set_setting') {
+        var s2 = window.cdGetSettings(); var p = (action.params && action.params.value !== undefined) ? action.params.value : action.params;
+        var key = action.target || (action.params && action.params.key) || '';
+        if (key && s2[key] !== undefined && typeof p === 'boolean') { s2[key] = p; window.cdSaveSettings({ [key]: p }); return '已设置 ' + key + ' = ' + p; }
+        return '暂不支持该设置';
+      }
+      return '该操作（' + action.action + '）当前仅预览，未改动数据。';
+    } catch (e) { console.warn('[小助手执行] 失败', e); return '执行失败:' + (e && e.message); }
+  }
+  window.liweAssistTools = liweAssistTools;
+  window.liweAssistBack = liweAssistBack;
+  window.liweAssistMenu = liweAssistMenu;
+  window.liweAssistSend = liweAssistSend;
+  window.liweAssistConfirm = liweAssistConfirm;
+  window.liweAssistReport = liweAssistReport;
+  window.liweAssistApplyKB = liweAssistApplyKB;
+  function liweAssistCopyReport() {
+    try { var ta = document.getElementById('liweReportBox'); var v = ta ? ta.value : ''; if (navigator && navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(v).then(function () { if (typeof toastr === 'function') toastr.success('已复制，请粘贴发给管理员'); }); } else { if (typeof toastr === 'function') toastr.info('请手动全选复制'); } } catch (e) {}
+  }
+  function liweAssistDownloadReport() {
+    try { var ta = document.getElementById('liweReportBox'); var v = ta ? ta.value : ''; var blob = new Blob([v], { type: 'text/plain;charset=utf-8' }); var url = URL.createObjectURL(blob); var a = document.createElement('a'); a.href = url; a.download = 'LIWE-问题上报-' + new Date().toISOString().slice(0, 10) + '.txt'; a.click(); URL.revokeObjectURL(url); } catch (e) {}
+  }
+  window.liweAssistCopyReport = liweAssistCopyReport;
+  window.liweAssistDownloadReport = liweAssistDownloadReport;
+  window.liweAssistDownloadKB = liweAssistDownloadKB;
+  window.liweAssistDispatch = liweAssistDispatch;
+  window.liweAssistPrefToggle = liweAssistPrefToggle;
+  window.liweAssistPrefReset = liweAssistPrefReset;
+  window.liweAssistRenderPrefInfo = liweAssistRenderPrefInfo;
+
+
   function cdPhoneSettings() {
     cdPhoneCloseFab();
     if (!_st._cfg) {
       var _arcInitS = (typeof cdGetSettings === 'function') ? cdGetSettings() : {};
-      _st._cfg = { floors: (_st.memFloors || 10), diary: (_st.memDiary !== false), archive: (_arcInitS.injectArchive !== false) };
+      _st._cfg = { floors: (_st.memFloors || 10), diary: (_st.memDiary !== false), archive: (_arcInitS.injectArchive !== false), readTavern: (_st.readTavern !== false) };
     }
     var c = _st._cfg;
     var shareTxt = '';
     var body = '<div style="font-size:12px;color:#8b95a1;margin-bottom:10px">以下记忆注入会在下一条消息生效。</div>'
-      + '<div class="cg-heart-sec"><i class="fa-solid fa-layer-group"></i> 楼层记忆</div>'
+      + '<div class="cg-heart-sec"><i class="fa-solid fa-layer-group"></i> 楼层记忆 <span style="font-size:10px;color:#8b95a1;font-weight:400">（读取酒馆最新 N 楼）</span></div>'
       + '<div style="display:flex;align-items:center;gap:10px;margin:6px 0 12px"><input type="range" id="cdpSetFloors" min="1" max="50" value="' + c.floors + '" style="flex:1" oninput="document.getElementById(\'cdpSetFloorsV\').textContent=this.value"><span id="cdpSetFloorsV" style="font-weight:700;color:#5b7fa6;min-width:20px;text-align:right">' + c.floors + '</span></div>'
       + '<div class="cg-heart-sec"><i class="fa-solid fa-book-open"></i> 角色日记</div>'
       + '<div style="display:flex;gap:8px;margin:6px 0 12px"><label style="flex:1;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="cdpSetDiary" ' + (c.diary ? 'checked' : '') + '> 注入日记</label></div>'
       + '<div class="cg-heart-sec"><i class="fa-solid fa-bookmark"></i> 剧情档案</div>'
       + '<div style="display:flex;gap:8px;margin:6px 0 12px"><label style="flex:1;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="cdpSetArchive" ' + (c.archive ? 'checked' : '') + '> 注入剧情档案</label></div>'
+      + '<div class="cg-heart-sec" style="margin-top:10px"><i class="fa-solid fa-book"></i> 读取酒馆楼层（记忆来源）</div>'
+      + '<div style="display:flex;gap:8px;margin:6px 0 12px"><label style="flex:1;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="cdpSetTavern" ' + (c.readTavern ? 'checked' : '') + '> 读取酒馆最新楼层当记忆</label><span style="font-size:10px;color:#8b95a1">开=读酒馆/关=仅手机历史</span></div>'
+      + '<div class="cg-heart-sec" style="margin-top:10px"><i class="fa-solid fa-comment-dots"></i> 聊天记录保留条数</div>'
+      + '<div style="display:flex;align-items:center;gap:10px;margin:6px 0 12px"><input type="number" id="cdpSetKeep" min="50" max="1000" value="' + (_st.keepMsgs || 200) + '" style="flex:1;padding:6px;font-size:13px;background:var(--panel2,#f7f8fa);border:1px solid var(--line,#dfe3e7);border-radius:8px;color:var(--ink1,#2e3337)"><span style="font-size:10px;color:#8b95a1">条/单聊与群聊分别保留</span></div>'
       + '<button class="cg-start" onclick="cdPhoneSaveSettings()"><i class="fa-solid fa-check"></i> 保存并生效</button>';
     openPhoneModal('设置 · 记忆注入', body);
   }
@@ -23392,9 +23985,12 @@ function _cgOpenMembers() {
     var f = document.getElementById('cdpSetFloors'); _st._cfg.floors = f ? (parseInt(f.value) || 10) : 10;
     var d = document.getElementById('cdpSetDiary'); _st._cfg.diary = d ? d.checked : true;
     var ar = document.getElementById('cdpSetArchive'); _st._cfg.archive = ar ? ar.checked : true;
+    var tv = document.getElementById('cdpSetTavern'); _st._cfg.readTavern = tv ? tv.checked : true;
     _st.memFloors = _st._cfg.floors;
     _st.memDiary = _st._cfg.diary;
     _st.memArchive = _st._cfg.archive;
+    _st.readTavern = _st._cfg.readTavern;
+    var kp = document.getElementById('cdpSetKeep'); var _kpV = kp ? parseInt(kp.value, 10) : 200; if (!_kpV || _kpV < 50) _kpV = 200; _st.keepMsgs = _kpV;
     try { if (typeof cdSaveSettings === 'function') cdSaveSettings({ injectArchive: _st._cfg.archive !== false }); } catch (_eA) {}
     try { if (typeof cdRefreshInjection === 'function') cdRefreshInjection(); } catch (_eB) {}
     cdPhoneCloseModal();
@@ -24074,6 +24670,22 @@ function _cgOpenMembers() {
         if (_archTxt.length) { p.push('# 你掌握的剧情档案'); p.push('这是这个世界的剧情档案，你记得这些已发生的事，回复时可自然援引：'); _archTxt.forEach(function (t) { p.push('  · ' + t); }); p.push(''); }
       }
     } catch (_e3) {}
+    // ★ 读取酒馆最新 N 楼（滑块楼层记忆，默认10）注入角色背景
+    try {
+      if (_st.readTavern && typeof window !== 'undefined' && typeof window.cdGetAiFloorsSmart === 'function') {
+        var _tf = await window.cdGetAiFloorsSmart();
+        if (Array.isArray(_tf) && _tf.length) {
+          var _tfN = Math.max(1, parseInt(_st.memFloors, 10) || 10);
+          var _tfTail = _tf.slice(-_tfN);
+          var _tfTxt = [];
+          for (var _ti = 0; _ti < _tfTail.length; _ti++) {
+            var _tm = _tfTail[_ti];
+            if (_tm && _tm.mes && String(_tm.mes).trim()) _tfTxt.push(String(_tm.mes).trim());
+          }
+          if (_tfTxt.length) { p.push('# 你记得的剧情（来自酒馆）'); p.push(_tfTxt.join('\n\n').slice(0, 2000)); p.push(''); }
+        }
+      }
+    } catch (_eTf) {}
     p.push('# 你收到的对话');
     p.push(recent ? recent : '（这是你们第一次聊）');
     p.push('主人刚说：「' + userText + '」');
@@ -24270,7 +24882,7 @@ function _cgOpenMembers() {
     '.cdp-cnm{font-size:11px;font-weight:600;color:var(--ink3,#8b95a1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;text-align:center}',
     '.cdp-caff{font-size:9px;font-weight:600;display:flex;align-items:center;gap:2px}.cdp-caff i{font-size:6px}.cdp-caff-pos{color:#93ae9b}.cdp-caff-neg{color:var(--danger,#b5695f)}.cdp-caff-neu{color:#c9b48d}',
     /* 主屏底部·心理大师横向卡片 */
-    '.cdp-psy-row{max-width:100%}.cdp-psy-list{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 6px}.cdp-psy-card{flex:0 0 auto;width:74px;text-align:center;cursor:pointer;background:rgba(255,255,255,.7);border:1px solid var(--glass-bd,rgba(120,140,160,.18));border-radius:14px;padding:10px 6px}.cdp-psy-card:active{transform:scale(.95)}.cdp-psy-av{font-size:22px;line-height:1}.cdp-psy-av i{color:#5b7fa6}.cdp-psy-nm{font-size:12px;font-weight:700;color:var(--ink,#2c3540);margin-top:6px}.cdp-psy-tg{font-size:9px;color:var(--ink3,#8b95a1);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '.cdp-psy-row{max-width:100%}.cdp-psy-list{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 6px}.cdp-psy-card{flex:0 0 auto;width:74px;text-align:center;cursor:pointer;background:rgba(255,255,255,.7);border:1px solid var(--glass-bd,rgba(120,140,160,.18));border-radius:14px;padding:10px 6px}.cdp-psy-card:active{transform:scale(.95)}.cdp-psy-av{font-size:22px;line-height:1}.cdp-psy-av i{color:#5b7fa6}.cdp-psy-nm{font-size:12px;font-weight:700;color:var(--ink,#2c3540);margin-top:6px}.cdp-psy-tg{font-size:9px;color:var(--ink3,#8b95a1);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cdp-assist-row{margin-top:8px;display:flex;align-items:center;gap:10px;cursor:pointer;background:rgba(255,255,255,.72);border:1px solid var(--glass-bd,rgba(120,140,160,.18));border-radius:14px;padding:9px 12px}.cdp-assist-row:active{transform:scale(.98)}.cdp-assist-av{width:40px;height:40px;border-radius:10px;overflow:hidden;flex:0 0 auto;box-shadow:0 1px 3px rgba(0,0,0,.12)}.cdp-assist-img{width:100%;height:100%;object-fit:cover;display:block}.cdp-assist-bd{flex:1;min-width:0}.cdp-assist-nm{font-size:13px;font-weight:700;color:var(--ink,#2c3540)}.cdp-assist-tg{font-size:9px;color:var(--ink3,#8b95a1);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cdp-assist-go{color:var(--ink3,#8b95a1);font-size:13px}',
     /* 历史分页：更早消息占位条（单聊 .cdp-hold / 群聊 .cg-hold） */
     '.cdp-hold,.cg-hold{display:flex;align-items:center;justify-content:center;gap:6px;font-size:11px;color:var(--ink3,#8b95a1);padding:5px 12px;margin:2px auto 2px;cursor:default;-webkit-user-select:none;user-select:none}.cdp-hold i,.cg-hold i{color:var(--accent,#5b7fa6);font-size:9px;flex:0 0 auto}',
 
