@@ -190,6 +190,15 @@ const CD_RITUAL_FRONTEND = `请根据当前剧情，用 HTML 把剧情中出现�
 - HTML 部件自然地穿插在正文对应的场景节点，与纯文本叙事无缝衔接，不堆在开头/结尾。
 - 一个剧情回合里，出现 1~3 处这样的 HTML 部件即可，够用就好，别每个自然段都塞。`;
 
+
+/** 已知网关 · 直连拉取模型失败(多为前端CORS)时的内置兜底清单 */
+const CD_GATEWAY_MODELS = {
+  // 各兼容网关联调失败时按域名命中的内置兜底测试模型（仅名单，可自行增补通用网关）
+  sensenova: ['deepseek-v4-flash', 'glm-5.2', 'kimi-k3', 'sensenova-6.8-flash-lite'],
+  //  例: yourgateway.com: [可用模型1, 可用模型2]
+  volces:   ['<<<请填你所配网关在该平台的可用模型名>>>']
+};
+
 const DEFAULT_SETTINGS = {
   enabled         : true,          // 自动写日记总开关
   interval        : 5,            // 每 N 个 AI 楼层触发一次（默认5楼）
@@ -252,6 +261,7 @@ const DEFAULT_SETTINGS = {
   rerankApi     : { base: '', key: '', model: '' }, // Rerank 端点（OpenAI 兼容 /rerank）
   retryTimes      : 3,        // LLM 失败自动重试次数(0=不重试)
   retryDelay      : 2,        // LLM 重试间隔(秒)
+  backendProxy    : false,    // [兼容网关] 开启后：直连被 CORS/预检拦截(部分网关)时，改走酒馆后端通道转发请求（模型仍用你填的网关，不混主模型）
   injectPosition  : 'after',  // 注入位置 'after'(末尾,默认) | 'before'(开头) | 'chat'(对话中)
   injectRole      : 0,        // 注入消息角色 0=system 1=user 2=assistant
   injectDepth     : 1,        // 注入层内深度(默认1)
@@ -538,6 +548,17 @@ async function callTavern(messages, _s) {
 async function callOpenAI(messages, ep, s) {
   const base = String(ep.url || '').replace(/\/+$/, '');
   if (!base) throw new Error('OpenAI 未配置接口地址');
+  // ★ 兼容网关·走后端代理直连：开启「走后端代理直连」时，优先借酒馆后端通道
+  //   (generateRaw / sendGenerationRequest) 转发，绕开浏览器 CORS/预检拦截(部分网关前端 fetch 必失败)。
+  //   模型取用户填的网关；若酒馆当前连接已配为该兼容源则语义等价、不混主模型。
+  if (s.backendProxy) {
+    try {
+      const bp = await callTavern(messages, s);
+      if (bp) return bp;
+    } catch (e1) {
+      cdWarn('后端代理(酒馆通道)尝试失败，退回直连: ' + (e1 && e1.message));
+    }
+  }
   // ★ 智能降级（方案 A，v2.6.3）：opencode.ai 等网关服务端不返回 CORS 头，
   //   浏览器/Tauri WebView 前端 fetch 直连会抛 "Failed to fetch"（TypeError: Failed to fetch）。
   //   此时自动降级到酒馆通道（generateRaw / generateQuietPrompt）——酒馆走服务端代理，
@@ -796,27 +817,42 @@ async function cdFetchModels(source, ep) {
       lastErr.push(`${base} 请求失败: ${e.message}`);
     }
   }
-  // ★ 直连失败降级（方案 A）：从酒馆已加载的 OpenAI 设置读取模型列表
-  //   opencode.ai 等网关无 CORS 头，前端 fetch 必失败；但酒馆已通过服务端拉取并缓存了模型，
-  //   尝试从 ST 全局 oai_settings.available_models / models 读取兜底。
+  // ★ 直连拉取失败（多为前端 CORS 拦截）时，按网关域名命中内置兜底清单
+  //   只回填“该网关下实测可用”的模型，绝不把酒馆主模型的 available_models(通常是不相关的 gpt 等)塞进来。
   try {
-    const oai = (typeof oai_settings !== 'undefined') ? oai_settings : (SillyTavern && SillyTavern.getContext() && SillyTavern.getContext().extensionSettings ? null : null);
-    let fromTavern = [];
-    if (oai) {
-      const cand = [oai.available_models, oai.models, oai.custom_models, (oai.available_models && oai.available_models[oai.chat_completion_source])];
-      for (const c of cand) {
-        if (Array.isArray(c) && c.length) {
-          fromTavern = c.map(m => (typeof m === 'string' ? m : (m && (m.id || m.name)))).filter(Boolean);
-          if (fromTavern.length) break;
-        }
-      }
+    const host = (rawBase.toLowerCase());
+    let kbModels = [];
+    for (const key of Object.keys(CD_GATEWAY_MODELS)) {
+      if (host.includes(key)) { kbModels = CD_GATEWAY_MODELS[key].filter(Boolean); break; }
     }
-    if (fromTavern.length) {
-      cdWarn('直连拉模型失败(多为 CORS)，已从酒馆已加载设置读取模型列表');
-      if (typeof cdAddLog === 'function') cdAddLog('warn', '[API] 拉模型直连失败，降级读取酒馆模型列表', { count: fromTavern.length });
-      return fromTavern;
+    if (kbModels && kbModels.length) {
+      cdWarn('直连拉模型失败(多为 CORS)，已命中『内置网关兜底清单』返回可用模型');
+      if (typeof cdAddLog === 'function') cdAddLog('warn', '[API] 拉模型直连失败，使用内置网关兜底清单', { source: source, host: host, count: kbModels.length });
+      return kbModels;
     }
   } catch (e) {}
+  // ★ 仅当用户用的是『当前酒馆(tavern)』来源时，才从酒馆已加载的 OpenAI 设置读取模型列表兜底；
+  //   填了自有网关(openai/claude/gemini)时不再读酒馆主模型列表，避免把无关模型当作结果返回。
+  if (source === 'tavern') {
+    try {
+      const oai = (typeof oai_settings !== 'undefined') ? oai_settings : (SillyTavern && SillyTavern.getContext() && SillyTavern.getContext().extensionSettings ? null : null);
+      let fromTavern = [];
+      if (oai) {
+        const cand = [oai.available_models, oai.models, oai.custom_models, (oai.available_models && oai.available_models[oai.chat_completion_source])];
+        for (const c of cand) {
+          if (Array.isArray(c) && c.length) {
+            fromTavern = c.map(m => (typeof m === 'string' ? m : (m && (m.id || m.name)))).filter(Boolean);
+            if (fromTavern.length) break;
+          }
+        }
+      }
+      if (fromTavern.length) {
+        cdWarn('直连拉模型失败(多为 CORS)，已从酒馆已加载设置读取模型列表');
+        if (typeof cdAddLog === 'function') cdAddLog('warn', '[API] 拉模型直连失败，降级读取酒馆模型列表', { count: fromTavern.length });
+        return fromTavern;
+      }
+    } catch (e) {}
+  }
   toastr.warning('[角色日记] 拉取模型列表失败（若你的接口网关不支持跨域CORS，请改用上方「当前酒馆」来源，或手动填写模型名）: ' + (lastErr.join(' | ') || '未知错误'));
   return [];
 }
@@ -3425,19 +3461,24 @@ function cdRenderLog() {
   
   let html;
   // ★ 测试按钮区
-  const testBtnHtml = `<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
-    <button class="cd-btn-secondary" id="cd-btn-test-api" style="flex:1;min-width:90px;"><i class="fa-regular fa-flask"></i> 三路API调试</button>
-    <button class="cd-btn-secondary" id="cd-btn-test-trigger" style="flex:1;min-width:90px;"><i class="fa-regular fa-clock"></i> 检查自动触发</button>
-    <button class="cd-btn-primary" id="cd-btn-test-summary" style="flex:1;min-width:90px;"><i class="fa-regular fa-wand-magic-sparkles"></i> 模拟自动总结</button>
-    <button class="cd-btn-secondary" id="cd-btn-test-cast" style="flex:1;min-width:90px;"><i class="fa-regular fa-people-group"></i> 登场人物诊断</button>
-    <button class="cd-btn-secondary" id="cd-btn-test-inject" style="flex:1;min-width:90px;"><i class="fa-regular fa-magnifying-glass"></i> 测试注入</button>
-    <button class="cd-btn-secondary" id="cd-btn-test-kb" style="flex:1;min-width:90px;"><i class="fa-regular fa-keyboard"></i> 键盘诊断</button>
-    <button class="cd-btn-secondary" id="cd-btn-test-custom" style="flex:1;min-width:90px;"><i class="fa-regular fa-layer-group"></i> 追踪项诊断</button>
-    <button class="cd-btn-secondary" id="cd-btn-test-worldbook" style="flex:1;min-width:90px;"><i class="fa-regular fa-book-bookmark"></i> 测试世界书</button>
-    <button class="cd-btn-secondary" id="cd-btn-test-hide" style="flex:1;min-width:90px;"><i class="fa-regular fa-eye-slash"></i> 楼层隐藏诊断</button>
-    <button class="cd-btn-secondary" id="cd-btn-test-progress" style="flex:1;min-width:90px;"><i class="fa-regular fa-chart-line"></i> 进度/去重诊断</button>
-    <button class="cd-btn-secondary" id="cd-btn-test-modal" style="flex:1;min-width:90px;"><i class="fa-regular fa-window-maximize"></i> 弹窗层级测试</button>
-  </div>`;
+  const testBtnHtml = `<div style="margin-bottom:6px;">
+    <button class="cd-btn-secondary" id="cd-btn-test-probe" style="width:100%;min-width:90px;"><i class="fa-regular fa-plug"></i> 测试当前API</button>
+  </div>
+  <details class="cds-collapse" style="margin-bottom:8px;"><summary><i class="fa-regular fa-screwdriver-wrench"></i> 更多调试工具</summary>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+      <button class="cd-btn-secondary" id="cd-btn-test-api" style="flex:1;min-width:90px;"><i class="fa-regular fa-flask"></i> 三路API调试</button>
+      <button class="cd-btn-secondary" id="cd-btn-test-trigger" style="flex:1;min-width:90px;"><i class="fa-regular fa-clock"></i> 检查自动触发</button>
+      <button class="cd-btn-primary" id="cd-btn-test-summary" style="flex:1;min-width:90px;"><i class="fa-regular fa-wand-magic-sparkles"></i> 模拟自动总结</button>
+      <button class="cd-btn-secondary" id="cd-btn-test-cast" style="flex:1;min-width:90px;"><i class="fa-regular fa-people-group"></i> 登场人物诊断</button>
+      <button class="cd-btn-secondary" id="cd-btn-test-inject" style="flex:1;min-width:90px;"><i class="fa-regular fa-magnifying-glass"></i> 测试注入</button>
+      <button class="cd-btn-secondary" id="cd-btn-test-kb" style="flex:1;min-width:90px;"><i class="fa-regular fa-keyboard"></i> 键盘诊断</button>
+      <button class="cd-btn-secondary" id="cd-btn-test-custom" style="flex:1;min-width:90px;"><i class="fa-regular fa-layer-group"></i> 追踪项诊断</button>
+      <button class="cd-btn-secondary" id="cd-btn-test-worldbook" style="flex:1;min-width:90px;"><i class="fa-regular fa-book-bookmark"></i> 测试世界书</button>
+      <button class="cd-btn-secondary" id="cd-btn-test-hide" style="flex:1;min-width:90px;"><i class="fa-regular fa-eye-slash"></i> 楼层隐藏诊断</button>
+      <button class="cd-btn-secondary" id="cd-btn-test-progress" style="flex:1;min-width:90px;"><i class="fa-regular fa-chart-line"></i> 进度/去重诊断</button>
+      <button class="cd-btn-secondary" id="cd-btn-test-modal" style="flex:1;min-width:90px;"><i class="fa-regular fa-window-maximize"></i> 弹窗层级测试</button>
+    </div>
+  </details>`;
 
   if (!logs.length) {
     html = testBtnHtml + '<div class="cd-empty"><p>暂无日志</p><p class="cd-empty-sub">写日记操作将会记录在这里</p></div>';
@@ -3489,6 +3530,7 @@ function cdRenderLog() {
   }
   $('#cd-content').html(html);
   // ★ 测试按钮事件绑定
+  $('#cd-btn-test-probe').off('click').on('click', cdTestApiProbe);
   $('#cd-btn-test-api').off('click').on('click', cdTestDiary);
   $('#cd-btn-test-trigger').off('click').on('click', cdCheckAutoTrigger);
   $('#cd-btn-test-cast').off('click').on('click', cdDiagCast);
@@ -3643,6 +3685,55 @@ const relMsgs     = cdBuildRelationPrompt(testFloors, data, s);
   cdAddLog('info', '========== 测试结束 ==========');
   toastr.success('测试完成，详情请查看日志面板');
   cdSwitchView('log');
+}
+
+/**
+ * ★ 测试当前API连通性
+ * 把当前设置面板填的 url/key/model 直接 fetch 一次极短请求，展示真实 HTTP 状态码与响应体前300字。
+ * 帮用户一眼定位：是浏览器 CORS/预检拦截(Failed to fetch)、还是网关/bkey/模型 本身报错。
+ */
+async function cdTestApiProbe() {
+  const s = cdGetSettings();
+  let src = window._cdEditSource || s.source || 'openai';
+  if (src === 'tavern' || src === 'gemini') {
+    const o = s.endpoints?.openai?.url ? 'openai' : s.endpoints?.claude?.url ? 'claude' : s.endpoints?.gemini?.url ? 'gemini' : '';
+    if (o) src = o;
+  }
+  const ep = s.endpoints?.[src] || {};
+  const url0 = (ep.url || '').trim();
+  const key0 = (ep.key || '').trim();
+  const mod0 = (ep.model || '').trim();
+  cdAddLog('info', '[API探针] 开始测试当前接口', { 来源: src, 地址: url0 || '(空)', 模型: mod0 || '(空)' });
+  if (!url0) { cdAddLog('warn', '[API探针] 未填写接口地址，请先在上方 API 来源里填写'); return; }
+  const base = url0.replace(/\/+$/, '');
+  const body = { model: mod0 || '', messages: [{ role: 'user', content: 'ping' }], max_tokens: 5, stream: false };
+  const startMs = Date.now();
+  try {
+    const res = await fetch(base + '/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key0 },
+      body: JSON.stringify(body),
+    });
+    const dur = Date.now() - startMs;
+    const txt = await res.text();
+    cdAddLog('info', '[API探针] 直连已发出的请求返回', {
+      状态码: res.status, 耗时ms: dur, 返回体前200字: txt ? txt.slice(0, 200) : '(空)',
+      结论: res.status >= 200 && res.status < 300 ? '接口+key+模型 全部可用 ✔' : '接口有响应但未成功，请按状态码排查',
+    });
+    if (typeof toastr !== 'undefined') {
+      if (res.status >= 200 && res.status < 300) toastr.success('API探针：接口可用 ✔');
+      else toastr.warning('API探针：接口返回 ' + res.status);
+    }
+  } catch (err) {
+    const dur = Date.now() - startMs;
+    const msg = String((err && err.message) || err);
+    const isCors = /failed to fetch|load failed|networkerror|not allowed|cors|typeerror/i.test(msg);
+    cdAddLog(isCors ? 'warn' : 'error', '[API探针] 直连未连上恒为CORS/预检拦截，请开启「走后端代理直连」或核对地址', {
+      错误: msg, 耗时ms: dur, 直连被拦: isCors,
+      建议: isCors ? '这类CORS/预检被拦是浏览器端问题，非key错误；开「走后端代理直连」或改用支持CORS的网关' : '非CORS错误，请检查地址/key/网络',
+    });
+    if (typeof toastr !== 'undefined') toastr.warning(isCors ? 'API探针：浏览器直连被CORS/预检拦截，请走后端代理' : 'API探针：请求异常，见日志');
+  }
 }
 
 /**
@@ -11653,6 +11744,8 @@ async function cdRenderSettings() {
             <div class="cds-row"><span class="cds-lab">密钥</span><span class="cds-ctrl"><input type="password" id="cd-s-key" value="${apiKey}" class="cd-input" placeholder="sk-..." style="width:auto;min-width:180px;text-align:left;"></span></div>
             <div class="cds-row"><span class="cds-lab">模型</span><span class="cds-ctrl"><input type="text" id="cd-s-model" value="${apiModel}" class="cd-input" list="cd-models" placeholder="模型名" style="width:auto;min-width:180px;text-align:left;"><datalist id="cd-models"></datalist></span></div>
             <button class="cd-btn-secondary" id="cd-btn-fetch-models" style="font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;">获取可用模型</button>
+            <div class="cds-row"><span class="cds-lab"><i class="fa-regular fa-tower-broadcast" style="margin-right:4px;color:var(--cd-acc,#5b7fa6);"></i>走后端代理直连</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-backend-proxy" ${s.backendProxy ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+            <div class="cds-hint" style="margin-top:2px;font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;opacity:0.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">直连被CORS/预检拦截时，走酒馆后端通道转发；请在酒馆把网关配为兼容连接源，避免走错源</div>
           </div>
         </div>
       </details>
@@ -11851,6 +11944,7 @@ async function cdRenderSettings() {
       };
     }
     cdSaveSettings({
+      backendProxy: $('#cd-s-backend-proxy').is(':checked'),
       enabled: $('#cd-s-enabled').is(':checked'),
       interval: parseInt($('#cd-s-interval').val(), 10) || 5,
       autoSummaryDelay: Math.max(0, parseInt($('#cd-s-asdelay').val(), 10) || 0),
@@ -12120,7 +12214,7 @@ async function cdRenderEgg() {
       }
     } catch (e) {
       cdWarn('塔罗占卜失败', e);
-      toastr.error('占卜失败: ' + e.message);
+      toastr.error('占卜失败: ' + e.message + '（若一直失败，请到 设置→高级→API来源 开启「走后端代理直连」）');
     } finally {
       cdBusy = false; cdBusyLabel = '';
     }
@@ -12134,6 +12228,8 @@ async function cdRenderEgg() {
     cdBusy = true; cdBusyLabel = '角色对白剧场'; cdBusyAt = Date.now();
     try {
       const s = cdGetSettings();
+      // ★ 修复：先进剧场时 tarotData 可能未初始化(初值为null)，补一次数据加载
+      tarotData = tarotData || (await cdGetData());
       const charInfo = checked.map(n => {
         const list = tarotData.diaries[n] || [];
         const last = list[list.length - 1];
@@ -12156,7 +12252,7 @@ async function cdRenderEgg() {
       }
     } catch (e) {
       cdWarn('角色剧场失败', e);
-      toastr.error('剧场生成失败: ' + e.message);
+      toastr.error('剧场生成失败: ' + e.message + '（若一直失败，请到 设置→高级→API来源 开启「走后端代理直连」）');
     } finally {
       cdBusy = false; cdBusyLabel = '';
     }
@@ -24685,7 +24781,8 @@ function _cgOpenMembers() {
           if (_tfTxt.length) { p.push('# 你记得的剧情（来自酒馆）'); p.push(_tfTxt.join('\n\n').slice(0, 2000)); p.push(''); }
         }
       }
-    } catch (_eTf) {}
+      console.log('[CD][楼层注入] 手机私聊读酒馆楼层 OK', { 参数N: _st.memFloors, 读到总楼层: _tf.length, 取尾: _tfTail.length, 注入字数: _tfTxt.join('\n\n').slice(0,2000).length });
+    } catch (_eTf) { console.warn('[CD][楼层注入] 手机私聊读酒馆楼层失败', _eTf); }
     p.push('# 你收到的对话');
     p.push(recent ? recent : '（这是你们第一次聊）');
     p.push('主人刚说：「' + userText + '」');
