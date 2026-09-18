@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.18.0';
+const PLUGIN_VERSION = '2.18.1';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -435,8 +435,6 @@ function emptyData() {
       itemsHold: [],  // [v2.9.7] 物品当前持有 [{ line }]（覆盖式，谁持有/位置/随身或寄存）
       timeAnchor: '', // [v2.9.7] 当前故事内时间锚点（覆盖式，最新一条）
       tasks: [],     // [v2.9.7] 任务记录（覆盖式，每条 { line }：任务名|发布者|进度|下一步|限时|最近推进）
-      money: '',     // [v2.9.9] 当前钱财金额（覆盖式，如 5000）
-      moneyLog: [],  // [v2.9.9] 钱财变动日志（追加式，每条 { time, desc }：买了什么减多少钱/干了什么加多少钱）
       custom: {},      // 用户自定义剧情追踪项 { key: [{ time, desc }] }（key 来自设置 customFields）
     },
     cards: [],         // 剧情卡牌收集 [{ title, desc, time, icon }]
@@ -1156,13 +1154,6 @@ const ARCHIVE_SYSTEM = [
   '4. 每次推进就更新"最近推进时间"，时间必须精确到年/月/日/时:分（如 2026年3月15日 14:30），禁止用"清晨/傍晚"等模糊时段词。',
   '5. 若没有进行中的任务，输出"无"。',
   '',
-  '钱财追踪（覆盖式+追加式，用来精确跟踪钱财）：',
-  '当前金额（覆盖式，只输出当前主角手里的具体钱数，纯数字，如 5000；若没有明确金额可留空）：',
-  '【铁律】当前金额只能填纯数字金额（如 5000、-200），禁止出现地点/环境/方位文字、禁止写句子里带地点名；写了非金额内容会被插件直接丢弃只留数字）：',
-  '当前金额：5000',
-  '钱财变动（追加式，逐条记录本次剧情里金钱的收入与支出，一条一行，写明具体数额与事由；本次无变动输出"无"）：',
-  '（格式：减/加具体数额（事由），带时间，如：-200（买干粮）2026年3月15日 14:30 | +1000（完成护送任务酬金）2026年3月15日 16:00）',
-  '【铁律】金额必须精确到具体数字（5000就是5000），禁止模糊词（"一些钱""钱变多了"）；每笔买卖都标注减了多少/加了多少、干什么事、以及精确年月日时分。',
         '6. 与「未解决事项」不得重复：未解决=长期伏笔/谜团/悬而未决线索；任务=正在进行的行动进度。同一件事只归一类记录，绝不在两处重复写。',
   '',
   '地点（追加式，地图用：只输出本次剧情新增出现/移动到的地点，按剧情先后顺序一行一个，直接写核心地名，如"贫民窟垃圾山""半塌危楼阁楼""南区佣兵集散地"；本次未移动则输出"无"。★★★★ 铁律：绝不把历史/未本次接触的地点全量重列，绝不重复已记录地点，只列本次真正新增/新移动到的地方；多列会被插件自动丢弃并只保留最近轨迹）：',
@@ -1262,13 +1253,6 @@ const ARCHIVE_SYSTEM_FULL = [
   '4. 每次推进就更新"最近推进时间"，时间必须精确到年/月/日/时:分（如 2026年3月15日 14:30），禁止用"清晨/傍晚"等模糊时段词。',
   '5. 若没有进行中的任务，输出"无"。',
   '',
-  '钱财追踪（覆盖式+追加式，用来精确跟踪钱财）：',
-  '当前金额（覆盖式，只输出当前主角手里的具体钱数，纯数字，如 5000；若没有明确金额可留空）：',
-  '【铁律】当前金额只能填纯数字金额（如 5000、-200），禁止出现地点/环境/方位文字、禁止写句子里带地点名；写了非金额内容会被插件直接丢弃只留数字）：',
-  '当前金额：5000',
-  '钱财变动（追加式，逐条记录本次剧情里金钱的收入与支出，一条一行，写明具体数额与事由；本次无变动输出"无"）：',
-  '（格式：减/加具体数额（事由），带时间，如：-200（买干粮）2026年3月15日 14:30 | +1000（完成护送任务酬金）2026年3月15日 16:00）',
-  '【铁律】金额必须精确到具体数字（5000就是5000），禁止模糊词（"一些钱""钱变多了"）；每笔买卖都标注减了多少/加了多少、干什么事、以及精确年月日时分。',
         '6. 与「未解决事项」不得重复：未解决=长期伏笔/谜团/悬而未决线索；任务=正在进行的行动进度。同一件事只归一类记录，绝不在两处重复写。',
   '',
   '地点（追加式，地图用：只输出本次剧情新增出现/移动到的地点，按剧情先后顺序一行一个，直接写核心地名，如"贫民窟垃圾山""半塌危楼阁楼""南区佣兵集散地"；本次未移动则输出"无"。★★★★ 铁律：绝不把历史/未本次接触的地点全量重列，绝不重复已记录地点，只列本次真正新增/新移动到的地方；多列会被插件自动丢弃并只保留最近轨迹）：',
@@ -1512,7 +1496,7 @@ function parseArchiveJson(text, customDefs) {
   }
   const defs = Array.isArray(customDefs) ? customDefs : [];
   // 全部字段标签：内置四个 + 每个自定义项的 label
-  const builtin = ['主线', '支线', '重要状态变化', '未解决事项', '剧情总览', '章回标题', '物品清单', '当前时间轴', '任务记录', '当前金额', '钱财变动'];
+  const builtin = ['主线', '支线', '重要状态变化', '未解决事项', '剧情总览', '章回标题', '物品清单', '当前时间轴', '任务记录'];
   const customLabels = defs.map(d => d && d.label ? d.label : '').filter(Boolean);
   // 按长度降序排列，避免「主角状态」被「状态」抢先截断
   const allLabels = builtin.concat(customLabels).sort((a, b) => b.length - a.length);
@@ -1581,26 +1565,9 @@ function parseArchiveJson(text, customDefs) {
     if (!_tl || _tl === '无') continue;
     if (/^任务记录|^（|^任务名/.test(_tl)) continue;
     if (/^地点[：:]/.test(_tl)) continue;   // 地点已在地图/主角/环境卡展示，任务里剔除避免重复
-    if (/^钱财追踪|^当前金额|^钱财变动/.test(_tl)) continue;  // 钱财追踪独立卡展示，任务里剔除避免空标签
     _tasks.push({ line: _tl });
   }
-  // ===== 钱财追踪：当前金额(覆盖式) + 钱财变动日志(追加式) =====
-  var money = (parts['当前金额'] || '').split('\n').map(function(_x){return _x.trim();}).filter(Boolean).join(' ').trim();
-  money = String(money).replace(/^当前金额[：:]?/,'').trim();
-  // ★ [v2.16] 金额白名单清洗：仅保留数字±金额，剥离【时间】/(说明)/地名段落
-  money = money.split(/[\n，,、 ；;]+/).map(function(_t){ return String(_t).replace(/^【[^】]*】\s*/,'').trim(); })
-    .filter(function(_t){ return /^[+-]?\d/.test(_t); }).join(' ').trim();
-  const _moneyLog = [];
-  var _mlk = parts['钱财变动'] || '';
-  var _mllines = String(_mlk).split('\n');
-  for (var _mi2 = 0; _mi2 < _mllines.length; _mi2++) {
-    var _ml2 = String(_mllines[_mi2] || '').trim();
-    if (!_ml2 || _ml2 === '无' || /^钱财变动|^（|^当前金额/.test(_ml2)) continue;
-    var _mtm = String(_ml2).match(/^【([^】]+)】\s*(.*)/);
-    if (_mtm) { _moneyLog.push({ time: _mtm[1], desc: _mtm[2] }); }
-    else { _moneyLog.push({ time: '', desc: _ml2 }); }
-  }
-  return { mainline, sideline, states, unresolved, locations, items: _itemsLog, itemsHold: _itemsHold, timeAnchor, tasks: _tasks, money, moneyLog: _moneyLog, custom, title, lead };
+  return { mainline, sideline, states, unresolved, locations, items: _itemsLog, itemsHold: _itemsHold, timeAnchor, tasks: _tasks, custom, title, lead };
 }
 
 function cdBuildRelationPrompt(windowFloors, data, _s) {
@@ -2897,15 +2864,10 @@ async function cdBuildDiaryInjectionText() {
           if (arc.unresolved) arcParts.push(`待解决事项：${arc.unresolved}`);
           // ★ 当前时间轴（覆盖式最新）
           if (arc.timeAnchor && String(arc.timeAnchor).trim()) arcParts.push(`当前时间：${String(arc.timeAnchor).trim()}`);
-          if (Array.isArray(arc.locations) && arc.locations.length) { var _locs30 = arc.locations.slice(-30).map(function(l){ return String(l).trim(); }).filter(Boolean); if (_locs30.length) arcParts.push('地点（已踏足/当前位置）：\n' + _locs30.map(function(l){ return '- ' + l; }).join('\n')); }
+          if (Array.isArray(arc.locations) && arc.locations.length) { var _locs = []; (function(){ for (var _i=0;_i<arc.locations.length;_i++){var _t=String(arc.locations[_i]).trim(); if(_t&&_locs.indexOf(_t)<0) _locs.push(_t);} _locs=_locs.slice(-3); })(); if (_locs.length) arcParts.push('地点（已踏足/当前位置）：\n' + _locs.map(function(l){ return '- ' + l; }).join('\n')); }
           // ★ 任务记录（活跃任务）
           if (Array.isArray(arc.tasks) && arc.tasks.length) {
             arcParts.push('任务记录：\n' + arc.tasks.map(function(t){ return '- ' + (t && t.line || ''); }).join('\n'));
-          }
-          // ★ 钱财追踪（当前金额 + 变动日志）
-          if (arc.money && String(arc.money).trim()) { arcParts.push('当前钱财：' + String(arc.money).trim()); }
-          if (Array.isArray(arc.moneyLog) && arc.moneyLog.length) {
-            arcParts.push('钱财变动：\n' + arc.moneyLog.map(function(ml){ var _s=(ml&&ml.time?('【'+ml.time+'】'):'')+(ml&&ml.desc||''); return '- ' + _s; }).join('\n'));
           }
   // ★ 自定义剧情追踪项注入
           const injCustomFields = Array.isArray(s.customFields) ? s.customFields.filter(f => f && f.key && f.label) : [];
@@ -5340,25 +5302,6 @@ if (arc.unresolved !== undefined) {
           // ★ 任务记录（覆盖式，只留最新）
           if (arc.tasks && Array.isArray(arc.tasks) && arc.tasks.length) {
             data.archive.tasks = arc.tasks.slice();
-          }
-          // ★ 当前钱财金额（覆盖式，只留最新）
-          if (arc.money && String(arc.money).trim()) {
-            data.archive.money = String(arc.money).trim();
-          }
-          // ★ 钱财变动日志（追加式，按 desc 去重复结算，与 items 同法）
-          if (arc.moneyLog && Array.isArray(arc.moneyLog) && arc.moneyLog.length) {
-            if (!data.archive.moneyLog || !Array.isArray(data.archive.moneyLog)) data.archive.moneyLog = [];
-            for (var _ai2 = 0; _ai2 < arc.moneyLog.length; _ai2++) {
-              var _ait2 = arc.moneyLog[_ai2] || {};
-              var _ad2 = String(_ait2.desc || '').replace(/^【[^】]+】\s*/, '').trim();
-              if (!_ad2) continue;
-              var _dup2 = false;
-              for (var _aj2 = 0; _aj2 < data.archive.moneyLog.length; _aj2++) {
-                var _od2 = String(data.archive.moneyLog[_aj2] && data.archive.moneyLog[_aj2].desc || '').replace(/^【[^】]+】\s*/, '').trim();
-                if (_od2 === _ad2) { _dup2 = true; break; }
-              }
-              if (!_dup2) data.archive.moneyLog.push({ time: _ait2.time || '', desc: _ait2.desc });
-            }
           }
           // 自定义追踪项（默认追加式数组；开启 overwrite 的项每轮只保留最新）
           if (arc.custom && Object.keys(arc.custom).length) {
@@ -8884,14 +8827,6 @@ async function cdRenderGraph() {
       '.cd-st-prob{background:#8a6a3b;color:#fff;border-radius:8px;padding:11px 13px;margin-bottom:10px}',
       '.cd-st-pb-title{font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:7px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.18);margin-bottom:8px}',
       '.cd-st-pb-grid{display:flex;flex-direction:column;gap:6px}',
-      '.cd-st-money{background:#f3ede1;color:#6b4a1b;border:1px solid #e0d3b8;border-radius:8px;padding:11px 13px;margin-bottom:10px}',
-      '.cd-st-money-title{display:flex;align-items:center;gap:6px;font-size:calc(0.72rem*var(--cd-fs,1));font-weight:700;margin-bottom:6px}',
-      '.cd-st-money-cur{font-size:calc(1.0rem*var(--cd-fs,1));font-weight:800;margin-bottom:6px}',
-      '.cd-st-money-log{max-height:180px;overflow:auto;font-size:calc(0.62rem*var(--cd-fs,1));line-height:1.7}',
-      '.cd-st-money-log-row{display:flex;gap:6px;padding:2px 0;border-bottom:1px dashed rgba(107,74,27,.15)}',
-      '.cd-st-money-log-row .t{color:#9a7a45;flex-shrink:0}',
-      '.cd-st-money-empty{opacity:.6;font-size:calc(0.6rem*var(--cd-fs,1))}',
-      '.cd-st-money-toggle{cursor:pointer;font-size:calc(0.62rem*var(--cd-fs,1));opacity:.8;margin-top:4px}',
       '.cd-st-pb-item{display:flex;gap:8px;font-size:10.5px;line-height:1.5}',
       '.cd-st-pb-item .k{color:#ffd9a0;font-weight:700;width:30px;flex-shrink:0}',
       '.cd-st-pb-item .v{color:#fff;flex:1}',
@@ -9220,21 +9155,6 @@ async function cdRenderGraph() {
       </div>
     </div>`;
 
-  // ===== 【钱财卡：当前金额 + 变动日志，来自 archive.money / archive.moneyLog】（深色，主角状态下面）=====
-  const _moneyVal = (data.archive && String(data.archive.money||'').trim()) || '';
-  // ★ [v2.16] 钱财卡渲染兜底：仅显示纯数字金额；非金额则标记异常（防地名字段漏进来）
-  const _moneyValClean = _moneyVal.split(/[\n，,、 ；;]+/).map(function(_t){ return String(_t).replace(/^【[^】]*】\s*/,'').trim(); })
-    .filter(function(_t){ return /^[+-]?\d/.test(_t); }).join(' ').trim();
-  const _moneyDisp = _moneyValClean || (_moneyVal ? '（记录异常）' : '');
-  const _moneyLog = (data.archive && Array.isArray(data.archive.moneyLog)) ? data.archive.moneyLog : [];
-  const moneyLogHtml = _moneyLog.length ? _moneyLog.slice(-30).reverse().map(function(ml,mi){ var _mlt=ml&&ml.time||''; var _mld=ml&&ml.desc||''; return '<div class="cd-st-money-log-row">'+( _mlt?'<span class="t">'+escapeHtml(_mlt)+'</span>':'')+'<span class="d">'+escapeHtml(_mld)+'</span></div>'; }).join('') : '';
-  var _moneyCount = _moneyLog.length;
-  const moneyCard = (_moneyVal || _moneyCount) ? `
-    <div class="cd-st-money">
-      <div class="cd-st-money-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> 钱财</div>
-      <div class="cd-st-money-cur">${_moneyDisp ? escapeHtml(_moneyDisp) : '（未记录）'}</div>
-      ${moneyLogHtml ? '<details><summary class="cd-st-money-toggle">钱财变动日志（' + _moneyCount + ' 条）</summary><div class="cd-st-money-log">' + moneyLogHtml + '</div></details>' : '<div class="cd-st-money-empty">（暂无钱财变动记录）</div>'}
-    </div>` : '';
   // ===== 环境卡（地图下方）=====
   const envKeys = ['布局','温度天气'];
   const envHas = envKeys.some(k => env[k] && String(env[k]).trim());
@@ -9324,7 +9244,6 @@ async function cdRenderGraph() {
     protCard +
     mapHtml +
     timeCard +
-    moneyCard +
     envCard +
     tasksCard +
     memoCard +
@@ -12299,6 +12218,15 @@ async function cdRenderEgg() {
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
     {
+    version: 'v2.18.1',
+    date: '2026-09-18',
+    items: [
+      '【地点注入只留3个】注入给 AI 的地点(已踏足/当前位置)只列「当前+前两个」最近3个并先去重，不再一排10+个(原 slice(-30) 全量注入)。',
+      '【钱财彻底删除(甲案)】注入/提示词/解析/存档结构/状态界面钱财卡/money字段全部移除，插件不再处理钱财；填写表「资产」格保留。',
+      '【生图官方拉模型修复】论坛生图选「NovelAI官方」拉取不了模型已修：官方API无 /models 端点，改为直接返回内置官方模型列表(nai-diffusion-4-5/-4/-3等)，可手动填任意官方模型名；第三方模式保持原 GET /models。',
+    ],
+  },
+    {
     version: 'v2.18.0',
     date: '2026-09-13',
     items: [
@@ -12813,7 +12741,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.18.0 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.18.1 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
@@ -19656,6 +19584,8 @@ async function cdZipExtractPng(buf){
 /* ---------- 拉取模型列表（GET {base}/models，Bearer 认证） ---------- */
 async function cdForumFetchModels(){
   var cfg=cdForumImgCfg();
+  // ★ [2026-09-18 方案A] 官方模式：官方 API 无 /models 端点，直接返回内置已知模型列表，不走网络请求
+  if(cfg && cfg.source==='novelai_official'){ return [ 'nai-diffusion-4-5-full', 'nai-diffusion-4-5-curated', 'nai-diffusion-4-full', 'nai-diffusion-4-curated-preview', 'nai-diffusion-3', 'nai-diffusion-furry-3', 'Safe-Tensor' ]; }
   var base=String(cfg.url||'').replace(/\/+$/,'').replace(/\/generate-image$/,'').replace(/\/ai\/generate-image$/,'');
   if(!base || !String(cfg.key||'').trim()){ return []; }
   var list=[];
@@ -23549,11 +23479,11 @@ function _cgOpenMembers() {
 '### 数据结构' +
 'diaries[角色]=[{turn,date,entry,mood,attitude_to_user,secret,key_events,relationship_with_others,message_id}]' +
 'relations[from][to]={type,attitude,note}' +
-'archive={mainline/sideline/states/unresolved(文本)；locations(数组)；items/moneyLog([{time,desc}])；itemsHold/tasks([{line}])；timeAnchor/money；custom{key:[{time,desc}]}}' +
+'archive={mainline/sideline/states/unresolved(文本)；locations(数组)；itemsHold/tasks([{line}])；timeAnchor；custom{key:[{time,desc}]}}' +
 'memo(备忘录) ' +
 '### 覆盖式(直接赋值清旧) vs 追加式(整体替换丢历史)' +
-'覆盖式：mainline/sideline/states/unresolved/money/timeAnchor/itemsHold/tasks/relations格' +
-'追加式：items/moneyLog/locations/diaries(用push)/cards/snapshots' +
+'覆盖式：mainline/sideline/states/unresolved/timeAnchor/itemsHold/tasks/relations格' +
+'追加式：items/locations/diaries(用push)/cards/snapshots' +
 '### 改时间为具体数字' +
 '文本字段：正则替换【xxx】→【2026年3月17日 14:30】再整体赋值' +
 '数组字段：遍历逐条改 it.time' +
@@ -24001,7 +23931,6 @@ function _cgOpenMembers() {
         function tsFix(n) { n = n || 1; return '【2026年3月' + (10 + (n % 18)) + '日 ' + (9 + (n % 12)) + ':30】'; }
         ['mainline','sideline','states','unresolved'].forEach(function (k) { if (!a3[k]) return; var s3 = String(a3[k]); s3 = s3.replace(/【[^】]*?某[^】]*?】/g, function () { fixed++; return tsFix(fixed); }); s3 = s3.replace(/【未知时间】/g, function () { fixed++; return tsFix(fixed); }); s3 = s3.replace(/【[^】]*?第[^】]*?天[^】]*?】/g, function () { fixed++; return tsFix(fixed); }); a3[k] = s3; });
         if (Array.isArray(a3.items)) a3.items.forEach(function (it) { if (it && /某|未知|第[^0-9]/.test(String(it.time||''))) { it.time = tsFix(++fixed); } });
-        if (Array.isArray(a3.moneyLog)) a3.moneyLog.forEach(function (it) { if (it && /某|未知|第[^0-9]/.test(String(it.time||''))) { it.time = tsFix(++fixed); } });
         if (a3.custom) Object.keys(a3.custom).forEach(function (k2) { if (Array.isArray(a3.custom[k2])) a3.custom[k2].forEach(function (it) { if (it && /某|未知|第[^0-9]/.test(String(it.time||''))) { it.time = tsFix(++fixed); } }); });
         await window.cdSaveData(d3); if (typeof window.cdRefreshInjection === 'function') await window.cdRefreshInjection();
         return '已统一 ' + fixed + ' 处模糊时间为具体数字（按剧情顺序顺延）';
