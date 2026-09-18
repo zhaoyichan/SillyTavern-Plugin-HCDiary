@@ -2759,6 +2759,7 @@ let cdBusyAt = 0;        // 占用锁开始时间戳
 let cdPending = false;  // 当锁住时又收到触发信号, 标记"完成后再跑一轮"
 let _cdLastAutoTriggerAt = 0;    // 自动触发防抖：上次 cdOnMessageReceived 实际开始处理的时间戳
 let _cdLastAutoTriggerLen = -1;  // 自动触发防抖：上次处理时的 chat.length（判断是否同一批消息双事件）
+let _cdDeletingTo = 0;          // 楼层删除屏蔽：删除流程结束前的时间戳（毫秒），期间抑制 MESSAGE_RECEIVED/RENDERED 触发的自动总结防重复
 
 /**
  * 执行一次日记 + 关系生成。
@@ -5699,6 +5700,12 @@ async function cdOnMessageReceived() {
   const chat = _cdGetChat();
   const currentLen = chat.length;
   if (currentLen < 1) return;
+  // ★ 楼层删除屏蔽：删楼流程会触发 MESSAGE_RECEIVED+CHARACTER_MESSAGE_RENDERED 双事件导致同一批被重复总结，
+  //   删楼窗口内直接 return，从源头掐掉删楼引发的重复请求
+  if (_cdDeletingTo && Date.now() < _cdDeletingTo) {
+    cdLog('cdOnMessageReceived: 删楼流程中，跳过自动总结(防重复)', {});
+    return;
+  }
 
   // ★ 防抖节流（治"双事件同时触发同一批消息"导致的重复总结）
   //   插件同时监听 MESSAGE_RECEIVED 与 CHARACTER_MESSAGE_RENDERED 两个 ST 事件，
@@ -6048,6 +6055,8 @@ async function cdCollectLiveTable() {
 
 /** 消息删除/撤回回调 */
 async function cdOnMessageDeleted(floor) {
+  // ★ [2026-09-18] 删楼屏蔽：端掉"删楼→MESSAGE_RECEIVED+RENDERED双事件→重复自动总结"的根，置 2s 窗口防重复
+  try { _cdDeletingTo = Date.now() + 2000; if(typeof cdAddLog==='function') cdAddLog('info', '[删楼屏蔽] 楼层删除，2秒内抑制自动总结防重复', { floor: floor }); } catch(_e){}
   await cdRollbackFrom(floor);
 }// ============================================================
 // 角色日记 插件 v2.0.0 — 主入口 (FAB + Modal + 事件)
@@ -11527,6 +11536,12 @@ async function cdRenderSettings() {
 <h2 class="cd-settings-h2"><i class="fa-regular fa-gear"></i> 设置</h2>
 
     <div class="cds-card">
+      <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-arrows-rotate"></i></span><span><span class="cds-gtitle">检查更新</span><span class="cds-gsub">一键检测新版本</span></span></div>
+      <div class="cds-row"><span class="cds-lab">当前版本</span><span class="cds-ctrl"><span class="cds-val" id="cd-upd-local">v${PLUGIN_VERSION}</span></span></div>
+      <div class="cds-row"><span class="cds-lab">最新版本</span><span class="cds-ctrl"><span class="cds-val" id="cd-upd-remote" style="min-width:58px;">-</span></span></div>
+      <div class="cds-row" style="justify-content:flex-start;"><button class="cd-btn-secondary" id="cd-btn-check-update"><i class="fa-solid fa-magnifying-glass" style="margin-right:5px;"></i>检查更新</button></div>
+    </div>
+    <div class="cds-card">
       <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-power-off"></i></span><span><span class="cds-gtitle">基本 · 总控</span><span class="cds-gsub">插件总开关与悬浮球</span></span></div>
       <div class="cds-row"><span class="cds-lab">界面字号</span><span class="cds-ctrl"><input type="range" id="cd-font-scale-range" min="80" max="200" step="5" value="${fontScalePct}" style="width:110px;accent-color:#c9a87c;"><span id="cd-font-scale-val" class="cds-val">${fontScalePct}%</span></span></div>
       <div class="cds-row"><span class="cds-lab">主开关</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-enabled" ${s.enabled ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
@@ -11807,6 +11822,62 @@ async function cdRenderSettings() {
   $('#cd-s-autoscrolltop').off('change').on('change', function () {
     cdSaveSettings({ autoScrollTop: $(this).is(':checked') });
     if (typeof toastr !== 'undefined') toastr.success('回复后回到开头' + ($(this).is(':checked') ? '已开启' : '已关闭'));
+  });
+  // ★ [2026-09-18] 检查更新按钮：探测本机原生"扩展更新/安装"接口可行性(true auto-update)，全程写日志供主人导出
+  $('#cd-btn-check-update').off('click').on('click', function () {
+    try {
+      if (typeof toastr === 'function') toastr.info('正在检查更新…');
+      // ===== 1) 探测后端扩展更新/安装接口（只读/最小请求，绝不真正安装） =====
+      var probeEndpoints = ['/api/extensions/discover','/api/extensions/update','/api/extensions/install','/api/plugins/extension/update','/api/plugins/update','/api/extensions/reinstall','/api/extensions/pull'];
+      var P = [];
+      probeEndpoints.forEach(function(pth){
+        P.push(fetch(pth, { method:'GET', headers:{'Accept':'application/json'} }).then(function(r){
+          return { path:pth, status:r.status, type:(r.headers&&r.headers.get&&r.headers.get('content-type'))||'' };
+        }).catch(function(e){ return { path:pth, status:'ERR', err:String(e&&e.message||e) }; }));
+      });
+      Promise.all(P).then(function(resList){
+        if(typeof cdAddLog==='function'){ try{ cdAddLog('warn', '[更新自动探测] 后端扩展更新/安装接口可达性', { 结果: resList, 说明: 'status=-表示接口存在/可用；404/405=该接口不存在或方法不对；200=很可能可用' }); }catch(_e1){} }
+        if(typeof console!=='undefined') console.warn('[更新自动探测]', JSON.stringify(resList));
+      });
+      // ===== 2) 检查 Github 是否有新版本 =====
+      fetch(REPO_URL).then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+        .then(function(data){
+          var rv=(data&&(data.tag_name||data.name)||'').replace(/^v/,'').trim();
+          var lv=(typeof PLUGIN_VERSION!=='undefined')?String(PLUGIN_VERSION):'';
+          var el=document.getElementById('cd-upd-remote'); if(el) el.textContent= rv?('v'+rv):'未知';
+          var newer=false;
+          var fa=String(rv||'0').split('.').map(function(n){return parseInt(n,10)||0;});
+          var fb=String(lv||'0').split('.').map(function(n){return parseInt(n,10)||0;});
+          for(var i=0;i<Math.max(fa.length,fb.length);i++){ var x=fa[i]||0, y=fb[i]||0; if(x!==y){ newer=x>y; break; } }
+          if(typeof cdAddLog==='function'){ try{ cdAddLog('info', '[更新自动探测] GitHub版本', { 本地: lv, 远端: rv, 有新版本: newer }); }catch(_e2){} }
+          if(newer){
+            if(typeof toastr==='function') toastr.info('发现新版本 v'+rv+'（当前 v'+lv+'），正在自动更新…');
+            // ★ [2026-09-18] 真·一键自动更新：调酒馆后端 /api/extensions/update（鞭炮同款机制）
+            try{
+              var ctx2 = (typeof SillyTavern!=='undefined' && SillyTavern.getContext) ? SillyTavern.getContext() : null;
+              var hdr = (ctx2 && typeof ctx2.getRequestHeaders==='function') ? ctx2.getRequestHeaders() : {'Content-Type':'application/json'};
+              var extName = 'SillyTavern-Plugin-HCDiary';
+              fetch('/api/extensions/update', { method:'POST', headers:hdr||{'Content-Type':'application/json'}, body:JSON.stringify({ extensionName: extName, global:false }) })
+                .then(function(r){
+                  if(r.ok){ if(typeof toastr==='function') toastr.success('更新完成 v'+rv+'，插件文件已更新，请完全重启酒馆生效'); }
+                  else { return r.text().then(function(t){ throw new Error('HTTP '+r.status+' '+String(t||'').slice(0,150)); }); }
+                  if(typeof cdAddLog==='function'){ try{ cdAddLog('warn','[更新自动][OK] '+extName+' 更新调用成功', { remote:rv }); }catch(_e){} }
+                })
+                .catch(function(e2){
+                  if(typeof toastr==='function') toastr.error('自动更新失败：'+((e2&&e2.message)||'未知')+'\n可到「酒馆→扩展管理器/扩展列表」手动更新');
+                  if(typeof cdAddLog==='function'){ try{ cdAddLog('error','[更新自动][FAIL] '+extName, { err:(e2&&e2.message)||e2 }); }catch(_e2){} }
+                });
+            }catch(_ae){ if(typeof toastr==='function') toastr.error('触发更新失败');
+              if(typeof cdAddLog==='function'){ try{ cdAddLog('error','[更新自动] 触发异常',{err:_ae&&_ae.message}); }catch(_e3){} }
+            }
+          }
+          else { if(typeof toastr==='function') toastr.success('已是最新版本 v'+(lv||'?')); }
+        })
+        .catch(function(e){
+          if(typeof cdAddLog==='function'){ try{ cdAddLog('warn', '[更新自动探测] GitHub检查失败', { err:(e&&e.message)||'网络错误' }); }catch(_e3){} }
+          if(typeof toastr==='function') toastr.error('检查更新失败：'+((e&&e.message)||'网络错误'));
+        });
+    } catch(e){ if (typeof toastr === 'function') toastr.error('检查更新异常'); if(typeof cdAddLog==='function'){ try{ cdAddLog('error','[更新自动探测] 异常',{err:e&&e.message}); }catch(_e){} } }
   });
   // 立即试听（用当前生效音：用户 uri 优先）
   $('#cd-btn-tone-preview').off('click').on('click', function () {
@@ -20492,10 +20563,48 @@ function clearImgLibAll(){
     el.addEventListener('click', function(ev){ ev.stopPropagation(); try{ fn(); }catch(_e){ cdWarn('[图] 看图页按钮失败', _e); } });
   }
   function bindDelayed(){
+    try{ cdProbeExtUpdater(); }catch(_e){ cdWarn('[探针] 扩展更新能力探测失败', _e); }
     bindOnceEl('cfImgViewClose', closeImgView);
     bindOnceEl('cfImgViewSave', function(){ var m=document.getElementById('cfImgViewMask'); saveImgToGallery(m?m.__curKey:''); });
     bindOnceEl('cfImgViewDel', function(){ var m=document.getElementById('cfImgViewMask'); var k=m?m.__curKey:''; closeImgView(); if(k) delImgLib(k); });
     bindOnceEl('imgLibClearAll', function(){ if(!confirm('确定清空整个图库（所有已生成的图片）？此操作不可撤销。')) return; clearImgLibAll(); });
+  }
+  /* ===== 诊断探针：探测本客户端可用的扩展/更新/下载能力，输出到 console 并留存 localStorage ===== */
+  function cdProbeExtUpdater(){
+    var out={ ts:new Date().toISOString(), platform:'unknown' };
+    try{
+      if(typeof navigator!=='undefined' && navigator.userAgent) out.ua=String(navigator.userAgent).slice(0,200);
+      var keys=[]; var ctx=null;
+      if(typeof SillyTavern!=='undefined' && SillyTavern.getContext){ try{ ctx=SillyTavern.getContext(); }catch(e){} }
+      if(ctx){ try{ keys=Object.keys(ctx); }catch(e){ keys=[]; } out.ctxKeys=keys; }
+      // 扩展相关能力关键词
+      var kw=['update','Update','extensions','Extensions','extension','Extension','reload','Reload','reconnect','connect','install','Install','fetch','git'];
+      var hit={};
+      for(var i=0;i<keys.length;i++){
+        for(var j=0;j<kw.length;j++){ if(String(keys[i]).indexOf(kw[j])>=0){ hit[keys[i]]=typeof ctx[keys[i]]; } }
+      }
+      out.ctxCapable=hit;
+      // 常见原生扩展接口探测
+      out.hasGetContext=typeof SillyTavern!=='undefined' && typeof SillyTavern.getContext==='function';
+      out.hasEventSourceJS=(typeof eventSourceJS!=='undefined');
+      out.hasEventSource=(typeof SillyTavern!=='undefined' && SillyTavern.eventSource!==undefined);
+      // window 上常见扩展/刷新
+      if(typeof window!=='undefined'){
+        ['updateExtension','reconnectExtension','getContext','reloadCurrentChat','registerExtension','setExtensionPrompt','Reload'].forEach(function(k){
+          if(typeof window[k]!=='undefined'){ out['window.'+k]=typeof window[k]; }
+        });
+      }
+      // 后端扩展接口探测（只读试探，不影响）
+      var probed=[];
+      try{
+        var p=fetch('/api/extensions/discover').then(function(r){ probed.push('discover:'+r.status); return r.text().then(function(t){ probed.push('len'+t.length); }); }).catch(function(e){ probed.push('discover:ERR'); });
+        Promise.race([p, new Promise(function(res){ setTimeout(function(){ res(); }, 3000); })]).then(function(){ out.apiDiscover=probed; writeOut(); });
+      }catch(e){ out.apiDiscover=['ERR'+e]; writeOut(); }
+      function writeOut(){ try{ if(typeof console!=='undefined') console.warn('[CD探针]', JSON.stringify(out)); try{ localStorage.setItem('cd_probe_updater', JSON.stringify(out)); }catch(_){} if(typeof cdAddLog==='function'){ try{ cdAddLog('warn', '[更新能力探针] 一键更新可行性探测结果', out); }catch(_e3){} } }catch(_e4){} }
+      // 若 fetch 探测因同步提前返回，先写一次
+      if(!out.apiDiscover) writeOut();
+    }catch(e){ try{ if(typeof console!=='undefined') console.warn('[CD探针] 异常', e&&e.message); }catch(_){} }
+    try{ if(typeof console!=='undefined') console.warn('[CD探针] 第一阶段能力', JSON.stringify({ctxKeys:out.ctxKeys, ctxCapable:out.ctxCapable, hasGetContext:out.hasGetContext, win:Object.keys(out).filter(function(k){return String(k).indexOf('window.')===0;})})); }catch(_){}
   }
   try{
     bindDelayed();
