@@ -1459,11 +1459,25 @@ function cdSplitDiaryArchive(text, hasDiary, hasArch) {
     const archiveText = hasArch !== false ? after : '';
     return { diaryText, archiveText };
   }
-  // 无分隔符：按启用的功能做保守分配
-  const idx = t.indexOf('主线：');
-  if (hasDiary && hasArch && idx >= 0) {
-    // 都开但没分隔符：尝试用「主线：」特征切
-    return { diaryText: t.slice(0, idx).trim(), archiveText: t.slice(idx).trim() };
+  // 无分隔符：增强判别，避免【时间·地点】的档案正文被误当日记而吞掉
+  if (hasDiary && hasArch) {
+    // ① 检测档案标签行（最早出现的归档标签 → 之前=日记，之后=档案）
+    const arcLabels = ['主线：','支线：','重要状态变化：','未解决事项：','章回标题：','剧情总览：','物品清单：','当前时间轴：','任务记录：'];
+    let eIdx = -1;
+    for (const lb of arcLabels) { const p = t.indexOf(lb); if (p >= 0 && (eIdx < 0 || p < eIdx)) eIdx = p; }
+    if (eIdx >= 0) {
+      return { diaryText: t.slice(0, eIdx).trim(), archiveText: t.slice(eIdx).trim() };
+    }
+    // ② 无档案标签：若存在【时间·地点】样式的多行正文（档案"状态/总览/主线"常长这样），整体归档案
+    const hasTimestampBody = /\n【[^】]+】|^【[^】]+】/.test(t) && /[·,，:：]|\d{4}年|\d{1,2}月|\d{1,2}日|\d{1,2}[::]\d{2}/.test(t);
+    if (hasTimestampBody) {
+      // 整体更像档案正文：给档案；若同时含明显 JSON(日记) 再尝试切
+      const jsonStart = t.indexOf('\n{"npcs"');
+      if (jsonStart >= 0) return { diaryText: t.slice(0, jsonStart).trim(), archiveText: t.slice(jsonStart).trim() };
+      return { diaryText: '', archiveText: t.trim() };
+    }
+    // ③ 最后保守：全文给日记(保持原行为，减少误判)
+    return { diaryText: t.trim(), archiveText: '' };
   }
   if (hasDiary) return { diaryText: t.trim(), archiveText: '' };
   if (hasArch)  return { diaryText: '', archiveText: t.trim() };
