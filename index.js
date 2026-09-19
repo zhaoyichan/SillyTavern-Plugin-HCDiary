@@ -1482,6 +1482,13 @@ function cdSplitDiaryArchive(text, hasDiary, hasArch) {
   }
   return { diaryText: t.trim(), archiveText: '' };
 }
+
+/** 清除合并输出里残留的分隔符标记（<<<CD_NEXT>>> 及 CD NEXT 等变体），防止它们污染剧情档案/状态界面 */
+function cdStripArchiveSeq(s){
+  if(!s) return '';
+  return String(s).replace(/<{2,3}\s*CD[_ \t-]*NEXT\s*>{2,3}/gi, '')
+    .split('\n').map(function(x){return String(x||'').trim();}).filter(Boolean).join('\n');
+}
 /** 把物品字段文本解析成有序数组 [{ time, desc }]，保持原文追加顺序 */
 function parseItemsText(text) {
   const out = [];
@@ -1504,6 +1511,7 @@ function parseItemsText(text) {
 /** 解析剧情档案的字段（主线/支线/重要状态变化/未解决事项 + 用户自定义追踪项） */
 function parseArchiveJson(text, customDefs) {
   let raw = String(text || '').trim();
+  try{ raw = (typeof cdStripArchiveSeq==='function') ? cdStripArchiveSeq(raw) : raw; }catch(_e){}
   let _locRaw = '';
   const _locM = String(raw).match(/<<<LOCATIONS>>>([\s\S]*?)<<<LOCATIONS_END>>>/);
   if (_locM) {
@@ -5084,6 +5092,7 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
     const _combo = resultMap['日记+档案'];
     if (_combo && _combo.status === 'fulfilled') {
       const _split = cdSplitDiaryArchive(String((_combo.value && _combo.value.text) || ''), _needDiary, _needArch);
+      if (typeof cdStripArchiveSeq === 'function') { if(_needDiary) _split.diaryText = cdStripArchiveSeq(_split.diaryText); if(_needArch) _split.archiveText = cdStripArchiveSeq(_split.archiveText); }
       if (_needDiary) {
         diaryRes = { status: 'fulfilled', value: { text: _split.diaryText, tokenUsage: _combo.value.tokenUsage } };
         cdAddLog('info', '[合并] 拆分出日记段', { 长度: (_split.diaryText || '').length, 前80: (_split.diaryText || '').slice(0, 80) });
