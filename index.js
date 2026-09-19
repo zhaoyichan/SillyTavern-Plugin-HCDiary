@@ -6,7 +6,7 @@
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.18.1';
+const PLUGIN_VERSION = '2.18.2';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -11539,7 +11539,8 @@ async function cdRenderSettings() {
       <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-arrows-rotate"></i></span><span><span class="cds-gtitle">检查更新</span><span class="cds-gsub">一键检测新版本</span></span></div>
       <div class="cds-row"><span class="cds-lab">当前版本</span><span class="cds-ctrl"><span class="cds-val" id="cd-upd-local">v${PLUGIN_VERSION}</span></span></div>
       <div class="cds-row"><span class="cds-lab">最新版本</span><span class="cds-ctrl"><span class="cds-val" id="cd-upd-remote" style="min-width:58px;">-</span></span></div>
-      <div class="cds-row" style="justify-content:flex-start;"><button class="cd-btn-secondary" id="cd-btn-check-update"><i class="fa-solid fa-magnifying-glass" style="margin-right:5px;"></i>检查更新</button></div>
+      <div class="cds-row" style="justify-content:flex-start;gap:8px;"><button class="cd-btn-secondary" id="cd-btn-check-update"><i class="fa-solid fa-magnifying-glass" style="margin-right:5px;"></i>检查更新</button><button class="cd-btn-secondary" id="cd-btn-download-update" style="display:none;color:#c84632;border-color:#e0b8ae;background:#fdf0ec;"><i class="fa-solid fa-download" style="margin-right:5px;"></i>下载更新</button></div>
+      <div class="cds-hint" id="cd-upd-status" style="white-space:normal;line-height:1.6;margin-top:4px;"></div>
     </div>
     <div class="cds-card">
       <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-power-off"></i></span><span><span class="cds-gtitle">基本 · 总控</span><span class="cds-gsub">插件总开关与悬浮球</span></span></div>
@@ -11824,22 +11825,11 @@ async function cdRenderSettings() {
     if (typeof toastr !== 'undefined') toastr.success('回复后回到开头' + ($(this).is(':checked') ? '已开启' : '已关闭'));
   });
   // ★ [2026-09-18] 检查更新按钮：探测本机原生"扩展更新/安装"接口可行性(true auto-update)，全程写日志供主人导出
+  // ===== 「检查更新」：只检测版本，检测到新版则显示「下载更新」按钮 =====
   $('#cd-btn-check-update').off('click').on('click', function () {
     try {
       if (typeof toastr === 'function') toastr.info('正在检查更新…');
-      // ===== 1) 探测后端扩展更新/安装接口（只读/最小请求，绝不真正安装） =====
-      var probeEndpoints = ['/api/extensions/discover','/api/extensions/update','/api/extensions/install','/api/plugins/extension/update','/api/plugins/update','/api/extensions/reinstall','/api/extensions/pull'];
-      var P = [];
-      probeEndpoints.forEach(function(pth){
-        P.push(fetch(pth, { method:'GET', headers:{'Accept':'application/json'} }).then(function(r){
-          return { path:pth, status:r.status, type:(r.headers&&r.headers.get&&r.headers.get('content-type'))||'' };
-        }).catch(function(e){ return { path:pth, status:'ERR', err:String(e&&e.message||e) }; }));
-      });
-      Promise.all(P).then(function(resList){
-        if(typeof cdAddLog==='function'){ try{ cdAddLog('warn', '[更新自动探测] 后端扩展更新/安装接口可达性', { 结果: resList, 说明: 'status=-表示接口存在/可用；404/405=该接口不存在或方法不对；200=很可能可用' }); }catch(_e1){} }
-        if(typeof console!=='undefined') console.warn('[更新自动探测]', JSON.stringify(resList));
-      });
-      // ===== 2) 检查 Github 是否有新版本 =====
+      var st = document.getElementById('cd-upd-status'); if(st) st.textContent='检查中…';
       fetch(REPO_URL).then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
         .then(function(data){
           var rv=(data&&(data.tag_name||data.name)||'').replace(/^v/,'').trim();
@@ -11849,36 +11839,69 @@ async function cdRenderSettings() {
           var fa=String(rv||'0').split('.').map(function(n){return parseInt(n,10)||0;});
           var fb=String(lv||'0').split('.').map(function(n){return parseInt(n,10)||0;});
           for(var i=0;i<Math.max(fa.length,fb.length);i++){ var x=fa[i]||0, y=fb[i]||0; if(x!==y){ newer=x>y; break; } }
-          if(typeof cdAddLog==='function'){ try{ cdAddLog('info', '[更新自动探测] GitHub版本', { 本地: lv, 远端: rv, 有新版本: newer }); }catch(_e2){} }
+          var dl=document.getElementById('cd-btn-download-update');
           if(newer){
-            if(typeof toastr==='function') toastr.info('发现新版本 v'+rv+'（当前 v'+lv+'），正在自动更新…');
-            // ★ [2026-09-18] 真·一键自动更新：调酒馆后端 /api/extensions/update（鞭炮同款机制）
-            try{
-              var ctx2 = (typeof SillyTavern!=='undefined' && SillyTavern.getContext) ? SillyTavern.getContext() : null;
-              var hdr = (ctx2 && typeof ctx2.getRequestHeaders==='function') ? ctx2.getRequestHeaders() : {'Content-Type':'application/json'};
-              var extName = 'SillyTavern-Plugin-HCDiary';
-              fetch('/api/extensions/update', { method:'POST', headers:hdr||{'Content-Type':'application/json'}, body:JSON.stringify({ extensionName: extName, global:false }) })
-                .then(function(r){
-                  if(r.ok){ if(typeof toastr==='function') toastr.success('更新完成 v'+rv+'，插件文件已更新，请完全重启酒馆生效'); }
-                  else { return r.text().then(function(t){ throw new Error('HTTP '+r.status+' '+String(t||'').slice(0,150)); }); }
-                  if(typeof cdAddLog==='function'){ try{ cdAddLog('warn','[更新自动][OK] '+extName+' 更新调用成功', { remote:rv }); }catch(_e){} }
-                })
-                .catch(function(e2){
-                  if(typeof toastr==='function') toastr.error('自动更新失败：'+((e2&&e2.message)||'未知')+'\n可到「酒馆→扩展管理器/扩展列表」手动更新');
-                  if(typeof cdAddLog==='function'){ try{ cdAddLog('error','[更新自动][FAIL] '+extName, { err:(e2&&e2.message)||e2 }); }catch(_e2){} }
-                });
-            }catch(_ae){ if(typeof toastr==='function') toastr.error('触发更新失败');
-              if(typeof cdAddLog==='function'){ try{ cdAddLog('error','[更新自动] 触发异常',{err:_ae&&_ae.message}); }catch(_e3){} }
-            }
+            if(st) st.textContent='发现新版本 v'+rv+'（当前 v'+lv+'），点击「下载更新」安装';
+            if(dl) dl.style.display='inline-flex';
+            if(typeof toastr==='function') toastr.warning('发现新版本 v'+rv+'（当前 v'+lv+'），可点击「下载更新」安装');
+          } else {
+            if(st) st.textContent='已是最新版本 v'+(lv||'?');
+            if(dl) dl.style.display='none';
+            if(typeof toastr==='function') toastr.success('已是最新版本 v'+(lv||'?'));
           }
-          else { if(typeof toastr==='function') toastr.success('已是最新版本 v'+(lv||'?')); }
         })
         .catch(function(e){
-          if(typeof cdAddLog==='function'){ try{ cdAddLog('warn', '[更新自动探测] GitHub检查失败', { err:(e&&e.message)||'网络错误' }); }catch(_e3){} }
+          if(st) st.textContent='检查失败：'+((e&&e.message)||'网络错误')+'（请检查网络或稍后重试）';
           if(typeof toastr==='function') toastr.error('检查更新失败：'+((e&&e.message)||'网络错误'));
         });
-    } catch(e){ if (typeof toastr === 'function') toastr.error('检查更新异常'); if(typeof cdAddLog==='function'){ try{ cdAddLog('error','[更新自动探测] 异常',{err:e&&e.message}); }catch(_e){} } }
+    } catch(e){ if(typeof toastr==='function') toastr.error('检查更新异常'); }
   });
+
+  // ===== 「下载更新」：触发酒馆后端 /api/extensions/update，界面反馈 下载中/成功/失败原因 =====
+  $('#cd-btn-download-update').off('click').on('click', function () {
+    var btn=document.getElementById('cd-btn-download-update');
+    var st=document.getElementById('cd-upd-status');
+    var oldHtml = btn ? btn.innerHTML : '';
+    try{
+      if(btn){ btn.disabled=true; btn.innerHTML='<i class="fa-solid fa-spinner fa-spin" style="margin-right:5px;"></i>下载中…'; }
+      if(st) st.textContent='正在下载更新并安装，请稍候…（可能需要一点时间）';
+      var ctx2=(typeof SillyTavern!=='undefined'&&SillyTavern.getContext)?SillyTavern.getContext():null;
+      var hdr=(ctx2&&typeof ctx2.getRequestHeaders==='function')?ctx2.getRequestHeaders():{'Content-Type':'application/json'};
+      var extName='SillyTavern-Plugin-HCDiary';
+      fetch('/api/extensions/update',{method:'POST',headers:hdr||{'Content-Type':'application/json'},body:JSON.stringify({extensionName:extName,global:true})})
+        .then(function(r){
+          if(!r.ok){ return r.text().then(function(t){ var m='HTTP '+r.status+(String(t||'').slice(0,200)?' '+String(t).slice(0,200):''); throw new Error(m); }); }
+          if(btn){ btn.disabled=false; btn.innerHTML=oldHtml; btn.style.display='none'; }
+          var lv=(typeof PLUGIN_VERSION!=='undefined')?String(PLUGIN_VERSION):'';
+          if(st) st.textContent='更新成功！插件文件已更新，请完全重启酒馆生效。';
+          if(typeof toastr==='function') toastr.success('更新成功，插件文件已更新，请完全重启酒馆生效');
+          if(typeof cdAddLog==='function'){ try{ cdAddLog('warn','[更新][OK] 一键更新成功',{extension:extName}); }catch(_e){} }
+          setTimeout(function(){ try{ location.reload(); }catch(_e2){ } }, 1500);
+        })
+        .catch(function(e2){
+          if(btn){ btn.disabled=false; btn.innerHTML=oldHtml; }
+          var msg=(e2&&e2.message)||'未知错误';
+          var nice=cdFriendlyUpdateErr(msg);
+          if(st) st.textContent='更新失败：'+nice;
+          if(typeof toastr==='function') toastr.error('更新失败：'+nice);
+          if(typeof cdAddLog==='function'){ try{ cdAddLog('error','[更新][FAIL] 一键更新失败',{err:msg}); }catch(_e3){} }
+        });
+    }catch(e){ if(btn){ btn.disabled=false; btn.innerHTML=oldHtml; } if(typeof toastr==='function') toastr.error('触发更新异常'); }
+  });
+
+  // 把后端错误翻译成用户可读的原因（网络/目录/Git 等）
+  function cdFriendlyUpdateErr(m){
+    if(!m) return '未知错误，请查看日志或稍后重试';
+    var s=String(m);
+    if(/404|not found|not found at/i.test(s) && /extensions/i.test(s)) return '找不到插件安装目录（可能安装位置不在此处）';
+    if(/409|mutation|already running/i.test(s)) return '有另一个更新正在执行，请稍等几秒再试';
+    if(/timeout|ETIMEDOUT|talking to the server|socket|ECONN/i.test(s)) return '网络连接 GitHub 失败（可能是网络不稳定或被墙），请检查网络后重试';
+    if(/IO error|git fetch|prepare git/i.test(s)) return 'GitHub 拉取失败（多为网络问题或仓库连接异常），请检查网络后重试';
+    if(/auth|forbidden|401|403|token/i.test(s)) return '权限/认证失败，无法访问该仓库';
+    if(/500|502|503|504/i.test(s)) return '服务器暂时出错（多为网络问题），请稍后重试';
+    return s.slice(0,120);
+  }
+
   // 立即试听（用当前生效音：用户 uri 优先）
   $('#cd-btn-tone-preview').off('click').on('click', function () {
     try { if (typeof cdPlayReplyToneForce === 'function') cdPlayReplyToneForce(); else if (typeof cdPreviewReplyTone === 'function') cdPreviewReplyTone(); } catch(e){}
@@ -12288,6 +12311,15 @@ async function cdRenderEgg() {
 
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
+    {
+    version: 'v2.18.2',
+    date: '2026-09-19',
+    items: [
+      '【升级检查更新为两段式一键更新】点「检查更新」仅检测版本(发现新版后显示「下载更新」按钮)；点「下载更新」触发酒馆后端 /api/extensions/update 真正 git 拉取安装；界面直显 下载中/成功/失败原因(网络/目录/Git/冲突等友好翻译)，不再只写日志。',
+      '【删楼重复请求修复】删楼层后会触发 MESSAGE_RECEIVED+RENDERED 双事件导致同一批被重复自动总结(请求两次)——删楼窗口内(2秒)抑制自动总结。',
+      '【修复一处 UI 提示】删除设置面板过时引导「到扩展管理器/扩展列表手动更新」。',
+    ],
+  },
     {
     version: 'v2.18.1',
     date: '2026-09-18',
@@ -12812,7 +12844,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.18.1 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.18.2 · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角 <i class="fa-regular fa-sliders"></i> 进入设置，配置好 API 即可使用
         </p>
