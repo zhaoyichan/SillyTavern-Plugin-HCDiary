@@ -1451,36 +1451,35 @@ async function cdBuildDiaryArchiveCombined(windowFloors, data, s, archiveFull) {
 function cdSplitDiaryArchive(text, hasDiary, hasArch) {
   const t = String(text || '');
   const A = '<<<CD_NEXT>>>';
-  const iA = t.lastIndexOf(A);
-  if (iA >= 0) {
+  // ★ 分界用第一个分隔符(indexOf)：同开日记+档案时，第一个分隔符前=日记，后=档案全部。
+  //   原用 lastIndexOf(最后一个) 会把分隔符前整段档案正文误当日记吞掉——这是档案被切空/只剩章回标题的真凶。
+  const iA = t.indexOf(A);
+  if (hasDiary !== false && hasArch !== false && iA >= 0) {
     const before = t.slice(0, iA).trim();
     const after  = t.slice(iA + A.length).trim();
-    const diaryText = hasDiary !== false ? before : '';
-    const archiveText = hasArch !== false ? after : '';
-    return { diaryText, archiveText };
+    return { diaryText: before, archiveText: after };
   }
-  // 无分隔符：增强判别，避免【时间·地点】的档案正文被误当日记而吞掉
-  if (hasDiary && hasArch) {
-    // ① 检测档案标签行（最早出现的归档标签 → 之前=日记，之后=档案）
-    const arcLabels = ['主线：','支线：','重要状态变化：','未解决事项：','章回标题：','剧情总览：','物品清单：','当前时间轴：','任务记录：'];
-    let eIdx = -1;
-    for (const lb of arcLabels) { const p = t.indexOf(lb); if (p >= 0 && (eIdx < 0 || p < eIdx)) eIdx = p; }
-    if (eIdx >= 0) {
-      return { diaryText: t.slice(0, eIdx).trim(), archiveText: t.slice(eIdx).trim() };
-    }
-    // ② 无档案标签：若存在【时间·地点】样式的多行正文（档案"状态/总览/主线"常长这样），整体归档案
-    const hasTimestampBody = /\n【[^】]+】|^【[^】]+】/.test(t) && /[·,，:：]|\d{4}年|\d{1,2}月|\d{1,2}日|\d{1,2}[::]\d{2}/.test(t);
-    if (hasTimestampBody) {
-      // 整体更像档案正文：给档案；若同时含明显 JSON(日记) 再尝试切
-      const jsonStart = t.indexOf('\n{"npcs"');
-      if (jsonStart >= 0) return { diaryText: t.slice(0, jsonStart).trim(), archiveText: t.slice(jsonStart).trim() };
-      return { diaryText: '', archiveText: t.trim() };
-    }
-    // ③ 最后保守：全文给日记(保持原行为，减少误判)
+  // 只开档案：全部归档案（宽松，即使多余分隔符也无妨）
+  if (hasDiary === false && hasArch !== false) {
+    return { diaryText: '', archiveText: t.trim() };
+  }
+  // 只开日记：全部归日记
+  if (hasArch === false && hasDiary !== false) {
     return { diaryText: t.trim(), archiveText: '' };
   }
-  if (hasDiary) return { diaryText: t.trim(), archiveText: '' };
-  if (hasArch)  return { diaryText: '', archiveText: t.trim() };
+  // 都开但无分隔符：按档案标签/正文判别
+  const arcLabels = ['主线：','支线：','重要状态变化：','未解决事项：','章回标题：','剧情总览：','物品清单：','当前时间轴：','任务记录：'];
+  let eIdx = -1;
+  for (const lb of arcLabels) { const p = t.indexOf(lb); if (p >= 0 && (eIdx < 0 || p < eIdx)) eIdx = p; }
+  if (eIdx >= 0) {
+    return { diaryText: t.slice(0, eIdx).trim(), archiveText: t.slice(eIdx).trim() };
+  }
+  const hasTimestampBody = /\n【[^】]+】|^【[^】]+】/.test(t) && /[·,，:：]|\d{4}年|\d{1,2}月|\d{1,2}日|\d{1,2}[::]\d{2}/.test(t);
+  if (hasTimestampBody) {
+    const jsonStart = t.indexOf('\n{"npcs"');
+    if (jsonStart >= 0) return { diaryText: t.slice(0, jsonStart).trim(), archiveText: t.slice(jsonStart).trim() };
+    return { diaryText: '', archiveText: t.trim() };
+  }
   return { diaryText: t.trim(), archiveText: '' };
 }
 /** 把物品字段文本解析成有序数组 [{ time, desc }]，保持原文追加顺序 */
