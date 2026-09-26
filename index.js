@@ -2962,6 +2962,8 @@ async function cdBuildDiaryInjectionText() {
 
 /** 注入状态管理 */
 let _cdInjectionRegistered = false;
+// idempotency dedupe injection by eventData.chat ref
+const _cdInjectedChatRefs = new WeakSet();
 let _cdInjectionKey = 'character-diary-memory';
 /** 缓存最近一次生成的注入消息（供 CHAT_COMPLETION_PROMPT_READY 手动按位置插入） */
 let _cdInjectMsg = null;
@@ -3256,6 +3258,8 @@ async function cdOnBeforeGeneration(eventData) {
     const chat = data.chat || [];
     const dryRun = data.dryRun === true || data.dry_run === true;
     if (dryRun || !Array.isArray(chat) || !chat.length) return;
+    // idempotent: skip if already injected for this chat ref
+    if (typeof _cdInjectedChatRefs.has === 'function' && _cdInjectedChatRefs.has(chat)) { return; }
 
     // ★ 主开关关闭则不注入
     const _s = cdGetSettings();
@@ -3326,6 +3330,8 @@ async function cdOnBeforeGeneration(eventData) {
     _insertRitual(_grp.before, 'before');
     _insertRitual(_grp.chat, 'chat');
     _insertRitual(_grp.after, 'after');
+    // idempotent: mark this chat as injected
+    if (typeof _cdInjectedChatRefs.add === 'function') { try { _cdInjectedChatRefs.add(chat); } catch (e) {} }
   } catch (e) {
     cdWarn('cdOnBeforeGeneration 失败', e);
   }
