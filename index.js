@@ -215,7 +215,7 @@ const DEFAULT_SETTINGS = {
   fabDirectForum  : false,        // 论坛直达：开启后点悬浮球直接打开跨世界论坛（关闭后回记忆面板/回酒馆见交互）
   themeMode       : 'day',       // 'auto' | 'day' | 'night'
   fontScale       : 1,            // 界面字号缩放 0.8~1.4（1=标准）
-  replyTone       : true,          // AI 回复结束提示音（默认开，可关闭）
+  replyTone       : false,          // AI 回复结束提示音（默认关，新装不响；可手动开启）
   replyToneUri     : '',            // 用户自定义提示音 data URI（空=用内置小剧场）
   replyToneName    : '',            // 当前使用提示音文件名（界面显示用）
   replyToneMode    : 'reply',           // 提示音触发时机: 'reply'=AI回复后 | 'summary'=插件总结后 | 'both'=两者都响
