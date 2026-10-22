@@ -22705,15 +22705,31 @@ async function cdSaveSetLib(lib) {
     throw e;
   }
 }
-// 角色名 → 存档数组
+/* 字节数格式化（真实值；为 0 / 取不到返回空串，界面就不渲染这一项） */
+function _cdSaveFmtBytes(n) {
+  n = Number(n) || 0;
+  if (n <= 0) return '';
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n / 1024).toFixed(0) + ' KB';
+  return (n / 1048576).toFixed(1) + ' MB';
+}
+/* 存档 id 里带的时间戳，用于按真实时间倒序 */
+function _cdSaveTs(s) {
+  const m = /^s(\d+)_/.exec(String((s && s.id) || ''));
+  return m ? Number(m[1]) : 0;
+}
+/* 角色名 → 存档数组
+   ★ FIX12：'未归类' 是 __anon__ 的显示名（老存档落在这里，以前界面直接跳过导致看不见）*/
 async function cdSaveGetSlots(charName) {
   const lib = await cdSaveGetLib();
   if (!charName) return lib.__anon__ || [];
+  if (charName === '未归类' && !lib['未归类'] && lib.__anon__) return lib.__anon__;
   return lib[charName] || [];
 }
 async function cdSaveSetSlots(charName, slots) {
   const lib = await cdSaveGetLib();
   if (!charName) charName = '__anon__';
+  else if (charName === '未归类' && !lib['未归类'] && lib.__anon__) charName = '__anon__';
   lib[charName] = slots;
   await cdSaveSetLib(lib);
 }
@@ -22772,6 +22788,12 @@ async function cdSaveWrite(slotIdx, note, memo) {
       }).filter(Boolean),
       memory: data
     };
+    // ★ FIX12：把真实占用与来源聊天记进存档，界面才显示得出来（算不出来就不显示）
+    try { rec.size = new Blob([JSON.stringify(rec)]).size; } catch (e) { rec.size = 0; }
+    try {
+      const _cx = SillyTavern.getContext();
+      rec.chatFile = (_cx && _cx.chatId) ? String(_cx.chatId) : '';
+    } catch (e) { rec.chatFile = ''; }
     let slots = (await cdSaveGetSlots(charName)).slice();
     // ★ 追加不覆盖：新存档 push 到末尾，绝不覆盖已有存档
     slots = slots.filter(function (x) { return !!x; });
@@ -22851,8 +22873,10 @@ async function cdSaveGetAllGroups() {
   const lib = await cdSaveGetLib();
   const out = [];
   Object.keys(lib).forEach(function (k) {
-    if (k === '__anon__') return;
-    if (Array.isArray(lib[k])) out.push({ charName: k, slots: lib[k] });
+    // ★ FIX12：不再跳过 __anon__。以前落在这里的存档（没有角色上下文时存的）
+    //   在界面上永远看不见，用户以为「存档没了」。现在显示为「未归类」。
+    const _nm = (k === '__anon__') ? '未归类' : k;
+    if (Array.isArray(lib[k])) out.push({ charName: _nm, slots: lib[k] });
   });
   out.sort(function (a, b) { return a.charName.localeCompare(b.charName, 'zh'); });
   return out;
@@ -23035,74 +23059,72 @@ async function cdRenderSave() {
     let html = '';
     html += '<input type="file" id="cd-save-import" accept="application/json,.json" style="display:none;" onchange="cdSaveImportFile(this.files&&this.files[0]);this.value=\'\';">';
     // 批5：存档容量显示
-    var _capUsed=0, _capPer=100;
-    try { groups.forEach(function (g){ _capUsed += (Array.isArray(g.slots) ? g.slots : []).filter(function (x){ return !!x; }).length; }); } catch(e) {}
-    var _capTotal = groups.length ? (groups.length * _capPer) : _capPer;
-    var _capPct = _capTotal > 0 ? Math.min(100, Math.round(_capUsed/_capTotal*100)) : 0;
-    html += '<div class="cd-gs-cap"><span class="cd-gs-cap-lbl"><i class="fa-regular fa-floppy-disk"></i> 存档容量</span><span class="cd-gs-cap-num">已用 '+_capUsed+' 格 / 可存 '+_capTotal+' 格</span><span class="cd-gs-cap-track"><span class="cd-gs-cap-fill" style="width:'+_capPct+'%;"></span></span></div>';
-    // 角色卡墙（紧凑密排）
-    html += '<div class="cd-gs-grid">';
-    if (!groups.length) {
-      html += '<div class="cd-gs-empty"><i class="fa-regular fa-floppy-disk"></i><span>还没有存档</span>'
-        + '<button class="cd-gs-new" onclick="cdSaveNewCurrent()"><i class="fa-regular fa-plus"></i> 存一个新档</button></div>';
-    } else {
-      var _hasFilled = false;
+    // ★ FIX12：顶部统计全部由真实遍历累加得出（没有就不渲染该项）
+    //   原来的「已用 X 格 / 可存 N×100 格」是硬编码假数字 —— 存档根本没有 100 格上限。
+    var _totalN = 0, _totalB = 0;
+    try {
       groups.forEach(function (g) {
-        var filled = (Array.isArray(g.slots) ? g.slots : []).filter(function (x) { return !!x; }).length;
-        if (filled) _hasFilled = true;
-        const isCur = (g.charName === curChar);
-        html += '<div class="cd-gs-card" onclick="cdSaveGoSlots(\'' + String(g.charName || '').replace(/'/g, "\'") + '\')">'
-          + '<div class="cd-gs-row"><i class="fa-regular fa-user cd-gs-ava"></i>'
-          + '<span class="cd-gs-nm">' + escapeHtml(g.charName || '未命名') + (isCur ? ' <em class="cd-gs-cur">当前</em>' : '') + '</span>'
-          + '<span class="cd-gs-ld">读档</span></div>'
-          + '<div class="cd-gs-chips">'
-          + (filled ? '<span class="cd-gs-chip cd-gs-chip-hl">' + filled + ' 档</span>' : '<span class="cd-gs-chip cd-gs-chip-empty">0 档</span>')
-          + (isCur ? '<span class="cd-gs-chip cd-gs-chip-now">进行中</span>' : '')
-          + '</div></div>';
+        (Array.isArray(g.slots) ? g.slots : []).forEach(function (x) {
+          if (!x) return;
+          _totalN++;
+          _totalB += (Number(x.size) || 0);
+        });
       });
-      // 末尾补 2 个空白矮档位，让"还能存"可见
-      html += '<div class="cd-gs-card cd-gs-blank" onclick="cdSaveNewCurrent()"><span class="cd-gs-plus">＋</span><span class="cd-gs-tx">新档</span></div>';
-      html += '<div class="cd-gs-card cd-gs-blank" onclick="cdSaveNewCurrent()"><span class="cd-gs-plus">＋</span><span class="cd-gs-tx">新档</span></div>';
+    } catch (e) {}
+    var _szAll = _cdSaveFmtBytes(_totalB);
+    html += '<div class="cd-sv-top">'
+      + '<span class="cd-sv-ttl"><i class="fa-regular fa-floppy-disk"></i>存档库</span>'
+      + '<span class="cd-sv-badge">全局 · 跨聊天共享</span>'
+      + '<span class="cd-sv-stat">';
+    if (groups.length) html += '<span class="cd-sv-st"><b>' + groups.length + '</b><span>位角色</span></span>';
+    if (_totalN)       html += '<span class="cd-sv-st"><b>' + _totalN + '</b><span>份存档</span></span>';
+    if (_szAll)        html += '<span class="cd-sv-st"><b>' + _szAll + '</b><span>占用</span></span>';
+    html += '</span></div>';
+    // 角色卡墙（紧凑密排）
+    html += '<div class="cd-sv-grid">';
+    if (!groups.length) {
+      html += '<div class="cd-sv-empty"><i class="fa-regular fa-floppy-disk"></i><span>还没有存档</span>'
+        + '<button class="cd-sv-btn cd-sv-btn-pri" onclick="cdSaveNewCurrent()"><i class="fa-regular fa-plus"></i> 存一个新档</button></div>';
+    } else {
+      groups.forEach(function (g) {
+        var _ss = (Array.isArray(g.slots) ? g.slots : []).filter(function (x) { return !!x; });
+        var _n = _ss.length, _b = 0;
+        _ss.forEach(function (x) { _b += (Number(x.size) || 0); });
+        var _sz = _cdSaveFmtBytes(_b);
+        // 最新一份：按 id 里的真实时间戳取最大
+        var _last = null;
+        _ss.forEach(function (x) { if (!_last || _cdSaveTs(x) > _cdSaveTs(_last)) _last = x; });
+        const isCur = (g.charName === curChar);
+        var _av = '';
+        try { if (typeof cdCharImgUrlFor === 'function') _av = cdCharImgUrlFor(g.charName, 'avatar') || ''; } catch (e) {}
+        var _cn = String(g.charName || '').replace(/'/g, "\'");
+        html += '<div class="cd-sv-card' + (isCur ? ' is-cur' : '') + '" onclick="cdSaveGoSlots(\'' + _cn + '\')">'
+          + '<div class="cd-sv-card-hd">'
+          + (_av ? '<img class="cd-sv-ava" src="' + _av + '" alt="">'
+                 : '<span class="cd-sv-ava-ph"><i class="fa-regular fa-user"></i></span>')
+          + '<span class="cd-sv-nm">' + escapeHtml(g.charName || '未命名') + '</span>'
+          + (isCur ? '<em class="cd-sv-cur">当前</em>' : '')
+          + '</div>'
+          + '<div class="cd-sv-metrics">'
+          + '<span class="cd-sv-m"><b>' + _n + '</b> 份</span>'
+          + (_sz ? '<span class="cd-sv-m cd-sv-m-dim">' + _sz + '</span>' : '')
+          + '</div>'
+          + (_last && _last.time ? '<div class="cd-sv-last"><i class="fa-regular fa-clock"></i> ' + escapeHtml(_last.time) + '</div>' : '')
+          + '</div>';
+      });
+      // 末尾补 1 个「新档」入口（不再是假的空白容量位）
+      html += '<div class="cd-sv-card cd-sv-blank" onclick="cdSaveNewCurrent()">'
+        + '<span class="cd-sv-plus">＋</span><span class="cd-sv-tx">存个新档</span></div>';
     }
     html += '</div>';
     // 底部工具条
-    html += '<div class="cd-gs-footbar">'
-      + '<button class="cd-gs-fbtn cd-gs-fbtn-primary" onclick="cdSaveNewCurrent()"><i class="fa-regular fa-plus"></i> 新档</button>'
-      + '<button class="cd-gs-fbtn" onclick="cdSaveExport()"><i class="fa-regular fa-download"></i> 导出</button>'
-      + '<button class="cd-gs-fbtn" onclick="document.getElementById(\'cd-save-import\').click()"><i class="fa-regular fa-upload"></i> 导入</button>'
+    html += '<div class="cd-sv-footbar">'
+      + '<button class="cd-sv-btn cd-sv-btn-pri" onclick="cdSaveNewCurrent()"><i class="fa-regular fa-plus"></i> 新档</button>'
+      + '<button class="cd-sv-btn" onclick="cdSaveExport()"><i class="fa-regular fa-download"></i> 导出</button>'
+      + '<button class="cd-sv-btn" onclick="document.getElementById(\'cd-save-import\').click()"><i class="fa-regular fa-upload"></i> 导入</button>'
       + '</div>';
     document.getElementById('cd-content').innerHTML = html;
-    // 注入玻璃浅灰样式
-    if (!document.getElementById('cd-gs-style')) {
-      const st = document.createElement('style'); st.id = 'cd-gs-style';
-      st.textContent = [
-        '#cd-content .cd-gs-head{display:flex;justify-content:space-between;align-items:baseline;margin:2px 2px 12px;}',
-        '#cd-content .cd-gs-tt{font-size:19px;font-weight:700;color:#2c3540;}',
-        '#cd-content .cd-gs-stat{font-size:12px;color:#98a1ad;}',
-        '#cd-content .cd-gs-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:10px;}',
-        '#cd-content .cd-gs-card{position:relative;overflow:hidden;background:rgba(255,255,255,.62);border:1px solid rgba(255,255,255,.75);border-radius:12px;padding:12px 12px 10px;cursor:pointer;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 4px 16px rgba(110,125,145,.12);transition:box-shadow .15s,transform .15s;}',
-        '#cd-content .cd-gs-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(110,125,145,.22);border-color:rgba(185,196,207,.9);}',
-        '#cd-content .cd-gs-row{display:flex;align-items:center;gap:7px;margin-bottom:8px;}',
-        '#cd-content .cd-gs-ava{width:26px;height:26px;border-radius:8px;font-size:13px;color:#fff;display:flex;align-items:center;justify-content:center;background:linear-gradient(150deg,#8d9bab,#6e7e90);flex-shrink:0;font-style:normal;}',
-        '#cd-content .cd-gs-nm{font-weight:700;font-size:12.5px;color:#2c3540;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
-        '#cd-content .cd-gs-nm em{font-style:normal;font-size:9px;color:#7f8da0;background:rgba(127,141,160,.14);border-radius:10px;padding:1px 6px;margin-left:4px;}',
-        '#cd-content .cd-gs-ld{font-size:10.5px;color:#8393a6;flex-shrink:0;}',
-        '#cd-content .cd-gs-chips{display:flex;gap:4px;flex-wrap:wrap;}',
-        '#cd-content .cd-gs-chip{border:1px solid rgba(185,196,207,.5);background:rgba(255,255,255,.5);border-radius:6px;padding:2px 7px;font-size:10px;color:#5b6a78;}',
-        '#cd-content .cd-gs-chip-hl{background:linear-gradient(150deg,#8797aa,#6b7b8e);color:#fff;border:none;font-weight:600;}',
-        '#cd-content .cd-gs-chip-empty{border-style:dashed;color:#a8b2bc;background:transparent;}',
-        '#cd-content .cd-gs-chip-now{border-color:#c8d3de;color:#43505f;background:rgba(200,211,222,.3);}',
-        '#cd-content .cd-gs-card.cd-gs-blank{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:66px;border-style:dashed;color:#a8b2bc;background:rgba(255,255,255,.3);}',
-        '#cd-content .cd-gs-blank .cd-gs-plus{font-size:20px;color:#98a4b0;}',
-        '#cd-content .cd-gs-blank .cd-gs-tx{font-size:9.5px;letter-spacing:.12em;margin-top:2px;}',
-        '#cd-content .cd-gs-empty{display:flex;flex-direction:column;align-items:center;gap:10px;padding:30px 0;color:#98a1ad;grid-column:1/-1;}',
-        '#cd-content .cd-gs-footbar{display:flex;gap:8px;justify-content:center;margin-top:16px;border-top:1px solid rgba(130,145,162,.16);padding-top:14px;}',
-        '#cd-content .cd-gs-fbtn{border:1px solid rgba(185,196,207,.6);background:rgba(255,255,255,.6);color:#3b4650;padding:7px 20px;border-radius:11px;cursor:pointer;font-size:12px;backdrop-filter:blur(8px);display:inline-flex;align-items:center;gap:5px;font-family:inherit;}',
-        '#cd-content .cd-gs-fbtn:hover{background:rgba(255,255,255,.92);color:#2c3540;box-shadow:0 5px 16px rgba(110,125,145,.16);}',
-        '#cd-content .cd-gs-fbtn-primary{background:linear-gradient(150deg,#8d9bab,#6e7e90);color:#fff;border:none;}'
-      ].join('\n');
-      (document.head || document.documentElement).appendChild(st);
-    }
+    // ★ FIX12：样式已移入 style.css（跟随四主题令牌），不再内联硬编码灰蓝玻璃色
   } catch (e) {
     document.getElementById('cd-content').innerHTML = '<div class="cd-empty"><p>存档界面渲染失败</p><p class="cd-empty-sub">' + escapeHtml(e && e.message) + '</p></div>';
   }
@@ -23124,23 +23146,35 @@ function cdSaveNewCurrent() {
 async function cdSaveGoSlots(name) {
   try {
     const _sl = await cdSaveGetSlots(name);
-    const slots = (_sl || []).filter(function (x) { return !!x; }).sort(function (a, b) { return ((b && b.star) ? 1 : 0) - ((a && a.star) ? 1 : 0); });
+    // ★ FIX12：置顶优先，其余按 id 里的真实时间倒序（原来同组内是无序的）
+    const slots = (_sl || []).filter(function (x) { return !!x; }).sort(function (a, b) {
+      return (((b && b.star) ? 1 : 0) - ((a && a.star) ? 1 : 0)) || (_cdSaveTs(b) - _cdSaveTs(a));
+    });
     const filled = slots.length;
+    var _b2 = 0, _lastT = '';
+    slots.forEach(function (x) { _b2 += (Number(x.size) || 0); });
+    var _lastRec = slots.length ? slots[0] : null;
+    slots.forEach(function (x) { if (!_lastRec || _cdSaveTs(x) > _cdSaveTs(_lastRec)) _lastRec = x; });
+    if (_lastRec && _lastRec.time) _lastT = _lastRec.time;
+    var _sz2 = _cdSaveFmtBytes(_b2);
     let html = '';
-    html += '<div class="cd-save-back" onclick="cdRenderSave()"><i class="fa-regular fa-chevron-left"></i> 返回角色列表</div>';
-    html += '<div class="cd-save-slot-head">'
-      + '<div class="cd-save-slot-ava"><i class="fa-regular fa-user"></i></div>'
-      + '<div class="cd-save-slot-headinfo">'
-      + '<div class="cd-save-slot-hn">' + escapeHtml(name) + '</div>'
-      + '<div class="cd-save-slot-hs">已存 ' + filled + ' / 100 格</div>'
-      + '</div>'
-      + '<button class="cd-save-newbtn" onclick="cdSaveNewIn(\'' + String(name).replace(/'/g, "\'") + '\')"><i class="fa-regular fa-plus"></i> 存一个新档</button>'
+    html += '<div class="cd-sv-back" onclick="cdRenderSave()"><i class="fa-regular fa-chevron-left"></i> 返回存档库</div>';
+    var _av2 = '';
+    try { if (typeof cdCharImgUrlFor === 'function') _av2 = cdCharImgUrlFor(name, 'avatar') || ''; } catch (e) {}
+    html += '<div class="cd-sv-head">'
+      + (_av2 ? '<img class="cd-sv-ava" src="' + _av2 + '" alt="">'
+              : '<span class="cd-sv-ava-ph"><i class="fa-regular fa-user"></i></span>')
+      + '<div class="cd-sv-headinfo">'
+      + '<div class="cd-sv-head-nm">' + escapeHtml(name) + '</div>'
+      + '<div class="cd-sv-head-sub">'
+      + filled + ' 份存档'
+      + (_sz2 ? ' · ' + _sz2 : '')
+      + (_lastT ? ' · 最新 ' + escapeHtml(_lastT) : '')
+      + '</div></div>'
+      + '<button class="cd-sv-btn cd-sv-btn-pri" onclick="cdSaveNewIn(\'' + String(name).replace(/'/g, "\'") + '\')"><i class="fa-regular fa-plus"></i> 存一个新档</button>'
       + '</div>';
-    // 批5：单角色容量条
-    var _c2w = Math.min(100, Math.round(filled / 100 * 100));
-    html += '<div class="cd-save-cap2"><span class="cd-save-cap2-lbl"><i class="fa-regular fa-floppy-disk"></i> 存档格</span><span class="cd-save-cap2-num">' + filled + ' / 100 格</span><span class="cd-save-cap2-track"><span class="cd-save-cap2-fill" style="width:' + _c2w + '%;"></span></span></div>';
 
-    html += '<div class="cd-save-slot-grid">';
+    html += '<div class="cd-sv-slot-grid">';
     slots.forEach(function (rec, i) {
       if (rec) {
         const nm = escapeHtml(rec.note || '未命名');
@@ -23150,32 +23184,39 @@ async function cdSaveGoSlots(name) {
         const id = String(rec.id || '').replace(/'/g, "\\'");
         const cnA = String(name || '').replace(/'/g, "\\'");
         const _cvS = cdCharCover(name);
-        html += '<div class="cd-save-slot filled' + _cvS.cls + '" onclick="cdSaveLoadById(\'' + id + '\',\'' + cnA + '\')">'
-          + '<div class="cd-save-slot-thumb' + _cvS.cls + '"' + _cvS.style + ' onclick="event.stopPropagation();cdSaveShowMemo(\'' + id + '\',\'' + cnA + '\')" title="感言"><i class="fa-regular fa-floppy-disk"></i></div>'
-          + '<div class="info"><div class="nm">' + nm + '</div>'
-          + '<div class="meta">' + ch + floors + tm + '</div></div>'
-          + '<div class="ops">'
-
-          + '<button class="ob' + (rec.star ? ' star-on' : '') + '" title="' + (rec.star ? '取消置顶' : '置顶') + '" onclick="event.stopPropagation();cdSaveToggleStar(\'' + id + '\',\'' + cnA + '\')"><i class="' + (rec.star ? 'fa-solid fa-star' : 'fa-regular fa-star') + '"></i></button>'
-          + '<button class="ob" title="改名" onclick="event.stopPropagation();cdSaveAskRename(\'' + id + '\',\'' + cnA + '\')"><i class="fa-regular fa-pen"></i></button>'
-          + '<button class="ob danger" title="删除" onclick="event.stopPropagation();cdSaveDelete(\'' + cnA + '\',\'' + id + '\');cdSaveGoSlots(\'' + cnA + '\');"><i class="fa-regular fa-trash-can"></i></button>'
+        var _sz1 = _cdSaveFmtBytes(rec.size);
+        var _src = rec.chatFile ? ('<span class="cd-sv-slot-src"><i class="fa-regular fa-comment"></i> ' + escapeHtml(rec.chatFile) + '</span>') : '';
+        html += '<div class="cd-sv-slot' + (rec.star ? ' is-star' : '') + _cvS.cls + '" onclick="cdSaveLoadById(\'' + id + '\',\'' + cnA + '\')">'
+          + '<div class="cd-sv-slot-thumb' + _cvS.cls + '"' + _cvS.style + ' onclick="event.stopPropagation();cdSaveShowMemo(\'' + id + '\',\'' + cnA + '\')" title="感言"><i class="fa-regular fa-floppy-disk"></i></div>'
+          + '<div class="cd-sv-slot-bd">'
+          + '<div class="cd-sv-slot-nm">' + nm + '</div>'
+          + '<div class="cd-sv-slot-meta">' + ch + floors + (_sz1 ? '<span class="sz">' + _sz1 + '</span>' : '') + tm + '</div>'
+          + _src
+          + '</div>'
+          + '<div class="cd-sv-slot-ops">'
+          + '<button class="cd-sv-ob' + (rec.star ? ' star-on' : '') + '" title="' + (rec.star ? '取消置顶' : '置顶') + '" onclick="event.stopPropagation();cdSaveToggleStar(\'' + id + '\',\'' + cnA + '\')"><i class="' + (rec.star ? 'fa-solid fa-star' : 'fa-regular fa-star') + '"></i></button>'
+          + '<button class="cd-sv-ob" title="改名" onclick="event.stopPropagation();cdSaveAskRename(\'' + id + '\',\'' + cnA + '\')"><i class="fa-regular fa-pen"></i></button>'
+          + '<button class="cd-sv-ob danger" title="删除" onclick="event.stopPropagation();cdSaveDelete(\'' + cnA + '\',\'' + id + '\');cdSaveGoSlots(\'' + cnA + '\');"><i class="fa-regular fa-trash-can"></i></button>'
           + '</div></div>';
       }
     });
-    html += '<div class="cd-save-slot empty" onclick="cdSaveNewIn(\'' + String(name).replace(/'/g, "\'") + '\')">'
-      + '<i class="fa-regular fa-plus"></i> 空白存档槽（点此存一个新档）</div>';
+    html += '<div class="cd-sv-slot cd-sv-slot-empty" onclick="cdSaveNewIn(\'' + String(name).replace(/'/g, "\'") + '\')">'
+      + '<i class="fa-regular fa-plus"></i> 存一个新档</div>';
     html += '</div>';
 
-    html += '<div class="cd-save-hint"><i class="fa-regular fa-circle-info"></i> 点空格槽＝存档到该位 · 点已存槽＝读档并进入该时刻（新建聊天，原聊天保留）<br>悬停一份存档可：改名 / 删除</div>';
+    html += '<div class="cd-sv-hint"><i class="fa-regular fa-circle-info"></i> 点一份存档＝读档并回到那一刻（新建聊天，原聊天保留）'
+      + '<br>点封面小图看感言 · 右上角可置顶 / 改名 / 删除</div>';
     // 底部：角色感言折叠（整个角色的留言）
     var _gMemo = [];
     try { _gMemo = await cdSaveGroupMemoGet(name); window.__cdCurCharForMemo = name; } catch (e) {}
     var _gMemoListHtml = '';
     try { _gMemoListHtml = await _cdSaveGroupMemoListHtml(_gMemo); } catch (e) { _gMemoListHtml = ''; }
-    html += '<details style="margin-top:12px;border:1px solid #cbd4dd;border-radius:10px;background:rgba(255,255,255,.62);padding:8px 12px;"><summary style="cursor:pointer;font-size:12.5px;color:#2c3540;font-weight:600;"><i class="fa-regular fa-note-sticky" style="color:#6e7e90;margin-right:6px;"></i>角色感言<span style="font-size:11px;color:#98a1ad;font-weight:400;margin-left:6px;">' + escapeHtml(name) + '</span></summary>'
-      + '<div style="margin-top:8px;">'
-      + '<div style="font-size:11px;color:#98a1ad;margin:2px 0 6px;">已写下的感言</div>'
-      + '<div style="max-height:180px;overflow-y:auto;border:1px solid #cbd4dd;border-radius:8px;padding:4px 10px;background:#fff;box-sizing:border-box;">' + _gMemoListHtml + '</div>'
+    html += '<details class="cd-sv-memo" open>'
+      + '<summary><i class="fa-regular fa-note-sticky"></i>角色感言'
+      + '<span class="cd-sv-memo-who">' + escapeHtml(name) + '</span></summary>'
+      + '<div class="cd-sv-memo-bd">'
+      + '<div class="cd-sv-memo-lbl">已写下的感言</div>'
+      + '<div class="cd-sv-memo-list">' + _gMemoListHtml + '</div>'
       + _cdMemoAddBoxHtml('cd-gs-groupmemo-new', 'group', '写一段话给这个角色…') + '</div></details>';
     document.getElementById('cd-content').innerHTML = html;
   } catch (e) {
