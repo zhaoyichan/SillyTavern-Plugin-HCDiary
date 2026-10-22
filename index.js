@@ -3724,6 +3724,13 @@ function cdNotifyHost() {
  * 顶部小通知条
  * @param {object} o { id, type:'busy'|'success'|'warn'|'error'|'info', title, msg, timeout(ms,0=不自动关), actions:[{label,fn,primary}] }
  */
+/** FIX14：通知文案转义（错误消息里可能含尖括号，直接拼 HTML 会破坏整条布局） */
+function cdNotifyEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 function cdNotify(o) {
   o = o || {};
   try {
@@ -3736,6 +3743,14 @@ function cdNotify(o) {
       el.id = id;
       host.appendChild(el);
     }
+    // ★ FIX14 关闭竞态：这条 id 可能正处于「关闭淡出」的 240ms 尾巴里。
+    //   旧的一次性删除定时器晚一步执行，会把刚刚重建的内容整条删掉
+    //   （busy→success 复用同一 id，症状是"完成提示闪一下就没了"）。
+    //   递增 token 让旧定时器作废，并清掉之前的两个定时器。
+    el._cdntTok = (el._cdntTok || 0) + 1;
+    clearTimeout(el._cdntT);
+    clearTimeout(el._cdntRT);
+    el.classList.remove('out');
     el.className = 'cd-notify cd-notify-' + t;
     const icon = t === 'error' ? 'circle-xmark' : t === 'success' ? 'circle-check'
       : t === 'warn' ? 'triangle-exclamation' : t === 'busy' ? 'arrows-rotate' : 'circle-info';
@@ -3743,10 +3758,10 @@ function cdNotify(o) {
     el.innerHTML =
       '<div class="cdnt-ic"><i class="fa-regular fa-' + icon + '"></i></div>' +
       '<div class="cdnt-bd">' +
-        '<div class="cdnt-t">' + String(o.title || '') + '</div>' +
-        (o.msg ? '<div class="cdnt-m">' + String(o.msg) + '</div>' : '') +
+        '<div class="cdnt-t">' + cdNotifyEsc(o.title) + '</div>' +
+        (o.msg ? '<div class="cdnt-m">' + cdNotifyEsc(o.msg) + '</div>' : '') +
         (acts.length ? '<div class="cdnt-acts">' + acts.map(function (a, i) {
-          return '<button class="cdnt-btn' + (a.primary ? ' pri' : '') + '" data-i="' + i + '">' + String(a.label) + '</button>';
+          return '<button class="cdnt-btn' + (a.primary ? ' pri' : '') + '" data-i="' + i + '">' + cdNotifyEsc(a.label) + '</button>';
         }).join('') + '</div>' : '') +
       '</div>' +
       '<button class="cdnt-x" title="关闭"><i class="fa-regular fa-xmark"></i></button>';
@@ -3768,8 +3783,15 @@ function cdNotify(o) {
 function cdNotifyClose(id) {
   try {
     const el = document.getElementById(id); if (!el) return;
+    clearTimeout(el._cdntT);
+    const tok = (el._cdntTok || 0);
     el.classList.add('out');
-    setTimeout(function () { if (el && el.parentNode) el.parentNode.removeChild(el); }, 220);
+    el._cdntRT = setTimeout(function () {
+      try {
+        // 期间若同 id 已被复用（token 变了），别把新通知删掉
+        if (el && el.parentNode && (el._cdntTok || 0) === tok) el.parentNode.removeChild(el);
+      } catch (e) {}
+    }, 240);
   } catch (e) {}
 }
 
@@ -4400,6 +4422,83 @@ function cdSetHiddenMark(m, val) {
  * @param hide true=隐藏 false=恢复
  * @returns {mode:'native'|'fallback'|'err', okCount:number, errCount:number, sample:{i,is_system,extra}[]}
  */
+/** ===== FIX13 · 隐藏楼层不再重载整个聊天（原方案会丢流式生成中的 AI 消息） ===== */
+
+/** 判断 ST 此刻是否正在生成：多信号 OR。宁可保守判成"在生成"，也不能打断正在流式输出的消息。 */
+function cdIsGenerating() {
+  try {
+    if (window.__cdGenerating === true) return true;
+    if (window.is_send_pressed === true) return true;
+    if (typeof $ === 'function') {
+      const $b = $('#send_but');
+      if ($b && $b.length) {
+        const cls = String($b.attr('class') || '');
+        if (/stop|waiting|generating/i.test(cls)) return true;
+        const ic = String($b.find('i').attr('class') || '');
+        if (/fa-stop|fa-square/i.test(ic)) return true;
+      }
+      const $last = $('#chat .mes:last-child');
+      if ($last && $last.length && /typing|streaming/i.test(String($last.attr('class') || ''))) return true;
+      // ST 流式输出时最后一条 mes 内有生成中的标识徽标
+      if ($('#chat .mes:last-child .mes_text .md-font-mono').length) return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+/** 等 ST 生成结束再放行；拿不到事件总线就用轮询兜底（默认最长 3 分钟，超时不再死等）。 */
+function cdWaitGenEnd(waitMs) {
+  const max = Number(waitMs) > 0 ? Number(waitMs) : 180000;
+  const t0 = Date.now();
+  return new Promise(function (res) {
+    let timer = null;
+    let detach = function () {};
+    const finish = function () {
+      if (timer) { clearInterval(timer); timer = null; }
+      try { detach(); } catch (e) {}
+      res(true);
+    };
+    try {
+      const ctx = (typeof SillyTavern !== 'undefined' && SillyTavern.getContext) ? SillyTavern.getContext() : null;
+      const es = ctx && ctx.eventSource;
+      const et = ctx && ctx.event_types;
+      const evt = et && (et.GENERATION_ENDED || et.MESSAGE_RECEIVED);
+      if (es && evt && typeof es.on === 'function') {
+        es.on(evt, finish);
+        detach = function () { try { es.removeListener(evt, finish); } catch (e) {} };
+      } else if (es && evt && typeof es.once === 'function') {
+        es.once(evt, finish);
+        detach = function () { try { es.removeListener(evt, finish); } catch (e) {} };
+      }
+    } catch (e) {}
+    timer = setInterval(function () {
+      if (!cdIsGenerating()) { finish(); return; }
+      if (Date.now() - t0 > max) { finish(); return; }
+    }, 400);
+    if (!cdIsGenerating()) { finish(); }
+  });
+}
+
+/** 只把 is_system 的变化同步到这几条楼层的 DOM —— 替代 reloadCurrentChat（后者会重建 #chat，正在流式生成的消息会当场丢失）。 */
+function cdSyncHiddenDom(ranges, hide) {
+  if (typeof $ !== 'function' || !Array.isArray(ranges)) return 0;
+  let n = 0;
+  for (let ri = 0; ri < ranges.length; ri++) {
+    const s = ranges[ri][0], e = ranges[ri][1];
+    for (let i = s; i <= e; i++) {
+      try {
+        const $el = $('.mes[mesid="' + i + '"]');
+        if (!$el || !$el.length) continue;
+        $el.attr('is_system', String(!!hide));
+        if (hide) { $el.addClass('cd-floor-archived').attr('data-cd-hidden', '1'); }
+        else { $el.removeClass('cd-floor-archived').removeAttr('data-cd-hidden'); }
+        n++;
+      } catch (e) {}
+    }
+  }
+  return n;
+}
+
 async function cdNativeHide(ctx, ranges, hide) {
   try {
     const chat = ctx && Array.isArray(ctx.chat) ? ctx.chat : [];
@@ -4459,11 +4558,12 @@ async function cdNativeHide(ctx, ranges, hide) {
       if (typeof ctx.saveChat === 'function') { await ctx.saveChat(); }
       else if (typeof ctx.saveChatConditional === 'function') { await ctx.saveChatConditional(); }
     } catch (err) {}
-    // 刷新界面让 ST 原生按 is_system 渲染幽灵图标
-    if (ctx && typeof ctx.reloadCurrentChat === 'function') {
-      try { ctx.reloadCurrentChat(); } catch (err) {}
-    }
-    if (typeof cdAddLog === 'function') { try { cdAddLog('info', '[隐藏·原生] 执行结果', { 原生: nativeCount, 回退: fallbackCount, 样本: JSON.stringify(changed) }); } catch (e2) {} }
+    // ★ FIX13：不再调用 reloadCurrentChat()。它会重建整个 #chat DOM，
+    //   正在流式生成的那条 AI 消息会当场丢失（用户实测：消息生成到一半就没了）。
+    //   改为只同步这几条楼层的 DOM，界面可见的"已归档"标记由 cdSyncHiddenDom 负责。
+    let _syncN = 0;
+    try { _syncN = cdSyncHiddenDom(ranges, hide); } catch (err) {}
+    if (typeof cdAddLog === 'function') { try { cdAddLog('info', '[隐藏·原生] 执行结果', { 原生: nativeCount, 回退: fallbackCount, DOM同步: _syncN, 整页刷新: false, 样本: JSON.stringify(changed) }); } catch (e2) {} }
     const mode = (exec && nativeCount > 0) ? 'native' : 'fallback';
     return { mode: mode, okCount: nativeCount, errCount: fallbackCount, sample: changed };
   } catch (e) {
@@ -4487,6 +4587,12 @@ async function cdHideOldFloors(keepCount) {
   if (!chat.length) { try { cdAddLog && cdAddLog('warn', '[隐藏] chat 为空'); } catch (e) {} return; }
   keepCount = Math.max(1, parseInt(keepCount, 10) || 5);
   cdAddLog('info', '[隐藏] 进入 cdHideOldFloors', { 保留: keepCount, chat条数: chat.length });
+  // ★ FIX13：AI 正在生成时，任何动 #chat 的操作都会把它打没 —— 排队等到生成结束再隐藏。
+  if (typeof cdIsGenerating === 'function' && cdIsGenerating()) {
+    cdAddLog('info', '[隐藏] 检测到 ST 正在生成，排队等待完成（绝不打断流式输出）');
+    try { await cdWaitGenEnd(180000); } catch (e) {}
+    cdAddLog('info', '[隐藏] 生成已结束，继续隐藏');
+  }
   // 从后往前找「可见的」 keepCount 条楼层（用户+AI都算；排除原生系统消息 与 已被HCDiary隐藏的）
   let found = 0;
   let visibleStart = chat.length;
@@ -5573,10 +5679,8 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
     const _bk = Object.keys(window.__cdBatchRuns);
     if (_bk.length > 20) for (let i = 0; i < _bk.length - 20; i++) delete window.__cdBatchRuns[_bk[i]];
   } catch (e) {}
-  if (_sNotify.notifyCard !== false) {
-    cdNotify({ id: 'cdnt-run-' + _batchId, type: 'busy',
-      title: '正在总结…', msg: windowFloors.length + ' 个新楼层 · 来源 ' + (_sNotify.source || 'tavern'), timeout: 0 });
-  }
+  /* FIX14(P2)：busy 通知已移到下方 cdBusy 检查之后。原先在这里弹，任务被
+     cdBusy 跳过时(5711 return，且不在 try 内)没有后续通知更新它 → 「正在总结…」永久挂在屏幕上。 */
   cdAddLog('info', '开始写日记', {楼层数: windowFloors.length, 起始楼层: windowFloors[0].message_id, 结束楼层: windowFloors[windowFloors.length-1].message_id});
 
   if (windowFloors.length > (s.maxWindowFloors || 40))
@@ -5627,6 +5731,11 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
     return;
   }
   cdBusy = true; cdBusyLabel = '写日记'; cdBusyAt = Date.now();
+  // ★ FIX14(P2)：确认这一批真的要跑才弹「正在总结…」，被跳过的批次不会留下孤儿通知
+  if (_sNotify.notifyCard !== false) {
+    cdNotify({ id: 'cdnt-run-' + _batchId, type: 'busy',
+      title: '正在总结…', msg: windowFloors.length + ' 个新楼层 · 通道 ' + (_sNotify.source || 'tavern'), timeout: 0 });
+  }
   _cdSnapshot = JSON.parse(JSON.stringify(data));   // ★ FIX10：确定要跑才拍撤销快照
   // ★ [自动总结延迟] 到达目标楼层后错峰等待（默认20秒）：避开刚触发的其他API调用、降低命中频率限制几率；手动触发不等待。等待期间新楼层照常累积、不影响本次批次。
   if (!manual) {
@@ -6148,19 +6257,23 @@ if (arc.unresolved !== undefined) {
         }
       }
 
+      const tips = [];
+      if (diaryOk) tips.push('日记已更新');
+      if (relOk) tips.push('关系已更新');
+      if (archiveOk) tips.push('剧情档案已更新');
+      const _cdOkText = tips.join(' · ') || '已完成';
+      // ★ FIX14(P1) [主 bug]：完成通知必须放在 silent 之外。
+      //   自动总结走 cdRunDiary({manual:false, silent:true})，以前整块被 `if (!silent)` 包住，
+      //   结果自动总结成功后什么提示都没有——只有「正在总结…」没有下文，看着像卡死/白跑。
+      //   顶部通知条是用户自己开的「可感知」通道（设置项 notifyCard），不受 silent（静默=不弹 toast）限制。
+      if (typeof _sNotify !== 'undefined' && _sNotify.notifyCard !== false) {
+        cdNotify({ id: 'cdnt-run-' + (_batchId || ''), type: 'success', title: '总结完成',
+          msg: _cdOkText, timeout: 5000,
+          actions: [{ label: '看日记', primary: true, fn: function () { try { cdSwitchView('browse'); } catch (e) {} } }] });
+      }
       if (!silent) {
-        const tips = [];
-        if (diaryOk) tips.push('日记已更新');
-        if (relOk) tips.push('关系已更新');
-        if (archiveOk) tips.push('剧情档案已更新');
         // ★ FIX10：已经有顶部通知条时不再重复弹 toastr（同一句话出现在两个地方）
-    if (!(_sNotify && _sNotify.notifyCard !== false)) toastr.success(tips.join(' · '));
-        // ★ 小通知卡：成功也让你看得见（可自己关，5 秒自动消失）
-        if (typeof _sNotify !== 'undefined' && _sNotify.notifyCard !== false) {
-          cdNotify({ id: 'cdnt-run-' + (_batchId || ''), type: 'success', title: '总结完成',
-            msg: tips.join(' · ') || '已完成', timeout: 5000,
-            actions: [{ label: '看日记', primary: true, fn: function () { try { cdSwitchView('browse'); } catch (e) {} } }] });
-        }
+        if (!(_sNotify && _sNotify.notifyCard !== false)) toastr.success(_cdOkText);
         
         // ★ 在聊天中发送通知消息
         try {
@@ -6207,19 +6320,22 @@ if (arc.unresolved !== undefined) {
             cdAddLog('info', '[FIX-空结果] 本批三路均未成功，回滚游标，楼层可重试', {批次: window.__cdLockedBatch, lastFloor: _d3.lastFloor});
           }
           window.__cdLockedBatch = null;
-          try {
-            if (typeof _sNotify !== 'undefined' && _sNotify.notifyCard !== false) {
-              const _bid2 = (typeof _batchId !== 'undefined' && _batchId) ? _batchId : '';
-              cdNotify({ id: 'cdnt-run-' + _bid2, type: 'warn', title: '这次没写出内容',
-                msg: 'AI 返回为空或没能解析出日记/档案（楼层没被标记为已总结，可以直接重试）', timeout: 0,
-                actions: [
-                  { label: '重试', primary: true, fn: function () { cdNotifyClose('cdnt-run-' + _bid2); if (_bid2) cdRerunBatch(_bid2); else cdRunDiary({ manual: true, silent: false }); } },
-                  { label: '看日志', fn: function () { try { cdSwitchView('log'); } catch (e2) {} } },
-                ] });
-            }
-          } catch (eN2) { console.warn('[CD] 空结果通知卡异常', eN2); }
         }
       } catch (e3) { cdWarn('FIX-空结果 回滚失败', e3); }
+      // ★ FIX14b：通知必须独立于回滚。原先它被包在 `if (window.__cdLockedBatch ...)` 里，
+      //   某些入口没预锁定时（__cdLockedBatch 为空）这次总结三路都没产出却一声不响，
+      //   已经弹出来的「正在总结…」就永远挂在屏幕上。现在无论有没有锁定批次都给结论。
+      try {
+        if (typeof _sNotify !== 'undefined' && _sNotify.notifyCard !== false) {
+          const _bid2 = (typeof _batchId !== 'undefined' && _batchId) ? _batchId : '';
+          cdNotify({ id: 'cdnt-run-' + _bid2, type: 'warn', title: '这次没写出内容',
+            msg: 'AI 返回为空或没能解析出日记/档案（楼层没被标记为已总结，可以直接重试）', timeout: 0,
+            actions: [
+              { label: '重试', primary: true, fn: function () { cdNotifyClose('cdnt-run-' + _bid2); if (_bid2) cdRerunBatch(_bid2); else cdRunDiary({ manual: true, silent: false }); } },
+              { label: '看日志', fn: function () { try { cdSwitchView('log'); } catch (e2) {} } },
+            ] });
+        }
+      } catch (eN2) { console.warn('[CD] 空结果通知卡异常', eN2); }
     }
   } catch (e) {
     // ★ FIX-2 失败回滚：本批锁定若未最终成功（崩溃/异常），从 processedFloors 移除，重新暴露给下次重试，避免楼层永久丢失
@@ -8697,6 +8813,7 @@ async function cdDashStats(force) {
   const o = {
     diary: 0, unread: 0, chars: 0, arcEntries: 0, arcSize: 0,
     slots: 0, slotLatest: '', slotList: [], forumPosts: 0, atUnread: 0,
+    slotsCur: 0, slotChars: 0,
     injectOn: 0, injectAll: 0, injectMods: [], vecTotal: 0, vecIndexed: 0,
     phoneChats: 0, phoneLatest: '', phoneList: [], relTotal: 0,
     diaryLatestChar: '', diaryLatestDate: '', diaryLatestText: '', diaryList: [],
@@ -8754,11 +8871,40 @@ async function cdDashStats(force) {
   } catch (e) {}
 
   try {
+    // ★ FIX13：存档是「全局 · 跨聊天跨角色共享」的资源。原来这里只数"当前角色"的槽位，
+    //   用户换成另一个角色后首页就显示 0，以为存档丢了（数据其实一直好好躺在 IndexedDB 里）。
+    //   现在遍历全部角色分组汇总；每条补上所属角色名，抽屉/搜索才可追溯来源。
     const nm = (typeof _cdSaveCurChar === 'function') ? _cdSaveCurChar() : '';
-    const sl = (await cdSaveGetSlots(nm)) || [];
-    o.slotList = sl.slice().reverse();
-    o.slots = sl.length;
-    if (sl.length) { const last = sl[sl.length - 1] || {}; o.slotLatest = String(last.note || last.time || '未命名存档'); }
+    const _grps = (typeof cdSaveGetAllGroups === 'function') ? (await cdSaveGetAllGroups()) : [];
+    const _all = [];
+    let _cur = 0, _chars = 0;
+    _grps.forEach(function (g) {
+      if (!g || !Array.isArray(g.slots)) return;
+      const _cn = String(g.charName || '');
+      let _cnt = 0;
+      // ★ FIX13c：组内先倒序（新的在前），给「没有 id 的老存档」兜底排序依据
+      const _arr = g.slots.filter(function (x) { return !!x; }).reverse();
+      _arr.forEach(function (x) {
+        _cnt++;
+        const c = Object.assign({}, x);
+        if (!c.charName) c.charName = _cn;
+        _all.push(c);
+      });
+      if (_cnt) _chars++;
+      if (_cn && _cn === nm) _cur = _cnt;
+    });
+    // ★ FIX13b：内联解析 id 里的时间戳，不依赖 _cdSaveTs（避免任何抽取/孤立执行场景下
+    //   抛 ReferenceError 后被外层 catch 吞掉，表现为「存档数莫名变 0」）
+    const _tsOf = function (x) { const m = /^s(\d+)_/.exec(String((x && x.id) || '')); return m ? Number(m[1]) : 0; };
+    _all.sort(function (a, b) { return _tsOf(b) - _tsOf(a); });
+    o.slotList = _all;
+    o.slots = _all.length;      // 全局总份数
+    o.slotsCur = _cur;          // 当前角色份数
+    o.slotChars = _chars;       // 有几位角色有存档
+    if (_all.length) {
+      const last = _all[0] || {};
+      o.slotLatest = (last.charName ? (last.charName + ' · ') : '') + String(last.note || last.time || '未命名存档');
+    }
   } catch (e) {}
 
   try {
@@ -8801,8 +8947,8 @@ function cdDashCardBody(id, st) {
       return { n: st.chars, u: '位角色', badge: 0,
         sub: st.chars ? (st.relTotal + ' 条关系') : '还没有角色记录', bar: -1 };
     case 'save':
-      return { n: st.slots, u: '槽', badge: 0,
-        sub: st.slots ? ('最新：' + st.slotLatest) : '尚未存档', bar: -1 };
+      return { n: st.slots, u: '份', badge: 0,
+        sub: st.slots ? (st.slotChars + ' 位角色 · 最新：' + st.slotLatest) : '尚未存档', bar: -1 };
     case 'inject':
       return { n: st.injectOn, u: ' 已启用', badge: 0,
         sub: st.injectAll ? ('共 ' + st.injectAll + ' 个模块') : '', bar: -1 };
@@ -8977,10 +9123,10 @@ async function cdHomeOpenDrawer(id) {
     if (!st.slotList.length) body = '<div class="cd-hempty">还没有存档。进入存档页可存到槽位。</div>';
     else {
       body = '<div class="cd-hsec" style="margin-top:0"><span>存档槽</span><span class="cd-hsec-ln"></span><span class="cd-hcnt">' + st.slotList.length + ' 个</span></div>';
-      body += st.slotList.map(function (s2) {
+      body += st.slotList.slice(0, 12).map(function (s2) {
         return '<div class="cd-hrow" data-hgo="save"><div class="cd-hrow-t"><b>' + _cdEsc(s2.note || '未命名') + '</b>' +
           (s2.star ? '<span class="cd-htag">★</span>' : '') + '</div>' +
-          '<div class="cd-hrow-m"><span>' + _cdEsc(s2.time || '') + '</span><span>' + (s2.floorCount != null ? (s2.floorCount + ' 层') : '') + '</span></div></div>';
+          '<div class="cd-hrow-m"><span>' + _cdEsc(s2.charName || '未归类') + '</span><span>' + _cdEsc(s2.time || '') + '</span><span>' + (s2.floorCount != null ? (s2.floorCount + ' 层') : '') + '</span></div></div>';
       }).join('');
     }
   } else if (id === 'inject') {
@@ -13941,6 +14087,8 @@ const CHANGELOG = [
     version: 'v2.17.0',
     date: '2026-09-10',
     items: [
+      '【FIX13】修「自动隐藏楼层会把整个酒馆刷新、导致 AI 流式生成到一半的消息消失」：隐藏完原本无条件 reloadCurrentChat() 重建 #chat，现改为只同步受影响楼层的 DOM；并新增生成中检测，AI 正在输出时排队等生成结束再隐藏，绝不打断。',
+      '【FIX13】修「换一个角色后首页概览的存档数字变 0」：该数字原按当前角色统计，而存档是全局跨聊天共享的资源；现改为遍历全部角色分组汇总，并显示「N 位角色 · 最新：角色 · 存档名」，抽屉明细补上所属角色名。',
       '【存档】存档存储迁至 IndexedDB（库 cd-save-db，告别 localStorage 容量瓶颈）；存档改为「快照」结构（还原楼层只留最近可配置条数默认10、剧情/日记/关系等 memory 全量快照）；追加不覆盖语义。',
       '【存档】界面改「游戏存档盘」游戏感两屏结构（第一屏角色卡墙 + 第二屏纵向槽位盘），UI 统一为玻璃拟态浅灰·紧凑密排，图标全 FontAwesome 无 emoji；新增星标置顶、每角色100格容量条、居中命名弹窗（纯白不透明卡片）。',
       '【存档】每条消息左下角新增常驻存档小图标（点它直接弹命名窗，可不打开插件面板）；读档前居中确认弹窗；读档后楼层「已总结、不自动总结」根治（清空进度游标）。',

@@ -4163,3 +4163,35 @@
 #cd-content .cd-sv-memo-list{max-height:180px;overflow-y:auto;border:1px solid var(--cd-line);
   border-radius:8px;padding:4px 10px;background:var(--cd-panel2);box-sizing:border-box;}
 /* ===== 存档界面 FIX12 结束 ===== */
+
+/* ===== FIX13 · 已归档楼层（替代 reloadCurrentChat 的局部 DOM 标记）=====
+   隐藏楼层不再重载整个 #chat，改为给 .mes 挂 .cd-floor-archived：
+   内容压暗 + 右上角「已归档」标签。AI 侧已因 is_system=true 跳过这些楼层。 */
+.mes.cd-floor-archived { position: relative; }
+.mes.cd-floor-archived > * { opacity: .45; }
+.mes.cd-floor-archived > .mes_block:hover { opacity: 1; }
+.mes.cd-floor-archived::after {
+  content: "已归档";
+  position: absolute; right: 10px; top: 4px; z-index: 6;
+  pointer-events: none;
+  font-size: 10px; line-height: 1.7; letter-spacing: .3px;
+  padding: 0 7px; border-radius: 999px;
+  color: #9a9488; background: rgba(128, 128, 128, .13);
+  border: 1px solid rgba(128, 128, 128, .22);
+}
+/* ===== FIX13 结束 ===== */
+
+/* ===== FIX14 通知条：窄屏（手机）适配 + 减少动效 ===== */
+@media (max-width:620px){
+  #cd-notify-stack{width:calc(100vw - 20px);max-width:calc(100vw - 20px);top:8px;gap:6px}
+  .cd-notify{min-width:0;padding:9px 10px 9px 11px;border-radius:12px}
+  .cd-notify .cdnt-bd{flex-direction:column;align-items:flex-start;gap:2px}
+  .cd-notify .cdnt-t{white-space:normal}
+  .cd-notify .cdnt-m{font-size:11.5px}
+  .cd-notify .cdnt-x{width:26px;height:26px}
+  .cd-notify .cdnt-btn{padding:6px 12px;font-size:11.5px}
+}
+@media (prefers-reduced-motion:reduce){
+  .cd-notify{animation:none;transition:none}
+  .cd-notify-busy .cdnt-ic{animation:none}
+}
