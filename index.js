@@ -759,48 +759,99 @@ function cdBareOverrides() {
   };
 }
 
-/** 跟随酒馆当前连接 */
+/** ★ FIX11：正确取到 generateRaw
+ *  官方把它挂在 SillyTavern.getContext() 上（不是全局变量），
+ *  插件原来用裸标识符 `typeof generateRaw` 判断 → 永远 false → 干净通道从来没走过。
+ *  这里按 ctx → 全局 → 动态 import('/script.js') 三级取用，结果缓存。 */
+let _cdRawGenCache;   // undefined=还没查过 / null=查过但拿不到 / function=可用
+async function cdGetRawGen(ctx) {
+  if (_cdRawGenCache !== undefined) return _cdRawGenCache;
+  let g = null;
+  if (ctx && typeof ctx.generateRaw === 'function') {
+    g = ctx.generateRaw;
+  } else if (typeof generateRaw === 'function') {
+    g = generateRaw;
+  } else {
+    // 兜底：动态 import 酒馆主脚本（官方推荐 '/script.js'，已是已加载模块，不会重复执行）
+    const cands = ['/script.js', '../../../../script.js', '../../script.js'];
+    for (let _i = 0; _i < cands.length; _i++) {
+      try {
+        const _m = await import(/* webpackIgnore: true */ cands[_i]);
+        if (_m && typeof _m.generateRaw === 'function') { g = _m.generateRaw; break; }
+      } catch (_e) { /* 换下一个候选路径 */ }
+    }
+  }
+  _cdRawGenCache = g;
+  return g;
+}
+
+/** 跟随酒馆当前连接
+ *  ★ FIX11：一次调用最多发一次真实请求。
+ *    旧实现每个通道都是 `if (result) return result;`，返回空(falsy)就继续往下
+ *    一条通道再发一次真请求 → 一次总结最多连发 3 次，且中间那条
+ *    generateQuietPrompt 会把聊天历史/角色卡/预设/世界书全带进去。 */
 async function callTavern(messages, _s) {
   const ctx = SillyTavern.getContext();
   const ordered = messages.map(m => ({ role: m.role, content: m.content }));
   // ★ 严格裸提示（默认开）：只把总结内容本身发给模型，不带酒馆 preset/角色卡/世界书/破限
   const bare = !(_s && _s.strictPrompt === false);
   const ov = bare ? cdBareOverrides() : undefined;
+  const _tag = bare ? '（已屏蔽预设/角色卡/世界书/聊天历史）' : '（未屏蔽预设）';
+  const _lg = (m, lv) => { try { if (typeof cdAddLog === 'function') cdAddLog(lv || 'api_req', m); } catch (e) {} };
 
-  // 方式1: generateRaw（无聊天上下文，最干净）
-  if (typeof generateRaw === 'function') {
+  // 通道① generateRaw —— 唯一真正「无聊天上下文 + 可屏蔽预设」的干净通道
+  const rawGen = await cdGetRawGen(ctx);
+  if (rawGen) {
     try {
       const args = { ordered_prompts: ordered, should_stream: false };
       if (ov) args.overrides = ov;
-      const result = await generateRaw(args);
-      if (result) return result;
-    } catch (e) { cdWarn('generateRaw 失败', e); }
-  } else if (bare) {
-    cdWarn('当前酒馆版本没有 generateRaw，静默生成可能仍带入预设/世界书');
-    if (typeof cdAddLog === 'function') cdAddLog('warn', '[API] 缺少 generateRaw：严格裸提示可能未完全生效（预设/世界书可能仍被带入）');
+      const result = await rawGen(args);
+      _lg('[API] 通道① generateRaw' + _tag);
+      // ★ 请求已真实发出并拿到响应：无论内容是否为空都到此为止，绝不重试其它通道
+      return String(result == null ? '' : result);
+    } catch (e) {
+      cdWarn('generateRaw 失败', e);
+      _lg('[API] 通道① generateRaw 抛错：' + ((e && e.message) || e), 'warn');
+    }
+  } else {
+    _lg('[API] 拿不到 generateRaw，改用 sendGenerationRequest（同样能屏蔽预设）', 'warn');
+    cdWarn('拿不到 generateRaw（已尝试 ctx / 全局 / 动态 import）');
   }
 
-  // 方式2: generateQuietPrompt
-  if (ctx && typeof ctx.generateQuietPrompt === 'function') {
+  // 通道② sendGenerationRequest —— ST 标准静默生成，支持 overrides
+  if (ctx && typeof ctx.sendGenerationRequest === 'function') {
     try {
-      const quietPrompt = ordered.map(m => m.content).join('\n\n');
-      const result = await ctx.generateQuietPrompt({ quietPrompt });
-      if (result) return result;
+      const _p = { quiet_prompt: ordered.map(m => m.content).join('\n\n'), execute_senders: false };
+      if (ov) _p.overrides = ov;
+      const result = await ctx.sendGenerationRequest(_p);
+      _lg('[API] 通道② sendGenerationRequest' + _tag);
+      return String(result == null ? '' : result);
+    } catch (e) {
+      cdWarn('sendGenerationRequest 失败', e);
+      _lg('[API] 通道② sendGenerationRequest 抛错：' + ((e && e.message) || e), 'warn');
+    }
+  }
+
+  // 通道③ generateQuietPrompt —— 官方语义就是「在聊天上下文中追加静默提示词」，
+  //   必然带聊天历史+角色卡+预设+世界书，且它不接受 overrides，无法屏蔽。
+  //   ★ 严格裸提示开启时禁用它（否则既烧额度又污染结果），直接报错让用户知情。
+  if (ctx && typeof ctx.generateQuietPrompt === 'function') {
+    if (bare) {
+      const _m = '严格裸提示已开启，但当前酒馆只提供 generateQuietPrompt（必然带入聊天历史/角色卡/预设/世界书，且无法屏蔽）。'
+        + '为避免白烧额度和污染总结结果，本次请求已中止。请改用直连接口来源，或关闭「严格裸提示」。';
+      _lg('[API] ' + _m, 'error');
+      throw new Error(_m);
+    }
+    try {
+      const result = await ctx.generateQuietPrompt({ quietPrompt: ordered.map(m => m.content).join('\n\n') });
+      _lg('[API] 通道③ generateQuietPrompt（未屏蔽预设/聊天历史，因你关闭了严格裸提示）', 'warn');
+      return String(result == null ? '' : result);
     } catch (e) { cdWarn('generateQuietPrompt 失败', e); }
   }
 
-  // 方式2.5: sendGenerationRequest（ST 新版标准静默生成，Tauri 版可用性高）
-  if (ctx && typeof ctx.sendGenerationRequest === 'function') {
-    try {
-      const quiet_prompt = ordered.map(m => m.content).join('\n\n');
-      const result = await ctx.sendGenerationRequest({ quiet_prompt, execute_senders: false });
-      if (result) return result;
-    } catch (e) { cdWarn('sendGenerationRequest 失败', e); }
-  }
-
-  // 方式3: generate (fallback)
+  // 通道④ 老版本全局 generate 兜底
   if (typeof generate === 'function') {
-    return await generate(Object.assign({
+    const _g = Object.assign({
       user_input: ordered.map(m => m.content).join('\n\n'),
       should_stream: false,
       overrides: {
@@ -808,10 +859,13 @@ async function callTavern(messages, _s) {
         world_info_before: '', world_info_after: '', dialogue_examples: '',
         chat_history: { with_depth_entries: false, prompts: [] },
       },
-    }, bare ? { overrides: cdBareOverrides() } : {}));
+    }, bare ? { overrides: cdBareOverrides() } : {});
+    const result = await generate(_g);
+    _lg('[API] 通道④ generate' + _tag);
+    return String(result == null ? '' : result);
   }
 
-  throw new Error('无可用LLM生成方式');
+  throw new Error('无可用LLM生成方式（已尝试 generateRaw / sendGenerationRequest / generateQuietPrompt / generate）');
 }
 
 
@@ -5596,12 +5650,23 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
       const comboMsgs = await cdBuildDiaryArchiveCombined(windowFloors, data, s, _archiveFull);
       calls.push({ name: '日记+档案', msgs: comboMsgs });
     }
+    // ★ FIX11：该功能界面已停用隐藏，但历史设置可能仍为 true → 每次总结偷偷多发一路请求。
+    //   这里读取时按「已停用」处理（不改写用户存档），并在日志里点名提示。
     if (s.enableRelation !== false) {
+      cdAddLog('warn', '「人物关系」功能已停用，但存档里仍是开启状态 → 已按停用处理（不再多发一路请求）。'
+        + '若确实需要，请到设置里重新开启（当前界面该开关已隐藏）。');
+    }
+    if (false) {
       const relMsgs = cdBuildRelationPrompt(windowFloors, data, s);
       calls.push({ name: '关系', msgs: relMsgs });
     }
 
     cdAddLog('api_req', `发送 ${calls.length} 路API请求`, {路由: calls.map(c => c.name)});
+    // ★ FIX11：路数异常时明确点名，避免用户不知道为什么扣了两次费
+    if (calls.length > 1) {
+      cdAddLog('warn', `本次总结会发 ${calls.length} 路独立请求（${calls.map(c => c.name).join(' / ')}），每路各扣一次费用。`
+        + `若只想发一路，请关闭多出来的功能开关（如「人物关系」）。`);
+    }
 
     /** 辅助：为单路 API 调用记录日志 */
     const _cdCallApi = async (name, msgs) => {
