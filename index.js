@@ -14793,7 +14793,7 @@ function cdRenderHelp() {
         默认已预设三组标签：<code>&lt;user_thought&gt;</code>（小剧场）、<code>&lt;think&gt;</code>（思考过程）、<code>&lt;!-- --&gt;</code>（注释）。<br>
         你可以增删改任意标签组，全部删光则不进行过滤。<br>
         注意：这里只影响发送给AI的文本，不影响已存储的日记和剧情档案内容。<br>
-        想清理 <b>AI 返回</b>里夹带的思维链（如 <code>&lt;think&gt;…&lt;think&gt;</code>），请用上方的「AI 返回过滤」。
+        想清理 <b>AI 返回</b>里夹带的思维链（如 <code>&lt;think&gt;…&lt;/think&gt;</code>），请用上方的「AI 返回过滤」。
       </p>
 
       <div class="cd-write-divider"></div>
