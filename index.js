@@ -477,6 +477,19 @@ const DEFAULT_SETTINGS = {
     { start: '', end: '' },
     { start: '<!--', end: '-->' },
   ],
+  // ★ FIX15：AI【返回内容】里的思维链/注释标签过滤（默认开）。
+  //   保护日记和剧情档案不被推理过程污染；可自定义，清空列表则不启用过滤。
+  aiFilterEnabled : true,
+  aiFilterTags    : [
+    { start: '<think>', end: '</think>' },
+    { start: '<thinking>', end: '</thinking>' },
+    { start: '<thought>', end: '</thought>' },
+    { start: '<reasoning>', end: '</reasoning>' },
+    { start: '<Reasoning>', end: '</Reasoning>' },
+    { start: '<analysis>', end: '</analysis>' },
+    { start: '<reflection>', end: '</reflection>' },
+    { start: '<!--', end: '-->' },
+  ],
   autoHideEnabled : false,        // 自动隐藏已总结楼层
   autoHideKeep    : 5,            // 保留最新 N 条楼层可见（用户+AI）
   autoHideMode    : 'b',          // 隐藏模式: 'b'=AI屏蔽留界面(幽灵图标,可恢复) | 'a'=界面也隐藏(彻底)
@@ -1845,7 +1858,9 @@ function parseItemsText(text) {
 
 /** 解析剧情档案的字段（主线/支线/重要状态变化/未解决事项 + 用户自定义追踪项） */
 function parseArchiveJson(text, customDefs) {
-  let raw = String(text || '').trim();
+  // ★ FIX15：先剥掉 AI 返回的思维链/注释块。档案是【纯文本按行】解析的，
+  //   思维链里每一行都会被当成正文收进「主线」，不剥掉等于整份档案被污染。
+  let raw = cdStripAiTags(text);
   try{ raw = (typeof cdStripArchiveSeq==='function') ? cdStripArchiveSeq(raw) : raw; }catch(_e){}
   let _locRaw = '';
   const _locM = String(raw).match(/<<<LOCATIONS>>>([\s\S]*?)<<<LOCATIONS_END>>>/);
@@ -1926,7 +1941,8 @@ function parseArchiveJson(text, customDefs) {
     if (/^地点[：:]/.test(_tl)) continue;   // 地点已在地图/主角/环境卡展示，任务里剔除避免重复
     _tasks.push({ line: _tl });
   }
-  return { mainline, sideline, states, unresolved, locations, items: _itemsLog, itemsHold: _itemsHold, timeAnchor, tasks: _tasks, custom, title, lead };
+  // ★ FIX15：字段级清洗（某个标签块混在行内没被整体剥干净时兜底）
+  return cdCleanAiField({ mainline, sideline, states, unresolved, locations, items: _itemsLog, itemsHold: _itemsHold, timeAnchor, tasks: _tasks, custom, title, lead });
 }
 
 function cdBuildRelationPrompt(windowFloors, data, _s) {
@@ -1955,7 +1971,93 @@ function cdBuildRelationPrompt(windowFloors, data, _s) {
   ];
 }
 
-/* ============================== 内容过滤 ============================== */
+
+/* ============================== AI 返回内容过滤（FIX15） ============================== */
+/* 和下面的 cdFilterTags 是两个方向，别搞混：
+     cdFilterTags  → 过滤【发给 AI】的楼层文本（小剧场/旁白），省 token、避免干扰判断；
+     cdStripAiTags → 过滤【AI 返回】的内容（DeepSeek <think>、推理块、注释），
+                     保护日记与剧情档案不被推理过程污染。 */
+const CD_AI_TAGS_BUILTIN = [
+  { start: '<think>', end: '</think>' },
+  { start: '<thinking>', end: '</thinking>' },
+  { start: '<thought>', end: '</thought>' },
+  { start: '<reasoning>', end: '</reasoning>' },
+  { start: '<analysis>', end: '</analysis>' },
+  { start: '<reflection>', end: '</reflection>' },
+  { start: '<!--', end: '-->' },
+];
+
+function cdEscapeRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+/** AI 返回过滤是否开启（默认开，没读到设置时也按开处理） */
+function cdAiFilterOn() {
+  try {
+    const _s = (typeof cdGetSettings === 'function') ? cdGetSettings() : null;
+    return !_s || _s.aiFilterEnabled !== false;
+  } catch (e) { return true; }
+}
+
+/** 取出有效的 AI 返回过滤标签对 */
+function cdAiFilterTags() {
+  try {
+    const _s = (typeof cdGetSettings === 'function') ? cdGetSettings() : null;
+    const list = (_s && Array.isArray(_s.aiFilterTags)) ? _s.aiFilterTags : CD_AI_TAGS_BUILTIN;
+    return list.filter(function (p) {
+      return p && String(p.start || '').trim() && String(p.end || '').trim();
+    });
+  } catch (e) { return CD_AI_TAGS_BUILTIN; }
+}
+
+/**
+ * 剔除 AI 返回里的思维链 / 注释块。
+ * ★ 策略：只在【成对出现】时剔除。遇到没闭合的标签原样保留 ——
+ *   AI 生成可能被截断，此时硬删会把后半截正文一起吞掉。宁脏勿丢。
+ *   （这点与 cdFilterTags 相反，那一侧是发给 AI 的文本，宁丢勿脏。）
+ * @param {string} text
+ * @returns {string}
+ */
+function cdStripAiTags(text) {
+  let r = String(text == null ? '' : text);
+  if (!r || !cdAiFilterOn()) return r;
+  const tags = cdAiFilterTags();
+  if (!tags.length) return r;
+  for (const pair of tags) {
+    const st = String(pair.start || '').trim();
+    const en = String(pair.end || '').trim();
+    if (!st || !en) continue;
+    try {
+      // 跨行匹配：DeepSeek 的思维链是多行的一大坨
+      r = r.replace(new RegExp(cdEscapeRe(st) + '[\\s\\S]*?' + cdEscapeRe(en), 'gi'), '');
+    } catch (e) {
+      // 用户填了会让正则炸的怪字符（如 * ( [ ）→ 退化为大小写不敏感的字面量剔除
+      let guard = 0;
+      const ls = st.toLowerCase(), le = en.toLowerCase();
+      while (guard++ < 500) {
+        const low = r.toLowerCase();
+        const si = low.indexOf(ls);
+        if (si === -1) break;
+        const ei = low.indexOf(le, si + ls.length);
+        if (ei === -1) break;              // 未闭合 → 保留，和主路径同一策略
+        r = r.slice(0, si) + r.slice(ei + le.length);
+      }
+    }
+  }
+  return r.trim();
+}
+
+/** 字段级清洗：JSON 某个字段值内部还夹着标签时兜一层（递归） */
+function cdCleanAiField(v) {
+  if (typeof v === 'string') return cdStripAiTags(v);
+  if (Array.isArray(v)) return v.map(cdCleanAiField);
+  if (v && typeof v === 'object') {
+    const o = {};
+    for (const k of Object.keys(v)) o[k] = cdCleanAiField(v[k]);
+    return o;
+  }
+  return v;
+}
+
+/* ============================== 内容过滤（发送给AI） ============================== */
 
 /** 根据用户自定义的标签对，过滤掉不需要发送给AI的内容 */
 function cdFilterTags(text, tags) {
@@ -2601,28 +2703,30 @@ function scanObjects(t, startIdx) {
 }
 
 function parseDiaryJson(text) {
-  let t = String(text || '').trim();
+  // ★ FIX15：思维链常挡在 JSON 代码块外面，剥掉后 JSON.parse 更容易成功，
+  //   少走 scanObjects 兜底（兜底会把思维链里的碎片也扫成日记数据）。
+  let t = cdStripAiTags(text);
   t = t.replace(/```json/gi, '').replace(/```/g, '');
   if (!t.includes('"npcs"')) t = '{"npcs":[' + t + ']}';   // ★ FIX10：原来只补头不补尾，全靠兜底解析
   t = sanitizeJsonString(t);
-  try { const obj = JSON.parse(t); if (Array.isArray(obj.npcs) && obj.npcs.length) return obj.npcs; } catch (_) {}
+  try { const obj = JSON.parse(t); if (Array.isArray(obj.npcs) && obj.npcs.length) return cdCleanAiField(obj.npcs); } catch (_) {}
   const key = t.indexOf('"npcs"');
   const arrIdx = t.indexOf('[', key >= 0 ? key : 0);
   const npcs = scanObjects(t, arrIdx >= 0 ? arrIdx + 1 : 0).filter(o => o && o.name);
-  if (npcs.length) return npcs;
+  if (npcs.length) return cdCleanAiField(npcs);   // ★ FIX15：字段级再洗一遍
   throw new Error('日记JSON解析失败, 原话: ' + String(text).slice(0, 150));
 }
 
 function parseRelationJson(text) {
-  let t = String(text || '').trim();
+  let t = cdStripAiTags(text);   // ★ FIX15：同上，剥思维链
   t = t.replace(/```json/gi, '').replace(/```/g, '');
   if (!t.includes('"relations"')) t = '{"relations":[' + t;
   t = sanitizeJsonString(t);
-  try { const obj = JSON.parse(t); if (Array.isArray(obj.relations)) return obj.relations; } catch (_) {}
+  try { const obj = JSON.parse(t); if (Array.isArray(obj.relations)) return cdCleanAiField(obj.relations); } catch (_) {}
   const key = t.indexOf('"relations"');
   const arrIdx = t.indexOf('[', key >= 0 ? key : 0);
   const rels = scanObjects(t, arrIdx >= 0 ? arrIdx + 1 : 0).filter(o => o && o.from && o.to);
-  if (rels.length) return rels;
+  if (rels.length) return cdCleanAiField(rels);   // ★ FIX15：字段级再洗一遍
   throw new Error('关系JSON解析失败, 原话: ' + String(text).slice(0, 150));
 }// ============================================================
 // 角色日记 插件 v2.0.0 — 数据合并 & 世界书同步
@@ -13133,6 +13237,14 @@ async function cdRenderSettings() {
   var _role0 = ((s.injectRole || 0) === 0) ? 'selected' : '';
   var _role1 = ((s.injectRole || 0) === 1) ? 'selected' : '';
   var _role2 = ((s.injectRole || 0) === 2) ? 'selected' : '';
+  var _aiFilterTags = (Array.isArray(s.aiFilterTags) && s.aiFilterTags.length) ? s.aiFilterTags : CD_AI_TAGS_BUILTIN;
+  var _aiFilterRows = _aiFilterTags.map(function (pair, idx) {
+    return '<div class="cd-set-row cd-aifilter-tag-row" data-idx="' + idx + '">' +
+      '<input type="text" class="cd-input cd-aifilter-start" value="' + escapeAttr(pair.start || '') + '" placeholder="上标签" style="flex:1;text-align:left;min-width:50px;">' +
+      '<span class="cds-hint">→</span>' +
+      '<input type="text" class="cd-input cd-aifilter-end" value="' + escapeAttr(pair.end || '') + '" placeholder="下标签" style="flex:1;text-align:left;min-width:50px;">' +
+      '<button class="cd-btn-danger cd-aifilter-del" style="padding:2px 8px;min-width:auto;">×</button></div>';
+  }).join('');
   var _filterRows = (Array.isArray(s.filterTags) ? s.filterTags : []).map(function (pair, idx) {
     return '<div class="cd-set-row cd-filter-tag-row" data-idx="' + idx + '">' +
       '<input type="text" class="cd-input cd-filter-start" value="' + escapeAttr(pair.start || '') + '" placeholder="上标签" style="flex:1;text-align:left;min-width:50px;">' +
@@ -13259,6 +13371,18 @@ async function cdRenderSettings() {
         <div>
           <div id="cd-filter-tags-container">${_filterRows}</div>
           <button class="cd-btn-secondary" id="cd-filter-add" style="margin-top:4px;font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;">+ 添加一组</button>
+        </div>
+      </details>
+
+      <details class="cds-collapse" open><summary><i class="fa-regular fa-brain"></i> AI 返回过滤（思维链）</summary>
+        <div>
+          <div class="cds-row"><span class="cds-lab">过滤 AI 返回的思维链 <span class="cds-hint">DeepSeek 的 &lt;think&gt; 等</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-aifilter" ${s.aiFilterEnabled !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+          <div style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;line-height:1.55;margin:2px 0 6px;">推理模型会把思考过程用标签包起来返回。不剥掉的话，这些推理文字会被当成正文收进角色日记和剧情档案。<br>默认已内置 <code>&lt;think&gt;</code>、<code>&lt;reasoning&gt;</code>、<code>&lt;analysis&gt;</code> 等常见标签，可自行增删。清空全部标签则不启用过滤。</div>
+          <div id="cd-aifilter-tags-container">${_aiFilterRows}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">
+            <button class="cd-btn-secondary" id="cd-aifilter-add" style="font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;">+ 添加一组</button>
+            <button class="cd-btn-secondary" id="cd-aifilter-reset" style="font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;color:#8a6a3a;border-color:#d8c39a;background:#fbf6ec;">恢复内置标签</button>
+          </div>
         </div>
       </details>
 
@@ -13451,6 +13575,38 @@ async function cdRenderSettings() {
   // ★ 删除一组过滤标签（委托事件）
   $('#cd-filter-tags-container').off('click', '.cd-filter-del').on('click', '.cd-filter-del', function () {
     $(this).closest('.cd-filter-tag-row').remove();
+  });
+
+  // ★ FIX15 AI 返回过滤：添加一组标签
+  $('#cd-aifilter-add').off('click').on('click', function () {
+    const container = $('#cd-aifilter-tags-container');
+    const idx = container.children().length;
+    container.append(`
+      <div class="cd-set-row cd-aifilter-tag-row" data-idx="${idx}">
+        <input type="text" class="cd-input cd-aifilter-start" value="" placeholder="上标签" style="flex:1;min-width:60px;">
+        <span style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;flex-shrink:0;">→</span>
+        <input type="text" class="cd-input cd-aifilter-end" value="" placeholder="下标签" style="flex:1;min-width:60px;">
+        <button class="cd-btn-danger cd-aifilter-del" style="padding:2px 6px;font-size: calc(0.6rem * var(--cd-fs, 1));min-width:auto;">×</button>
+      </div>
+    `);
+  });
+
+  // ★ FIX15 删除一组（事件委托）
+  $('#cd-aifilter-tags-container').off('click', '.cd-aifilter-del').on('click', '.cd-aifilter-del', function () {
+    $(this).closest('.cd-aifilter-tag-row').remove();
+  });
+
+  // ★ FIX15 恢复内置标签
+  $('#cd-aifilter-reset').off('click').on('click', function () {
+    const container = $('#cd-aifilter-tags-container');
+    container.html(CD_AI_TAGS_BUILTIN.map(function (pair, idx) {
+      return '<div class="cd-set-row cd-aifilter-tag-row" data-idx="' + idx + '">' +
+        '<input type="text" class="cd-input cd-aifilter-start" value="' + escapeAttr(pair.start) + '" placeholder="上标签" style="flex:1;text-align:left;min-width:50px;">' +
+        '<span class="cds-hint">→</span>' +
+        '<input type="text" class="cd-input cd-aifilter-end" value="' + escapeAttr(pair.end) + '" placeholder="下标签" style="flex:1;text-align:left;min-width:50px;">' +
+        '<button class="cd-btn-danger cd-aifilter-del" style="padding:2px 8px;min-width:auto;">×</button></div>';
+    }).join(''));
+    if (typeof toastr !== 'undefined') toastr.info('已恢复内置标签，点「保存设置」生效');
   });
 
   // ★ 恢复所有隐藏楼层（方案B：原生 /unhide，见 cdShowAllFloors）
@@ -13711,6 +13867,14 @@ async function cdRenderSettings() {
         return {
           start: $(this).find('.cd-filter-start').val().trim(),
           end: $(this).find('.cd-filter-end').val().trim(),
+        };
+      }).get(),
+      // ★ FIX15 AI 返回过滤
+      aiFilterEnabled: $('#cd-s-aifilter').is(':checked'),
+      aiFilterTags: $('#cd-aifilter-tags-container .cd-aifilter-tag-row').map(function () {
+        return {
+          start: $(this).find('.cd-aifilter-start').val().trim(),
+          end: $(this).find('.cd-aifilter-end').val().trim(),
         };
       }).get(),
       autoCompress: $('#cd-s-autocompress').is(':checked'),
@@ -14628,7 +14792,8 @@ function cdRenderHelp() {
         在设置中可自定义「上标签」和「下标签」，被这对标签包裹的楼层内容在发送给AI总结时会被移除。<br>
         默认已预设三组标签：<code>&lt;user_thought&gt;</code>（小剧场）、<code>&lt;think&gt;</code>（思考过程）、<code>&lt;!-- --&gt;</code>（注释）。<br>
         你可以增删改任意标签组，全部删光则不进行过滤。<br>
-        注意：过滤只影响发送给AI的文本，不影响已存储的日记和剧情档案内容。
+        注意：这里只影响发送给AI的文本，不影响已存储的日记和剧情档案内容。<br>
+        想清理 <b>AI 返回</b>里夹带的思维链（如 <code>&lt;think&gt;…&lt;think&gt;</code>），请用上方的「AI 返回过滤」。
       </p>
 
       <div class="cd-write-divider"></div>
