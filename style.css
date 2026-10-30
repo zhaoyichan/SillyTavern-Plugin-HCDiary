@@ -4195,3 +4195,12 @@
   .cd-notify{animation:none;transition:none}
   .cd-notify-busy .cdnt-ic{animation:none}
 }
+
+/* ===== FIX16 · 首页工具格「自动总结」开关 ===== */
+.cd-root .cd-ti-sw{position:relative;overflow:visible;}
+.cd-root .cd-ti-sw > i{font-size:15px;}
+.cd-root .cd-ti-sw.on > i,.cd-root .cd-ti-sw.on > span{color:var(--cd-gold,#c9a86a);}
+.cd-root .cd-ti-sw.off{opacity:.62;filter:grayscale(.35);}
+.cd-root .cd-ti-badge{position:absolute;top:-6px;right:-5px;min-width:16px;height:16px;padding:0 4px;
+  border-radius:9px;background:var(--cd-gold,#c9a86a);color:var(--cd-onGold,#1b1710);
+  font-size:10px;font-weight:700;line-height:16px;text-align:center;}

@@ -3072,6 +3072,18 @@ async function cdGetAiFloorsSmart() {
 async function cdGetNewFloors(data) {
   const chat = _cdGetChat();
   let baseline = data._lastDiaryChatLength ?? 0;
+  /* ★ FIX16 回填保证：
+     1) 楼层被删除后 chat 会缩短/索引错位，积压起点可能已越界 → 直接作废标记，避免基线错乱。
+     2) 扫描起点绝不允许越过「还有更早楼层没总结」的那个点（data._cdBacklogFrom），
+        否则那些楼层永远扫不到 —— 这正是「没总结却显示已总结」的根因之一。 */
+  if (typeof data._cdBacklogFrom === 'number') {
+    if (data._cdBacklogFrom >= chat.length) {
+      cdLog('cdGetNewFloors: 积压起点越界（楼层被删/重排），清除回填标记', {旧积压起点: data._cdBacklogFrom, chat长度: chat.length});
+      data._cdBacklogFrom = null;
+    } else if (data._cdBacklogFrom < baseline) {
+      baseline = Number(data._cdBacklogFrom);
+    }
+  }
   // 分片加载时，把基线和 lastFloor 都重置为当前 chat.length
   if (baseline > chat.length) {
     cdLog('cdGetNewFloors: 分片加载，重置基线', {旧基线: baseline, 新基线: chat.length});
@@ -3175,10 +3187,18 @@ function mergeDiaries(data, npcs, windowFloors, s) {
       message_id: topFloor,
     });
   }
-  data.lastFloor = Math.max(data.lastFloor ?? -1, topFloor);
+  /* ★ FIX16：回填期间不推进 lastFloor。
+     旧写法无条件 Math.max(lastFloor, topFloor)，topFloor 是本批最大楼层 —— 中间还有没总结的洞时，
+     这会对外虚报「已总结到最高楼层」，楼层管理器/隐藏功能据此把没总结的楼层当成「已记录」处理掉。 */
+  const _cdBackfilling = (typeof data._cdBacklogFrom === 'number');
+  if (!_cdBackfilling) data.lastFloor = Math.max(data.lastFloor ?? -1, topFloor);
   // ★ 记录当前 chat.length 作为下次检测新增楼层的基线
   const chat = _cdGetChat();
-  data._lastDiaryChatLength = chat.length;
+  /* ★ FIX16：基线按「本批真正覆盖到的位置」推进，不再无脑推到 chat.length。
+     旧写法会把「本轮没排进窗口、一个字都没总结」的楼层也算成已越过 → 永久漏总结。 */
+  let _cdNewBase = Math.min(chat.length, topFloor + 1);
+  if (_cdBackfilling && Number(data._cdBacklogFrom) < _cdNewBase) _cdNewBase = Number(data._cdBacklogFrom);
+  if (_cdNewBase > (data._lastDiaryChatLength ?? 0)) data._lastDiaryChatLength = _cdNewBase;
   return data;
 }
 
@@ -5589,7 +5609,9 @@ function cdTestDedupeModal() {
 
 /**
  * ★ 立即隐藏「已总结的旧楼层」，但始终保留最新 N 条（含用户+AI，无论是否已总结）。
- * 即：最新 keepCount 条永不隐藏；更早的楼层里，凡是已总结(lastFloor/processedFloors)的都隐藏，未总结的保留。
+ * 即：最新 keepCount 条永不隐藏；更早的楼层里，凡是【真正处理过（processedFloors）】的才隐藏，未总结的保留。
+ * ★ FIX16：判定基准由「lastFloor 最高水位」改为「processedFloors 真实已处理记录」——
+ *   最高水位中间可能有洞（窗口截断/暂停期间攒的楼层），按它判断会把没总结过的楼层藏掉。
  * 即时执行（供手动按钮/测试用），不依赖等写日记完成。
  */
 /**
@@ -5621,7 +5643,10 @@ async function cdHideRecordedKeepNewest(keepCount) {
     const m = chat[i];
     if (!m || !(m.mes && String(m.mes).trim())) continue;
     if (keepSet[i]) { keepCountActual++; continue; }
-    const rec = (i <= lastFloor) || !!pfSet[i];
+    /* ★ FIX16：只认「真正处理过」的楼层（processedFloors）。
+       旧写法 `(i <= lastFloor) || pfSet[i]` 会把中间没总结过的楼层也算成已记录，
+       结果还没进档案就被隐藏功能藏掉了。lastFloor 是最高水位，不代表中间没有洞。 */
+    const rec = !!pfSet[i];
     if (rec && !cdIsHCHidden(m)) toHide.push(i);
   }
   cdAddLog('info', '[隐藏·即时] 扫描', { chat条数: chat.length, lastFloor, processed数: Object.keys(pfSet).length, 保留: keepCountActual, 待隐藏已总结: toHide.length });
@@ -5633,13 +5658,8 @@ async function cdHideRecordedKeepNewest(keepCount) {
 }
 
 /**
- * ★ 立即隐藏所有「已记录」的旧楼层（基于 lastFloor / processedFloors 数据），用户+AI 都隐藏。
+ * ★ 立即隐藏所有「真正处理过」的旧楼层（只看 processedFloors，不看 lastFloor 最高水位），用户+AI 都隐藏。
  * 即时执行（供手动按钮/测试用），不依赖等写日记完成。
- */
-/**
- * ★ 立即隐藏所有「已记录（已写日记/补写）」的旧楼层（基于 lastFloor / processedFloors），用户+AI 都隐藏。
- * 方案B：调用原生 /hide。即时执行（供手动按钮/测试用）。
- * @returns 隐藏条数
  */
 async function cdHideRecordedFloors() {
   cdAddLog('info', '[隐藏·即时] 开始（基于已记录数据，调用原生 /hide）');
@@ -5657,7 +5677,10 @@ async function cdHideRecordedFloors() {
     const m = chat[i];
     if (!m) continue;
     if (m.is_system) continue;   // 原生系统消息不处理
-    const rec = (i <= lastFloor) || !!pfSet[i];
+    /* ★ FIX16：只认「真正处理过」的楼层（processedFloors）。
+       旧写法 `(i <= lastFloor) || pfSet[i]` 会把中间没总结过的楼层也算成已记录，
+       结果还没进档案就被隐藏功能藏掉了。lastFloor 是最高水位，不代表中间没有洞。 */
+    const rec = !!pfSet[i];
     if (rec && !cdIsHCHidden(m)) toHide.push(i);
   }
   cdAddLog('info', '[隐藏·即时] 扫描', { chat条数: chat.length, lastFloor, processed数: Object.keys(pfSet).length, 已记录待隐藏: toHide.length });
@@ -5721,6 +5744,8 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
   let diaryOk = false;
   let relOk = false;
   let archiveOk = false;
+  /* FIX16：本批是否是「积压的最后一批」（true ⇒ 处理成功后可解除回填态） */
+  let _cdBacklogCleared = false;
   if (cdBusy) {
     cdAddLog('warn', '写日记被跳过：已有任务在进行中，当前任务: ' + (cdBusyLabel||'未知'));
     if (manual) { cdBusyToast(); cdPending = true; }
@@ -5787,8 +5812,29 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
      cdBusy 跳过时(5711 return，且不在 try 内)没有后续通知更新它 → 「正在总结…」永久挂在屏幕上。 */
   cdAddLog('info', '开始写日记', {楼层数: windowFloors.length, 起始楼层: windowFloors[0].message_id, 结束楼层: windowFloors[windowFloors.length-1].message_id});
 
-  if (windowFloors.length > (s.maxWindowFloors || 40))
-    windowFloors = windowFloors.slice(-(s.maxWindowFloors || 40));
+  /* ★ FIX16 积压回填：
+     原先把窗口切成「最新的一段」（slice(-N)），被切掉的更早楼层既没发给 AI，
+     游标却被推进到 chat 末尾 → 那些楼层从此再也扫不到（永久漏总结），
+     还因为 lastFloor 被推高而被隐藏功能当成「已记录」藏掉。
+     现在改成「先补最老的一段」（slice(0,N)），并把余下最老的楼层号记进 data._cdBacklogFrom，
+     下一轮继续从那里补，逐轮追平；追平后自动清除标记。 */
+  const _cdMaxW = Math.max(1, parseInt(s.maxWindowFloors, 10) || 40);
+  if (windowFloors.length > _cdMaxW) {
+    const _restFrom = windowFloors[_cdMaxW].message_id;
+    windowFloors = windowFloors.slice(0, _cdMaxW);
+    if (typeof _restFrom === 'number') {
+      data._cdBacklogFrom = _restFrom;
+      _cdBacklogCleared = false;
+      cdAddLog('info', '[FIX16·回填] 本批超过窗口上限，先补最老的一段', {
+        窗口上限: _cdMaxW,
+        本批楼层: windowFloors.map(function (w) { return w.message_id; }),
+        剩下次批起点: _restFrom
+      });
+    }
+  } else if (typeof data._cdBacklogFrom === 'number') {
+    // 本批没超出窗口 ⇒ 这是积压的最后一批，处理成功后解除回填态
+    _cdBacklogCleared = true;
+  }
   // ★ [改动①-openair0] 开场白(0层)保底进批次（双通道统一收口于此）。
   //   [原]仅首次(lastFloor===-1)才带 → 改为：只要开场白(楼层号0·正文非空)尚未被 processedFloors 锁定，
   //   且本批非空，就把开场白 unshift 置顶到批次最前（覆盖已开历史聊天 / jsonl 通道 / 手动补写后自动触发等场景），
@@ -6273,12 +6319,23 @@ if (arc.unresolved !== undefined) {
           if (_mid > _maxMid) _maxMid = _mid;
           if (data.processedFloors.indexOf(_mid) < 0) data.processedFloors.push(_mid);
         }
-        if (_maxMid > (data.lastFloor ?? -1)) data.lastFloor = _maxMid;
+        /* ★ FIX16：回填期间不虚报进度。
+           lastFloor 语义 = 「连续无遗漏地处理到的最高楼层」；中间还有洞时不允许推到本批最高，
+           否则隐藏功能会把那些洞当成「已记录」藏掉（用户选的：只认真正处理过的楼层）。 */
+        if (_cdBacklogCleared && typeof data._cdBacklogFrom === 'number') {
+          cdAddLog('info', '[FIX16·回填] 积压已追平，解除回填态', {原积压起点: data._cdBacklogFrom});
+          data._cdBacklogFrom = null;
+        }
+        const _cdStillBackfilling = (typeof data._cdBacklogFrom === 'number');
+        if (!_cdStillBackfilling && _maxMid > (data.lastFloor ?? -1)) data.lastFloor = _maxMid;
         // ★ 同步推进 _lastDiaryChatLength（手动"写日记"入口 cdGetNewFloors 用此基线），
         //   否则只勾档案/关系不写日记时，该基线停在旧值，手动补写仍会从旧基线重扫全部 → 重复总结。
-        //   这里以 chat.length 为最新基线（与 mergeDiaries 里的做法一致）。
+        //   ★ FIX16：按「本批实际覆盖到的位置」推进，不再无脑推到 chat.length，
+        //     否则没排进窗口的楼层会被算成已越过，从此永久抓不到。
         const _curLen = _cdGetChat().length;
-        if (_curLen > (data._lastDiaryChatLength ?? 0)) data._lastDiaryChatLength = _curLen;
+        let _cdNewBase = Math.min(_curLen, _maxMid + 1);
+        if (_cdStillBackfilling && Number(data._cdBacklogFrom) < _cdNewBase) _cdNewBase = Number(data._cdBacklogFrom);
+        if (_cdNewBase > (data._lastDiaryChatLength ?? 0)) data._lastDiaryChatLength = _cdNewBase;
         // 控制 processedFloors 不无限膨胀：保留最近 2000 个，避免长期对话内存/存储增长
         if (data.processedFloors.length > 2000) data.processedFloors = data.processedFloors.slice(-2000);
         cdAddLog('info', '[进度] 本次已处理楼层', {批次: _batchIds, lastFloor: data.lastFloor, _lastDiaryChatLength: data._lastDiaryChatLength, processedFloors总数: data.processedFloors.length});
@@ -6509,6 +6566,12 @@ async function cdOnMessageReceivedJsonl() {
   if (s.autoSummary === false) return;
   const data = await cdGetData();
   const baseline = (typeof data.lastFloor === 'number' && data.lastFloor >= -1) ? data.lastFloor : -1;
+  /* ★ FIX16：回填期间把扫描起点拉回还有积压的地方。
+     lastFloor 在回填期间不再推进（见 cdRunDiary），这里额外兜一层，
+     确保 px_ss产生的 _cdBacklogFrom 能真正被扫到，不会因 baseline 偏高而漏掉。 */
+  const _cdBl = typeof data._cdBacklogFrom === 'number' ? Math.min(baseline, Number(data._cdBacklogFrom) - 1) : baseline;
+  if (_cdBl < baseline && typeof cdAddLog === 'function') cdAddLog('info', '[FIX16·回填] 扫描起点已拉回积压处', {起点: _cdBl, 积压: data._cdBacklogFrom});
+  const baselineUse = _cdBl;
   const interval = s.interval || 5;
   const offset = Math.max(0, parseInt(s.memoryOffset, 10) || 0);
   const _pfSet = Array.isArray(data.processedFloors) ? data.processedFloors.map(Number) : [];
@@ -6526,7 +6589,7 @@ async function cdOnMessageReceivedJsonl() {
   // 找出 lastFloor 之后、未处理的新楼层（jsonl 行号 i = message_id，与 lastFloor/processedFloors 对齐）
   // ★ [Bug4修复] 与 chat 路径口径对齐：只统计有正文(非空 mes) 的楼层，保证两路径 totalNew 一致
   const newFloors = res.floors.filter(function (fl) {
-    return fl.i > baseline && _pfSet.indexOf(fl.i) < 0 && fl.mes && String(fl.mes).trim();
+    return fl.i > baselineUse && _pfSet.indexOf(fl.i) < 0 && fl.mes && String(fl.mes).trim();
   });
   const totalNew = newFloors.length;
   if (totalNew < interval) {
@@ -6691,6 +6754,16 @@ async function cdOnMessageReceived() {
   //   不再用会被提前推进的 _baselineChatLength（旧逻辑在调用写日记前就预推基线，
   //   一旦写日记失败/空结果，基线虚高吞掉了待处理楼层，导致“新增AI”恒为1、永不凑满整批）。
   let baseline = (typeof data.lastFloor === 'number' && data.lastFloor >= -1) ? data.lastFloor : -1;
+  /* ★ FIX16：回填期间，若还有更早的未处理楼层，把扫描起点拉回那批之前。
+     lastFloor 在回填期间停住不推（cdRunDiary 里改的），但旧数据里它可能已经很高，
+     不拉回的话积压楼层永远扫不到。 */
+  if (typeof data._cdBacklogFrom === 'number') {
+    const _cdBl2 = Math.min(baseline, Number(data._cdBacklogFrom) - 1);
+    if (_cdBl2 < baseline) {
+      cdAddLog('info', '[FIX16·回填] 扫描起点已拉回积压处', {起点: _cdBl2, 积压: data._cdBacklogFrom});
+      baseline = _cdBl2;
+    }
+  }
 
   // 分片/重roll保护：chat 变短时，把进度回退到当前 chat 末尾，避免越界
   if (baseline > currentLen - 1) {
@@ -6751,9 +6824,9 @@ async function cdOnMessageReceived() {
   }
 
   let windowFloors = aiFloors.slice(0, takeCount);
-  if (windowFloors.length > (s.maxWindowFloors || 40))
-    windowFloors = windowFloors.slice(-(s.maxWindowFloors || 40));
-
+  /* ★ FIX16：这里不再自己截尾。原先 slice(-N) 会把更早的楼层直接丢掉，
+     而 cdRunDiary 里的游标仍会被推到最后 ⇒ 那些楼层永久漏总结。
+     现在整批交给 cdRunDiary，由它按窗口切「最老的一段」并把余下的记进积压游标。 */
   const lastProcessed = windowFloors[windowFloors.length - 1].message_id;
   cdAddLog('info', '自动触发(锚点偏移)', {本批AI楼层: windowFloors.length, 起点: windowFloors[0].message_id, 终点: lastProcessed, 偏移: offset, 新增AI: totalNew, 基线: baseline});
     // ★ FIX-1(修复版) 拉取即锁定：只在内存记录本批待处理(__cdLockedBatch)，不提前推游标/不落盘，避免“游标推了但档案未写”(全已总结但档案为空)
@@ -7861,6 +7934,8 @@ function cdInjectModal() {
   $('#cd-content').on('click', '#cd-hm-restore', function (e) { e.stopPropagation(); cdHomeCardRestore(); });
   $('#cd-content').on('click', '.cd-ti', function () {
     var m = $(this).attr('data-ht');
+    // ★ FIX16：专用开关项，切的是设置不是视图
+    if (m === '__autosum') { if (typeof cdToggleAutoSummary === 'function') cdToggleAutoSummary(); return; }
     if (m) cdSwitchView(m);
   });
   $('#cd-content').on('click', '#cd-hs-back', function () { $('#cd-hsearch-input').val(''); cdSwitchView('home'); });
@@ -9085,9 +9160,122 @@ function cdDashOrderedCards(s) {
 
 let cdHomeEdit = false;
 
+/** FIX16：真实扫描「还没被总结过的楼层」（空 mes 与已处理楼层都不算） */
+async function cdPendingFloors() {
+  try {
+    if (typeof cdGetData !== 'function' || typeof cdGetNewFloors !== 'function') return [];
+    const d = await cdGetData();
+    const fl = await cdGetNewFloors(d);
+    return Array.isArray(fl) ? fl : [];
+  } catch (e) {
+    if (typeof cdAddLog === 'function') cdAddLog('warn', '[FIX16] 统计待总结楼层失败: ' + (e && e.message));
+    return [];
+  }
+}
+
+/** FIX16：按窗口分批把指定楼层补总结一遍（串行，避免抢同一把锁） */
+async function cdBackfillFloors(floors) {
+  try {
+    const s = (typeof cdGetSettings === 'function') ? cdGetSettings() : {};
+    const _maxW = Math.max(1, parseInt(s.maxWindowFloors, 10) || 40);
+    let rest = Array.isArray(floors) ? floors.slice() : [];
+    let done = 0;
+    while (rest.length) {
+      const batch = rest.slice(0, _maxW);
+      rest = rest.slice(_maxW);
+      try {
+        await cdRunDiary({ manual: true, silent: false, extraFloors: batch });
+        done += batch.length;
+      } catch (e2) {
+        if (typeof cdAddLog === 'function') cdAddLog('warn', '[FIX16·回填] 批次失败: ' + (e2 && e2.message));
+        break;
+      }
+    }
+    if (typeof cdNotify === 'function') {
+      cdNotify({ id: 'cdnt-bfill', type: done ? 'success' : 'warn',
+        title: done ? '补齐完成' : '没有补成功',
+        msg: done ? ('已补总结 ' + done + ' 层。') : '这批楼层一个都没补上，看日志里的失败原因。',
+        timeout: 4500 });
+    }
+  } catch (e) {
+    if (typeof cdAddLog === 'function') cdAddLog('error', '[FIX16·回填] 异常: ' + (e && e.message));
+  }
+}
+
+/** FIX16：明确标记为「不补」—— 写进 processedFloors，之后不再被自动回填追问，也不会被隐藏当成已记录 */
+async function cdSkipPendingFloors(floors) {
+  try {
+    const data = await cdGetData();
+    if (!Array.isArray(data.processedFloors)) data.processedFloors = [];
+    const ids = (Array.isArray(floors) ? floors : [])
+      .map(function (f) { return Number(f && f.message_id); })
+      .filter(function (n) { return Number.isFinite(n) && n >= 0; });
+    let added = 0;
+    for (const id of ids) { if (data.processedFloors.indexOf(id) < 0) { data.processedFloors.push(id); added++; } }
+    data._cdBacklogFrom = null;
+    await cdSaveData(data);
+    if (typeof cdNotify === 'function') {
+      cdNotify({ id: 'cdnt-skip', type: 'info', title: '已跳过 ' + added + ' 层',
+        msg: '这些楼层不会再被自动总结，也不会被隐藏功能当成「已记录」。想补的话去「楼层补写」手动选。',
+        timeout: 4500 });
+    }
+  } catch (e) {
+    if (typeof cdAddLog === 'function') cdAddLog('error', '[FIX16·跳过] 异常: ' + (e && e.message));
+  }
+}
+
+/** FIX16：暂停 / 恢复自动总结（首页工具格那个开关） */
+async function cdToggleAutoSummary() {
+  const s = (typeof cdGetSettings === 'function') ? cdGetSettings() : {};
+  const next = (s.autoSummary === false);       // 当前是关 ⇒ 这次是「恢复」
+  if (typeof cdSaveSettings === 'function') cdSaveSettings({ autoSummary: next });
+  try { $('#cd-s-autosummary').prop('checked', next); } catch (e) {}
+  if (typeof cdAddLog === 'function') cdAddLog('info', '[FIX16] 自动总结开关切换', { 现在: next ? '开' : '关' });
+
+  if (!next) {
+    // 暂停：如实告知已积压多少层
+    const pend = await cdPendingFloors();
+    if (typeof cdNotify === 'function') {
+      cdNotify({ id: 'cdnt-autosum', type: 'info', title: '自动总结已暂停',
+        msg: pend.length
+          ? ('暂停期间攒下的楼层不会自动总结。当前有 ' + pend.length + ' 层还没总结，恢复时会先问你要不要补。')
+          : '之后不再自动总结，手动「写日记」照常可用。',
+        timeout: 5000 });
+    }
+    try { if (typeof cdRenderHome === 'function') await cdRenderHome(); } catch (e) {}
+    return;
+  }
+
+  // 恢复：有积压就先征求选择（用户明确要求：NSFW 场景往往就是不想让它们进档案）
+  const pend = await cdPendingFloors();
+  try { if (typeof cdRenderHome === 'function') await cdRenderHome(); } catch (e) {}
+  if (!pend.length) {
+    if (typeof cdNotify === 'function') {
+      cdNotify({ id: 'cdnt-autosum', type: 'success', title: '自动总结已恢复',
+        msg: '没有积压楼层，之后的楼层会照常自动总结。', timeout: 4500 });
+    }
+    return;
+  }
+  if (typeof cdNotify === 'function') {
+    cdNotify({ id: 'cdnt-autosum', type: 'info', title: '自动总结已恢复',
+      msg: '暂停期间攒了 ' + pend.length + ' 层没总结。要补上吗？' +
+           '（选「不用补」的话，这些楼层会被标记为跳过，以后也不再自动补）',
+      timeout: 0,
+      actions: [
+        { label: '补齐这 ' + pend.length + ' 层', primary: true,
+          fn: function () { if (typeof cdNotifyClose === 'function') cdNotifyClose('cdnt-autosum'); cdBackfillFloors(pend); } },
+        { label: '不用补',
+          fn: function () { if (typeof cdNotifyClose === 'function') cdNotifyClose('cdnt-autosum'); cdSkipPendingFloors(pend); } },
+      ] });
+  }
+}
+
 async function cdRenderHome() {
   const st = await cdDashStats(true);
   const s = (typeof cdGetSettings === 'function') ? cdGetSettings() : {};
+  /* FIX16：工具格角标上的「还没总结的楼层数」必须是真的 —— 这里走底层真实扫描。
+     扫不到就返回空数组，角标不显示（符合「没数据源的组件不渲染」）。 */
+  const pendFloors = (typeof cdPendingFloors === 'function') ? (await cdPendingFloors()) : [];
   const hidden = (s.dashHidden && typeof s.dashHidden === 'object') ? s.dashHidden : {};
   const hiddenN = Object.keys(hidden).filter(function (k) { return hidden[k]; }).length;
   const list = cdDashOrderedCards(s);
@@ -9133,8 +9321,21 @@ async function cdRenderHome() {
   h += '</div>';
 
   // 工具格
+  /* ★ FIX16：最前面插入「自动总结 暂停/恢复」开关。放在这里是因为 NSFW 场景要一键切，
+     不该绕去设置面板；带真实待处理楼层数（来自底层真实扫描，没有数据就不显示角标）。 */
+  const _asOn = (s.autoSummary !== false);
+  const _pendN = pendFloors.length;
+  /* 以前这里写成 `'title="' + x + _pendN ? '"' : (...)`，
+     ?: 的优先级低于 + ，会被解析成 (字符串) ? '"' : (...) —— 恒为真，积压数永远不显示。 */
+  const _asTip = (_asOn ? '点一下暂停自动总结' : '点一下恢复自动总结') +
+    (_pendN ? ('｜当前有 ' + _pendN + ' 层还没总结') : '');
+  const _asHtml = '<div class="cd-ti cd-ti-sw' + (_asOn ? ' on' : ' off') + '" data-ht="__autosum" title="' + _asTip + '">' +
+    '<i class="fa-regular ' + (_asOn ? 'fa-circle-play' : 'fa-circle-pause') + '"></i>' +
+    '<span>' + (_asOn ? '总结进行中' : '总结已暂停') + '</span>' +
+    (_pendN ? '<b class="cd-ti-badge" title="还有 ' + _pendN + ' 层没总结">' + _pendN + '</b>' : '') +
+    '</div>';
   h += '<div class="cd-hsec"><span>工具</span><span class="cd-hsec-ln"></span></div>';
-  h += '<div class="cd-tgrid">' + CD_DASH_TOOLS.map(function (t) {
+  h += '<div class="cd-tgrid">' + _asHtml + CD_DASH_TOOLS.map(function (t) {
     return '<div class="cd-ti" data-ht="' + t.mode + '"><i class="' + t.ic + '"></i><span>' + t.t + '</span></div>';
   }).join('') + '</div>';
 
@@ -13313,6 +13514,8 @@ async function cdRenderSettings() {
 
     <div class="cds-card">
       <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-sliders"></i></span><span><span class="cds-gtitle">运行参数</span><span class="cds-gsub">自动处理的频率与稳定性</span></span></div>
+      <div class="cds-row"><span class="cds-lab">自动总结 <span class="cds-hint">关=只手动触发</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-autosummary" ${s.autoSummary !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+      <div class="cds-hint" style="white-space:normal;line-height:1.6;margin:2px 0 6px;">关掉后不再自动跑总结（NSFW 场景常用）。首页<b>工具</b>那排第一个就是它的一键开关，点一下就能暂停/恢复。</div>
       <div class="cds-row"><span class="cds-lab">处理频率 <span class="cds-hint">每 N 条楼层(AI+用户)</span></span><span class="cds-ctrl"><input type="number" id="cd-s-interval" value="${s.interval}" min="1" max="100" class="cd-input"></span></div>
       <div class="cds-row"><span class="cds-lab">总结延迟 <span class="cds-hint">自动总结到达后等 N 秒再调用API</span></span><span class="cds-ctrl"><input type="number" id="cd-s-asdelay" value="${s.autoSummaryDelay === undefined ? 20 : s.autoSummaryDelay}" min="0" max="300" class="cd-input" style="width:52px;"><span class="cds-hint">秒</span></span></div>
       <div class="cds-row"><span class="cds-lab">记忆锚点偏移 <span class="cds-hint">跳过末尾 N 条</span></span><span class="cds-ctrl"><input type="number" id="cd-s-offset" value="${s.memoryOffset === undefined ? 2 : s.memoryOffset}" min="0" max="20" class="cd-input" style="width:52px;"></span></div>
@@ -13455,6 +13658,13 @@ async function cdRenderSettings() {
     if (typeof cdRefreshCharArt === 'function') cdRefreshCharArt();
     try { if (cdViewMode === 'browse' && typeof cdRenderBrowse === 'function') cdRenderBrowse(); } catch (_e) {}
     try { if (cdViewMode === 'save' && typeof cdRenderSave === 'function') cdRenderSave(); } catch (_e) {}
+  });
+  /* FIX16：面板里的总开关即时生效，并与首页工具格按钮同步 */
+  $('#cd-settings-panel').off('change', '#cd-s-autosummary').on('change', '#cd-s-autosummary', function () {
+    var _v = $(this).is(':checked');
+    if (typeof cdSaveSettings === 'function') cdSaveSettings({ autoSummary: _v });
+    try { if (typeof cdRenderHome === 'function' && cdViewMode === 'home') cdRenderHome(); } catch (_e2) {}
+    if (typeof toastr !== 'undefined') toastr.success(_v ? '自动总结已开启' : '自动总结已关闭');
   });
   $('#cd-settings-panel').off('change', '#cd-s-cardcover').on('change', '#cd-s-cardcover', function () {
     if (typeof cdSaveSettings === 'function') cdSaveSettings({ cardCover: $(this).is(':checked') });
@@ -13826,6 +14036,7 @@ async function cdRenderSettings() {
       backendProxy: $('#cd-s-backend-proxy').is(':checked'),
       enabled: $('#cd-s-enabled').is(':checked'),
       interval: parseInt($('#cd-s-interval').val(), 10) || 5,
+      autoSummary: $('#cd-s-autosummary').is(':checked'),
       autoSummaryDelay: Math.max(0, parseInt($('#cd-s-asdelay').val(), 10) || 0),
       memoryOffset: (function () { var _v = parseInt($('#cd-s-offset').val(), 10); return Number.isFinite(_v) ? Math.max(0, _v) : 2; })(),
       cameoThreshold: parseInt($('#cd-s-cameo').val(), 10) || 3,
@@ -14761,7 +14972,7 @@ function cdRenderHelp() {
       <p style="font-size: calc(0.66rem * var(--cd-fs, 1));color:#6b5a48;line-height:1.6;margin:0 0 8px;">
         每次 AI 回复后自动检查新增楼层数。达到设置间隔（默认 5 楼）时，自动执行三路并行 API 写日记+关系+剧情档案。<br>
         基于 <code>chat.length</code> 基线追踪，不受 SillyTavern 分片加载影响。<br>
-        可在设置面板关闭自动总结，改为手动触发。
+        可在设置面板「运行参数 › 自动总结」关闭它，或直接在首页<b>工具</b>那排点第一个开关一键暂停/恢复。
       </p>
 
       <div class="cd-write-divider"></div>
