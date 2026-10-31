@@ -677,6 +677,7 @@ function emptyData() {
     relations:{},      // { from: { to: { type, attitude, note } } }
     lastFloor: -1,     // 日记引擎进度（mergeDiaries 更新），手动/自动共用
     processedFloors: [], // [v2.7.3] 已实际被补写/总结成功的楼层 message_id 集合（解决补写中途楼层后仍显示"未记录"、以及重复总结同一批旧楼层的问题）
+    skippedFloors: [],   // [FIX17] 用户明确标记「不补」的楼层 message_id。与 processedFloors 双写，原因见 cdSkipPendingFloors 的注释
     _baselineChatLength: -1, // [自动触发专用] 基于 chat.length，不受分片影响
     _lastDiaryChatLength: 0, // [自动触发同步] 上次检测新增楼层的 chat.length 基线
     archive: {         // 剧情档案（增量版）
@@ -7916,6 +7917,10 @@ function cdInjectModal() {
   $('#cd-content').on('click', '.cd-card', function (e) {
     if (cdHomeEdit) return;
     var id = $(this).attr('data-hc');
+    /* ★ FIX18：「内容管理」是全屏二级页，点卡片直接进（不经过抽屉）；
+       总结开关卡是开关，点了就切换。 */
+    if ($(this).hasClass('cd-swcard')) { if (typeof cdToggleAutoSummary === 'function') cdToggleAutoSummary(); return; }
+    if (id === 'studio') { if (typeof cdSwitchView === 'function') cdSwitchView('studio'); return; }
     if (id) cdHomeOpenDrawer(id);
   });
   $('#cd-content').on('click', '#cd-hm-edit', function (e) {
@@ -7936,6 +7941,8 @@ function cdInjectModal() {
     var m = $(this).attr('data-ht');
     // ★ FIX16：专用开关项，切的是设置不是视图
     if (m === '__autosum') { if (typeof cdToggleAutoSummary === 'function') cdToggleAutoSummary(); return; }
+    // ★ FIX18：论坛是独立弹层，不是面板内视图
+    if (m === '__forum') { if (typeof cdForumOpen === 'function') cdForumOpen(); return; }
     if (m) cdSwitchView(m);
   });
   $('#cd-content').on('click', '#cd-hs-back', function () { $('#cd-hsearch-input').val(''); cdSwitchView('home'); });
@@ -8062,6 +8069,7 @@ async function cdRefreshPanelContent() {
     case 'graph':    await cdRenderGraph(); break;
     case 'archive':  await cdRenderArchive(); break;
     case 'floors':   await cdRenderFloors(); break;
+    case 'studio':   await cdRenderStudio(); break;   // ★ FIX18 内容管理工作台
     case 'clear':    cdRenderClear(); break;
     case 'export':   cdRenderExport(); break;
     case 'egg':      cdRenderEgg(); break;
@@ -8964,27 +8972,34 @@ function cdRenderInject() {
 
 const CD_DASH_CARDS = [
   { id: 'diary',   ic: 'fa-regular fa-book-open',    t: '日记',     mode: 'browse'  },
-  { id: 'phone',   ic: 'fa-solid fa-mobile-screen',  t: '手机',     mode: 'phone'   },
+  { id: 'studio',  ic: 'fa-regular fa-layer-group',  t: '内容管理', mode: 'studio'  },
   { id: 'archive', ic: 'fa-regular fa-timeline',     t: '剧情档案', mode: 'archive' },
   { id: 'graph',   ic: 'fa-regular fa-address-book', t: '状态',     mode: 'graph'   },
-  { id: 'save',    ic: 'fa-regular fa-floppy-disk',  t: '存档',     mode: 'save'    },
-  { id: 'inject',  ic: 'fa-solid fa-scroll',         t: '注入',     mode: 'inject'  },
-  { id: 'forum',   ic: 'fa-solid fa-comments',       t: '论坛',     mode: '__forum' },
-  { id: 'vector',  ic: 'fa-regular fa-brain',        t: '向量库',   mode: 'vector'  }
+  { id: 'save',    ic: 'fa-regular fa-floppy-disk',  t: '存档',     mode: 'save'    }
 ];
+/* ★ FIX18：概览大卡瘦身。
+   - 「手机 / 注入 / 论坛 / 向量库」四张卡从大卡区下沉到工具格（视觉上弱一档 dn）。
+   - 「楼层补写」「数据管理」两格从首页退场 —— 它们的活由新的「内容管理」大卡接管；
+     两页仍保留在「全部功能」菜单里（压缩融合 / 备份恢复这些独有能力不丢），只是不在首页抢位置。 */
 const CD_DASH_TOOLS = [
-  { ic: 'fa-regular fa-layer-group',       t: '楼层补写', mode: 'floors'    },
-  { ic: 'fa-regular fa-table',             t: '情报表',   mode: 'table'     },
-  { ic: 'fa-regular fa-download',          t: '导出',     mode: 'export'    },
-  { ic: 'fa-regular fa-database',          t: '数据管理', mode: 'manage'    },
-  { ic: 'fa-regular fa-clipboard-list',    t: '日志',     mode: 'log'       },
-  { ic: 'fa-regular fa-tag',               t: '更新记录', mode: 'changelog' },
-  { ic: 'fa-regular fa-circle-question',   t: '帮助',     mode: 'help'      },
-  { ic: 'fa-regular fa-gem',               t: '彩蛋',     mode: 'egg'       }
+  { ic: 'fa-solid fa-mobile-screen',    t: '手机',     mode: 'phone',   dn: true },
+  { ic: 'fa-solid fa-scroll',           t: '注入',     mode: 'inject',  dn: true },
+  { ic: 'fa-solid fa-comments',         t: '论坛',     mode: '__forum', dn: true },
+  { ic: 'fa-regular fa-brain',          t: '向量库',   mode: 'vector',  dn: true },
+  { ic: 'fa-regular fa-table',           t: '情报表',   mode: 'table'   },
+  { ic: 'fa-regular fa-download',        t: '导出',     mode: 'export'  },
+  { ic: 'fa-regular fa-clipboard-list',  t: '日志',     mode: 'log'     },
+  { ic: 'fa-regular fa-tag',             t: '更新记录', mode: 'changelog' },
+  { ic: 'fa-regular fa-circle-question', t: '帮助',     mode: 'help'    },
+  { ic: 'fa-regular fa-gem',             t: '彩蛋',     mode: 'egg'     }
 ];
 
 let _cdDashCache = null;
-function cdDashInvalidate() { _cdDashCache = null; }
+function cdDashInvalidate() {
+  _cdDashCache = null;
+  // ★ FIX18c：楼层状态缓存也要一起失效（补写/跳过/删除后数字才不会停留在旧值）
+  try { if (typeof cdFloorStateInvalidate === 'function') cdFloorStateInvalidate(); } catch (_e) {}
+}
 
 /** 汇总仪表盘所需的全部真实数据（一次读取，多处复用） */
 async function cdDashStats(force) {
@@ -8996,7 +9011,10 @@ async function cdDashStats(force) {
     injectOn: 0, injectAll: 0, injectMods: [], vecTotal: 0, vecIndexed: 0,
     phoneChats: 0, phoneLatest: '', phoneList: [], relTotal: 0,
     diaryLatestChar: '', diaryLatestDate: '', diaryLatestText: '', diaryList: [],
-    charList: [], arcText: {}
+    charList: [], arcText: {},
+    /* ★ FIX19：内容管理卡的真实条目统计（日记 / 档案段 / 关系 / 卡牌 / 快照 / 合计）
+       —— 楼层已从内容管理移除，卡片数字改为「可管理条目数」，与页面完全对得上 */
+    studioItems: 0, studioDiary: 0, studioArc: 0, studioRel: 0, studioCard: 0, studioSnap: 0
   };
   try {
     const data = (await cdGetData()) || {};
@@ -9034,6 +9052,16 @@ async function cdDashStats(force) {
     o.vecTotal = all.length;
     o.vecIndexed = all.filter(function (v) { return v && Array.isArray(v.vector) && v.vector.length; }).length;
   } catch (e) { try { cdLog('[Dash] 数据读取失败', e); } catch (_e) {} }
+
+  /* ★ FIX19：内容管理卡的数字 —— 走 cdStudioCountItems()（与内容管理页完全同口径）。
+     读不到就留 0（卡片显示「—」，不摆假数字）。 */
+  try {
+    const _si = (typeof cdStudioCountItems === 'function') ? cdStudioCountItems(data) : null;
+    if (_si) {
+      o.studioItems = _si.total; o.studioDiary = _si.diary; o.studioArc = _si.arc;
+      o.studioRel = _si.rel; o.studioCard = _si.card; o.studioSnap = _si.snap;
+    }
+  } catch (e) { try { cdLog('[Dash] 内容统计失败', e); } catch (_e) {} }
 
   try {
     const s = (typeof cdGetSettings === 'function') ? cdGetSettings() : {};
@@ -9119,6 +9147,11 @@ function cdDashCardBody(id, st) {
     case 'phone':
       return { n: st.phoneChats, u: '个会话', badge: 0,
         sub: st.phoneChats ? ('最近：' + st.phoneLatest) : '暂无会话', bar: -1 };
+    case 'studio':
+      /* ★ FIX19：数字全部来自 cdStudioCountItems() 的真实条目统计；一条都没有时显示「—」，不写死 0 */
+      if (!st.studioItems) return { n: '—', u: '', badge: 0, sub: '还没有可管理的内容', bar: -1 };
+      return { n: st.studioItems, u: '项', badge: 0,
+        sub: '日记 ' + st.studioDiary + ' 篇 · 档案 ' + st.studioArc + ' 段', bar: -1 };
     case 'archive':
       return { n: st.arcEntries, u: '条', badge: 0,
         sub: st.arcEntries ? (st.arcSize + ' 字 · 主线/支线/状态/未解') : '档案还是空的', bar: -1 };
@@ -9145,16 +9178,36 @@ function cdDashCardBody(id, st) {
 function cdDashOrderedCards(s) {
   const order = Array.isArray(s.dashOrder) ? s.dashOrder : [];
   const hidden = (s.dashHidden && typeof s.dashHidden === 'object') ? s.dashHidden : {};
-  let list = CD_DASH_CARDS.slice();
-  if (order.length) {
-    const pos = {};
-    order.forEach(function (id, i) { pos[id] = i; });
-    list.sort(function (a, b) {
-      const pa = (pos[a.id] == null ? 999 : pos[a.id]);
-      const pb = (pos[b.id] == null ? 999 : pos[b.id]);
-      return pa - pb;
-    });
+  const known = {};
+  CD_DASH_CARDS.forEach(function (c) { known[c.id] = true; });
+  const defaults = CD_DASH_CARDS.map(function (c) { return c.id; });
+  const kept = order.filter(function (id) { return known[id]; });
+  /* ★ FIX18 迁移：旧顺序里存着已被移出首页的卡（phone/inject/forum/vector…），
+     或者还没有新的「内容管理」卡 → 重建顺序。
+     ⚠ FIX18d 修一个真 bug：用户从没排过序时（kept 为空 = 最常见情况），
+       原写法会把「内容管理」插到 eff 第 0 位 → 内容管理排第一、日记卡被挤到第二。
+       现在分两种情况：
+         - 没排过序 → 直接用默认顺序（日记 / 内容管理 / 剧情档案 / 状态 / 存档）
+         - 排过序   → 保留用户给的相对顺序，「内容管理」插到「日记」后面，其余按默认顺序补齐 */
+  let eff;
+  if (!kept.length) {
+    eff = defaults.slice();
+  } else {
+    eff = kept.slice();
+    if (eff.indexOf('studio') < 0) {
+      const _d = eff.indexOf('diary');
+      eff.splice(_d >= 0 ? _d + 1 : 0, 0, 'studio');
+    }
+    defaults.forEach(function (id) { if (eff.indexOf(id) < 0) eff.push(id); });
   }
+  const pos = {};
+  eff.forEach(function (id, i) { pos[id] = i; });
+  let list = CD_DASH_CARDS.slice();
+  list.sort(function (a, b) {
+    const pa = (pos[a.id] == null ? 999 : pos[a.id]);
+    const pb = (pos[b.id] == null ? 999 : pos[b.id]);
+    return pa - pb;
+  });
   return list.filter(function (c) { return !hidden[c.id]; });
 }
 
@@ -9207,11 +9260,19 @@ async function cdSkipPendingFloors(floors) {
   try {
     const data = await cdGetData();
     if (!Array.isArray(data.processedFloors)) data.processedFloors = [];
+    if (!Array.isArray(data.skippedFloors)) data.skippedFloors = [];
     const ids = (Array.isArray(floors) ? floors : [])
       .map(function (f) { return Number(f && f.message_id); })
       .filter(function (n) { return Number.isFinite(n) && n >= 0; });
     let added = 0;
-    for (const id of ids) { if (data.processedFloors.indexOf(id) < 0) { data.processedFloors.push(id); added++; } }
+    // ★ 必须双写：processedFloors 被 50+ 处当作「别再碰它」的判据（防重复总结 / 隐藏达标 / 算不算新楼层）。
+    //   跳过语义上同属「别再碰」，所以它得留在 processedFloors；
+    //   但 UI 要区分「真总结过」和「明确不补」，于是额外记一份 skippedFloors。
+    //   两者之差 = 真正总结过的。（老数据没有 skippedFloors ⇒ 全算已总结，向后兼容。）
+    for (const id of ids) {
+      if (data.processedFloors.indexOf(id) < 0) { data.processedFloors.push(id); added++; }
+      if (data.skippedFloors.indexOf(id) < 0) data.skippedFloors.push(id);
+    }
     data._cdBacklogFrom = null;
     await cdSaveData(data);
     if (typeof cdNotify === 'function') {
@@ -9221,6 +9282,137 @@ async function cdSkipPendingFloors(floors) {
     }
   } catch (e) {
     if (typeof cdAddLog === 'function') cdAddLog('error', '[FIX16·跳过] 异常: ' + (e && e.message));
+  }
+}
+
+/** FIX17：单个楼层的状态
+ *  'skip' 用户明确标记不补 ｜ 'done' 真总结过 ｜ 'todo' 还没碰过
+ *  ★ 先看 skippedFloors（那才是「明确不补」的标记），再看 processedFloors。
+ *    老数据没有 skippedFloors ⇒ 只可能落到 done/todo，向后兼容。
+ *  ★ 任何取不出数的情况一律返回 'todo' —— 宁可当没处理过，也不虚报已总结。 */
+function cdFloorStateOf(data, mid) {
+  const n = Number(mid);
+  if (!Number.isFinite(n) || n < 0) return 'todo';
+  if (Array.isArray(data && data.skippedFloors)) {
+    for (let i = 0; i < data.skippedFloors.length; i++) {
+      if (Number(data.skippedFloors[i]) === n) return 'skip';
+    }
+  }
+  if (Array.isArray(data && data.processedFloors)) {
+    for (let i = 0; i < data.processedFloors.length; i++) {
+      if (Number(data.processedFloors[i]) === n) return 'done';
+    }
+  }
+  return 'todo';
+}
+
+/** FIX17：一次性统计全部楼层状态
+ *  @returns null 表示读不到数据（调用方据此整块不渲染，不摆假数字）
+ *           { total, done, skip, todo, pending:[message_id...], chatLen }
+ *  ★ chat 下标 i 即 message_id —— 与 lastFloor / processedFloors 同一口径（见 6589 行注释）。 */
+async function cdFloorStats() {
+  try {
+    if (typeof cdGetData !== 'function' || typeof _cdGetChat !== 'function') return null;
+    const data = await cdGetData();
+    const chat = _cdGetChat();
+    if (!Array.isArray(chat)) return null;
+    let done = 0, skip = 0;
+    const pending = [];
+    for (let i = 0; i < chat.length; i++) {
+      const st = cdFloorStateOf(data, i);
+      if (st === 'skip') { skip++; continue; }
+      if (st === 'done') { done++; continue; }
+      pending.push(i);
+    }
+    return { total: chat.length, done: done, skip: skip, todo: pending.length,
+             pending: pending, chatLen: chat.length };
+  } catch (e) {
+    if (typeof cdAddLog === 'function') cdAddLog('warn', '[FIX17] 统计楼层状态失败: ' + (e && e.message));
+    return null;
+  }
+}
+
+/* ============================================================
+ * ★ FIX18c：楼层状态唯一数据源
+ *   cdFloorStats() 用 chat 数组下标统计，而 cdGetAiFloorsSmart() 在 jsonl 模式下
+ *   用的是 jsonl 行号 —— 两种模式口径不同，横幅和列表的数字会对不上。
+ *   这里统一成：楼层列表来自 cdGetAiFloorsSmart()（跟随 summarySource），
+ *   状态判定来自 cdFloorStateOf()（与 processedFloors / skippedFloors 同一口径）。
+ *   带 4 秒 TTL 缓存：首页每次渲染都重扫的话，手机上 jsonl 模式会反复读整个文件。
+ * ============================================================ */
+let _cdFloorStateCache = null;
+let _cdFloorStateCacheAt = 0;
+async function cdFloorStateList(force) {
+  try {
+    const now = Date.now();
+    if (!force && _cdFloorStateCache && (now - _cdFloorStateCacheAt) < 4000) return _cdFloorStateCache;
+    const data = await cdGetData();
+    const all = (typeof cdGetAiFloorsSmart === 'function') ? (await cdGetAiFloorsSmart()) : [];
+    const floors = [];
+    let done = 0, skip = 0, todo = 0;
+    for (let i = 0; i < all.length; i++) {
+      const f = all[i] || {};
+      const mid = Number(f.message_id);
+      const stt = (typeof cdFloorStateOf === 'function') ? cdFloorStateOf(data, mid) : 'todo';
+      if (stt === 'skip') skip++;
+      else if (stt === 'done') done++;
+      else todo++;
+      floors.push({
+        kind: 'floor', id: 'f' + mid, mid: mid,
+        who: String(f.name || 'AI'),
+        text: String(f.mes || ''),
+        size: String(f.mes || '').length,
+        state: stt
+      });
+    }
+    const out = { total: floors.length, done: done, skip: skip, todo: todo, floors: floors };
+    _cdFloorStateCache = out;
+    _cdFloorStateCacheAt = now;
+    return out;
+  } catch (e) {
+    try { cdLog('[FIX18c] 读取楼层状态失败', e); } catch (_e) {}
+    return null;
+  }
+}
+function cdFloorStateInvalidate() { _cdFloorStateCache = null; _cdFloorStateCacheAt = 0; }
+
+/** FIX17：撤销「跳过」—— 让楼层重新回到待总结队列
+ *  ★ 两个数组都要清理：只清 skippedFloors 的话，它还留在 processedFloors 里，
+ *    照样被「防重复总结」挡住，扫不到 —— 表现就像撤销没生效。 */
+async function cdUnskipFloors(floors) {
+  try {
+    const data = await cdGetData();
+    if (!Array.isArray(data.skippedFloors)) data.skippedFloors = [];
+    if (!Array.isArray(data.processedFloors)) data.processedFloors = [];
+    const ids = (Array.isArray(floors) ? floors : [])
+      .map(function (f) { return Number(f && f.message_id); })
+      .filter(function (n) { return Number.isFinite(n) && n >= 0; });
+    let removed = 0;
+    // ★ 必须只处理【确实被跳过】的：混在里面的「真总结过」的楼层碰都不能碰，
+    //   否则会被退回未总结，下次自动总结重复总结它（日记里出现两份一样的内容）。
+    //   _sk / _pf 是两个镜像给 indexOf 用的数字副本，随元素移除同步 splice，避免重复 id 时错位。
+    const _sk = data.skippedFloors.map(Number);
+    const _pf = data.processedFloors.map(Number);
+    for (const id of ids) {
+      const si = _sk.indexOf(id);
+      if (si < 0) continue;
+      data.skippedFloors.splice(si, 1); _sk.splice(si, 1);
+      const pi = _pf.indexOf(id);
+      if (pi >= 0) { data.processedFloors.splice(pi, 1); _pf.splice(pi, 1); }
+      removed++;
+    }
+    await cdSaveData(data);
+    if (typeof cdNotify === 'function') {
+      cdNotify({ id: 'cdnt-unskip', type: 'success', title: '已恢复 ' + removed + ' 层',
+        msg: removed
+          ? '它们重新回到待总结队列，下次自动总结会带上。'
+          : '这几层本来就没被标记跳过，不用撤销。',
+        timeout: 4500 });
+    }
+    return removed;
+  } catch (e) {
+    if (typeof cdAddLog === 'function') cdAddLog('error', '[FIX17·撤销跳过] 异常: ' + (e && e.message));
+    return 0;
   }
 }
 
@@ -9277,9 +9469,34 @@ async function cdRenderHome() {
      扫不到就返回空数组，角标不显示（符合「没数据源的组件不渲染」）。 */
   const pendFloors = (typeof cdPendingFloors === 'function') ? (await cdPendingFloors()) : [];
   const hidden = (s.dashHidden && typeof s.dashHidden === 'object') ? s.dashHidden : {};
-  const hiddenN = Object.keys(hidden).filter(function (k) { return hidden[k]; }).length;
+  /* ★ FIX18：只统计仍在概览区的大卡 —— 旧的 phone/inject/… 已下沉到工具格，
+     留在 dashHidden 里不算「被隐藏」，否则「恢复已隐藏(N)」会多出一个点不回来的数。 */
+  const hiddenN = Object.keys(hidden).filter(function (k) {
+    if (!hidden[k]) return false;
+    for (let i = 0; i < CD_DASH_CARDS.length; i++) if (CD_DASH_CARDS[i].id === k) return true;
+    return false;
+  }).length;
   const list = cdDashOrderedCards(s);
   const edit = !!cdHomeEdit;
+
+  /* ★ FIX18：总结开关升为「概览大卡」第一位，深色图标按钮。
+     ⚠ 定义必须在这里（网格渲染之前）—— 以前这段在网格后面，
+       而网格里已经引用了 _asHtml → const 的 TDZ 会直接抛 ReferenceError，整个首页渲染失败。
+     深色完全由令牌组合：背景 var(--cd-ink) / 文字 var(--cd-card) / 描边 var(--cd-lineG)。
+     夜间主题下 --cd-ink 本身是浅色 → 自动反相成「浅底深字 + 金边」，
+     否则黑面板上再放一块黑按钮等于完全看不见。 */
+  const _asOn = (s.autoSummary !== false);
+  const _pendN = pendFloors.length;
+  /* 以前这里写成 `'title="' + x + _pendN ? '"' : (...)`，
+     ?: 的优先级低于 + ，会被解析成 (字符串) ? '"' : (...) —— 恒为真，积压数永远不显示。 */
+  const _asTip = (_asOn ? '点一下暂停自动总结' : '点一下恢复自动总结') +
+    (_pendN ? ('｜当前有 ' + _pendN + ' 层还没总结') : '');
+  const _asHtml = '<div class="cd-card cd-swcard' + (_asOn ? '' : ' off') + '" id="cd-swcard" title="' + _asTip + '">' +
+    '<div class="cd-swcard-ic"><i class="fa-regular ' + (_asOn ? 'fa-circle-play' : 'fa-circle-pause') + '"></i></div>' +
+    '<div class="cd-swcard-t">' + (_asOn ? '总结进行中' : '总结已暂停') + '</div>' +
+    '<div class="cd-swcard-s">' + (_asOn ? '点一下暂停' : '点一下恢复') + '</div>' +
+    (_pendN ? '<span class="cd-swcard-badge" title="还有 ' + _pendN + ' 层没总结">' + _pendN + '</span>' : '') +
+    '</div>';
 
   let h = '';
   // ★ FIX6：首页顶部 = 融合卡（对齐 HCDiary-悬浮球与面板-方案C.html 的 .intro 那条）
@@ -9296,6 +9513,8 @@ async function cdRenderHome() {
   h += '<div class="cd-hsec"><span>概览</span><span class="cd-hsec-ln"></span>' +
        '<button class="cd-hedit' + (edit ? ' on' : '') + '" id="cd-hm-edit"><i class="fa-regular ' + (edit ? 'fa-check' : 'fa-sort') + '"></i> ' + (edit ? '完成' : '编排') + '</button></div>';
   h += '<div class="cd-grid" id="cd-hgrid">';
+  /* ★ FIX18：总结开关卡 = 概览大卡区第一位（不参与编排，固定在首位） */
+  h += _asHtml;
   list.forEach(function (c, i) {
     const b = cdDashCardBody(c.id, st);
     const cls = 'cd-card' + ((b.badge > 0 || (c.id === 'diary' && st.unread > 0)) ? ' hot' : '') + (edit ? ' ed' : '');
@@ -9321,22 +9540,10 @@ async function cdRenderHome() {
   h += '</div>';
 
   // 工具格
-  /* ★ FIX16：最前面插入「自动总结 暂停/恢复」开关。放在这里是因为 NSFW 场景要一键切，
-     不该绕去设置面板；带真实待处理楼层数（来自底层真实扫描，没有数据就不显示角标）。 */
-  const _asOn = (s.autoSummary !== false);
-  const _pendN = pendFloors.length;
-  /* 以前这里写成 `'title="' + x + _pendN ? '"' : (...)`，
-     ?: 的优先级低于 + ，会被解析成 (字符串) ? '"' : (...) —— 恒为真，积压数永远不显示。 */
-  const _asTip = (_asOn ? '点一下暂停自动总结' : '点一下恢复自动总结') +
-    (_pendN ? ('｜当前有 ' + _pendN + ' 层还没总结') : '');
-  const _asHtml = '<div class="cd-ti cd-ti-sw' + (_asOn ? ' on' : ' off') + '" data-ht="__autosum" title="' + _asTip + '">' +
-    '<i class="fa-regular ' + (_asOn ? 'fa-circle-play' : 'fa-circle-pause') + '"></i>' +
-    '<span>' + (_asOn ? '总结进行中' : '总结已暂停') + '</span>' +
-    (_pendN ? '<b class="cd-ti-badge" title="还有 ' + _pendN + ' 层没总结">' + _pendN + '</b>' : '') +
-    '</div>';
+  /* ★ FIX18：总结开关已升为概览大卡第一位（见上方 _asHtml），工具格不再重复放一格。 */
   h += '<div class="cd-hsec"><span>工具</span><span class="cd-hsec-ln"></span></div>';
-  h += '<div class="cd-tgrid">' + _asHtml + CD_DASH_TOOLS.map(function (t) {
-    return '<div class="cd-ti" data-ht="' + t.mode + '"><i class="' + t.ic + '"></i><span>' + t.t + '</span></div>';
+  h += '<div class="cd-tgrid">' + CD_DASH_TOOLS.map(function (t) {
+    return '<div class="cd-ti' + (t.dn ? ' dn' : '') + '" data-ht="' + t.mode + '"><i class="' + t.ic + '"></i><span>' + t.t + '</span></div>';
   }).join('') + '</div>';
 
   $('#cd-content').html(h);
@@ -9576,6 +9783,7 @@ function cdMarkSettingsClean() {
    并把名字统一成入口卡片上的叫法，避免面包屑与按钮文案对不上。 */
 var CD_VIEW_LABEL = { home: '首页', browse: '日记', archive: '剧情', graph: '状态', save: '存档', phone: '手机', inject: '注入',
   vector: '向量库', manage: '数据管理', floors: '楼层补写', backfill: '回填', clear: '清理', timeline: '时间线', export: '导出',
+  studio: '内容管理',
   egg: '彩蛋', log: '日志', changelog: '更新日志', help: '帮助', forum: '论坛', theatre: '剧场', table: '情报表',
   __settings: '设置', __forum: '论坛' };
 function cdSyncCrumb(mode) {
@@ -15063,6 +15271,914 @@ function cdRenderHelp() {
 }
 
 /** 📋 数据管理：多选删除已生成的数据 */
+/* ==========================================================================
+ * ★ FIX18b · 内容管理工作台（全屏二级页）
+ *   页面结构（五层）：状态横幅 → 类型标签 → 工具条 → 统一列表 → 批量操作栏
+ *   全部数字来自真实数据；删除前先出「影响预览」，预览里的数字实时算。
+ * ========================================================================== */
+
+/* ---- 页面级状态（切走再回来保留，退出面板清空） ---- */
+let _cdStudioTab = 'diary';      // ★ FIX19：楼层 tab 已去掉 → diary | arc | rel | card | snap
+let _cdStudioQ = '';              // 搜索词
+let _cdStudioSort = 'desc';       // desc | asc
+let _cdStudioSel = {};            // 选中集合（按 tab 分开存）
+let _cdStudioEdits = null;        // ★ FIX19：编辑层状态 { tab, list, map, cur }
+let _cdStudioQTimer = null;       // 搜索防抖计时器
+
+function cdStudioResetState() {
+  _cdStudioTab = 'diary'; _cdStudioQ = ''; _cdStudioSort = 'desc';
+  _cdStudioSel = {}; _cdStudioEdits = null;
+}
+function _cdStudioSelOf(tab) {
+  if (!_cdStudioSel[tab]) _cdStudioSel[tab] = [];
+  return _cdStudioSel[tab];
+}
+
+/* ============================================================
+ * ★ FIX19：内容管理 —— 批量「编辑内容 + 删除产出」
+ *   楼层 tab 已按用户要求整个去掉（楼层补写 / 标记跳过走「全部功能 → 楼层补写」老入口）
+ *
+ *   统一条目模型（每类内容都归一成同一种行）：
+ *     { id, kind, tab, title, group, text, extra, extraLabel, date, size, ref, editable }
+ *   ref = 回写定位（日记按 角色名+序号 / 档案按 字段+下标 / 关系按 from>to / 卡牌按下标）
+ *   ★ 不再靠 id 字符串反解 —— 删和改都按 ref 精确落点，绝不误伤别的条目
+ * ============================================================ */
+
+/* ---- 内容指纹：条目 id 里带索引，删过之后同一个 id 会指向别的条目。
+       指纹让「预览看到什么，删/改的就是什么」—— 内容变过的条目会被跳过，不误伤。 ---- */
+function cdStudioFp(parts) {
+  const arr = Array.isArray(parts) ? parts : [parts];
+  return arr.map(function (x) { return String(x == null ? '' : x).slice(0, 64); }).join('');
+}
+
+/* ---- 剧情档案 → 可编辑条目（四个大段落 + 地点/物品/持有/任务/自定义追踪项） ---- */
+function cdStudioArchiveItems(data) {
+  const out = [];
+  const a = (data && data.archive && typeof data.archive === 'object') ? data.archive : {};
+  function pushText(field, label, group, text) {
+    const s = String(text == null ? '' : text);
+    out.push({
+      kind: 'arc', tab: 'arc', id: 'a:' + field, title: label, group: group,
+      text: s, extra: '', extraLabel: '', date: '', size: s.length,
+      ref: { kind: 'arc', field: field, fp: cdStudioFp(s) }, editable: true
+    });
+  }
+  pushText('mainline', '主线', '档案', a.mainline);
+  pushText('sideline', '支线', '档案', a.sideline);
+  pushText('states', '重要状态', '档案', a.states);
+  pushText('unresolved', '未解决事项', '档案', a.unresolved);
+  pushText('timeAnchor', '时间锚点', '档案', a.timeAnchor);
+
+  (Array.isArray(a.locations) ? a.locations : []).forEach(function (s, i) {
+    const v = String(s == null ? '' : s);
+    out.push({
+      kind: 'arc', tab: 'arc', id: 'a:locations#' + i, title: '地点', group: '地点',
+      text: v, extra: '', extraLabel: '', date: '', size: v.length,
+      ref: { kind: 'arc', field: 'locations', idx: i, fp: cdStudioFp(v) }, editable: true
+    });
+  });
+  (Array.isArray(a.items) ? a.items : []).forEach(function (it, i) {
+    const o = it || {};
+    const v = String(o.desc == null ? '' : o.desc);
+    out.push({
+      kind: 'arc', tab: 'arc', id: 'a:items#' + i, title: '物品', group: '物品',
+      text: v, extra: String(o.time == null ? '' : o.time), extraLabel: '时间', date: '', size: v.length,
+      ref: { kind: 'arc', field: 'items', idx: i, fp: cdStudioFp([v, o.time]) }, editable: true
+    });
+  });
+  (Array.isArray(a.itemsHold) ? a.itemsHold : []).forEach(function (it, i) {
+    const v = String((it || {}).line == null ? '' : (it || {}).line);
+    out.push({
+      kind: 'arc', tab: 'arc', id: 'a:itemsHold#' + i, title: '持有', group: '持有',
+      text: v, extra: '', extraLabel: '', date: '', size: v.length,
+      ref: { kind: 'arc', field: 'itemsHold', idx: i, fp: cdStudioFp(v) }, editable: true
+    });
+  });
+  (Array.isArray(a.tasks) ? a.tasks : []).forEach(function (it, i) {
+    const v = String((it || {}).line == null ? '' : (it || {}).line);
+    out.push({
+      kind: 'arc', tab: 'arc', id: 'a:tasks#' + i, title: '任务', group: '任务',
+      text: v, extra: '', extraLabel: '', date: '', size: v.length,
+      ref: { kind: 'arc', field: 'tasks', idx: i, fp: cdStudioFp(v) }, editable: true
+    });
+  });
+  const cu = (a.custom && typeof a.custom === 'object') ? a.custom : {};
+  Object.keys(cu).forEach(function (key) {
+    (Array.isArray(cu[key]) ? cu[key] : []).forEach(function (it, i) {
+      const o = it || {};
+      const v = String(o.desc == null ? '' : o.desc);
+      out.push({
+        kind: 'arc', tab: 'arc', id: 'a:custom#' + key + '#' + i, title: key, group: '自定义',
+        text: v, extra: String(o.time == null ? '' : o.time), extraLabel: '时间', date: '', size: v.length,
+        ref: { kind: 'arc', field: 'custom', key: key, idx: i, fp: cdStudioFp([v, o.time]) }, editable: true
+      });
+    });
+  });
+  return out;
+}
+
+/* ---- 角色日记 → 可编辑条目 ---- */
+function cdStudioDiaryItems(data) {
+  const out = [];
+  const dd = (data && data.diaries && typeof data.diaries === 'object') ? data.diaries : {};
+  Object.keys(dd).forEach(function (name) {
+    const arr = Array.isArray(dd[name]) ? dd[name] : [];
+    for (let i = 0; i < arr.length; i++) {
+      const it = arr[i] || {};
+      const v = String(it.entry == null ? '' : it.entry);
+      out.push({
+        kind: 'diary', tab: 'diary', id: 'd:' + name + '#' + i, title: name, group: '日记',
+        text: v, extra: String(it.mood == null ? '' : it.mood), extraLabel: '心情',
+        date: String(it.date == null ? '' : it.date), size: v.length,
+        ref: { kind: 'diary', name: name, idx: i, fp: cdStudioFp([v, it.date, it.mood]) }, editable: true
+      });
+    }
+  });
+  return out;
+}
+
+/* ---- 人物关系 ---- */
+function cdStudioRelItems(data) {
+  const out = [];
+  const rr = (data && data.relations && typeof data.relations === 'object') ? data.relations : {};
+  Object.keys(rr).forEach(function (from) {
+    const tg = rr[from] || {};
+    Object.keys(tg).forEach(function (to) {
+      const rel = tg[to] || {};
+      const note = String(rel.note == null ? '' : rel.note);
+      out.push({
+        kind: 'rel', tab: 'rel', id: 'r:' + from + '>' + to, title: from + ' → ' + to, group: '关系',
+        text: note, extra: String(rel.type == null ? '' : rel.type), extraLabel: '类型',
+        date: '', size: note.length,
+        ref: { kind: 'rel', from: from, to: to, fp: cdStudioFp(note) }, editable: true
+      });
+    });
+  });
+  return out;
+}
+
+/* ---- 剧情卡牌 ---- */
+function cdStudioCardItems(data) {
+  const out = [];
+  const cards = (data && Array.isArray(data.cards)) ? data.cards : [];
+  for (let i = 0; i < cards.length; i++) {
+    const c = cards[i] || {};
+    const v = String(c.desc == null ? '' : c.desc);
+    out.push({
+      kind: 'card', tab: 'card', id: 'c:' + i, title: String(c.title == null ? '未命名卡牌' : c.title), group: '卡牌',
+      text: v, extra: String(c.time == null ? '' : c.time), extraLabel: '时间',
+      date: '', size: v.length,
+      ref: { kind: 'card', idx: i, fp: cdStudioFp(v) }, editable: true
+    });
+  }
+  return out;
+}
+
+/* ---- 填表快照（只有时间戳，没有正文可改 ⇒ 不给编辑） ---- */
+function cdStudioSnapItems(data) {
+  const out = [];
+  const snaps = (data && Array.isArray(data.liveTableSnapshots)) ? data.liveTableSnapshots : [];
+  for (let i = 0; i < snaps.length; i++) {
+    const sp = snaps[i] || {};
+    const t = sp.time ? new Date(sp.time).toLocaleString() : '';
+    out.push({
+      kind: 'snap', tab: 'snap', id: 's:' + i,
+      title: '快照#' + (i + 1) + (sp.mid !== undefined ? (' · 楼层#' + sp.mid) : ''), group: '快照',
+      text: t, extra: '', extraLabel: '', date: '', size: t.length,
+      ref: { kind: 'snap', idx: i, fp: cdStudioFp(t) }, editable: false
+    });
+  }
+  return out;
+}
+
+/* ---- 各类型条目数（同步；给首页概览卡用，与内容管理页同口径） ---- */
+function cdStudioCountItems(data) {
+  const d = (data && typeof data === 'object') ? data : {};
+  const diary = cdStudioDiaryItems(d).length;
+  const arc = cdStudioArchiveItems(d).length;
+  const rel = cdStudioRelItems(d).length;
+  const card = cdStudioCardItems(d).length;
+  const snap = cdStudioSnapItems(d).length;
+  return { diary: diary, arc: arc, rel: rel, card: card, snap: snap, total: diary + arc + rel + card + snap };
+}
+
+/* ---- 取某个 tab 的全量条目（不过滤、不搜索、不排序） ---- */
+async function cdStudioAll(tab) {
+  let data = null;
+  try { data = await cdGetData(); } catch (e) { data = null; }
+  if (!data || typeof data !== 'object') data = {};
+  const map = {
+    diary: cdStudioDiaryItems(data),
+    arc: cdStudioArchiveItems(data),
+    rel: cdStudioRelItems(data),
+    card: cdStudioCardItems(data),
+    snap: cdStudioSnapItems(data)
+  };
+  const list = map[tab] || [];
+  for (let i = 0; i < list.length; i++) list[i].ord = i;
+  return list;
+}
+
+/* ---- 当前列表（搜索 + 排序） ---- */
+async function cdStudioList() {
+  const tab = _cdStudioTab;
+  let list = await cdStudioAll(tab);
+  const q = String(_cdStudioQ || '').trim().toLowerCase();
+  if (q) {
+    list = list.filter(function (x) {
+      return (String(x.title || '') + ' ' + String(x.text || '') + ' ' +
+        String(x.extra || '') + ' ' + String(x.date || '') + ' ' + String(x.group || '')).toLowerCase().indexOf(q) >= 0;
+    });
+  }
+  const asc = (_cdStudioSort === 'asc');
+  list = list.slice();
+  list.sort(function (a, b) { return asc ? (a.ord - b.ord) : (b.ord - a.ord); });
+  return list;
+}
+
+/* ---- 取某条目「当前」的内容指纹（条目已不在 → null） ---- */
+function cdStudioCurrentFp(data, ref) {
+  if (!data || !ref) return null;
+  try {
+    if (ref.kind === 'diary') {
+      const arr = (data.diaries && data.diaries[ref.name]);
+      if (!Array.isArray(arr) || !arr[ref.idx]) return null;
+      const it = arr[ref.idx];
+      return cdStudioFp([it.entry, it.date, it.mood]);
+    }
+    if (ref.kind === 'arc') {
+      const a = data.archive;
+      if (!a || typeof a !== 'object') return null;
+      const F = ref.field;
+      if (F === 'mainline' || F === 'sideline' || F === 'states' || F === 'unresolved' || F === 'timeAnchor') {
+        return cdStudioFp(a[F]);
+      }
+      if (F === 'locations') {
+        if (!Array.isArray(a.locations) || a.locations[ref.idx] === undefined) return null;
+        return cdStudioFp(a.locations[ref.idx]);
+      }
+      if (F === 'items') {
+        if (!Array.isArray(a.items) || !a.items[ref.idx]) return null;
+        return cdStudioFp([a.items[ref.idx].desc, a.items[ref.idx].time]);
+      }
+      if (F === 'itemsHold') {
+        if (!Array.isArray(a.itemsHold) || !a.itemsHold[ref.idx]) return null;
+        return cdStudioFp(a.itemsHold[ref.idx].line);
+      }
+      if (F === 'tasks') {
+        if (!Array.isArray(a.tasks) || !a.tasks[ref.idx]) return null;
+        return cdStudioFp(a.tasks[ref.idx].line);
+      }
+      if (F === 'custom') {
+        const arr = (a.custom && a.custom[ref.key]);
+        if (!Array.isArray(arr) || !arr[ref.idx]) return null;
+        return cdStudioFp([arr[ref.idx].desc, arr[ref.idx].time]);
+      }
+      return null;
+    }
+    if (ref.kind === 'rel') {
+      const tg = (data.relations && data.relations[ref.from]);
+      if (!tg || !tg[ref.to]) return null;
+      return cdStudioFp(tg[ref.to].note);
+    }
+    if (ref.kind === 'card') {
+      const arr = Array.isArray(data.cards) ? data.cards : null;
+      if (!arr || !arr[ref.idx]) return null;
+      return cdStudioFp(arr[ref.idx].desc);
+    }
+    if (ref.kind === 'snap') {
+      const arr = Array.isArray(data.liveTableSnapshots) ? data.liveTableSnapshots : null;
+      if (!arr || !arr[ref.idx]) return null;
+      return cdStudioFp(arr[ref.idx].time);
+    }
+    return null;
+  } catch (e) { return null; }
+}
+
+/* ---- 把一次编辑写回 data（按 ref 精确落点） ---- */
+function cdStudioApplyEdit(data, ref, patch) {
+  if (!data || !ref) return false;
+  const P = patch || {};
+  /* ★ 指纹校验：这条内容在打开编辑器之后被别人改过 → 拒绝覆盖，不冲掉别人的改动 */
+  const _cur = cdStudioCurrentFp(data, ref);
+  if (_cur === null) return false;
+  if (ref.fp && _cur !== ref.fp) return false;
+  try {
+    if (ref.kind === 'diary') {
+      const arr = (data.diaries && data.diaries[ref.name]);
+      if (!Array.isArray(arr) || !arr[ref.idx]) return false;
+      const it = arr[ref.idx];
+      if (P.text !== undefined) it.entry = String(P.text);
+      if (P.extra !== undefined) it.mood = String(P.extra);
+      if (P.date !== undefined) it.date = String(P.date);
+      return true;
+    }
+    if (ref.kind === 'arc') {
+      const a = data.archive;
+      if (!a || typeof a !== 'object') return false;
+      const F = ref.field;
+      if (F === 'mainline' || F === 'sideline' || F === 'states' || F === 'unresolved' || F === 'timeAnchor') {
+        a[F] = String(P.text == null ? '' : P.text);
+        return true;
+      }
+      if (F === 'locations') {
+        if (!Array.isArray(a.locations) || a.locations[ref.idx] === undefined) return false;
+        a.locations[ref.idx] = String(P.text == null ? '' : P.text);
+        return true;
+      }
+      if (F === 'items') {
+        if (!Array.isArray(a.items) || !a.items[ref.idx]) return false;
+        a.items[ref.idx].desc = String(P.text == null ? '' : P.text);
+        if (P.extra !== undefined) a.items[ref.idx].time = String(P.extra);
+        return true;
+      }
+      if (F === 'itemsHold') {
+        if (!Array.isArray(a.itemsHold) || !a.itemsHold[ref.idx]) return false;
+        a.itemsHold[ref.idx].line = String(P.text == null ? '' : P.text);
+        return true;
+      }
+      if (F === 'tasks') {
+        if (!Array.isArray(a.tasks) || !a.tasks[ref.idx]) return false;
+        a.tasks[ref.idx].line = String(P.text == null ? '' : P.text);
+        return true;
+      }
+      if (F === 'custom') {
+        const arr = (a.custom && a.custom[ref.key]);
+        if (!Array.isArray(arr) || !arr[ref.idx]) return false;
+        arr[ref.idx].desc = String(P.text == null ? '' : P.text);
+        if (P.extra !== undefined) arr[ref.idx].time = String(P.extra);
+        return true;
+      }
+      return false;
+    }
+    if (ref.kind === 'rel') {
+      const tg = (data.relations && data.relations[ref.from]);
+      if (!tg || !tg[ref.to]) return false;
+      tg[ref.to].note = String(P.text == null ? '' : P.text);
+      if (P.extra !== undefined) tg[ref.to].type = String(P.extra);
+      return true;
+    }
+    if (ref.kind === 'card') {
+      const arr = Array.isArray(data.cards) ? data.cards : null;
+      if (!arr || !arr[ref.idx]) return false;
+      arr[ref.idx].desc = String(P.text == null ? '' : P.text);
+      if (P.extra !== undefined) arr[ref.idx].time = String(P.extra);
+      return true;
+    }
+    return false;
+  } catch (e) {
+    try { cdLog('[内容管理] 写入失败', e); } catch (_e) {}
+    return false;
+  }
+}
+
+/* ---- 保存一批编辑（只写真正改过的） ---- */
+async function cdStudioSaveEdits(edits) {
+  const arr = Array.isArray(edits) ? edits : [];
+  if (!arr.length) return 0;
+  let data = null;
+  try { data = await cdGetData(); } catch (e) { data = null; }
+  if (!data) return 0;
+  if (typeof cdPushBackup === 'function') { try { cdPushBackup(data, '内容管理编辑'); } catch (_e) {} }
+  let n = 0, fail = 0;
+  arr.forEach(function (e) {
+    if (cdStudioApplyEdit(data, (e || {}).ref, e || {})) n++;
+    else fail++;
+  });
+  await cdSaveData(data);
+  if (typeof cdDashInvalidate === 'function') cdDashInvalidate();
+  if (typeof cdNotify === 'function') {
+    cdNotify({
+      id: 'cdnt-studio-edit', type: fail ? 'warn' : 'success',
+      title: '已保存 ' + n + ' 处修改',
+      msg: fail ? (fail + ' 处没写进去（条目可能已被删）') : '内容已更新，改动前已进本地备份。',
+      timeout: 4200
+    });
+  }
+  return n;
+}
+
+/* ---- 影响预览：算清「删这些会连带删掉什么」 ---- */
+async function cdStudioPreview(ids, tab) {
+  const set = {};
+  (ids || []).forEach(function (i) { set[i] = true; });
+  const all = await cdStudioAll(tab);
+  const hit = all.filter(function (x) { return set[x.id]; });
+  const pv = { items: [], count: hit.length, chars: 0 };
+  hit.forEach(function (x) { pv.chars += (x.text || '').length; });
+  if (tab === 'diary') {
+    pv.items.push({ k: '角色日记', v: hit.length + ' 篇 · ' + pv.chars + ' 字' });
+    pv.items.push({ k: '剧情档案 / 关系', v: '不随日记删除' });
+  } else if (tab === 'arc') {
+    pv.items.push({ k: '剧情档案条目', v: hit.length + ' 段 · ' + pv.chars + ' 字' });
+    pv.items.push({ k: '角色日记', v: '不随档案删除' });
+  } else if (tab === 'rel') {
+    pv.items.push({ k: '人物关系', v: hit.length + ' 条' });
+  } else if (tab === 'card') {
+    pv.items.push({ k: '剧情卡牌', v: hit.length + ' 张' });
+  } else if (tab === 'snap') {
+    pv.items.push({ k: '填表快照', v: hit.length + ' 份' });
+  }
+  /* ★ 预览时把 ref 快照下来：删除时用它，而不是重新按 id 找 ——
+     保证「预览里看到的那几条」就是「真正被删的那几条」。 */
+  pv.refs = hit.map(function (x) { return x.ref; });
+  return pv;
+}
+
+/* ---- 删除（真删，且先备份；按 ref 精确删，不误伤别的条目） ---- */
+async function cdStudioDelete(ids, tab, refs) {
+  let targets = [];
+  if (Array.isArray(refs) && refs.length) {
+    /* 优先用预览时冻结的 ref（含指纹）—— 预览看到什么，删的就是什么 */
+    targets = refs.map(function (r) { return { ref: r }; });
+  } else {
+    const set = {};
+    (ids || []).forEach(function (i) { set[i] = true; });
+    const all = await cdStudioAll(tab);
+    targets = all.filter(function (x) { return set[x.id]; });
+  }
+  if (!targets.length) return 0;
+  let data = null;
+  try { data = await cdGetData(); } catch (e) { data = null; }
+  if (!data) return 0;
+  /* 指纹校验：内容已经变过的条目直接跳过，绝不误删别人的东西 */
+  const usable = targets.filter(function (t) {
+    const cur = cdStudioCurrentFp(data, t.ref);
+    if (cur === null) return false;
+    return (!t.ref.fp || cur === t.ref.fp);
+  });
+  const skipped = targets.length - usable.length;
+  if (!usable.length) {
+    if (typeof cdNotify === 'function') {
+      cdNotify({ id: 'cdnt-studio-del', type: 'warn', title: '没有可删的内容', msg: '选中的内容已经变了或没了，已跳过。', timeout: 4000 });
+    }
+    return 0;
+  }
+  if (typeof cdPushBackup === 'function') { try { cdPushBackup(data, '内容管理删除'); } catch (_e) {} }
+  let n = 0;
+  try {
+    if (tab === 'diary') {
+      /* 按角色分组，组内倒序删 —— 正序 splice 会让后面的索引前移，删掉的不是你勾的那条 */
+      const byName = {};
+      usable.forEach(function (t) {
+        const r = t.ref;
+        (byName[r.name] = byName[r.name] || []).push(r.idx);
+      });
+      Object.keys(byName).forEach(function (nm) {
+        const arr = (data.diaries && data.diaries[nm]);
+        if (!Array.isArray(arr)) return;
+        byName[nm].sort(function (a, b) { return b - a; });
+        byName[nm].forEach(function (i) { if (arr[i] !== undefined) { arr.splice(i, 1); n++; } });
+      });
+    } else if (tab === 'arc') {
+      const a = data.archive;
+      if (!a || typeof a !== 'object') return 0;
+      /* 大段落字段：直接置空 */
+      const plain = {}, arrFields = {};
+      usable.forEach(function (t) {
+        const x = t;
+        const F = x.ref.field;
+        if (F === 'mainline' || F === 'sideline' || F === 'states' || F === 'unresolved' || F === 'timeAnchor') plain[F] = true;
+        else if (F === 'custom') { (arrFields.custom = arrFields.custom || {}); (arrFields.custom[x.ref.key] = arrFields.custom[x.ref.key] || []).push(x.ref.idx); }
+        else { (arrFields[F] = arrFields[F] || []).push(x.ref.idx); }
+      });
+      Object.keys(plain).forEach(function (F) { a[F] = ''; n++; });
+      Object.keys(arrFields).forEach(function (F) {
+        if (F === 'custom') {
+          const cu = (a.custom && typeof a.custom === 'object') ? a.custom : {};
+          Object.keys(arrFields.custom).forEach(function (key) {
+            if (!Array.isArray(cu[key])) return;
+            arrFields.custom[key].sort(function (x, y) { return y - x; });
+            arrFields.custom[key].forEach(function (i) { if (cu[key][i] !== undefined) { cu[key].splice(i, 1); n++; } });
+            if (!cu[key].length) delete cu[key];
+          });
+          return;
+        }
+        const arr = Array.isArray(a[F]) ? a[F] : null;
+        if (!arr) return;
+        arrFields[F].sort(function (x, y) { return y - x; });
+        arrFields[F].forEach(function (i) { if (arr[i] !== undefined) { arr.splice(i, 1); n++; } });
+      });
+    } else if (tab === 'rel') {
+      const rr = (data.relations && typeof data.relations === 'object') ? data.relations : {};
+      usable.forEach(function (t) {
+        const x = t;
+        const tg = rr[x.ref.from];
+        if (tg && tg[x.ref.to] !== undefined) { delete tg[x.ref.to]; n++; }
+      });
+      Object.keys(rr).forEach(function (k) { if (!Object.keys(rr[k] || {}).length) delete rr[k]; });
+    } else if (tab === 'card') {
+      const arr = Array.isArray(data.cards) ? data.cards : null;
+      if (!arr) return 0;
+      usable.map(function (t) { return t.ref.idx; }).sort(function (a, b) { return b - a; })
+        .forEach(function (i) { if (arr[i] !== undefined) { arr.splice(i, 1); n++; } });
+    } else if (tab === 'snap') {
+      const arr = Array.isArray(data.liveTableSnapshots) ? data.liveTableSnapshots : null;
+      if (!arr) return 0;
+      usable.map(function (t) { return t.ref.idx; }).sort(function (a, b) { return b - a; })
+        .forEach(function (i) { if (arr[i] !== undefined) { arr.splice(i, 1); n++; } });
+    }
+  } catch (e) {
+    try { cdAddLog('error', '[内容管理·删除] 异常: ' + (e && e.message)); } catch (_e) {}
+    return 0;
+  }
+  await cdSaveData(data);
+  if (typeof cdDashInvalidate === 'function') cdDashInvalidate();
+  if (typeof cdNotify === 'function') {
+    cdNotify({
+      id: 'cdnt-studio-del', type: skipped ? 'warn' : 'success', title: '已删除 ' + n + ' 项',
+      msg: (skipped ? (skipped + ' 项内容已变动，已跳过。') : '') + '已进本地备份，可在「全部功能 → 数据管理」恢复。',
+      timeout: 4500
+    });
+  }
+  return n;
+}
+
+/* ---- 二次确认对话框（影响预览 + 不可恢复警告） ---- */
+function cdStudioConfirmDialog(title, bodyHtml, items, onOk) {
+  const root = document.getElementById(MODAL_ID);
+  if (!root) return;
+  let ov = document.getElementById('cd-studio-dlg');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'cd-studio-dlg';
+    ov.className = 'cd-studio-mask';
+    root.appendChild(ov);
+  }
+  const rows = (items || []).map(function (it) {
+    return '<div class="cd-studio-dlg-row"><span>' + _cdEsc(it.k) + '</span><b>' + _cdEsc(String(it.v)) + '</b></div>';
+  }).join('');
+  ov.innerHTML = '<div class="cd-studio-dlg">' +
+    '<div class="cd-studio-dlg-t"><i class="fa-regular fa-circle-exclamation"></i><b>' + _cdEsc(title) + '</b></div>' +
+    '<div class="cd-studio-dlg-b">' + bodyHtml + '</div>' +
+    (rows ? '<div class="cd-studio-dlg-bx">' + rows + '</div>' : '') +
+    '<div class="cd-studio-dlg-warn"><i class="fa-regular fa-circle-info"></i>不可恢复。删了就是没了。</div>' +
+    '<div class="cd-studio-dlg-f">' +
+      '<button class="cd-btn-secondary" id="cd-studio-dlg-cancel">取消</button>' +
+      '<button class="cd-btn-danger" id="cd-studio-dlg-ok">确认删除</button>' +
+    '</div></div>';
+  ov.classList.add('on');
+  const close = function () { ov.classList.remove('on'); ov.innerHTML = ''; };
+  $('#cd-studio-dlg-cancel').off('click.studio').on('click.studio', close);
+  $('#cd-studio-dlg-ok').off('click.studio').on('click.studio', async function () {
+    close();
+    try { await onOk(); } catch (e) { try { cdAddLog('error', '[内容管理] 确认后操作失败: ' + (e && e.message)); } catch (_e) {} }
+  });
+}
+
+/* ============================================================
+ * 编辑层：左列表 + 右大文本框（批量改内容）
+ * ============================================================ */
+function _cdStudioEditsDirty() {
+  const st = _cdStudioEdits;
+  if (!st) return 0;
+  let n = 0;
+  st.list.forEach(function (x) {
+    const m = st.map[x.id];
+    if (!m) return;
+    if (m.text !== x.text || (m.extra || '') !== (x.extra || '') || (m.date || '') !== (x.date || '')) n++;
+  });
+  return n;
+}
+function _cdStudioEditsCollect() {
+  const st = _cdStudioEdits;
+  if (!st) return [];
+  const out = [];
+  st.list.forEach(function (x) {
+    const m = st.map[x.id];
+    if (!m) return;
+    if (m.text === x.text && (m.extra || '') === (x.extra || '') && (m.date || '') === (x.date || '')) return;
+    out.push({ ref: x.ref, text: m.text, extra: m.extra, date: m.date });
+  });
+  return out;
+}
+function cdStudioCloseEditor() {
+  const ov = document.getElementById('cd-studio-editor');
+  if (ov) { ov.innerHTML = ''; ov.classList.remove('on'); }
+  _cdStudioEdits = null;
+}
+async function cdStudioOpenEditor(ids, tab) {
+  const all = await cdStudioAll(tab);
+  const set = {};
+  (ids || []).forEach(function (i) { set[i] = true; });
+  const list = all.filter(function (x) { return set[x.id] && x.editable !== false; });
+  if (!list.length) {
+    if (typeof cdNotify === 'function') {
+      cdNotify({ id: 'cdnt-studio-edit', type: 'warn', title: '没有可编辑的内容', msg: '选中的条目不支持编辑。', timeout: 3600 });
+    }
+    return;
+  }
+  const map = {};
+  list.forEach(function (x) {
+    map[x.id] = { text: x.text, extra: x.extra, date: x.date || '' };
+  });
+  _cdStudioEdits = { tab: tab, list: list, map: map, cur: 0 };
+  cdStudioRenderEditor();
+}
+function cdStudioRenderEditor() {
+  const st = _cdStudioEdits;
+  if (!st) return;
+  const root = document.getElementById(MODAL_ID);
+  if (!root) return;
+  let ov = document.getElementById('cd-studio-editor');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'cd-studio-editor';   /* ★ 不能叫 cd-studio-edit：和内容页「编辑内容」按钮同名，getElementById 会抓错 */
+    ov.className = 'cd-studio-edit';
+    root.appendChild(ov);
+  }
+  const cur = st.list[st.cur];
+  if (!cur) { cdStudioCloseEditor(); return; }
+  const m = st.map[cur.id] || { text: '', extra: '', date: '' };
+  const dirty = _cdStudioEditsDirty();
+
+  let h = '';
+  h += '<div class="cd-studio-ein">';
+  /* 顶栏 */
+  h += '<div class="cd-studio-ehd"><i class="fa-regular fa-pen-to-square"></i><b>批量编辑内容</b>' +
+       '<span class="cd-studio-ehd-n">' + st.list.length + ' 条 · 已改 ' + dirty + ' 条</span>' +
+       '<span class="cd-studio-sp"></span>' +
+       '<button class="cd-studio-x" id="cd-studio-edit-x" title="关闭"><i class="fa-regular fa-xmark"></i></button></div>';
+  h += '<div class="cd-studio-ebd">';
+  /* 左：条目列表 */
+  h += '<div class="cd-studio-elist">';
+  st.list.forEach(function (x, i) {
+    const mm = st.map[x.id] || {};
+    const dd = (mm.text !== x.text) || ((mm.extra || '') !== (x.extra || '')) || ((mm.date || '') !== (x.date || ''));
+    h += '<div class="cd-studio-eitem' + (i === st.cur ? ' on' : '') + (dd ? ' dirty' : '') + '" data-ei="' + i + '">' +
+         '<span class="cd-studio-eitem-t">' + _cdEsc(x.title) + '</span>' +
+         '<span class="cd-studio-eitem-s">' + _cdEsc(String(x.text || '').slice(0, 44)) + '</span>' +
+         (dd ? '<span class="cd-studio-edot"></span>' : '') +
+         '</div>';
+  });
+  h += '</div>';
+  /* 右：大文本框 */
+  h += '<div class="cd-studio-eedit">';
+  h += '<div class="cd-studio-etitle"><b>' + _cdEsc(cur.title) + '</b><span>' + _cdEsc(cur.group || '') + '</span></div>';
+  h += '<div class="cd-studio-efields">';
+  if (cur.kind === 'diary') {
+    h += '<label class="cd-studio-efield"><span>日期</span><input id="cd-studio-e-date" value="' + _cdEsc(m.date || '') + '"></label>';
+  }
+  if (cur.extraLabel) {
+    h += '<label class="cd-studio-efield"><span>' + _cdEsc(cur.extraLabel) + '</span><input id="cd-studio-e-extra" value="' + _cdEsc(m.extra || '') + '"></label>';
+  }
+  h += '<span class="cd-studio-esp"></span>';
+  h += '<span class="cd-studio-elen" id="cd-studio-e-len">' + String(m.text || '').length + ' 字</span>';
+  h += '</div>';
+  h += '<textarea id="cd-studio-e-text" spellcheck="false" placeholder="在这里改内容…">' + _cdEsc(m.text || '') + '</textarea>';
+  h += '</div>';
+  h += '</div>';
+  /* 底栏 */
+  h += '<div class="cd-studio-eft">' +
+       '<span class="cd-studio-ehint">改动会直接覆盖原文，保存前自动进本地备份</span>' +
+       '<span class="cd-studio-sp"></span>' +
+       '<button class="cd-btn-secondary cd-studio-mini" id="cd-studio-edit-cancel">放弃修改</button>' +
+       '<button class="cd-btn-primary cd-studio-mini" id="cd-studio-edit-save">保存全部</button>' +
+       '</div>';
+  h += '</div>';
+  ov.innerHTML = h;
+  ov.classList.add('on');
+
+  /* ---- 事件（全部委托，重渲染后依然有效） ----
+     ★★ FIX19c 修「点不了」：
+     原来每个选择器都写一遍 $(document).off('click.studioedit').on(...)，
+     每绑一条就把上一条清掉 —— 整层只剩「保存全部」有反应，切条目/关闭/放弃全哑，
+     input 那组也只剩「日期」生效（改正文根本没被记录）。
+     正确做法：整块一次性 off 干净，再连续 on 多个不同选择器。 ---- */
+  function syncCur() {
+    const c = st.list[st.cur];
+    if (!c) return;
+    const mm = st.map[c.id];
+    if (!mm) return;
+    const ta = document.getElementById('cd-studio-e-text');
+    if (ta) mm.text = ta.value;
+    const ex = document.getElementById('cd-studio-e-extra');
+    if (ex) mm.extra = ex.value;
+    const dt = document.getElementById('cd-studio-e-date');
+    if (dt) mm.date = dt.value;
+  }
+  const $ed = $(document);
+  $ed.off('.studioedit');
+  $ed.on('click.studioedit', '.cd-studio-eitem', function () {
+    syncCur();
+    const i = Number($(this).attr('data-ei'));
+    if (Number.isFinite(i) && i >= 0 && i < st.list.length) { st.cur = i; cdStudioRenderEditor(); }
+  });
+  $ed.on('input.studioedit', '#cd-studio-e-text', function () {
+    const c = st.list[st.cur];
+    if (!c) return;
+    st.map[c.id].text = this.value;
+    const len = document.getElementById('cd-studio-e-len');
+    if (len) len.textContent = String(this.value || '').length + ' 字';
+  });
+  $ed.on('input.studioedit', '#cd-studio-e-extra', function () {
+    const c = st.list[st.cur];
+    if (!c) return;
+    st.map[c.id].extra = this.value;
+  });
+  $ed.on('input.studioedit', '#cd-studio-e-date', function () {
+    const c = st.list[st.cur];
+    if (!c) return;
+    st.map[c.id].date = this.value;
+  });
+  $ed.on('click.studioedit', '#cd-studio-edit-x', function () {
+    syncCur();
+    cdStudioCloseEditor();
+  });
+  $ed.on('click.studioedit', '#cd-studio-edit-cancel', function () {
+    syncCur();
+    cdStudioCloseEditor();
+  });
+  $ed.on('click.studioedit', '#cd-studio-edit-save', async function () {
+    syncCur();
+    const edits = _cdStudioEditsCollect();
+    if (!edits.length) {
+      cdStudioCloseEditor();
+      if (typeof cdNotify === 'function') {
+        cdNotify({ id: 'cdnt-studio-edit', type: 'info', title: '没有改动', msg: '一个字都没改，不保存。', timeout: 3200 });
+      }
+      return;
+    }
+    const n = await cdStudioSaveEdits(edits);
+    cdStudioCloseEditor();
+    cdRenderStudio();
+    void n;
+  });
+}
+
+/* ---- 渲染整页 ---- */
+async function cdRenderStudio() {
+  const list = await cdStudioList();
+  const tab = _cdStudioTab;
+  const sel = _cdStudioSelOf(tab);
+  const selSet = {};
+  sel.forEach(function (i) { selSet[i] = true; });
+
+  /* 各 tab 的真实计数（横幅 / 标签上的数字，全部实时数） */
+  const allData = await cdStudioAll('diary');
+  const allArc = await cdStudioAll('arc');
+  const allRel = await cdStudioAll('rel');
+  const allCard = await cdStudioAll('card');
+  const allSnap = await cdStudioAll('snap');
+  const totalItems = allData.length + allArc.length + allRel.length + allCard.length + allSnap.length;
+  const charCount = allData.reduce(function (a, x) { return a + x.size; }, 0);
+  const charNames = {};
+  allData.forEach(function (x) { charNames[x.title] = 1; });
+
+  const TABS = [
+    { k: 'diary', t: '日记', n: allData.length },
+    { k: 'arc',   t: '剧情档案', n: allArc.length },
+    { k: 'rel',   t: '关系', n: allRel.length },
+    { k: 'card',  t: '卡牌', n: allCard.length },
+    { k: 'snap',  t: '快照', n: allSnap.length }
+  ];
+
+  let h = '';
+  /* ① 状态横幅 */
+  h += '<div class="cd-studio-ban">';
+  h += '<div class="cd-studio-ov">';
+  h += '<div class="cd-studio-ov-i"><div class="cd-studio-ov-n">' + totalItems + '</div><div class="cd-studio-ov-l">可管理条目</div></div>';
+  h += '<div class="cd-studio-ov-i"><div class="cd-studio-ov-n ok">' + allData.length + '</div><div class="cd-studio-ov-l">日记</div></div>';
+  h += '<div class="cd-studio-ov-i"><div class="cd-studio-ov-n g">' + allArc.length + '</div><div class="cd-studio-ov-l">档案段</div></div>';
+  h += '<div class="cd-studio-ov-i"><div class="cd-studio-ov-n dim">' + (allRel.length + allCard.length + allSnap.length) + '</div><div class="cd-studio-ov-l">关系卡牌快照</div></div>';
+  h += '</div>';
+  h += '<div class="cd-studio-act">' +
+       '<span class="cd-studio-hint">' +
+       (totalItems
+         ? ('共 ' + Object.keys(charNames).length + ' 个角色 · ' + charCount + ' 字日记 · 选中任意条目即可改内容或删产出')
+         : '还没有可管理的内容') +
+       '</span></div></div>';
+
+  /* ② 类型标签 */
+  h += '<div class="cd-studio-tabs">';
+  TABS.forEach(function (t) {
+    h += '<div class="cd-studio-tab' + (tab === t.k ? ' on' : '') + '" data-st-tab="' + t.k + '">' + t.t +
+         '<span class="n">' + t.n + '</span></div>';
+  });
+  h += '</div>';
+
+  /* ③ 工具条 */
+  h += '<div class="cd-studio-tbar">';
+  h += '<div class="cd-studio-sbox"><i class="fa-regular fa-magnifying-glass"></i><input id="cd-studio-q" placeholder="搜内容 / 角色" value="' + _cdEsc(_cdStudioQ) + '"></div>';
+  h += '<select class="cd-studio-sel" id="cd-studio-sort">' +
+       '<option value="desc"' + (_cdStudioSort === 'desc' ? ' selected' : '') + '>从新到旧</option>' +
+       '<option value="asc"' + (_cdStudioSort === 'asc' ? ' selected' : '') + '>从旧到新</option></select>';
+  h += '<span class="cd-studio-sp"></span>';
+  h += '<span class="cd-studio-lnk" id="cd-studio-all">全选</span>';
+  h += '<span class="cd-studio-lnk" id="cd-studio-inv">反选</span>';
+  h += '<span class="cd-studio-lnk" id="cd-studio-none">清空</span>';
+  h += '</div>';
+
+  /* ④ 统一列表 */
+  h += '<div class="cd-studio-list" id="cd-studio-list">';
+  if (!list.length) {
+    h += '<div class="cd-studio-empty"><i class="fa-regular fa-inbox"></i><p>' +
+         (_cdStudioQ ? '没有搜到符合条件的内容' : '这里还没有内容') + '</p></div>';
+  } else {
+    list.forEach(function (x) {
+      const on = !!selSet[x.id];
+      const tag = x.kind === 'diary' ? (x.date || '日记')
+        : (x.kind === 'arc' ? (x.group || '档案')
+        : (x.kind === 'rel' ? '关系'
+        : (x.kind === 'card' ? (x.extra || '卡牌') : '快照')));
+      h += '<div class="cd-studio-row' + (on ? ' sel' : '') + '" data-st-id="' + _cdEsc(x.id) + '" data-st-kind="' + x.kind + '">' +
+           '<div class="cd-studio-cbx' + (on ? ' on' : '') + '"></div>' +
+           '<div class="cd-studio-dot ' + x.kind + '"></div>' +
+           '<div class="cd-studio-who">' + _cdEsc(x.title) + '</div>' +
+           '<div class="cd-studio-txt">' + _cdEsc(x.text || '') + '</div>' +
+           '<div class="cd-studio-tag">' + _cdEsc(tag) + '</div>' +
+           '<div class="cd-studio-sz">' + x.size + '</div>' +
+           '</div>';
+    });
+  }
+  h += '</div>';
+
+  /* ⑤ 批量操作栏（选中才出现） */
+  const canEdit = (tab !== 'snap');
+  h += '<div class="cd-studio-abar' + (sel.length ? ' on' : '') + '">';
+  h += '<div class="cd-studio-abar-n">已选 <b>' + sel.length + '</b> 项</div>';
+  if (canEdit) {
+    h += '<button class="cd-btn-primary cd-studio-mini" id="cd-studio-edit">编辑内容</button>';
+  }
+  h += '<button class="cd-btn-danger cd-studio-mini" id="cd-studio-del">删除产出</button>';
+  h += '</div>';
+
+  $('#cd-content').html(h);
+  cdHomeSyncTabbar('home');
+  try { cdApplyFontScale(); } catch (e) {}
+
+  /* ---- 事件（全部用事件委托，重渲染后依然有效） ----
+     ★★ FIX19c 修「点不了」：
+     原来每个选择器都写一遍 $().off('click.studio').on(...)，
+     结果每绑一条就把上一条刚绑好的委托清掉 —— 整页只剩最后那个「删除产出」有反应。
+     正确做法：整块一次性 off 干净，再连续 on 多个不同选择器。 ---- */
+  const $sc = $('#cd-content');
+  $sc.off('.studio');
+  $sc.on('click.studio', '.cd-studio-tab', function () {
+    _cdStudioTab = $(this).attr('data-st-tab');
+    cdRenderStudio();
+  });
+  $sc.on('click.studio', '.cd-studio-row', function (e) {
+    if ($(e.target).closest('#cd-studio-q').length) return;
+    var id = $(this).attr('data-st-id');
+    var arr = _cdStudioSelOf(_cdStudioTab);
+    var i = arr.indexOf(id);
+    if (i >= 0) arr.splice(i, 1); else arr.push(id);
+    cdRenderStudio();
+  });
+  $sc.on('dblclick.studio', '.cd-studio-row', function () {
+    var id = $(this).attr('data-st-id');
+    cdStudioOpenEditor([id], _cdStudioTab);
+  });
+  $sc.on('click.studio', '#cd-studio-all', async function () {
+    var l = await cdStudioList();
+    _cdStudioSel[_cdStudioTab] = l.map(function (x) { return x.id; });
+    cdRenderStudio();
+  });
+  $sc.on('click.studio', '#cd-studio-inv', async function () {
+    var l = await cdStudioList();
+    var cur = _cdStudioSelOf(_cdStudioTab).slice();
+    var set = {}; cur.forEach(function (i) { set[i] = true; });
+    _cdStudioSel[_cdStudioTab] = l.filter(function (x) { return !set[x.id]; }).map(function (x) { return x.id; });
+    cdRenderStudio();
+  });
+  $sc.on('click.studio', '#cd-studio-none', function () {
+    _cdStudioSel[_cdStudioTab] = [];
+    cdRenderStudio();
+  });
+  $sc.on('change.studio', '#cd-studio-sort', function () {
+    _cdStudioSort = $(this).val(); cdRenderStudio();
+  });
+  $sc.on('input.studio', '#cd-studio-q', function () {
+    _cdStudioQ = $(this).val();
+    clearTimeout(_cdStudioQTimer);
+    _cdStudioQTimer = setTimeout(function () { cdRenderStudio(); }, 260);
+  });
+  $sc.on('click.studio', '#cd-studio-edit', async function () {
+    var sel = _cdStudioSelOf(_cdStudioTab).slice();
+    if (!sel.length) return;
+    cdStudioOpenEditor(sel, _cdStudioTab);
+  });
+  $sc.on('click.studio', '#cd-studio-del', async function () {
+    var tabNow = _cdStudioTab;
+    var sel = _cdStudioSelOf(tabNow).slice();
+    if (!sel.length) return;
+    var pv = await cdStudioPreview(sel, tabNow);
+    var body = '将删除选中的 <b>' + sel.length + ' 项</b>。';
+    cdStudioConfirmDialog('确认删除这些内容？', body, pv.items, async function () {
+      await cdStudioDelete(sel, tabNow, pv.refs);
+      _cdStudioSel[tabNow] = [];
+      cdRenderStudio();
+    });
+  });
+}
+
+/* 退出面板时清掉工作台的选择态 */
+if (typeof window !== 'undefined') window.cdStudioResetState = cdStudioResetState;
+
+/* 退出面板时清掉工作台的选择态 */
+if (typeof window !== 'undefined') window.cdStudioResetState = cdStudioResetState;
+
 async function cdRenderManage() {
   const data = await cdGetData();
 

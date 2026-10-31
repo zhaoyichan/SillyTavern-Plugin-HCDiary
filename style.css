@@ -4204,3 +4204,161 @@
 .cd-root .cd-ti-badge{position:absolute;top:-6px;right:-5px;min-width:16px;height:16px;padding:0 4px;
   border-radius:9px;background:var(--cd-gold,#c9a86a);color:var(--cd-onGold,#1b1710);
   font-size:10px;font-weight:700;line-height:16px;text-align:center;}
+
+/* ===== FIX18a · 总结开关卡（大卡区第一位，深色图标按钮） ===== */
+.cd-root .cd-swcard{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
+  padding:14px 10px 12px;background:var(--cd-ink);border-color:var(--cd-lineG);
+}
+.cd-root .cd-swcard:hover{background:var(--cd-ink);border-color:var(--cd-gold);}
+.cd-root .cd-swcard:after{opacity:0;}
+.cd-root .cd-swcard-ic{
+  width:38px;height:38px;border-radius:50%;border:1px solid var(--cd-lineG);
+  color:var(--cd-goldHi);display:flex;align-items:center;justify-content:center;flex:none;font-size:15px;
+}
+.cd-root .cd-swcard:hover .cd-swcard-ic{border-color:var(--cd-gold);}
+.cd-root .cd-swcard-t{font-size:12.5px;font-weight:500;letter-spacing:.05em;color:var(--cd-card);white-space:nowrap;}
+.cd-root .cd-swcard-s{font-size:10.5px;color:var(--cd-goldDim);white-space:nowrap;}
+.cd-root .cd-swcard-badge{
+  position:absolute;top:9px;right:9px;min-width:17px;height:17px;padding:0 5px;border-radius:9px;
+  background:var(--cd-gold);color:var(--cd-onGold);font-size:10px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;
+}
+/* 暂停态：主标题降一档，让人一眼看出「停住了」 */
+.cd-root .cd-swcard.off .cd-swcard-t{color:var(--cd-goldDim);}
+.cd-root .cd-swcard.off .cd-swcard-s{color:var(--cd-ink3);}
+/* 编排模式下开关卡不参与移动（没有编辑按钮，也不抖动） */
+.cd-root .cd-swcard.ed{animation:none;}
+
+/* ===== FIX18a · 工具格下沉项（从大卡区移下来的，弱一档） ===== */
+.cd-root .cd-ti.dn{opacity:.62;}
+.cd-root .cd-ti.dn:hover{opacity:1;}
+
+/* ===== FIX18b · 内容管理工作台 ===== */
+.cd-studio-ban{padding:11px 14px 12px;background:var(--cd-panel2);border-bottom:1px solid var(--cd-lineS);border-radius:12px;margin-bottom:10px;}
+.cd-studio-ov{display:flex;gap:2px;}
+.cd-studio-ov-i{flex:1;text-align:center;padding:2px 0;}
+.cd-studio-ov-n{font-size:19px;font-weight:300;line-height:1.2;font-variant-numeric:tabular-nums;color:var(--cd-ink);}
+.cd-studio-ov-n.ok{color:var(--cd-ok);}
+.cd-studio-ov-n.g{color:var(--cd-gold);}
+.cd-studio-ov-n.dim{color:var(--cd-ink3);}
+.cd-studio-ov-l{font-size:10px;color:var(--cd-ink3);letter-spacing:.1em;margin-top:1px;}
+.cd-studio-bar{height:3px;border-radius:2px;background:var(--cd-lineS);overflow:hidden;margin:9px 0 8px;display:flex;}
+.cd-studio-bar i{display:block;height:100%;background:var(--cd-gold);}
+.cd-studio-bar i.done{background:var(--cd-ok);}
+.cd-studio-bar i.skip{background:var(--cd-ink3);opacity:.45;}
+.cd-studio-act{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.cd-studio-hint{font-size:11px;color:var(--cd-ink3);flex:1;min-width:90px;}
+.cd-studio-mini{padding:5px 12px;font-size:11.5px;min-width:auto;}
+
+.cd-studio-tabs{display:flex;gap:2px;padding:0 12px;border-bottom:1px solid var(--cd-line);background:var(--cd-panel);border-radius:10px 10px 0 0;overflow-x:auto;}
+.cd-studio-tab{padding:8px 12px;font-size:12.5px;color:var(--cd-ink3);cursor:pointer;border-bottom:2px solid transparent;display:flex;align-items:center;gap:5px;white-space:nowrap;}
+.cd-studio-tab.on{color:var(--cd-ink);border-bottom-color:var(--cd-gold);}
+.cd-studio-tab .n{min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--cd-panel2);border:1px solid var(--cd-lineS);font-size:10px;color:var(--cd-ink3);display:flex;align-items:center;justify-content:center;}
+.cd-studio-tab.on .n{background:var(--cd-gold);border-color:var(--cd-gold);color:var(--cd-onGold);}
+.cd-studio-tab .n.warn{border-color:var(--cd-err);color:var(--cd-err);}
+
+.cd-studio-tbar{display:flex;align-items:center;gap:7px;padding:8px 12px;border-bottom:1px solid var(--cd-lineS);background:var(--cd-panel);flex-wrap:wrap;}
+.cd-studio-sp{flex:1;}
+.cd-studio-sbox{display:flex;align-items:center;gap:5px;height:28px;padding:0 8px;border-radius:8px;background:var(--cd-panel2);border:1px solid var(--cd-lineS);width:150px;}
+.cd-studio-sbox i{font-size:11px;color:var(--cd-ink3);}
+.cd-studio-sbox input{flex:1;min-width:0;border:none;background:none;outline:none;color:var(--cd-ink);font-size:11.5px;font-family:inherit;}
+.cd-studio-sel{height:28px;border-radius:8px;background:var(--cd-panel2);border:1px solid var(--cd-lineS);color:var(--cd-ink2);font-size:11.5px;padding:0 8px;font-family:inherit;cursor:pointer;}
+.cd-studio-lnk{font-size:11px;color:var(--cd-ink3);cursor:pointer;padding:3px 5px;border-radius:6px;white-space:nowrap;}
+.cd-studio-lnk:hover{background:var(--cd-cardH);color:var(--cd-ink);}
+
+.cd-studio-list{max-height:min(52vh,520px);overflow-y:auto;border-radius:9px;border:1px solid var(--cd-lineS);background:var(--cd-card);margin:10px 0;}
+.cd-studio-row{display:flex;align-items:center;gap:8px;padding:7px 11px;border-bottom:1px solid var(--cd-lineS);cursor:pointer;}
+.cd-studio-row:last-child{border-bottom:none;}
+.cd-studio-row:hover{background:var(--cd-cardH);}
+.cd-studio-row.sel{background:var(--cd-glow);}
+.cd-studio-cbx{width:13px;height:13px;border-radius:4px;border:1px solid var(--cd-line);background:var(--cd-card);flex:none;}
+.cd-studio-cbx.on{background:var(--cd-gold);border-color:var(--cd-gold);}
+.cd-studio-dot{width:6px;height:6px;border-radius:50%;flex:none;background:var(--cd-ink3);}
+.cd-studio-dot.todo{background:var(--cd-gold);}
+.cd-studio-dot.done{background:var(--cd-ok);}
+.cd-studio-dot.skip{background:var(--cd-ink3);opacity:.5;}
+.cd-studio-who{font-size:11.5px;color:var(--cd-ink2);min-width:50px;max-width:96px;flex:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.cd-studio-txt{flex:1;font-size:11.5px;color:var(--cd-ink2);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.cd-studio-tag{font-size:10px;color:var(--cd-ink3);border:1px solid var(--cd-lineS);border-radius:5px;padding:0 5px;flex:none;}
+.cd-studio-sz{font-size:10.5px;color:var(--cd-ink3);min-width:38px;text-align:right;flex:none;font-variant-numeric:tabular-nums;}
+.cd-studio-empty{padding:34px 12px;text-align:center;color:var(--cd-ink3);}
+.cd-studio-empty i{font-size:22px;opacity:.5;}
+.cd-studio-empty p{font-size:11.5px;margin:7px 0 0;}
+
+.cd-studio-abar{display:none;align-items:center;gap:7px;padding:9px 12px;background:var(--cd-card);border:1px solid var(--cd-line);border-radius:11px;margin-top:2px;flex-wrap:wrap;}
+.cd-studio-abar.on{display:flex;}
+.cd-studio-abar-n{font-size:11.5px;color:var(--cd-ink2);flex:1;min-width:80px;}
+.cd-studio-abar-n b{color:var(--cd-gold);font-weight:500;}
+
+/* 删除确认：影响预览 + 二次确认 */
+.cd-studio-mask{position:absolute;inset:0;background:rgba(10,10,12,.42);z-index:2000020;display:none;align-items:center;justify-content:center;padding:16px;}
+.cd-studio-mask.on{display:flex;}
+.cd-studio-dlg{width:340px;max-width:100%;background:var(--cd-card);border:1px solid var(--cd-line);border-radius:14px;padding:17px 17px 15px;box-shadow:var(--cd-tsh);}
+.cd-studio-dlg-t{font-size:13.5px;font-weight:500;color:var(--cd-ink);display:flex;align-items:center;gap:7px;}
+.cd-studio-dlg-t i{color:var(--cd-err);font-size:14px;}
+.cd-studio-dlg-b{font-size:12px;color:var(--cd-ink2);line-height:1.7;margin:11px 0;}
+.cd-studio-dlg-b b{color:var(--cd-ink);font-weight:500;}
+.cd-studio-dlg-bx{background:var(--cd-panel2);border:1px solid var(--cd-lineS);border-radius:9px;padding:9px 11px;margin:10px 0;}
+.cd-studio-dlg-row{display:flex;justify-content:space-between;gap:10px;font-size:11.5px;color:var(--cd-ink2);padding:2px 0;}
+.cd-studio-dlg-row b{color:var(--cd-ink);font-weight:500;font-variant-numeric:tabular-nums;text-align:right;}
+.cd-studio-dlg-warn{font-size:11px;color:var(--cd-err);margin-top:9px;display:flex;align-items:center;gap:5px;}
+.cd-studio-dlg-f{display:flex;gap:8px;justify-content:flex-end;margin-top:11px;}
+.cd-studio-dlg-f .cd-btn-danger{border-color:var(--cd-err);color:var(--cd-err);}
+.cd-studio-dlg-f .cd-btn-danger:hover{background:var(--cd-err);color:#fff;}
+
+/* ══ FIX19：内容管理 · 批量编辑层 ══ */
+/* 遮罩：默认隐藏，靠 .on 打开（关闭时必须摘掉 .on，否则半透明层会一直挡住面板） */
+.cd-root .cd-studio-edit{position:absolute;inset:0;z-index:2000030;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(10,10,12,.52);}
+.cd-root .cd-studio-edit.on{display:flex;}
+
+.cd-root .cd-studio-ein{width:min(920px,100%);height:min(80vh,660px);background:var(--cd-card);border:1px solid var(--cd-line);border-radius:14px;box-shadow:var(--cd-tsh);display:flex;flex-direction:column;overflow:hidden;}
+.cd-root .cd-studio-ehd{display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid var(--cd-lineS);background:var(--cd-panel2);}
+.cd-root .cd-studio-ehd>i{color:var(--cd-gold);}
+.cd-root .cd-studio-ehd>b{font-size:13.5px;font-weight:600;color:var(--cd-ink);}
+.cd-root .cd-studio-ehd-n{font-size:11px;color:var(--cd-ink3);}
+.cd-root .cd-studio-x{width:24px;height:24px;border-radius:7px;border:1px solid var(--cd-lineS);background:var(--cd-card);color:var(--cd-ink3);cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none;}
+.cd-root .cd-studio-x:hover{color:var(--cd-ink);border-color:var(--cd-lineG);}
+
+.cd-root .cd-studio-ebd{display:flex;flex:1;min-height:0;}
+
+.cd-root .cd-studio-elist{width:212px;flex:none;overflow-y:auto;background:var(--cd-panel2);border-right:1px solid var(--cd-lineS);padding:7px;}
+.cd-root .cd-studio-eitem{position:relative;padding:7px 9px;border-radius:8px;cursor:pointer;border:1px solid transparent;margin-bottom:3px;}
+.cd-root .cd-studio-eitem:hover{background:var(--cd-cardH);}
+.cd-root .cd-studio-eitem.on{background:var(--cd-card);border-color:var(--cd-lineG);}
+.cd-root .cd-studio-eitem-t{display:block;font-size:11.5px;font-weight:500;color:var(--cd-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:10px;}
+.cd-root .cd-studio-eitem-s{display:block;font-size:10.5px;color:var(--cd-ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
+.cd-root .cd-studio-eitem.dirty .cd-studio-eitem-t{color:var(--cd-gold);}
+.cd-root .cd-studio-edot{position:absolute;top:9px;right:7px;width:6px;height:6px;border-radius:50%;background:var(--cd-gold);}
+
+.cd-root .cd-studio-eedit{flex:1;min-width:0;display:flex;flex-direction:column;gap:9px;padding:13px 15px;}
+.cd-root .cd-studio-etitle{display:flex;align-items:baseline;gap:8px;}
+.cd-root .cd-studio-etitle>b{font-size:14px;font-weight:600;color:var(--cd-ink);}
+.cd-root .cd-studio-etitle>span{font-size:11px;color:var(--cd-ink3);}
+.cd-root .cd-studio-efields{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.cd-root .cd-studio-efield{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--cd-ink3);}
+.cd-root .cd-studio-efield input{height:26px;width:140px;border-radius:7px;border:1px solid var(--cd-lineS);background:var(--cd-panel2);color:var(--cd-ink);font-size:11.5px;padding:0 8px;font-family:inherit;}
+.cd-root .cd-studio-efield input:focus{outline:none;border-color:var(--cd-lineG);}
+.cd-root .cd-studio-esp{flex:1;}
+.cd-root .cd-studio-elen{font-size:11px;color:var(--cd-ink3);font-variant-numeric:tabular-nums;}
+.cd-root .cd-studio-eedit textarea{flex:1;min-height:0;resize:none;border:1px solid var(--cd-lineS);border-radius:9px;background:var(--cd-panel2);color:var(--cd-ink);font:12.5px/1.75 inherit;padding:10px 12px;}
+.cd-root .cd-studio-eedit textarea:focus{outline:none;border-color:var(--cd-lineG);background:var(--cd-card);}
+
+.cd-root .cd-studio-eft{display:flex;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid var(--cd-lineS);background:var(--cd-panel2);}
+.cd-root .cd-studio-ehint{font-size:11px;color:var(--cd-ink3);}
+
+/* 列表状态点：按内容类型分色 */
+.cd-root .cd-studio-dot.diary{background:var(--cd-gold);}
+.cd-root .cd-studio-dot.arc{background:var(--cd-run);}
+.cd-root .cd-studio-dot.rel{background:var(--cd-ok);}
+.cd-root .cd-studio-dot.card{background:var(--cd-goldHi);}
+.cd-root .cd-studio-dot.snap{background:var(--cd-ink3);opacity:.6;}
+
+/* 窄屏：编辑层改成上下排（左列表压扁成横条） */
+@media (max-width:620px){
+  .cd-root .cd-studio-edit{padding:0;}
+  .cd-root .cd-studio-ein{width:100%;height:100%;border-radius:0;border:none;}
+  .cd-root .cd-studio-ebd{flex-direction:column;}
+  .cd-root .cd-studio-elist{width:auto;max-height:34%;border-right:none;border-bottom:1px solid var(--cd-lineS);display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;}
+  .cd-root .cd-studio-eitem{flex:none;min-width:132px;margin-bottom:0;}
+}
