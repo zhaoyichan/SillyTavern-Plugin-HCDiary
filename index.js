@@ -240,7 +240,12 @@ function cdCharOptions(cur) {
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.18.2';
+const PLUGIN_VERSION = '2.18.3';
+/* ★ FIX23：构建标识，用于定位用户跑的是哪批代码。
+   CD_BUILD = 本版所基于的提交短 sha，配合 PLUGIN_VERSION 即可唯一确定版本；
+   下次改动代码时请一并更新（无法自指自身 sha，故取基线）。 */
+const CD_BUILD = '3ba43dd';
+const CD_BUILD_DATE = '2026-11-01';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /** 调试开关 */
@@ -3850,10 +3855,13 @@ async function cdOnBeforeGeneration(eventData) {
     const chat = data.chat || [];
     const dryRun = data.dryRun === true || data.dry_run === true;
     if (dryRun || !Array.isArray(chat) || !chat.length) return;
+    /* ★ FIX23 诊断对账：进入即计触发，后面各个分支再计各自的跳过原因 */
+    cdInjectStatAdd('触发', 1);
     // idempotent: skip if already injected for this chat ref
     if (typeof _cdInjectedChatRefs.has === 'function' && _cdInjectedChatRefs.has(chat)) {
       /* ★ FIX22 诊断：同一 chat 引用第二次进入 → 证实事件确实被重复触发 */
       try { cdAddLog('info', '[注入] 命中幂等，跳过重复触发', { chat条数: chat.length }); } catch (_eIdem) {}
+      cdInjectStatAdd('幂等跳过', 1);
       return;
     }
     /* ★★ FIX22 根因修复：进入即标记。
@@ -3865,7 +3873,7 @@ async function cdOnBeforeGeneration(eventData) {
 
     // ★ 主开关关闭则不注入
     const _s = cdGetSettings();
-    if (_s.enabled === false) return;
+    if (_s.enabled === false) { cdInjectStatAdd('开关关闭跳过', 1); return; }
 
     // ★ 加固：每次生成前重建注入缓存，保证「数据变更」与「注入内容」实时一致，
     //   避免清除/批量删除剧情档案等操作后，旧缓存 _cdInjectMsg 仍被注入到本次生成。
@@ -3881,8 +3889,10 @@ async function cdOnBeforeGeneration(eventData) {
     }
     if (_cdDupInjected) {
       try { cdAddLog('info', '[注入] 内容已存在，跳过重复插入', { 字符数: _cdInjectMsg.length, chat条数: chat.length }); } catch (_eDup) {}
+      cdInjectStatAdd('内容重复跳过', 1);
     }
     if (_cdInjectMsg && !_cdDupInjected) {
+      cdInjectStatAdd('插入', 1, { 末次字符数: _cdInjectMsg.length });
       const sysMsg = { role: _cdInjectMsgRole === 1 ? 'user' : (_cdInjectMsgRole === 2 ? 'assistant' : 'system'), content: _cdInjectMsg };
       const s = _s;
       const pos = s.injectPosition || 'after';
@@ -3902,6 +3912,8 @@ async function cdOnBeforeGeneration(eventData) {
         chat.splice(idx, 0, sysMsg);
         cdAddLog('info', '[注入] 末尾注入', { 插入位置: idx, 深度: userDepth, 总条数: chat.length, 字符数: _cdInjectMsg.length });
       }
+    } else if (!_cdInjectMsg) {
+      cdInjectStatAdd('缓存为空跳过', 1);
     }
 
     // ---- 仪式注入（场景模块库）：启用的符契按各自位置注入 ----
@@ -4075,6 +4087,43 @@ const CD_LOG_KEY = 'character-diary-logs';
    导致 cdAddLog 整体写入失败、整个日志面板失效。 */
 const CD_LOG_INJECT_KEY = 'cd-inject-recent';
 
+/* ★ FIX23：注入诊断计数器（持久化，刷新不丢）。
+   用户报「剧情档案发了两次」时，这几个数字能直接定性：
+     触发次数 > 插入次数  ⇒ 幂等防护生效（多出来的都被拦下）
+     触发次数 = 插入次数 且 > 1 ⇒ 防护没挡住，存在第二条注入路径
+   对账关系：触发 = 插入 + 各类跳过，不平衡就说明有分支没埋点。 */
+const CD_INJECT_STAT_KEY = 'cd-inject-stat';
+const CD_INJECT_STAT_FIELDS = ['触发', '插入', '幂等跳过', '内容重复跳过', '开关关闭跳过', '缓存为空跳过'];
+
+function cdGetInjectStat() {
+  const base = { 触发: 0, 插入: 0, 幂等跳过: 0, 内容重复跳过: 0,
+                 开关关闭跳过: 0, 缓存为空跳过: 0,
+                 末次字符数: 0, 末次时间: '' };
+  try {
+    const o = JSON.parse(localStorage.getItem(CD_INJECT_STAT_KEY) || '{}');
+    for (const k of CD_INJECT_STAT_FIELDS) { if (typeof o[k] === 'number') base[k] = o[k]; }
+    if (typeof o.末次字符数 === 'number') base.末次字符数 = o.末次字符数;
+    if (typeof o.末次时间 === 'string') base.末次时间 = o.末次时间;
+  } catch (e) { /* 读不到就用零值，不影响注入 */ }
+  return base;
+}
+
+function cdInjectStatAdd(field, n, extra) {
+  try {
+    const st = cdGetInjectStat();
+    if (Object.prototype.hasOwnProperty.call(st, field)) st[field] = (Number(st[field]) || 0) + (Number(n) || 0);
+    if (field === '插入') {
+      st.末次字符数 = (extra && typeof extra.末次字符数 === 'number') ? extra.末次字符数 : 0;
+      st.末次时间 = new Date().toLocaleString();
+    }
+    localStorage.setItem(CD_INJECT_STAT_KEY, JSON.stringify(st));
+  } catch (e) { /* 计数失败不影响注入本身 */ }
+}
+
+function cdResetInjectStat() {
+  try { localStorage.removeItem(CD_INJECT_STAT_KEY); } catch (e) {}
+}
+
 /** 记录一次实际注入的内容 */
 function cdRecordInjectContent(text) {
   try {
@@ -4108,6 +4157,213 @@ function cdBuildInjectLogHtml() {
       items + '</div></details>';
   } catch (e) { return ''; }
 }
+
+
+/* ==========================================================================
+   FIX23：诊断报告
+   用户在另一台设备跑同一插件时，把这段文本整段复制给开发者即可定位问题。
+   设计原则：
+   ① 只放「能定性」的信息，不含剧情正文（避免泄露与体积膨胀）
+   ② 每个关键数字都给出判定说明，非技术用户也能看懂结论
+   ③ 全部包 try/catch——诊断功能自身绝不能影响插件运行
+   ========================================================================== */
+
+/** 简单字符串 hash（djb2），用于判断两次注入内容是否逐字相同，不依赖 crypto */
+function cdDiagHash(s) {
+  let h = 5381;
+  const str = String(s || '');
+  for (let i = 0; i < str.length; i++) h = (((h << 5) + h) + str.charCodeAt(i)) >>> 0;
+  return h.toString(16);
+}
+
+/** 当前对话里「与最近一次注入内容完全一致」的消息有几条 —— 重复注入的直接证据 */
+function cdDiagCountInjected() {
+  try {
+    let chat = [];
+    try {
+      const ctx = (typeof SillyTavern !== 'undefined' && SillyTavern.getContext) ? SillyTavern.getContext() : null;
+      chat = (ctx && Array.isArray(ctx.chat)) ? ctx.chat : [];
+    } catch (_eCtx) { chat = []; }
+    const arr = JSON.parse(localStorage.getItem(CD_LOG_INJECT_KEY) || '[]');
+    if (!Array.isArray(arr) || !arr.length) return { total: chat.length, matched: -1 };
+    const latest = String(arr[arr.length - 1].content || '');
+    let matched = 0;
+    for (const m of chat) { if (m && m.content === latest) matched++; }
+    return { total: chat.length, matched: matched };
+  } catch (e) { return { total: -1, matched: -1 }; }
+}
+
+/** 生成诊断报告纯文本 */
+function cdBuildDiagnosticReport() {
+  const L = [];
+  const P = (k, v) => { L.push('  ' + k + '  ' + v); };
+  try {
+    L.push('===== HCDiary 诊断报告 =====');
+    L.push('（把整段复制给开发者。含版本/设备/注入次数对账/最近日志；不含你的剧情正文）');
+    L.push('');
+    L.push('生成时间  ' + new Date().toLocaleString());
+    L.push('插件版本  v' + PLUGIN_VERSION);
+    L.push('构建标识  ' + CD_BUILD + ' (' + CD_BUILD_DATE + ')');
+    L.push('');
+
+    // ---- 环境 ----
+    L.push('【环境】');
+    let ua = '', lang = '', w = 0, h = 0;
+    try { ua = String(navigator.userAgent || ''); } catch (e) { ua = '(读取失败)'; }
+    try { lang = String(navigator.language || ''); } catch (e) { lang = ''; }
+    try { w = window.innerWidth; h = window.innerHeight; } catch (e) {}
+    let mobile = false;
+    try { mobile = (typeof isMobile === 'function') ? isMobile() : (w > 0 && w <= 640); } catch (e) {}
+    P('设备', (mobile ? '手机/窄屏' : '电脑') + '（' + w + 'x' + h + '）');
+    P('语言', lang || '(未知)');
+    P('UA', ua.slice(0, 160));
+    L.push('');
+
+    // ---- ★ 注入对账 ----
+    L.push('【★ 注入诊断：重复注入看这一段】');
+    const st = cdGetInjectStat();
+    const skipped = (st.幂等跳过 + st.内容重复跳过 + st.开关关闭跳过 + st.缓存为空跳过);
+    P('事件触发', st.触发 + ' 次');
+    P('实际插入', st.插入 + ' 次');
+    P('  引用级幂等跳过', st.幂等跳过 + ' 次');
+    P('  内容级重复跳过', st.内容重复跳过 + ' 次');
+    P('  主开关关闭跳过', st.开关关闭跳过 + ' 次');
+    P('  注入缓存为空跳过', st.缓存为空跳过 + ' 次');
+    const balanced = (st.触发 === (st.插入 + skipped));
+    P('对账', st.触发 + ' = 插入 ' + st.插入 + ' + 跳过合计 ' + skipped + '  → ' + (balanced ? '平衡 ✓' : '★不平衡★（有分支没埋点）'));
+    if (st.触发 === 0) {
+      P('判定', '尚无记录 —— 请先回到对话里发一条消息再回来复制');
+    } else if (st.触发 > st.插入) {
+      P('判定', '触发 > 插入：重复触发已被防护拦下 ✓');
+    } else if (st.触发 === st.插入 && st.插入 > 1) {
+      P('判定', '★ 触发 = 插入 且大于 1：存在第二条注入路径，需继续排查 ★');
+    } else {
+      P('判定', '未见重复触发');
+    }
+    P('末次注入', (st.末次时间 || '(无)') + ' · ' + st.末次字符数 + ' 字符');
+    L.push('');
+
+    const cnt = cdDiagCountInjected();
+    if (cnt.matched >= 0) {
+      P('当前对话中「内容与末次注入一致」的消息', cnt.matched + ' 条（对话共 ' + cnt.total + ' 条）');
+      P('判定', cnt.matched >= 2 ? ('★ ' + cnt.matched + ' 条：重复注入仍然存在 ★') : '1 条：正常 ✓');
+    } else {
+      P('当前对话注入条数', '(本次尚无注入记录)');
+    }
+    L.push('');
+
+    // ---- 最近注入记录两两比对 ----
+    try {
+      const arr = JSON.parse(localStorage.getItem(CD_LOG_INJECT_KEY) || '[]');
+      if (Array.isArray(arr) && arr.length) {
+        L.push('最近 ' + arr.length + ' 次注入记录：');
+        for (let i = 0; i < arr.length; i++) {
+          const r = arr[arr.length - 1 - i];
+          L.push('  ' + (i + 1) + '. ' + (r.time || '?') + '  ' + (r.chars || 0) + ' 字符  hash=' + cdDiagHash(r.content));
+        }
+        const hashes = arr.map(r => cdDiagHash(r.content));
+        const dupPairs = [];
+        for (let i = 0; i < hashes.length; i++) {
+          for (let j = i + 1; j < hashes.length; j++) {
+            if (hashes[i] === hashes[j]) dupPairs.push('第' + (arr.length - i) + '条=第' + (arr.length - j) + '条');
+          }
+        }
+        P('重复检测', dupPairs.length ? ('★ ' + dupPairs.join('、') + ' 内容完全相同 ★') : '各条互不相同 ✓');
+      } else {
+        P('最近注入记录', '(暂无)');
+      }
+    } catch (e) { P('最近注入记录', '(读取失败)'); }
+    L.push('');
+
+    // ---- 关键设置 ----
+    L.push('【关键设置】');
+    try {
+      const s = cdGetSettings();
+      const keys = ['enabled', 'injectPosition', 'injectDepth', 'injectRole', 'archiveStyle',
+                    'summarizeInjectArchive', 'diaryVersion', 'vectorEnabled', 'autoSummary'];
+      const shown = [];
+      for (const k of keys) {
+        if (typeof s[k] !== 'undefined') shown.push(k + '=' + JSON.stringify(s[k]));
+      }
+      L.push('  ' + (shown.length ? shown.join('  ') : '(未读取到)'));
+      try {
+        const ri = Array.isArray(s.ritualInjects) ? s.ritualInjects : [];
+        P('仪式注入', ri.length + ' 条');
+      } catch (e) {}
+    } catch (e) { L.push('  (读取失败: ' + (e && e.message) + ')'); }
+    L.push('');
+
+    // ---- 最近关键日志 ----
+    L.push('【最近关键日志】（error / warn / 注入相关，最多 30 条）');
+    try {
+      const logs = cdGetLogs();
+      const key = logs.filter(function (lg) {
+        return lg.level === 'error' || lg.level === 'warn' || /注入|档案|总结失败|解析失败/.test(String(lg.message || ''));
+      }).slice(-30);
+      if (!key.length) {
+        L.push('  (无)');
+      } else {
+        for (const lg of key) {
+          let d = '';
+          if (lg.detail) {
+            d = '  | ' + String(lg.detail).replace(/\s*\n\s*/g, ' ').slice(0, 240);
+          }
+          L.push('  [' + (lg.time || '') + '][' + (lg.level || '') + '] ' + String(lg.message || '') + d);
+        }
+      }
+    } catch (e) { L.push('  (读取失败)'); }
+    L.push('');
+    L.push('===== 报告结束 =====');
+
+    // 同时留一条日志，便于事后知道生成过报告
+    try { cdAddLog('info', '[诊断] 已生成诊断报告', { 构建: CD_BUILD, 版本: PLUGIN_VERSION }); } catch (_e) {}
+  } catch (e) {
+    L.push('');
+    L.push('★ 报告生成中断：' + ((e && e.message) || e));
+  }
+  return L.join('\n');
+}
+
+/** 复制失败时的降级：textarea + execCommand，再失败则弹出可手动复制的文本框 */
+function cdDiagnosticFallback(text) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:8%;left:4%;width:92%;height:76%;z-index:99999;' +
+      'background:#fffdf6;color:#2b2118;font-size:12px;line-height:1.5;padding:12px;' +
+      'border:2px solid #c9a86a;border-radius:12px;white-space:pre;';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (_e) { ok = false; }
+    if (ok) {
+      try { document.body.removeChild(ta); } catch (_e2) {}
+      if (typeof toastr !== 'undefined' && toastr.success) toastr.success('诊断报告已复制，粘贴给我即可');
+    } else {
+      ta.setAttribute('readonly', 'readonly');
+      if (typeof toastr !== 'undefined' && toastr.info) toastr.info('无法自动复制，已打开文本框，请全选复制后发给我');
+    }
+  } catch (e) {
+    if (typeof toastr !== 'undefined' && toastr.error) toastr.error('复制失败：' + ((e && e.message) || e));
+  }
+}
+
+/** 按钮入口：复制诊断报告 */
+function cdCopyDiagnostic() {
+  let text = '';
+  try { text = cdBuildDiagnosticReport(); } catch (e) { text = '诊断报告生成失败：' + ((e && e.message) || e); }
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () {
+        if (typeof toastr !== 'undefined' && toastr.success) toastr.success('诊断报告已复制，粘贴给我即可');
+      }).catch(function () { cdDiagnosticFallback(text); });
+      return;
+    }
+  } catch (e) { /* 继续走降级 */ }
+  cdDiagnosticFallback(text);
+}
+
 
 /** 添加一条日志
  *  @param {'info'|'warn'|'error'|'api_req'|'api_res'} level
@@ -4153,6 +4409,9 @@ function cdGetLogs() {
 /** 清空日志 */
 function cdClearLogs() {
   localStorage.removeItem(CD_LOG_KEY);
+  /* ★ FIX23：清空日志顺带重置注入计数，否则旧的累积值
+     会让新一轮观察的对账看起来像“触发很多”，误导判定。 */
+  try { if (typeof cdResetInjectStat === 'function') cdResetInjectStat(); } catch (e) {}
 }
 
 /** 渲染日志视图（含token/费用统计） */
@@ -4373,11 +4632,19 @@ function cdRenderLog() {
 
   // ★ FIX22：最近注入内容区块（默认折叠）
   const injLogHtml = (typeof cdBuildInjectLogHtml === 'function') ? cdBuildInjectLogHtml() : '';
+  /* ★ FIX23：诊断报告按钮。两处分支（有日志/无日志）都要出现，
+     否则「日志被清空后就找不到入口」——那恰恰是最需要它的时候。 */
+  const diagBtnHtml = (typeof cdCopyDiagnostic === 'function') ?
+    ('<button class="cd-btn-secondary" id="cd-btn-diag-report" style="width:100%;margin-top:6px;">' +
+     '<i class="fa-regular fa-clipboard"></i> 复制诊断报告（出问题把它发给我）</button>' +
+     '<p style="font-size:calc(0.55rem * var(--cd-fs,1));color:var(--cd-ink3);margin:6px 0 0;line-height:1.6;">' +
+     '构建 <code>' + CD_BUILD + '</code> · v' + PLUGIN_VERSION +
+     '　报告含版本、设备、注入次数对账与最近日志；不含剧情正文。</p>') : '';
 
   if (!logs.length) {
-    html = testBtnHtml + injLogHtml + `<div class="cd-empty${cdCharEmptyCls()}"${cdCharEmptyAttr()}><p>暂无日志</p><p class="cd-empty-sub">每次总结会在这里留下一条「任务批次」，成功失败一眼看得出</p></div>`;
+    html = testBtnHtml + injLogHtml + diagBtnHtml + `<div class="cd-empty${cdCharEmptyCls()}"${cdCharEmptyAttr()}><p>暂无日志</p><p class="cd-empty-sub">每次总结会在这里留下一条「任务批次」，成功失败一眼看得出</p></div>`;
   } else {
-    html = testBtnHtml + barHtml + injLogHtml +
+    html = testBtnHtml + barHtml + injLogHtml + diagBtnHtml +
       `<div class="cd-log-stats-container">${statsHtml}</div>` +
       (cards || `<div class="cd-empty${cdCharEmptyCls()}"${cdCharEmptyAttr()}><p>没有符合筛选的日志</p></div>`) +
       '<div style="display:flex;gap:6px;margin-top:8px;">' +
@@ -4454,6 +4721,11 @@ function cdRenderLog() {
     }
   });
   $('#cd-btn-clear-log')?.off('click').on('click', () => { cdClearLogs(); cdRenderLog(); });
+  /* ★ FIX23：事件委托（内容每次重渲染，直绑会失效）。
+     命名空间 cddiag 独立，不会影响其他委托（项目铁律：同一元素多个选择器不能各写一遍 off(ns)）。 */
+  $(document).off('click.cddiag', '#cd-btn-diag-report').on('click.cddiag', '#cd-btn-diag-report', function () {
+    try { cdCopyDiagnostic(); } catch (e) { console.warn('[CD] 诊断报告失败', e); }
+  });
   // ★ 导出日志
   $('#cd-btn-export-log')?.off('click').on('click', function () {
     const logs = cdGetLogs();
