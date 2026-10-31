@@ -240,11 +240,11 @@ function cdCharOptions(cur) {
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.18.5';
+const PLUGIN_VERSION = '2.18.6';
 /* ★ FIX23：构建标识，用于定位用户跑的是哪批代码。
    CD_BUILD = 本版所基于的提交短 sha，配合 PLUGIN_VERSION 即可唯一确定版本；
    下次改动代码时请一并更新（无法自指自身 sha，故取基线）。 */
-const CD_BUILD = '1caae78';
+const CD_BUILD = '015ca7b';
 const CD_BUILD_DATE = '2026-11-01';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
@@ -1538,6 +1538,51 @@ const ARCHIVE_SYSTEM_BASE = [
        与旧格式长得一模一样，只能靠这个字段区分）
    老档案没有该字段 ⇒ cdArchiveFormatOf 返回 1。 */
 const CD_ARCHIVE_FORMAT_VERSION = 2;
+
+/* ★ FIX26：字段级格式标记（用户要求「徽章想看到更细的」）。
+   三态语义：
+     2 = 该字段最近一次由 AI 用新格式（FIX21 起）生成/更新
+     1 = 旧格式，从未被新格式更新过
+     0 = 手动编辑过 ⇒ ★ 格式无法确定
+         原因：解析层会把分组展开回平铺，新格式与旧格式存进档案后
+         **长得一模一样**，内容上无从判断。手动改过就老老实实标「未知」，
+         标成「新」就是造假。
+   老档案没有 fmt 字段 ⇒ 回退到整份档案的 formatVersion。 */
+const CD_ARCHIVE_FMT_FIELDS = ['主线', '支线', '重要状态变化', '未解决事项', '自定义追踪项'];
+
+function cdArchiveFieldFmt(arc, field) {
+  try {
+    const fm = (arc && arc.fmt && typeof arc.fmt === 'object') ? arc.fmt : null;
+    if (fm && typeof fm[field] === 'number') return fm[field];
+    return (typeof cdArchiveFormatOf === 'function') ? cdArchiveFormatOf(arc) : 1;
+  } catch (e) { return 1; }
+}
+
+function cdArchiveSetFieldFmt(arc, field, v) {
+  try {
+    if (!arc) return;
+    if (!arc.fmt || typeof arc.fmt !== 'object') arc.fmt = {};
+    arc.fmt[field] = Number(v) || 0;
+  } catch (e) { /* 标记失败不影响档案本身 */ }
+}
+
+/** AI 用新格式整份写入后调用：整份 + 各字段都标为新格式 */
+function cdArchiveMarkNewFormat(arc) {
+  try {
+    if (!arc) return;
+    arc.formatVersion = (typeof CD_ARCHIVE_FORMAT_VERSION !== 'undefined') ? CD_ARCHIVE_FORMAT_VERSION : 2;
+    for (let i = 0; i < CD_ARCHIVE_FMT_FIELDS.length; i++) cdArchiveSetFieldFmt(arc, CD_ARCHIVE_FMT_FIELDS[i], arc.formatVersion);
+  } catch (e) { /* 同上 */ }
+}
+
+/** 手动编辑某字段后调用：只在内容真的变了时才标 0（否则不动） */
+function cdArchiveMarkManualField(arc, field, before, after) {
+  try {
+    if (String(before || '') === String(after || '')) return false;
+    cdArchiveSetFieldFmt(arc, field, 0);
+    return true;
+  } catch (e) { return false; }
+}
 
 function cdArchiveFormatOf(arc) {
   try {
@@ -3626,6 +3671,9 @@ function cdLooksLikeInjected(msg, curText) {
 /** 清理 chat 里本插件此前注入过的消息（标记或内容与本次相同），返回清理条数 */
 function cdPurgeInjectedFromChat(chat, curText) {
   let n = 0;
+  /* ★ 用户反馈：每清一条记一条日志太吵。改为**本轮只记一条**汇总。
+        痕迹仍然保留（事后能追查有没有误删），但不再刷屏。 */
+  let looseN = 0, looseMax = 0, looseMin = 0;
   try {
     if (!Array.isArray(chat)) return 0;
     for (let i = chat.length - 1; i >= 0; i--) {
@@ -3644,9 +3692,19 @@ function cdPurgeInjectedFromChat(chat, curText) {
       if (_hit) {
         chat.splice(i, 1); n++;
         if (_loose) {
-          try { cdAddLog('info', '[注入] 宽松识别清理历史注入消息', { 字符数: String(m.content || '').length, 剩余条数: chat.length }); } catch (_eL) {}
+          const _l = String(m.content || '').length;
+          looseN++;
+          if (!looseMax || _l > looseMax) looseMax = _l;
+          if (!looseMin || _l < looseMin) looseMin = _l;
         }
       }
+    }
+    /* 汇总成一条，放在循环外（循环内记会逐条刷屏） */
+    if (looseN) {
+      try {
+        cdAddLog('info', '[注入] 宽松识别清理历史注入消息',
+          { 清理条数: looseN, 字符数区间: (looseMin === looseMax ? String(looseMax) : (looseMin + '~' + looseMax)), 剩余条数: chat.length });
+      } catch (_eL) {}
     }
   } catch (e) { /* 清理失败不阻止插入 */ }
   return n;
@@ -6883,7 +6941,7 @@ if (arc.unresolved !== undefined) {
   data.archive.unresolved = (!_un || _un === '无' || _un === '无。' || _un === '暂无') ? '' : _un;
 }
           /* ★ FIX25：本次由 AI 用新提示词生成 ⇒ 标记为新格式 */
-          try { data.archive.formatVersion = CD_ARCHIVE_FORMAT_VERSION; } catch (_eFv) {}
+          try { if (typeof cdArchiveMarkNewFormat === 'function') cdArchiveMarkNewFormat(data.archive); } catch (_eFv) {}
           // ★ 物品清单（变动日志，追加去重，防重复结算）
           if (arc.items && Array.isArray(arc.items) && arc.items.length) {
             if (!Array.isArray(data.archive.items)) data.archive.items = [];
@@ -6958,7 +7016,7 @@ if (arc.unresolved !== undefined) {
               if (_rwArc.states !== undefined) data.archive.states = String(_rwArc.states || '').trim(); // 已撤销旧值，直接覆盖（不用块内 _mergeStatesByRole）
               if (_rwArc.unresolved !== undefined) { const _u2=String(_rwArc.unresolved||'').trim(); data.archive.unresolved = (!_u2||_u2==='无'||_u2==='无。'||_u2==='暂无')?'':_u2; }
               /* ★ FIX25：重写同样由 AI 生成 ⇒ 标记为新格式 */
-              try { data.archive.formatVersion = CD_ARCHIVE_FORMAT_VERSION; } catch (_eFv2) {}
+              try { if (typeof cdArchiveMarkNewFormat === 'function') cdArchiveMarkNewFormat(data.archive); } catch (_eFv2) {}
               if (_rwArc.title) data._chapterTitle = String(_rwArc.title).trim();
               if (_rwArc.lead)  data._chapterLead  = String(_rwArc.lead).trim();
               if (Array.isArray(_rwArc.locations) && _rwArc.locations.length) { try { if (!Array.isArray(data.archive.locations)) data.archive.locations=[]; data.archive.locations = data.archive.locations.concat(_rwArc.locations); } catch(_e){} }
@@ -12458,10 +12516,26 @@ try {
     });
   }
   // 组装编辑区 HTML（标签在框外、框内纯内容、纵向堆叠）
+  /* ★ FIX26：字段级三态小标签（新格式 / 旧格式 / 手动改过） */
+  var _arcFmtTag = function (lab) {
+    var _v = (typeof cdArchiveFieldFmt === 'function') ? cdArchiveFieldFmt(arc, lab) : 1;
+    var _t, _bg, _fg, _bd, _tip;
+    if (_v === 0) {
+      _t = '手动改过 · 格式未知'; _bg = 'rgba(120,120,120,.12)'; _fg = '#6a6a6a'; _bd = 'rgba(120,120,120,.28)';
+      _tip = '你手动编辑过该字段。因解析层已把分组展开成平铺，新旧格式存进去长得一模一样，无法从内容判定，所以不会假装成「新」。';
+    } else if (_v >= 2) {
+      _t = '新格式'; _bg = 'rgba(120,170,120,.14)'; _fg = '#4a7a4a'; _bd = 'rgba(120,170,120,.3)';
+      _tip = '该字段最近一次由 AI 用新格式写入。';
+    } else {
+      _t = '旧格式'; _bg = 'rgba(190,150,80,.14)'; _fg = '#8b6a2f'; _bd = 'rgba(190,150,80,.3)';
+      _tip = '该字段仍是旧格式，下次总结后会自动转新。';
+    }
+    return '<span title="' + _tip + '" style="font-size: calc(0.5rem * var(--cd-fs,1));font-weight:600;padding:1px 7px;border-radius:999px;background:' + _bg + ';color:' + _fg + ';border:1px solid ' + _bd + ';">' + _t + '</span>';
+  };
   var _arcSec = function (lab, txt, ph) {
     var _t = String(txt || '');
     return '<div style="margin-bottom:12px;">' +
-      '<div style="font-size: calc(0.62rem * var(--cd-fs,1));font-weight:700;color:#6b4a1b;margin:0 0 4px;letter-spacing:.5px;">— ' + escapeHtml(lab) + ' —</div>' +
+      '<div style="font-size: calc(0.62rem * var(--cd-fs,1));font-weight:700;color:#6b4a1b;margin:0 0 4px;letter-spacing:.5px;display:flex;align-items:center;gap:6px;">— ' + escapeHtml(lab) + ' —' + _arcFmtTag(lab) + '</div>' +
       '<textarea spellcheck="false" rows="4" data-arch-key="' + escapeAttr(lab) + '" placeholder="' + escapeAttr(ph) + '" style="width:100%;box-sizing:border-box;padding:6px;font-size: calc(0.62rem * var(--cd-fs,1));background:#fffdf6;border:1px solid #e3d5b8;border-radius:6px;color:#3c2f1f;resize:vertical;line-height:1.6;">' + escapeHtml(_t) + '</textarea>' +
       '</div>';
   };
@@ -12492,10 +12566,21 @@ try {
         var el = $('#cd-content textarea[data-arch-key="' + CSS.escape(lab) + '"]');
         return el.length ? el.val() : '';
       };
+      /* ★ FIX26：先留下旧值，改完对比——只有内容真的变了才标记为「手动改过（格式未知）」 */
+      var _bfM = _d0.archive.mainline, _bfS = _d0.archive.sideline,
+          _bfSt = _d0.archive.states, _bfU = _d0.archive.unresolved;
       _d0.archive.mainline = _getVal('主线');
       _d0.archive.sideline = _getVal('支线');
       _d0.archive.states = _getVal('重要状态变化');
       _d0.archive.unresolved = _getVal('未解决事项');
+      try {
+        if (typeof cdArchiveMarkManualField === 'function') {
+          cdArchiveMarkManualField(_d0.archive, '主线', _bfM, _d0.archive.mainline);
+          cdArchiveMarkManualField(_d0.archive, '支线', _bfS, _d0.archive.sideline);
+          cdArchiveMarkManualField(_d0.archive, '重要状态变化', _bfSt, _d0.archive.states);
+          cdArchiveMarkManualField(_d0.archive, '未解决事项', _bfU, _d0.archive.unresolved);
+        }
+      } catch (_eFm) {}
       // 自定义追踪项：按标签匹配，把编辑后的文本重新按“【时间】”行解析回数组
       for (var _ci = 0; _ci < _arcCfg.length; _ci++) {
         var el = $('#cd-content textarea[data-arch-key="' + CSS.escape(_arcCfg[_ci].label) + '"]');
@@ -12510,7 +12595,13 @@ try {
           else if (_ln && _ln.length > 1) { arr2.push({ time: curT, desc: _ln }); }
         }
         if (!Array.isArray(_d0.archive.custom)) _d0.archive.custom = {};
+        var _bfC = JSON.stringify((_d0.archive.custom && _d0.archive.custom[_arcCfg[_ci].key]) || []);
         _d0.archive.custom[_arcCfg[_ci].key] = arr2;
+        try {
+          if (typeof cdArchiveMarkManualField === 'function') {
+            cdArchiveMarkManualField(_d0.archive, '自定义追踪项', _bfC, JSON.stringify(arr2));
+          }
+        } catch (_eFc) {}
       }
       await cdSaveData(_d0);
       if (typeof cdRefreshInjection === 'function') await cdRefreshInjection();
@@ -12761,11 +12852,24 @@ try {
     try {
       const _fv = (typeof cdArchiveFormatOf === 'function') ? cdArchiveFormatOf(data && data.archive) : 1;
       const _isNew = _fv >= CD_ARCHIVE_FORMAT_VERSION;
+      /* ★ FIX26：顶部徽章改为【字段级汇总】：分别数出新格式 / 旧格式 / 手动改过各几段 */
+      let _nNew = 0, _nOld = 0, _nMan = 0;
+      try {
+        for (let _fi = 0; _fi < CD_ARCHIVE_FMT_FIELDS.length; _fi++) {
+          const _fv2 = cdArchiveFieldFmt(data && data.archive, CD_ARCHIVE_FMT_FIELDS[_fi]);
+          if (_fv2 === 0) _nMan++; else if (_fv2 >= 2) _nNew++; else _nOld++;
+        }
+      } catch (_eFc2) {}
+      const _parts = [];
+      if (_nNew) _parts.push('新格式 ' + _nNew + ' 段');
+      if (_nOld) _parts.push('旧格式 ' + _nOld + ' 段');
+      if (_nMan) _parts.push('手动改过 ' + _nMan + ' 段');
       top += '<div style="display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:3px 10px;border-radius:999px;' +
              (_isNew ? 'background:rgba(120,170,120,.14);color:#4a7a4a;border:1px solid rgba(120,170,120,.3);'
                      : 'background:rgba(190,150,80,.14);color:#8b6a2f;border:1px solid rgba(190,150,80,.3);') +
              '"><i class="fa-regular ' + (_isNew ? 'fa-circle-check' : 'fa-clock-rotate-left') + '"></i>' +
-             (_isNew ? '已用新格式（事件按时间·地点分组）' : '旧格式（下次总结后自动转新）') + '</div>';
+             (_parts.length ? _parts.join(' · ') : (_isNew ? '已用新格式' : '旧格式（下次总结后自动转新）')) +
+             '</div>';
     } catch (_eFmt) {}
     top += '</div>';
     content.prepend(top);
