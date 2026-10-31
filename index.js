@@ -500,6 +500,7 @@ const DEFAULT_SETTINGS = {
   customFields : [],             // 用户自定义剧情追踪项定义 [{ key, label, desc }]
   injectMemo   : true,          // [v2.9.3] 备忘录注入开关：状态界面手动写的备忘录是否在对话时注入给AI
   summarySource: 'chat',      // [v2.9.4] 自动总结数据源: 'chat'=现有(用chat数组) | 'jsonl'=从jsonl读全量楼层(根治分片)
+  archiveStyle  : 'dialogue', // [v2.12+] 剧情档案记录风格: 'dialogue'=对话版(每条事件带关键对话原话) | 'plain'=常规版(只总结事实经过,不引用原文)
   archiveMode   : 'append',   // 'append' | 'vector' 剧情档案模式
   diaryMode     : 'append',   // 'append' | 'vector' 角色日记模式
   vectorTopK    : 5,          // 向量检索召回条数
@@ -1618,9 +1619,66 @@ const ARCHIVE_SYSTEM_FULL = [
   '章回标题：第X回：XXXX（4-8字，文雅含蓄、具古风章回韵味，如旧时小说回目，含蓄点题且有对仗或意境，覆盖式）。',
 ].join('\n');
 
+
+/* =========================================================================
+ * ★ 剧情档案记录风格（2026-10-31 新增）
+ *   'dialogue' = 对话版（默认，向后兼容）：每条事件要带「关键对话原话」
+ *   'plain'    = 常规版：只总结事实经过（谁+做了什么+结果），不引用任何对话原文
+ *
+ * 实现方式：保留两套原始 SYSTEM 常量不动，常规版在此基础上做措辞替换。
+ * 好处是对话版与原版逐字相同，老用户升级后行为完全不变。
+ * ========================================================================= */
+const CD_ARCH_PLAIN_MAP = [
+  /* ---- 增量版(ARCHIVE_SYSTEM) 与 全量版(ARCHIVE_SYSTEM_FULL) 共用 ---- */
+  ['2. 叙述时优先交代人物、时间、地点、动作、关键对话内容、结果。',
+   '2. 叙述时优先交代人物、时间、地点、动作、经过、结果。'],
+  ['后接"谁 + 做了什么 + 关键对话原话 + 结果"）：',
+   '后接"谁 + 做了什么 + 结果"）：'],
+  ['【2026年3月15日 14:30 · 雪原酒馆】主角用青铜钥匙打开旧箱，取出信笺，对女巫说"信里写的是矿坑的坐标"——女巫皱眉，将信笺收进怀里。',
+   '【2026年3月15日 14:30 · 雪原酒馆】主角用青铜钥匙打开旧箱，取出信笺，把信里写的矿坑坐标告知女巫——女巫皱眉，将信笺收进怀里。'],
+  ['【2026年3月15日 21:10 · 酒馆角落】酒保低声对主角说"北境最近死了三个猎人，死因都一样"——他比了个噤声的手势。',
+   '【2026年3月15日 21:10 · 酒馆角落】酒保低声向主角透露北境最近死了三名猎人且死因一致——他比了个噤声的手势。'],
+  ['1. 与主线同：每条含【时间·地点】+ 谁 + 具体动作 + 关键对话原话(若有) + 结果。',
+   '1. 与主线同：每条含【时间·地点】+ 谁 + 具体动作 + 结果。'],
+
+  /* ---- 增量版独有 ---- */
+  ['主线（追加式·事件流水，只输出本次新增楼层的关键事件，一条一行，必须记录关键句子，禁止笼统）：',
+   '主线（追加式·事件流水，只输出本次新增楼层的事件，一条一行，只写事实经过，禁止笼统）：'],
+  ['1. 每个事件必须含【关键句子】：有推动剧情的对话→写关键原话(带引号,1~2句即可,不整段转录)；无对话→写具体动作/具体物证("取出藏有线索的信笺""从尸体搜出半枚铜币")。',
+   '1. 每个事件只写事实经过：谁 + 做了什么 + 得到/失去/发现了什么。★禁止引用任何对话原文、禁止摘抄台词（不要用引号复述某人说了哪句话）；把说话内容概括成一件事即可（如"把矿坑坐标告知对方"），不还原措辞。'],
+  ['2. 严禁笼统替代：禁止"他们交谈了""达成交易""发生了冲突""关系变好"这类空话；必须落到 谁+具体做了什么+说了哪句关键的话+得到/失去/发现了什么具体东西。',
+   '2. 严禁笼统替代：禁止"他们交谈了""达成交易""发生了冲突""关系变好"这类空话；必须落到 谁+具体做了什么+得到/失去/发现了什么具体东西。'],
+  ['2. 禁止笼统词，落到具体细节；支线同样要带关键句子。',
+   '2. 禁止笼统词，落到具体细节。'],
+
+  /* ---- 全量重建版独有 ---- */
+  ['主线（完整式·事件流水，把从剧情开始到当前的【全部】主线事件按时间先后完整列出，一条一行，必须记录关键句子，禁止笼统）：',
+   '主线（完整式·事件流水，把从剧情开始到当前的【全部】主线事件按时间先后完整列出，一条一行，只写事实经过，禁止笼统）：'],
+  ['1. 每个事件必须含【关键句子】：有对话→写关键原话(带引号,1~2句)；无对话→写具体动作/物证。',
+   '1. 每个事件只写事实经过：谁 + 做了什么 + 得到/失去/发现了什么。★禁止引用任何对话原文、禁止摘抄台词（不要用引号复述某人说了哪句话）；把说话内容概括成一件事即可，不还原措辞。'],
+  ['2. 严禁笼统替代：禁止"他们交谈了""达成交易""发生冲突"这类空话；落到 谁+具体动作+关键对话+得到/失去/发现了什么。',
+   '2. 严禁笼统替代：禁止"他们交谈了""达成交易""发生冲突"这类空话；落到 谁+具体动作+得到/失去/发现了什么。'],
+];
+
+/** 取当前生效的剧情档案 SYSTEM 提示词；archiveStyle='plain' 时把「关键对话原话」措辞替换掉 */
+function cdArchiveSystemOf(full, s) {
+  const base = full ? ARCHIVE_SYSTEM_FULL : ARCHIVE_SYSTEM;
+  let st = (s && s.archiveStyle) ? String(s.archiveStyle) : '';
+  if (!st) {
+    try { st = (typeof cdGetSettings === 'function') ? String((cdGetSettings() || {}).archiveStyle || '') : ''; }
+    catch (e) { st = ''; }
+  }
+  if (st !== 'plain') return base;          /* 对话版：与改动前逐字相同 */
+  let out = base;
+  for (let i = 0; i < CD_ARCH_PLAIN_MAP.length; i++) {
+    out = out.split(CD_ARCH_PLAIN_MAP[i][0]).join(CD_ARCH_PLAIN_MAP[i][1]);
+  }
+  return out;
+}
+
 async function cdBuildArchivePrompt(windowFloors, data, _s, archiveFull) {
   // ★ archiveFull=true 表示全量重建模式（手动补写大区间），用完整总结提示词，否则用增量提示词
-  const _archSys = archiveFull ? ARCHIVE_SYSTEM_FULL : ARCHIVE_SYSTEM;
+  const _archSys = cdArchiveSystemOf(archiveFull, _s);
   const existing = data.archive || emptyData().archive;
   // ★ 用户自定义剧情追踪项
   const customFields = Array.isArray(_s?.customFields) ? _s.customFields.filter(f => f && f.key && f.label) : [];
@@ -13797,6 +13855,13 @@ async function cdRenderSettings() {
         </div>
       </details>
 
+      <details class="cds-collapse"><summary><i class="fa-regular fa-scroll"></i> 剧情档案记录风格</summary>
+        <div>
+          <div class="cds-row"><span class="cds-lab">记录风格</span><span class="cds-ctrl"><select id="cd-s-archive-style" class="cd-input" style="max-width:280px;"><option value="dialogue" ${s.archiveStyle !== 'plain' ? 'selected' : ''}>对话版（保留关键对话原话）</option><option value="plain" ${s.archiveStyle === 'plain' ? 'selected' : ''}>常规版（只总结事实经过）</option></select></span></div>
+          <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;margin:4px 0 0;line-height:1.5;">「对话版」是原有行为：每条事件要求带 1~2 句关键台词原文，档案更详实但更长。「常规版」只记事实经过（谁 + 做了什么 + 结果），禁止引用任何对话原文，档案明显更短、更省 token。<b>只影响剧情档案</b>，角色日记保持不变。切换后下次总结生效。</p>
+        </div>
+      </details>
+
       <details class="cds-collapse"><summary><i class="fa-regular fa-database"></i> 自动总结数据源</summary>
         <div>
           <div class="cds-row"><span class="cds-lab">自动总结数据源</span><span class="cds-ctrl"><select id="cd-s-summary-source" class="cd-input" style="max-width:260px;"><option value="chat" ${s.summarySource !== 'jsonl' ? 'selected' : ''}>现有方式（用聊天数组）</option><option value="jsonl" ${s.summarySource === 'jsonl' ? 'selected' : ''}>jsonl 全量楼层（根治分片）</option></select></span></div>
@@ -14281,6 +14346,7 @@ async function cdRenderSettings() {
       autoHideKeep: parseInt($('#cd-s-autohide-keep').val(), 10) || 5,
       autoHideMode: $('#cd-s-autohide-mode').val() || 'b',
       summarySource: $('#cd-s-summary-source').val() || 'chat',
+      archiveStyle: ($('#cd-s-archive-style').val() === 'plain' ? 'plain' : 'dialogue'),
       // ★ 收集过滤标签
       filterTags: $('#cd-filter-tags-container .cd-filter-tag-row').map(function () {
         return {
