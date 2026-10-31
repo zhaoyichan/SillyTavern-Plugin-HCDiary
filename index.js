@@ -3608,6 +3608,8 @@ async function cdRegisterInjection() {
     _cdInjectMsg = text || null;
     _cdInjectMsgRole = cdGetInjectRole();
     cdAddLog('info', '[注入] 注入内容已缓存', { 用户设置位置: _s.injectPosition, 字符数: text ? text.length : 0 });
+    /* ★ FIX22：把本次注入全文记进日志面板的「最近注入内容」（单独存储，只留 3 条） */
+    try { cdRecordInjectContent(text); } catch (_eRec) {}
   } catch (e) {
     cdAddLog('warn', '[注入] cdRegisterInjection 失败: ' + e.message);
   }
@@ -3849,7 +3851,17 @@ async function cdOnBeforeGeneration(eventData) {
     const dryRun = data.dryRun === true || data.dry_run === true;
     if (dryRun || !Array.isArray(chat) || !chat.length) return;
     // idempotent: skip if already injected for this chat ref
-    if (typeof _cdInjectedChatRefs.has === 'function' && _cdInjectedChatRefs.has(chat)) { return; }
+    if (typeof _cdInjectedChatRefs.has === 'function' && _cdInjectedChatRefs.has(chat)) {
+      /* ★ FIX22 诊断：同一 chat 引用第二次进入 → 证实事件确实被重复触发 */
+      try { cdAddLog('info', '[注入] 命中幂等，跳过重复触发', { chat条数: chat.length }); } catch (_eIdem) {}
+      return;
+    }
+    /* ★★ FIX22 根因修复：进入即标记。
+       原实现把 add(chat) 放在函数末尾，而检查(has)与标记(add)之间隔着 await cdRefreshInjection()，
+       存在典型的 TOCTOU 竞态：事件被并发触发两次时，两个调用都会通过检查并各自插入一条 sysMsg，
+       表现为「剧情档案被发了两次」——两条一模一样的系统消息。
+       改为通过检查后立刻标记，彻底消除这个竞态窗口。 */
+    if (typeof _cdInjectedChatRefs.add === 'function') { try { _cdInjectedChatRefs.add(chat); } catch (_eAdd) {} }
 
     // ★ 主开关关闭则不注入
     const _s = cdGetSettings();
@@ -3860,7 +3872,17 @@ async function cdOnBeforeGeneration(eventData) {
     try { await cdRefreshInjection(); } catch (e) { cdWarn('生成前重建注入缓存失败(继续用旧缓存)', e); }
 
     // ---- 记忆注入（日记/关系/档案/填表），无内容则跳过但继续仪式注入 ----
-    if (_cdInjectMsg) {
+    /* ★ FIX22 内容级兜底去重：chat 里若已存在 content 完全相同的注入消息则跳过。
+       与上面的「引用级」幂等互补——即便 ST 每次传新数组导致引用级判断失效，
+       只要这批消息里已经插过同一份内容，就不会再插第二条。 */
+    var _cdDupInjected = false;
+    for (var _di = 0; _di < chat.length; _di++) {
+      if (chat[_di] && chat[_di].content === _cdInjectMsg) { _cdDupInjected = true; break; }
+    }
+    if (_cdDupInjected) {
+      try { cdAddLog('info', '[注入] 内容已存在，跳过重复插入', { 字符数: _cdInjectMsg.length, chat条数: chat.length }); } catch (_eDup) {}
+    }
+    if (_cdInjectMsg && !_cdDupInjected) {
       const sysMsg = { role: _cdInjectMsgRole === 1 ? 'user' : (_cdInjectMsgRole === 2 ? 'assistant' : 'system'), content: _cdInjectMsg };
       const s = _s;
       const pos = s.injectPosition || 'after';
@@ -3920,8 +3942,7 @@ async function cdOnBeforeGeneration(eventData) {
     _insertRitual(_grp.before, 'before');
     _insertRitual(_grp.chat, 'chat');
     _insertRitual(_grp.after, 'after');
-    // idempotent: mark this chat as injected
-    if (typeof _cdInjectedChatRefs.add === 'function') { try { _cdInjectedChatRefs.add(chat); } catch (e) {} }
+    // ★ FIX22：标记已提前到「通过检查后立刻执行」（消除 await 竞态），此处不再重复标记
   } catch (e) {
     cdWarn('cdOnBeforeGeneration 失败', e);
   }
@@ -4049,6 +4070,44 @@ function cdRerunBatch(batchId) {
 
 /** 日志存储键名 */
 const CD_LOG_KEY = 'character-diary-logs';
+/* ★ FIX22：注入全文单独存储（只留最近 3 条）。
+   注入内容常近万字符，若混进主日志流（上限 500 条）会迅速撑爆 localStorage，
+   导致 cdAddLog 整体写入失败、整个日志面板失效。 */
+const CD_LOG_INJECT_KEY = 'cd-inject-recent';
+
+/** 记录一次实际注入的内容 */
+function cdRecordInjectContent(text) {
+  try {
+    if (!text) return;
+    const arr = JSON.parse(localStorage.getItem(CD_LOG_INJECT_KEY) || '[]');
+    arr.push({ time: new Date().toLocaleString(), chars: String(text).length, content: String(text) });
+    while (arr.length > 3) arr.shift();
+    localStorage.setItem(CD_LOG_INJECT_KEY, JSON.stringify(arr));
+  } catch (e) { /* 存储失败不影响注入本身 */ }
+}
+
+/** 日志面板用：构造「最近注入内容」折叠区块的 HTML */
+function cdBuildInjectLogHtml() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(CD_LOG_INJECT_KEY) || '[]');
+    if (!Array.isArray(arr) || !arr.length) return '';
+    const items = arr.slice().reverse().map(function (r) {
+      return '<details style="margin:4px 0;border:1px solid #e4d8bf;border-radius:8px;background:#fffdf6;">' +
+        '<summary style="cursor:pointer;list-style:none;padding:7px 10px;font-size:calc(0.62rem * var(--cd-fs,1));color:#6b4a1b;font-weight:700;">' +
+        '<i class="fa-regular fa-paper-plane"></i> ' + escapeHtml(r.time || '') + ' · ' + (r.chars || 0) + ' 字符</summary>' +
+        '<pre class="cd-log-detail" style="margin:0;padding:8px 10px;max-height:320px;overflow:auto;">' + escapeHtml(r.content || '') + '</pre>' +
+        '</details>';
+    }).join('');
+    return '<details style="margin-bottom:8px;border:1px solid #e4d8bf;border-radius:10px;background:#fdfaf3;">' +
+      '<summary style="cursor:pointer;list-style:none;padding:9px 12px;font-size:calc(0.72rem * var(--cd-fs,1));font-weight:700;color:#6b4a1b;">' +
+      '<i class="fa-regular fa-file-lines"></i> 最近注入给 AI 的内容（默认折叠，点开核对）</summary>' +
+      '<div style="padding:8px 12px 12px;border-top:1px solid #ede2cc;">' +
+      '<p style="font-size:calc(0.55rem * var(--cd-fs,1));color:#8b7355;margin:0 0 8px;line-height:1.6;">' +
+      '记录最近 3 次真正注入到对话里的完整内容。若发现剧情档案出现两次，点开核对；' +
+      '同时留意上方日志里是否出现「命中幂等」或「跳过重复插入」。</p>' +
+      items + '</div></details>';
+  } catch (e) { return ''; }
+}
 
 /** 添加一条日志
  *  @param {'info'|'warn'|'error'|'api_req'|'api_res'} level
@@ -4312,10 +4371,13 @@ function cdRenderLog() {
     _chip('all', '全部') + _chip('fail', '失败') + _chip('warn', '有警告') + _chip('api', '含API') +
     '<span class="cd-logv-count">共 ' + _groups.length + ' 批 / ' + logs.length + ' 条</span></div>';
 
+  // ★ FIX22：最近注入内容区块（默认折叠）
+  const injLogHtml = (typeof cdBuildInjectLogHtml === 'function') ? cdBuildInjectLogHtml() : '';
+
   if (!logs.length) {
-    html = testBtnHtml + `<div class="cd-empty${cdCharEmptyCls()}"${cdCharEmptyAttr()}><p>暂无日志</p><p class="cd-empty-sub">每次总结会在这里留下一条「任务批次」，成功失败一眼看得出</p></div>`;
+    html = testBtnHtml + injLogHtml + `<div class="cd-empty${cdCharEmptyCls()}"${cdCharEmptyAttr()}><p>暂无日志</p><p class="cd-empty-sub">每次总结会在这里留下一条「任务批次」，成功失败一眼看得出</p></div>`;
   } else {
-    html = testBtnHtml + barHtml +
+    html = testBtnHtml + barHtml + injLogHtml +
       `<div class="cd-log-stats-container">${statsHtml}</div>` +
       (cards || `<div class="cd-empty${cdCharEmptyCls()}"${cdCharEmptyAttr()}><p>没有符合筛选的日志</p></div>`) +
       '<div style="display:flex;gap:6px;margin-top:8px;">' +
