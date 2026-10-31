@@ -240,11 +240,11 @@ function cdCharOptions(cur) {
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.18.3';
+const PLUGIN_VERSION = '2.18.4';
 /* ★ FIX23：构建标识，用于定位用户跑的是哪批代码。
    CD_BUILD = 本版所基于的提交短 sha，配合 PLUGIN_VERSION 即可唯一确定版本；
    下次改动代码时请一并更新（无法自指自身 sha，故取基线）。 */
-const CD_BUILD = '3ba43dd';
+const CD_BUILD = '1148c65';
 const CD_BUILD_DATE = '2026-11-01';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
@@ -3559,6 +3559,57 @@ async function cdBuildDiaryInjectionText() {
 let _cdInjectionRegistered = false;
 // idempotency dedupe injection by eventData.chat ref
 const _cdInjectedChatRefs = new WeakSet();
+
+/* ★ FIX24：注入消息标记。
+   用 Object.defineProperty 且 enumerable:false —— JSON.stringify 不会序列化它，
+   所以标记只存在于内存，不会写进聊天文件、不污染用户数据。
+   WeakSet 作为快判断（同引用），属性作为兼容兆底。 */
+const CD_INJECT_MARK = '_hcDiaryInjected';
+const _cdInjectedMsgRefs = new WeakSet();
+
+function cdMarkInjected(msg) {
+  try {
+    if (!msg || typeof msg !== 'object') return;
+    Object.defineProperty(msg, CD_INJECT_MARK, { value: true, enumerable: false, configurable: true, writable: true });
+    _cdInjectedMsgRefs.add(msg);
+  } catch (e) { /* 无法标记不影响插入 */ }
+}
+
+function cdIsInjectedMsg(msg) {
+  try { return !!(msg && typeof msg === 'object' && (msg[CD_INJECT_MARK] === true || _cdInjectedMsgRefs.has(msg))); }
+  catch (e) { return false; }
+}
+
+/** 清理 chat 里本插件此前注入过的消息（标记或内容与本次相同），返回清理条数 */
+function cdPurgeInjectedFromChat(chat, curText) {
+  let n = 0;
+  try {
+    if (!Array.isArray(chat)) return 0;
+    for (let i = chat.length - 1; i >= 0; i--) {
+      const m = chat[i];
+      if (!m) continue;
+      if (cdIsInjectedMsg(m) || (curText && m.content === curText)) { chat.splice(i, 1); n++; }
+    }
+  } catch (e) { /* 清理失败不阻止插入 */ }
+  return n;
+}
+
+/* ★ FIX24：同一轮生成内复用同一个刷新 Promise。
+   事件被触发多次时，原实现每次都 await cdRefreshInjection() 重建注入内容；
+   而重建依赖「最近 N 条聊天窗口」，第一次插入后窗口就变了
+   ⇒ 内容漂移 ⇒ 内容级去重失效。复用后同轮内容恒定。 */
+let _cdRefreshInFlight = null;
+function cdRefreshInjectionShared() {
+  if (_cdRefreshInFlight) return _cdRefreshInFlight;
+  _cdRefreshInFlight = (async function () {
+    try { await cdRefreshInjection(); }
+    finally {
+      /* 本轮宏任务结束后才允许下一次重建（保证跨轮仍会刷新） */
+      setTimeout(function () { _cdRefreshInFlight = null; }, 0);
+    }
+  })();
+  return _cdRefreshInFlight;
+}
 let _cdInjectionKey = 'character-diary-memory';
 /** 缓存最近一次生成的注入消息（供 CHAT_COMPLETION_PROMPT_READY 手动按位置插入） */
 let _cdInjectMsg = null;
@@ -3877,7 +3928,11 @@ async function cdOnBeforeGeneration(eventData) {
 
     // ★ 加固：每次生成前重建注入缓存，保证「数据变更」与「注入内容」实时一致，
     //   避免清除/批量删除剧情档案等操作后，旧缓存 _cdInjectMsg 仍被注入到本次生成。
-    try { await cdRefreshInjection(); } catch (e) { cdWarn('生成前重建注入缓存失败(继续用旧缓存)', e); }
+    /* ★ FIX24：改用同轮复用的刷新，避免同一轮里重建多次导致内容漂移 */
+    try {
+      if (typeof cdRefreshInjectionShared === 'function') await cdRefreshInjectionShared();
+      else await cdRefreshInjection();
+    } catch (e) { cdWarn('生成前重建注入缓存失败(继续用旧缓存)', e); }
 
     // ---- 记忆注入（日记/关系/档案/填表），无内容则跳过但继续仪式注入 ----
     /* ★ FIX22 内容级兜底去重：chat 里若已存在 content 完全相同的注入消息则跳过。
@@ -3892,8 +3947,18 @@ async function cdOnBeforeGeneration(eventData) {
       cdInjectStatAdd('内容重复跳过', 1);
     }
     if (_cdInjectMsg && !_cdDupInjected) {
+      /* ★ FIX24：先清理本插件此前插入的消息再插新的。
+         否则每触发一次就多一条，对话里会越积越多
+         （用户日志里插入位置从 13 涨到 14 就是在累积）。 */
+      const _purged = (typeof cdPurgeInjectedFromChat === 'function') ? cdPurgeInjectedFromChat(chat, _cdInjectMsg) : 0;
+      if (_purged > 0) {
+        try { cdAddLog('info', '[注入] 清理历史注入消息', { 清理条数: _purged, 清理后条数: chat.length }); } catch (_ePurge) {}
+        cdInjectStatAdd('历史清理', _purged);
+      }
       cdInjectStatAdd('插入', 1, { 末次字符数: _cdInjectMsg.length });
       const sysMsg = { role: _cdInjectMsgRole === 1 ? 'user' : (_cdInjectMsgRole === 2 ? 'assistant' : 'system'), content: _cdInjectMsg };
+      /* ★ 非枚举标记：不会被 JSON.stringify 写进聊天文件 */
+      if (typeof cdMarkInjected === 'function') cdMarkInjected(sysMsg);
       const s = _s;
       const pos = s.injectPosition || 'after';
       const userDepth = Math.max(1, parseInt(s.injectDepth, 10) || 1);
@@ -3902,15 +3967,18 @@ async function cdOnBeforeGeneration(eventData) {
         idx = 0;
         while (idx < chat.length && chat[idx].role === 'system') idx++;
         chat.splice(idx, 0, sysMsg);
-        cdAddLog('info', '[注入] 开头注入', { 插入位置: idx, 字符数: _cdInjectMsg.length });
+        cdAddLog('info', '[注入] 开头注入', { 插入位置: idx, 字符数: _cdInjectMsg.length,
+          内容hash: (typeof cdDiagHash === 'function') ? cdDiagHash(_cdInjectMsg) : null });
       } else if (pos === 'chat') {
         idx = Math.floor(chat.length / 2);
         chat.splice(idx, 0, sysMsg);
-        cdAddLog('info', '[注入] 对话中注入', { 插入位置: idx, 字符数: _cdInjectMsg.length });
+        cdAddLog('info', '[注入] 对话中注入', { 插入位置: idx, 字符数: _cdInjectMsg.length,
+          内容hash: (typeof cdDiagHash === 'function') ? cdDiagHash(_cdInjectMsg) : null });
       } else {
         idx = Math.max(0, chat.length - userDepth);
         chat.splice(idx, 0, sysMsg);
-        cdAddLog('info', '[注入] 末尾注入', { 插入位置: idx, 深度: userDepth, 总条数: chat.length, 字符数: _cdInjectMsg.length });
+        cdAddLog('info', '[注入] 末尾注入', { 插入位置: idx, 深度: userDepth, 总条数: chat.length, 字符数: _cdInjectMsg.length,
+          内容hash: (typeof cdDiagHash === 'function') ? cdDiagHash(_cdInjectMsg) : null });
       }
     } else if (!_cdInjectMsg) {
       cdInjectStatAdd('缓存为空跳过', 1);
@@ -4093,11 +4161,18 @@ const CD_LOG_INJECT_KEY = 'cd-inject-recent';
      触发次数 = 插入次数 且 > 1 ⇒ 防护没挡住，存在第二条注入路径
    对账关系：触发 = 插入 + 各类跳过，不平衡就说明有分支没埋点。 */
 const CD_INJECT_STAT_KEY = 'cd-inject-stat';
-const CD_INJECT_STAT_FIELDS = ['触发', '插入', '幂等跳过', '内容重复跳过', '开关关闭跳过', '缓存为空跳过'];
+const CD_INJECT_STAT_FIELDS = ['触发', '插入', '幂等跳过', '内容重复跳过', '开关关闭跳过', '缓存为空跳过', '历史清理'];
 
+/* ★ FIX24：内存作为真源。
+   原实现每次 add 都“从 localStorage 读 → 改 → 写回”，
+   多次调用交替时会丢失计数（用户报告里
+   “触发 1 / 插入 0”与日志里 2 次「开头注入」对不上，即此原因）。
+   改为内存对象累加 + 同步写回，JS 单线程下无竞态。 */
+let _cdInjectStatMem = null;
 function cdGetInjectStat() {
+  if (_cdInjectStatMem) return _cdInjectStatMem;
   const base = { 触发: 0, 插入: 0, 幂等跳过: 0, 内容重复跳过: 0,
-                 开关关闭跳过: 0, 缓存为空跳过: 0,
+                 开关关闭跳过: 0, 缓存为空跳过: 0, 历史清理: 0,
                  末次字符数: 0, 末次时间: '' };
   try {
     const o = JSON.parse(localStorage.getItem(CD_INJECT_STAT_KEY) || '{}');
@@ -4105,6 +4180,7 @@ function cdGetInjectStat() {
     if (typeof o.末次字符数 === 'number') base.末次字符数 = o.末次字符数;
     if (typeof o.末次时间 === 'string') base.末次时间 = o.末次时间;
   } catch (e) { /* 读不到就用零值，不影响注入 */ }
+  _cdInjectStatMem = base;
   return base;
 }
 
@@ -4122,6 +4198,7 @@ function cdInjectStatAdd(field, n, extra) {
 
 function cdResetInjectStat() {
   try { localStorage.removeItem(CD_INJECT_STAT_KEY); } catch (e) {}
+  _cdInjectStatMem = null;
 }
 
 /** 记录一次实际注入的内容 */
@@ -4229,6 +4306,7 @@ function cdBuildDiagnosticReport() {
     P('  内容级重复跳过', st.内容重复跳过 + ' 次');
     P('  主开关关闭跳过', st.开关关闭跳过 + ' 次');
     P('  注入缓存为空跳过', st.缓存为空跳过 + ' 次');
+    P('  已清理的历史注入消息', st.历史清理 + ' 条');
     const balanced = (st.触发 === (st.插入 + skipped));
     P('对账', st.触发 + ' = 插入 ' + st.插入 + ' + 跳过合计 ' + skipped + '  → ' + (balanced ? '平衡 ✓' : '★不平衡★（有分支没埋点）'));
     if (st.触发 === 0) {
@@ -4246,7 +4324,10 @@ function cdBuildDiagnosticReport() {
     const cnt = cdDiagCountInjected();
     if (cnt.matched >= 0) {
       P('当前对话中「内容与末次注入一致」的消息', cnt.matched + ' 条（对话共 ' + cnt.total + ' 条）');
-      P('判定', cnt.matched >= 2 ? ('★ ' + cnt.matched + ' 条：重复注入仍然存在 ★') : '1 条：正常 ✓');
+      /* ★ FIX24：原先 matched===0 也会显示“1 条：正常”，属于误导。 */
+      P('判定', cnt.matched >= 2 ? ('★ ' + cnt.matched + ' 条：重复注入仍然存在 ★')
+              : (cnt.matched === 1 ? '1 条：正常 ✓'
+              : '0 条：本次尚无注入（若刚发过消息仍为 0，说明注入内容每次都在漂移）'));
     } else {
       P('当前对话注入条数', '(本次尚无注入记录)');
     }
