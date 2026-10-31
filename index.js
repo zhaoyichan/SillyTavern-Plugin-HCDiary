@@ -240,11 +240,11 @@ function cdCharOptions(cur) {
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.18.4';
+const PLUGIN_VERSION = '2.18.5';
 /* ★ FIX23：构建标识，用于定位用户跑的是哪批代码。
    CD_BUILD = 本版所基于的提交短 sha，配合 PLUGIN_VERSION 即可唯一确定版本；
    下次改动代码时请一并更新（无法自指自身 sha，故取基线）。 */
-const CD_BUILD = '1148c65';
+const CD_BUILD = '1caae78';
 const CD_BUILD_DATE = '2026-11-01';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
@@ -1532,6 +1532,20 @@ const ARCHIVE_SYSTEM_BASE = [
  * 好处是对话版与基座拼装结果逐字相同，行为可预期。
  * ★ 映射必须整套联动：只替换一处时，AI 仍会从其余措辞收到「写原话」的指令。
  * ------------------------------------------------------------------------- */
+/* ★ FIX25：档案格式版本。
+   1 = 旧平铺格式（每行自带完整【时间·地点】前缀）
+   2 = FIX21 起的新格式（事件按【时间·地点】分组；解析层会展开回平铺，故存进去
+       与旧格式长得一模一样，只能靠这个字段区分）
+   老档案没有该字段 ⇒ cdArchiveFormatOf 返回 1。 */
+const CD_ARCHIVE_FORMAT_VERSION = 2;
+
+function cdArchiveFormatOf(arc) {
+  try {
+    const v = Number(arc && arc.formatVersion);
+    return (v >= 1) ? v : 1;
+  } catch (e) { return 1; }
+}
+
 const CD_ARCH_PLAIN_MAP = [
   ['1. 优先交代 人物/时间/地点/动作/关键对话/结果。',
    '1. 优先交代 人物/时间/地点/动作/经过/结果。'],
@@ -3580,6 +3594,35 @@ function cdIsInjectedMsg(msg) {
   catch (e) { return false; }
 }
 
+/* ★ FIX25：宽松识别。
+   正常情况下靠「不可枚举标记」或「内容完全相同」判定本插件注入的消息。
+   但标记会随消息对象被 ST 重建而丢失，内容又可能漂移 ⇒ 两条同时失效时，
+   注入消息就会一轮一条地堆积。故加第三层按「结构特征」识别。
+   ★ 三个条件必须同时满足才判定，尽量不误删用户自己的 system 消息。 */
+const CD_INJECT_BLOCK_MARKS = ['[剧情档案]', '[剧情档案·向量检索]', '[角色日记]', '[角色关系]', '[用户备忘录·最高优先级]'];
+
+function cdLooksLikeInjected(msg, curText) {
+  try {
+    if (!msg || typeof msg.content !== 'string' || !msg.content) return false;
+    /* ① 角色必须与注入角色一致（默认 system） */
+    const r = (_cdInjectMsgRole === 1) ? 'user' : ((_cdInjectMsgRole === 2) ? 'assistant' : 'system');
+    if (msg.role !== r) return false;
+    /* ② 必须含【至少 2 个】插件专属区块标记。
+          单次注入通常含 剧情档案 + 角色日记 + 角色关系 + 备忘录 等多个区块，
+          用户手写一条 system 同时带 2 个这种标记的概率极低。
+          ★ 只认 1 个太容易误伤（误删是丢数据，漏判只是多一条，风险不对称）。 */
+    let marks = 0;
+    for (let i = 0; i < CD_INJECT_BLOCK_MARKS.length; i++) {
+      if (msg.content.indexOf(CD_INJECT_BLOCK_MARKS[i]) >= 0) marks++;
+    }
+    if (marks < 2) return false;
+    /* ③ 长度门槛：至少 200 字符，且不低于本次注入的一半（避免误伤短提示语） */
+    const refLen = (curText && curText.length) || 0;
+    const minLen = Math.max(200, Math.floor(refLen * 0.5));
+    return msg.content.length >= minLen;
+  } catch (e) { return false; }
+}
+
 /** 清理 chat 里本插件此前注入过的消息（标记或内容与本次相同），返回清理条数 */
 function cdPurgeInjectedFromChat(chat, curText) {
   let n = 0;
@@ -3588,7 +3631,22 @@ function cdPurgeInjectedFromChat(chat, curText) {
     for (let i = chat.length - 1; i >= 0; i--) {
       const m = chat[i];
       if (!m) continue;
-      if (cdIsInjectedMsg(m) || (curText && m.content === curText)) { chat.splice(i, 1); n++; }
+      let _hit = false, _loose = false;
+      /* ★ 精确判定（标记 / 内容完全相同）优先，且单独 try：
+            即使宽松识别那条路径出问题，也不能连累这里的清理能力。 */
+      try { if (cdIsInjectedMsg(m) || (curText && m.content === curText)) { _hit = true; } } catch (_eP1) {}
+      /* ★ FIX25：宽松兜底——标记丢失 + 内容漂移时仍能识别。
+            单独 try + typeof 守卫：宽松识别只是加分项，
+            它出错时绝不能让整个 purge 半途而废（否则精确匹配也一起失效）。 */
+      if (!_hit && typeof cdLooksLikeInjected === 'function') {
+        try { if (cdLooksLikeInjected(m, curText)) { _hit = true; _loose = true; } } catch (_eP2) {}
+      }
+      if (_hit) {
+        chat.splice(i, 1); n++;
+        if (_loose) {
+          try { cdAddLog('info', '[注入] 宽松识别清理历史注入消息', { 字符数: String(m.content || '').length, 剩余条数: chat.length }); } catch (_eL) {}
+        }
+      }
     }
   } catch (e) { /* 清理失败不阻止插入 */ }
   return n;
@@ -4163,6 +4221,35 @@ const CD_LOG_INJECT_KEY = 'cd-inject-recent';
 const CD_INJECT_STAT_KEY = 'cd-inject-stat';
 const CD_INJECT_STAT_FIELDS = ['触发', '插入', '幂等跳过', '内容重复跳过', '开关关闭跳过', '缓存为空跳过', '历史清理'];
 
+/* ★ FIX25：诊断用——同步读取「谁在参与 prompt 构造」的线索。
+   /api/extensions/discover 是异步的，而报告必须同步生成，故只用同步可得的来源。
+   读不到就保持 null，报告如实显示「(不可用)」，绝不编造。 */
+function cdDiagEnvExtensions() {
+  const out = { 事件名: '(未知)', 监听数: null, 全局迹象: [], 可用: false };
+  try {
+    const ST = (typeof SillyTavern !== 'undefined') ? SillyTavern : null;
+    let evName = '';
+    try { evName = (typeof event_types !== 'undefined' && event_types && event_types.CHAT_COMPLETION_PROMPT_READY) || ''; } catch (_e) {}
+    if (evName) out.事件名 = String(evName);
+    /* EventEmitter 的 _events 是同步可枚举的：能看出同一事件上挂了几个监听者
+       （>1 说明别的扩展也注册了；本插件只注册一次，多出来的是别人） */
+    try {
+      const es = ST && ST.eventSource;
+      if (es && evName && es._events && es._events[evName]) {
+        const h = es._events[evName];
+        out.监听数 = (typeof h === 'function') ? 1 : ((h && h.length) || null);
+        out.可用 = true;
+      }
+    } catch (_e2) {}
+    if (typeof window !== 'undefined') {
+      ['setExtensionPrompt', 'getContext', 'eventSource', 'extensions', 'extensionPrompts'].forEach(function (k) {
+        try { if (typeof window[k] !== 'undefined') out.全局迹象.push(k + ':' + typeof window[k]); } catch (_e3) {}
+      });
+    }
+  } catch (e) { /* 读不到就保持 null */ }
+  return out;
+}
+
 /* ★ FIX24：内存作为真源。
    原实现每次 add 都“从 localStorage 读 → 改 → 写回”，
    多次调用交替时会丢失计数（用户报告里
@@ -4173,12 +4260,14 @@ function cdGetInjectStat() {
   if (_cdInjectStatMem) return _cdInjectStatMem;
   const base = { 触发: 0, 插入: 0, 幂等跳过: 0, 内容重复跳过: 0,
                  开关关闭跳过: 0, 缓存为空跳过: 0, 历史清理: 0,
-                 末次字符数: 0, 末次时间: '' };
+                 末次字符数: 0, 末次时间: '', 触发时刻: [] };
   try {
     const o = JSON.parse(localStorage.getItem(CD_INJECT_STAT_KEY) || '{}');
     for (const k of CD_INJECT_STAT_FIELDS) { if (typeof o[k] === 'number') base[k] = o[k]; }
     if (typeof o.末次字符数 === 'number') base.末次字符数 = o.末次字符数;
     if (typeof o.末次时间 === 'string') base.末次时间 = o.末次时间;
+    /* ★ FIX25：触发时刻（最近 8 次），用于判断多次触发是「同时」还是「分步」 */
+    if (Array.isArray(o.触发时刻)) base.触发时刻 = o.触发时刻.filter(function (x) { return typeof x === 'string'; }).slice(-8);
   } catch (e) { /* 读不到就用零值，不影响注入 */ }
   _cdInjectStatMem = base;
   return base;
@@ -4188,6 +4277,15 @@ function cdInjectStatAdd(field, n, extra) {
   try {
     const st = cdGetInjectStat();
     if (Object.prototype.hasOwnProperty.call(st, field)) st[field] = (Number(st[field]) || 0) + (Number(n) || 0);
+    /* ★ FIX25：每次「触发」记一个带毫秒的时刻，保留最近 8 个 */
+    if (field === '触发') {
+      const d = new Date();
+      const ts = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ':' +
+                 ('0' + d.getSeconds()).slice(-2) + '.' + ('00' + d.getMilliseconds()).slice(-3);
+      if (!Array.isArray(st.触发时刻)) st.触发时刻 = [];
+      st.触发时刻.push(ts);
+      if (st.触发时刻.length > 8) st.触发时刻 = st.触发时刻.slice(-8);
+    }
     if (field === '插入') {
       st.末次字符数 = (extra && typeof extra.末次字符数 === 'number') ? extra.末次字符数 : 0;
       st.末次时间 = new Date().toLocaleString();
@@ -4294,6 +4392,46 @@ function cdBuildDiagnosticReport() {
     P('设备', (mobile ? '手机/窄屏' : '电脑') + '（' + w + 'x' + h + '）');
     P('语言', lang || '(未知)');
     P('UA', ua.slice(0, 160));
+    L.push('');
+
+    // ---- ★ FIX25：扩展环境 + 触发时序（定位「同一轮为什么触发多次」）----
+    L.push('【扩展环境】（定位谁在额外构造 prompt）');
+    try {
+      const ex = (typeof cdDiagEnvExtensions === 'function') ? cdDiagEnvExtensions() : null;
+      if (ex) {
+        P('生成前事件', ex.事件名);
+        P('该事件监听数', (ex.监听数 === null ? '(读不到)' : ex.监听数 + ' 个') +
+          (ex.监听数 && ex.监听数 > 1 ? '  ← >1 说明别的扩展也注册了同一事件' : ''));
+        P('全局迹象', ex.全局迹象.length ? ex.全局迹象.join(', ') : '(无)');
+      } else {
+        P('扩展环境', '(不可用)');
+      }
+    } catch (_eEx) { P('扩展环境', '(读取异常，已忽略)'); }
+
+    /* ★ 注意：这里不能引用 st —— const st 在本函数更下方才声明，
+          同一作用域内提前引用会触发 TDZ 报错，且会被 try/catch 吞成「读取异常」。 */
+    try {
+      const _stTs = cdGetInjectStat();
+      const tsArr = Array.isArray(_stTs.触发时刻) ? _stTs.触发时刻 : [];
+      if (tsArr.length) {
+        L.push('  最近 ' + tsArr.length + ' 次触发时刻（看是同时还是分步）：');
+        let prevMs = null;
+        for (let i = 0; i < tsArr.length; i++) {
+          const t = String(tsArr[i]);
+          let gap = '';
+          const mm = /^(\d{2}):(\d{2}):(\d{2})\.(\d{3})$/.exec(t);
+          if (mm) {
+            const curMs = (Number(mm[1]) * 3600 + Number(mm[2]) * 60 + Number(mm[3])) * 1000 + Number(mm[4]);
+            if (prevMs !== null) gap = '  +' + Math.max(0, curMs - prevMs) + 'ms';
+            prevMs = curMs;
+          }
+          L.push('    ' + (i + 1) + '. ' + t + gap);
+        }
+        P('判定', '间隔 <50ms ⇒ 同一轮内并发触发；间隔数百 ms ⇒ 分步构造（预览/计数/生成）');
+      } else {
+        P('触发时刻', '(尚无触发记录)');
+      }
+    } catch (_eTs) { P('触发时刻', '(读取异常，已忽略)'); }
     L.push('');
 
     // ---- ★ 注入对账 ----
@@ -6744,6 +6882,8 @@ if (arc.unresolved !== undefined) {
   const _un = String(arc.unresolved || '').trim();
   data.archive.unresolved = (!_un || _un === '无' || _un === '无。' || _un === '暂无') ? '' : _un;
 }
+          /* ★ FIX25：本次由 AI 用新提示词生成 ⇒ 标记为新格式 */
+          try { data.archive.formatVersion = CD_ARCHIVE_FORMAT_VERSION; } catch (_eFv) {}
           // ★ 物品清单（变动日志，追加去重，防重复结算）
           if (arc.items && Array.isArray(arc.items) && arc.items.length) {
             if (!Array.isArray(data.archive.items)) data.archive.items = [];
@@ -6817,6 +6957,8 @@ if (arc.unresolved !== undefined) {
               if (_rwArc.sideline) data.archive.sideline = String(_rwArc.sideline).trim();
               if (_rwArc.states !== undefined) data.archive.states = String(_rwArc.states || '').trim(); // 已撤销旧值，直接覆盖（不用块内 _mergeStatesByRole）
               if (_rwArc.unresolved !== undefined) { const _u2=String(_rwArc.unresolved||'').trim(); data.archive.unresolved = (!_u2||_u2==='无'||_u2==='无。'||_u2==='暂无')?'':_u2; }
+              /* ★ FIX25：重写同样由 AI 生成 ⇒ 标记为新格式 */
+              try { data.archive.formatVersion = CD_ARCHIVE_FORMAT_VERSION; } catch (_eFv2) {}
               if (_rwArc.title) data._chapterTitle = String(_rwArc.title).trim();
               if (_rwArc.lead)  data._chapterLead  = String(_rwArc.lead).trim();
               if (Array.isArray(_rwArc.locations) && _rwArc.locations.length) { try { if (!Array.isArray(data.archive.locations)) data.archive.locations=[]; data.archive.locations = data.archive.locations.concat(_rwArc.locations); } catch(_e){} }
@@ -12615,6 +12757,16 @@ try {
     if (_chRoll) top += '<div class="cd-arc-v6-chapter"><span class="cd-arc-v6-ro">◇ ' + escapeHtml(_chRoll) + '</span><div>' + escapeHtml(_chTtl || '') + '</div></div>';
     else top += '<div class="cd-arc-v6-chapter">' + (_ch ? escapeHtml(_ch) : '剧情档案') + '</div>';
     if (lead) top += '<div class="cd-arc-v6-lead">' + lead + '</div>';
+    /* ★ FIX25：格式徽章，一眼看出当前档案用的是哪套格式 */
+    try {
+      const _fv = (typeof cdArchiveFormatOf === 'function') ? cdArchiveFormatOf(data && data.archive) : 1;
+      const _isNew = _fv >= CD_ARCHIVE_FORMAT_VERSION;
+      top += '<div style="display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:3px 10px;border-radius:999px;' +
+             (_isNew ? 'background:rgba(120,170,120,.14);color:#4a7a4a;border:1px solid rgba(120,170,120,.3);'
+                     : 'background:rgba(190,150,80,.14);color:#8b6a2f;border:1px solid rgba(190,150,80,.3);') +
+             '"><i class="fa-regular ' + (_isNew ? 'fa-circle-check' : 'fa-clock-rotate-left') + '"></i>' +
+             (_isNew ? '已用新格式（事件按时间·地点分组）' : '旧格式（下次总结后自动转新）') + '</div>';
+    } catch (_eFmt) {}
     top += '</div>';
     content.prepend(top);
     // 隐藏地点统计（折叠条）
