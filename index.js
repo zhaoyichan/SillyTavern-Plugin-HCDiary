@@ -240,7 +240,7 @@ function cdCharOptions(cur) {
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.18.6';
+const PLUGIN_VERSION = '2.18.7';
 /* ★ FIX23：构建标识，用于定位用户跑的是哪批代码。
    CD_BUILD = 本版所基于的提交短 sha，配合 PLUGIN_VERSION 即可唯一确定版本；
    下次改动代码时请一并更新（无法自指自身 sha，故取基线）。 */
@@ -506,6 +506,12 @@ const DEFAULT_SETTINGS = {
   injectMemo   : true,          // [v2.9.3] 备忘录注入开关：状态界面手动写的备忘录是否在对话时注入给AI
   summarySource: 'chat',      // [v2.9.4] 自动总结数据源: 'chat'=现有(用chat数组) | 'jsonl'=从jsonl读全量楼层(根治分片)
   archiveStyle  : 'dialogue', // [v2.12+] 剧情档案记录风格: 'dialogue'=对话版(每条事件带关键对话原话) | 'plain'=常规版(只总结事实经过,不引用原文)
+  /* ★ FIX27：剧情档案字段开关。用户诉求「默认只要主线，支线/状态/未解决开了才有」。
+     false = 该字段整段不进提示词（不是写「无」），档案立刻变短；true = 照旧输出。
+     ★ 关掉不会删档案里的旧内容，只是不再要求 AI 更新它。 */
+  arcSide       : false,      // 支线
+  arcState      : false,      // 重要状态变化
+  arcUnresolved : false,      // 未解决事项
   archiveMode   : 'append',   // 'append' | 'vector' 剧情档案模式
   diaryMode     : 'append',   // 'append' | 'vector' 角色日记模式
   vectorTopK    : 5,          // 向量检索召回条数
@@ -1456,62 +1462,41 @@ const ARCHIVE_STATE_MODE = {
 const ARCHIVE_SYSTEM_BASE = [
   '你是剧情档案整理员。只记录已经发生的事实，不写猜测、评价、气氛渲染或心理分析。',
   '',
-  '【时间规则】以下规则适用于所有需要写时间的地方，后文不再重复：',
-  '1. 格式【2026年3月15日 14:30】，必须含具体数字；禁止"清晨/午后/傍晚/入夜/约半日/未知"这类缺数字的模糊时段。',
-  '2. 原文没有确切时间时，按剧情发生顺序自洽顺延一个具体数字时间，绝不输出缺数字的时间标记。',
-  '3. 事件按【时间 · 地点】分组：组头独占一行并写全，组内每条以 · 开头，不再重复前缀。',
-  '4. 下一组只写变化的部分：只有时间变就写【21:10】，只有地点变就写【·酒馆角落】，两者都变才写全。',
+  '【时间规则】',
+  '1. 格式【2026年3月15日 14:30】，必须含具体数字；禁止"清晨/午后/傍晚/入夜/约半日"这类没数字的写法。',
+  '2. 原文没有确切时间时，按剧情顺序自洽顺延一个具体数字时间。',
+  '3. 一个【时间 · 地点】开一个组头，组头独占一行，下面只跟一条以 · 开头的叙述。',
+  '4. 组头只在时间推移、或人物移动/换房间时才新开；地点没变就只写时间【21:10】，地点一变必须写新地点。',
   '',
   '【写作原则】',
-  '1. 优先交代 人物/时间/地点/动作/关键对话/结果。',
-  '2. 对剧情推进没有作用的闲聊和重复内容可压缩，但已成立的约定、条件、交易、冲突、决策、状态变化不得漏。',
-  '3. 物品、证据、金额、药物、条约、代号、身份、职位、伤病、生理变化、关系变化、位置变化，一律写具体内容，禁止"某物""某情报""发生变化"。',
-  '4. 能明确在场者、目击者、参与者时写明，避免后续人物关系或知情范围混乱。',
-  '5. 跨多段聊天的连续事件合并成一条完整事件，不按楼层机械切碎。',
-  '6. 暴力、成人互动、羞辱、伤病、血腥等敏感内容不跳过、不美化，只用客观中性措辞。',
-  '7. 禁止"暧昧气氛""心理博弈""宣示主权""占有欲""言语挑衅"这类抽象标签，也禁止"他们交谈了""达成交易""发生冲突""关系变好"这类空话。',
-  '8. 不擅自补日期、时间、动机、立场或因果。原文没有，就保持没有。',
-  '9. 纯文本输出，不加项目符号、不编号、不解释你的做法。',
+  '1. ★同一时刻、同一地点的事合成一条★，用分号串起经过；不按单个动作或楼层拆条。',
+  '2. 一条要能独立读懂：谁 → 做了什么 → 结果；有对话就带 1 句原话（引号），没对话就写具体动作或物证。',
+  '3. 已成立的约定、条件、交易、冲突、决策、伤病、身份、关系变化不得漏；物品、金额、代号写具体，禁止"某物""发生变化"。',
+  '4. 敏感内容（暴力、成人、伤害、血腥）照实写，只用客观中性措辞，不跳过、不美化；禁止"气氛""博弈""宣示主权"这类抽象标签和"他们交谈了""关系变好"这类空话。',
+  '5. 不补原文没有的动机、立场、因果；纯文本输出，不加项目符号、不编号、不解释你的做法。',
   '',
   '【输出字段】字段标签原样输出，每个字段一段文字。',
   '',
   '主线：',
   '{MAIN}',
-  '（格式样板——组头独占一行，组内每条以 · 开头：）',
+  '（样板——一个时间地点写成一条：）',
   '【2026年3月15日 14:30 · 雪原酒馆】',
-  '·主角用青铜钥匙打开旧箱取出信笺，对女巫说"信里写的是矿坑的坐标"——女巫皱眉，将信笺收进怀里',
-  '·酒保擦着杯子，瞥了主角一眼',
+  '·主角用青铜钥匙打开旧箱取出信笺，对女巫说"信里写的是矿坑坐标"；女巫皱眉把信收进怀里',
   '【21:10】',
-  '·酒保低声说"北境最近死了三个猎人，死因都一样"，比了个噤声的手势',
-  '（每条必须落到 谁 + 具体动作 + 关键对话原话（带引号，1~2句；无对话则写具体动作或物证）+ 结果。同一事件绝不重复记录。）',
-  '',
-  '支线：',
-  '{SUB}',
-  '（格式与主线完全相同。）',
-  '',
-  '重要状态变化：',
-  '（每行一个对象。{STATE_MODE}）',
-  '主角：身份【…】| 身体【…】| 精神【…】| 地址【…】| 资产【…】| 外在【…】| 好感【…】| 备注【…】',
-  '角色名：身体【…】| 地址【…】| 资产【…】| 外在【…】| 好感【…】| 备注【…】',
-  '环境：布局【…】| 温度天气【…】',
-  '· 身体=伤病/体力/健康；地址=当前所在核心地名（只写地名，不写"抵达/身处"这类动作词）；资产=钱/物品/持有物；外在=外貌与穿着；备注=不易归类的其它当前状态',
-  '· 外在：仅在角色首次登场，或换装、受伤等发生变化时才写；要写到五官、发型、身形、衣着，禁止只写"黑发"这类笼统概括',
-  '· 地址：只在角色真正移动时才更新；回忆、比喻、幻觉、梦境、传闻里出现的场景不算实际位置；发生移动时写明"从X移至Y"',
-  '· 好感度：★每轮都必须写出当前数字★，负值必带负号（如 好感【-12】），即使没变化也要写；禁止"好感大幅提升"这类模糊表述',
-  '· 好感度变化：单次最多 +2（仅限生死相救这类重大转折，一般互动 +1 或不变）；下降无下限（-10、-30 都可以）',
-  '· 已被后续剧情推翻或缓解的旧状态不要列；本轮确实无任何变化则输出"无"',
-  '',
-  '未解决事项：',
-  '（只列尚未解决的长期伏笔、谜团、未兑现的承诺、跨楼层的悬而未决线索，每条以【时间】标注产生时间，时间未变可省略。已解决/已放弃/不再相关的移除。）',
+  '·酒保擦着杯子低声说"北境最近死了三个猎人，死因都一样"，比了个噤声手势',
+  '★同一【时间·地点】只写一条；场景里发生多件事就并进这一条，不再另起一行。',
+  '{SIDE}',
+  '{STATE}',
+  '{UNRES}',
   '',
   '任务记录：',
-  '（一行一条，只列进行中的任务：任务名 | 发布者/来源 | 当前进度 | 下一步 | 限时/优先级 | 最近推进时间。时间未变可省略；已完成/放弃的移除；没有则输出"无"。任务名要具体，禁止"一个任务""某事"。）',
+  '（一行一条进行中的任务：任务名 | 来源 | 进度 | 下一步 | 期限；已完成/放弃的删掉；无则"无"。）',
   '',
   '剧情总览：',
-  '（80~120字连贯文字，概述当前整体进展、主要局势与各线关系，勿加编号。）',
+  '（80~120字，概述当前局势与主要线索，不加编号。）',
   '',
   '章回标题：',
-  '（第X回：XXXX，4-8字，文雅含蓄、具古风章回韵味，含蓄点题。）',
+  '（第X回：XXXX，4-8字，古风含蓄点题。）',
 ].join('\n');
 
 
@@ -1592,28 +1577,83 @@ function cdArchiveFormatOf(arc) {
 }
 
 const CD_ARCH_PLAIN_MAP = [
-  ['1. 优先交代 人物/时间/地点/动作/关键对话/结果。',
-   '1. 优先交代 人物/时间/地点/动作/经过/结果。'],
-  ['·主角用青铜钥匙打开旧箱取出信笺，对女巫说"信里写的是矿坑的坐标"——女巫皱眉，将信笺收进怀里',
-   '·主角用青铜钥匙打开旧箱取出信笺，把信里写的矿坑坐标告知女巫——女巫皱眉，将信笺收进怀里'],
-  ['·酒保低声说"北境最近死了三个猎人，死因都一样"，比了个噤声的手势',
-   '·酒保低声向主角透露北境最近死了三名猎人且死因一致，比了个噤声的手势'],
-  ['（每条必须落到 谁 + 具体动作 + 关键对话原话（带引号，1~2句；无对话则写具体动作或物证）+ 结果。同一事件绝不重复记录。）',
-   '（每条必须落到 谁 + 具体动作 + 得到/失去/发现了什么 + 结果。★禁止引用任何对话原文、禁止摘抄台词（不要用引号复述某人说了哪句话）；把说话内容概括成一件事即可，不还原措辞。同一事件绝不重复记录。）'],
+  ['2. 一条要能独立读懂：谁 → 做了什么 → 结果；有对话就带 1 句原话（引号），没对话就写具体动作或物证。',
+   '2. 一条要能独立读懂：谁 → 做了什么 → 结果；★禁止引用任何对话原文、禁止用引号复述某人说了哪句话，把说话内容概括成一件事即可。'],
+  ['·主角用青铜钥匙打开旧箱取出信笺，对女巫说"信里写的是矿坑坐标"；女巫皱眉把信收进怀里',
+   '·主角用青铜钥匙打开旧箱取出信笺，把信里写的矿坑坐标告知女巫；女巫皱眉把信收进怀里'],
+  ['·酒保擦着杯子低声说"北境最近死了三个猎人，死因都一样"，比了个噤声手势',
+   '·酒保擦着杯子低声透露北境最近死了三名猎人且死因一致，比了个噤声手势'],
 ];
 
 /** 拼装档案提示词：基座 + 增量/全量差异插槽 + 状态模式；style='plain' 时再把「关键对话原话」措辞替换掉
  *  hasOld=false 时必须让 AI 全量输出状态（否则它看不到旧值，“只写变化”会变成盲猜） */
-function cdArchiveBuildSys(full, style, hasOld) {
+/* ★ FIX27：可开关的三个字段段。开关打开时才拼进 BASE 的 {SIDE}/{STATE}/{UNRES} 插槽。
+   关掉 = 整段消失（连字段标签、维度说明、样例都不给）。
+   ★ 不能只写「无」：AI 仍会为它留标题、留位置，输出长度降不下来。 */
+const ARCHIVE_SEG_SIDE = [
+  '',
+  '支线：',
+  '{SUB}',
+].join('\n');
+
+const ARCHIVE_SEG_STATE = [
+  '',
+  '重要状态变化：',
+  '（每行一个对象。{STATE_MODE}）',
+  '主角：身份【…】| 身体【…】| 精神【…】| 地址【…】| 资产【…】| 外在【…】| 好感【…】| 备注【…】',
+  '角色名：身体【…】| 地址【…】| 资产【…】| 外在【…】| 好感【…】| 备注【…】',
+  '环境：布局【…】| 温度天气【…】',
+  '· 身体=伤病/体力；地址=当前地名（不写"抵达/身处"，只在真正移动时改，写明"从X移至Y"，回忆/梦境里的场景不算）；资产=钱与持有物；备注=其它当前状态',
+  '· 外在：只在首次登场、换装或受伤时才写，要写到五官、发型、身形、衣着，禁止只写"黑发"这类笼统概括',
+  '· 好感度：★每轮都必须写出当前数字★，负值必带负号（如 好感【-12】），即使没变化也要写；禁止"好感大幅提升"这类模糊表述',
+  '· 好感度变化：单次最多 +2（仅限生死相救这类重大转折，一般互动 +1 或不变）；下降无下限',
+  '· 已被后续剧情推翻或缓解的旧状态不要列；本轮确实无任何变化则输出"无"',
+].join('\n');
+
+const ARCHIVE_SEG_UNRES = [
+  '',
+  '未解决事项：',
+  '（只列仍悬着的伏笔、谜团、未兑现承诺，每条标【时间】；已解决的删掉；无则"无"。）',
+].join('\n');
+
+/** ★ FIX27：读当前生效的档案字段开关。主线常开，其余三项默认关。 */
+function cdArchiveFieldsOf(s) {
+  let st = s;
+  if (!st || typeof st !== 'object') {
+    try { st = (typeof cdGetSettings === 'function') ? (cdGetSettings() || {}) : {}; } catch (e) { st = {}; }
+  }
+  return { side: !!st.arcSide, state: !!st.arcState, unres: !!st.arcUnresolved };
+}
+
+/** 当前要输出的字段标签（主线永远第一，其余顺序固定） */
+function cdArchiveFieldLabels(fields) {
+  const f = fields || {};
+  const out = ['主线'];
+  if (f.side) out.push('支线');
+  if (f.state) out.push('重要状态变化');
+  if (f.unres) out.push('未解决事项');
+  return out;
+}
+
+/** 拼装档案提示词：基座 + 字段插槽 + 增量/全量差异 + 状态模式
+ *  ★ fields 省略（undefined）= 全字段开，这是 ARCHIVE_SYSTEM / ARCHIVE_SYSTEM_FULL
+ *    两个老常量的语义，改了会让老测试的逐字节断言失效。
+ *    fields = {side,state,unres} 时按开关裁剪，false 的字段整段消失。 */
+function cdArchiveBuildSys(full, style, hasOld, fields) {
   const d = full ? ARCHIVE_DIFF.full : ARCHIVE_DIFF.incremental;
-  let out = ARCHIVE_SYSTEM_BASE.split('{MAIN}').join(d.main).split('{SUB}').join(d.sub);
+  const f = (fields && typeof fields === 'object') ? fields : { side: true, state: true, unres: true };
+  let out = ARCHIVE_SYSTEM_BASE.split('{MAIN}').join(d.main);
+  out = out.split('{SIDE}').join(f.side ? ARCHIVE_SEG_SIDE.split('{SUB}').join(d.sub) : '');
+  out = out.split('{STATE}').join(f.state ? ARCHIVE_SEG_STATE : '');
+  out = out.split('{UNRES}').join(f.unres ? ARCHIVE_SEG_UNRES : '');
   out = out.split('{STATE_MODE}').join(hasOld === false ? ARCHIVE_STATE_MODE.cold : ARCHIVE_STATE_MODE.warm);
   if (style === 'plain') {
     for (let i = 0; i < CD_ARCH_PLAIN_MAP.length; i++) {
       out = out.split(CD_ARCH_PLAIN_MAP[i][0]).join(CD_ARCH_PLAIN_MAP[i][1]);
     }
   }
-  return out;
+  /* 切掉字段后可能留下 3 个以上连续换行，压回一空行 */
+  return out.replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /* 兼容常量：等价于 cdArchiveBuildSys(false/true,'dialogue') 的拼装结果。
@@ -1628,7 +1668,7 @@ function cdArchiveSystemOf(full, s, hasOld) {
     try { st = (typeof cdGetSettings === 'function') ? String((cdGetSettings() || {}).archiveStyle || '') : ''; }
     catch (e) { st = ''; }
   }
-  return cdArchiveBuildSys(!!full, st === 'plain' ? 'plain' : 'dialogue', hasOld);
+  return cdArchiveBuildSys(!!full, st === 'plain' ? 'plain' : 'dialogue', hasOld, cdArchiveFieldsOf(s));
 }
 
 async function cdBuildArchivePrompt(windowFloors, data, _s, archiveFull, forceCold) {
@@ -1637,6 +1677,10 @@ async function cdBuildArchivePrompt(windowFloors, data, _s, archiveFull, forceCo
   const _hasOldStates = !forceCold && !!(_s && _s.summarizeInjectArchive)
     && !!(existing && String(existing.states || '').trim());
   const _archSys = cdArchiveSystemOf(archiveFull, _s, _hasOldStates);
+  /* ★ FIX27：字段开关。关掉的字段既不出现在提示词里，也不再把旧内容塞进 user 消息
+     （否则关掉状态后仍在注几千字旧状态，白烧 token）。 */
+  const _archF = cdArchiveFieldsOf(_s);
+  const _archLabels = cdArchiveFieldLabels(_archF);
   const existing = data.archive || emptyData().archive;
   // ★ 用户自定义剧情追踪项
   const customFields = Array.isArray(_s?.customFields) ? _s.customFields.filter(f => f && f.key && f.label) : [];
@@ -1695,7 +1739,7 @@ async function cdBuildArchivePrompt(windowFloors, data, _s, archiveFull, forceCo
           ? '【首次记录特别要求】本次输入含开头的【第0楼开场白】。请把它中的背景/时间/地点/登场人物及其当前彼此的关系状态，作为"主线起点/重要状态"优先写入档案，不要因它是静态描述、非事件而遗漏。'
           : '',
         '',
-        customFormatBlock ? '自定义追踪项（在四个核心字段之后额外输出，属于附属字段，不得替代四个核心字段）：\n' + customFormatBlock : '',
+        customFormatBlock ? '自定义追踪项（在上面这些字段之后额外输出，属于附属字段，不得替代主线）：\n' + customFormatBlock : '',
         '',
         '**从历史档案中检索到的相关事件（供参考）**：',
         retrievedText,
@@ -1703,7 +1747,7 @@ async function cdBuildArchivePrompt(windowFloors, data, _s, archiveFull, forceCo
       const usr = [
         (archiveFull ? `以下是剧情全部楼层（请完整总结整段剧情）：\n${scene}` : `本次新增楼层：\n${scene}`),
         '',
-        `请${archiveFull ? '完整输出这段剧情从开始到现在的' : '分析新增楼层中的'}剧情推进，输出：主线、支线、重要状态变化、未解决事项${customOutputNames ? '、' + customOutputNames : ''}。`,
+        `请${archiveFull ? '完整输出这段剧情从开始到现在的' : '分析新增楼层中的'}剧情推进，输出：${_archLabels.join('、')}${customOutputNames ? '、' + customOutputNames : ''}。`,
         archiveFull ? '这是全量重建，请覆盖输出当前完整主线与状态，不要假设此前已记录而跳过早期剧情。' : '可以引用上面"检索到的相关事件"中的内容，但不要重复输出，只做增量更新。',
       ].join('\n');
       return [
@@ -1726,12 +1770,12 @@ async function cdBuildArchivePrompt(windowFloors, data, _s, archiveFull, forceCo
     archiveFull ? '**（全量重建模式）请基于下方全部楼层完整输出当前剧情档案，覆盖旧值，不要遗漏早期剧情**：' : '**已有剧情进展（请做增量扩展，不要重复）**：',
     ...(_s.summarizeInjectArchive ? [
       existing.mainline ? `已知主线：${existing.mainline}` : '已知主线：（暂无，这是初见）',
-      existing.sideline ? `已知支线：${existing.sideline}` : '',
-      existing.states ? `已知重要状态：${existing.states}` : '',
-      existing.unresolved ? `已知未解决事项：${existing.unresolved}` : '',
+      (_archF.side && existing.sideline) ? `已知支线：${existing.sideline}` : '',
+      (_archF.state && existing.states) ? `已知重要状态：${existing.states}` : '',
+      (_archF.unres && existing.unresolved) ? `已知未解决事项：${existing.unresolved}` : '',
       existingCustomTxt ? `\n${existingCustomTxt}` : '',
     ] : []),
-    customFormatBlock ? '\n自定义追踪项（同样严格按格式输出，都完整输出之后，作为额外附属字段单独输出，不要跳过或替代四个核心字段）：\n' + customFormatBlock : '',
+    customFormatBlock ? '\n自定义追踪项（同样严格按格式输出，等上面字段都写完之后，作为额外附属字段单独输出，不要替代主线）：\n' + customFormatBlock : '',
   ].filter(Boolean).join('\n');
   // ★ 世界书联动：异步获取登场角色的世界书设定（loadWorldInfo 为异步 API）
   let _worldbookTxtArchive = '';
@@ -1745,14 +1789,14 @@ async function cdBuildArchivePrompt(windowFloors, data, _s, archiveFull, forceCo
     (archiveFull ? `以下是剧情全部楼层（请完整总结整段剧情）：\n${scene}` : `本次新增楼层：\n${scene}`),
     '',
     (archiveFull
-      ? `请完整输出这段剧情从开始到现在的：主线、支线、重要状态变化、未解决事项${customOutputNames ? '、' + customOutputNames : ''}。`
+      ? `请完整输出这段剧情从开始到现在的：${_archLabels.join('、')}${customOutputNames ? '、' + customOutputNames : ''}。`
       : [
           '请输出剧情档案（普通增量模式），并严格遵守以下铁律：',
-          '1. 必须完整输出四个核心字段【主线】【支线】【重要状态变化】【未解决事项】，顺序固定为主线→支线→重要状态变化→未解决事项；即使本次没有对应内容，也必须在对应字段下输出一行「无」，绝不允许缺失或跳过这四个核心字段。',
-          '2. 这四个核心字段是本次输出的主体，必须放在最前面。',
-          '3. 在四个核心字段之后，再额外输出自定义追踪项：' + (customOutputNames ? customOutputNames : '无') + '（作为附加块，不得替代或占据四个核心字段的位置）。',
-          '4. 无论本次楼层多么简单或仅含开场白/静态描写，都要把其中的人物、关系、背景、设定作为主线/重要状态的起始内容整理写入对应核心字段，保证开场白相关内容被完整收录。'
-        ].join('\n')
+          '1. 必须按顺序完整输出这些字段：' + _archLabels.join(' → ') + '；即使某字段本次没有内容，也要在该字段下写一行「无」，不得跳过。',
+          '2. 主线是本次输出的主体，必须放在最前面。',
+          customOutputNames ? ('3. 主线之后，再额外输出自定义追踪项：' + customOutputNames + '（作为附加块，不得替代主线）。') : '',
+          '4. 无论本次楼层多简单、或仅含开场白/静态描写，都要把其中的人物、关系、背景写成主线的起始内容，不得因为「不是事件」而漏掉。'
+        ].filter(Boolean).join('\n')
     ),
     // ★ 重点角色：引导剧情档案围绕这些角色记录，防止其脱离设定
     (Array.isArray(data.focusRoles) && data.focusRoles.length)
@@ -1782,7 +1826,7 @@ async function cdBuildDiaryArchiveCombined(windowFloors, data, s, archiveFull) {
     sysParts.push('【任务一：角色日记】请完整遵守下面任务一的全部要求，输出角色日记的 JSON 对象数组（保持第一人称、字数、内心层次等所有约束）。若还包含任务二，则在你把任务一的完整 JSON 输出并闭合后，另起一行只写一行分隔符 <<<CD_NEXT>>>，再继续输出任务二。\n\n' + (diaryMsgs[0] ? diaryMsgs[0].content : ''));
   }
   if (archMsgs) {
-    sysParts.push('【任务二：剧情档案】请完整遵守下面任务二的全部要求，输出剧情档案的 主线/支线/重要状态变化/未解决事项 四段纯文本。★铁律：即使剧情再简也应每段保留字段标签并输出内容（无内容就写"无"），绝对禁止只输出"章回标题/剧情总览"而不写主线支线状态未解决。注意：每次分节交界处，只写一行分隔符 <<<CD_NEXT>>>。若只有这一个任务，则直接输出内容、不要画任何分隔符。\n\n' + (archMsgs[0] ? archMsgs[0].content : ''));
+    sysParts.push('【任务二：剧情档案】请完整遵守下面任务二的全部要求，输出剧情档案的 ' + cdArchiveFieldLabels(cdArchiveFieldsOf(s)).join('/') + ' 纯文本。★铁律：即使剧情再简也要保留字段标签并写内容（无内容就写"无"），绝对禁止只写"章回标题/剧情总览"而不写主线。注意：每次分节交界处，只写一行分隔符 <<<CD_NEXT>>>。若只有这一个任务，则直接输出内容、不要画任何分隔符。\n\n' + (archMsgs[0] ? archMsgs[0].content : ''));
   }
   sysParts.push('分隔符规矩：每段内容之间恰好用一个「<<<CD_NEXT>>>」单独成行来分隔，除此之外不要出现这个符号。先写的放前面，后写的放后面。');
   const sys = sysParts.join('\n\n');
@@ -4557,6 +4601,7 @@ function cdBuildDiagnosticReport() {
     try {
       const s = cdGetSettings();
       const keys = ['enabled', 'injectPosition', 'injectDepth', 'injectRole', 'archiveStyle',
+                    'arcSide', 'arcState', 'arcUnresolved',
                     'summarizeInjectArchive', 'diaryVersion', 'vectorEnabled', 'autoSummary'];
       const shown = [];
       for (const k of keys) {
@@ -14595,6 +14640,10 @@ async function cdRenderSettings() {
         <div>
           <div class="cds-row"><span class="cds-lab">记录风格</span><span class="cds-ctrl"><select id="cd-s-archive-style" class="cd-input" style="max-width:280px;"><option value="dialogue" ${s.archiveStyle !== 'plain' ? 'selected' : ''}>对话版（保留关键对话原话）</option><option value="plain" ${s.archiveStyle === 'plain' ? 'selected' : ''}>常规版（只总结事实经过）</option></select></span></div>
           <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;margin:4px 0 0;line-height:1.5;">「对话版」是原有行为：每条事件要求带 1~2 句关键台词原文，档案更详实但更长。「常规版」只记事实经过（谁 + 做了什么 + 结果），禁止引用任何对话原文，档案明显更短、更省 token。<b>只影响剧情档案</b>，角色日记保持不变。切换后下次总结生效。</p>
+          <div class="cds-row"><span class="cds-lab">支线</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-arc-side" ${s.arcSide ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+          <div class="cds-row"><span class="cds-lab">重要状态变化</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-arc-state" ${s.arcState ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+          <div class="cds-row"><span class="cds-lab">未解决事项</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-arc-unresolved" ${s.arcUnresolved ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+          <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;margin:4px 0 0;line-height:1.5;"><b>主线永远输出。</b>上面三个默认关闭——关掉后该字段整段不再发给 AI（不是让它写「无」），档案会明显变短、更省 token。已经记下来的旧内容不会被删，只是不再更新它。打开后从下次总结开始生效。</p>
         </div>
       </details>
 
@@ -15083,6 +15132,9 @@ async function cdRenderSettings() {
       autoHideMode: $('#cd-s-autohide-mode').val() || 'b',
       summarySource: $('#cd-s-summary-source').val() || 'chat',
       archiveStyle: ($('#cd-s-archive-style').val() === 'plain' ? 'plain' : 'dialogue'),
+      arcSide: $('#cd-s-arc-side').is(':checked'),
+      arcState: $('#cd-s-arc-state').is(':checked'),
+      arcUnresolved: $('#cd-s-arc-unresolved').is(':checked'),
       // ★ 收集过滤标签
       filterTags: $('#cd-filter-tags-container .cd-filter-tag-row').map(function () {
         return {
