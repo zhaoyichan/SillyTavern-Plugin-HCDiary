@@ -240,7 +240,7 @@ function cdCharOptions(cur) {
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.18.7';
+const PLUGIN_VERSION = '2.18.8';
 /* ★ FIX23：构建标识，用于定位用户跑的是哪批代码。
    CD_BUILD = 本版所基于的提交短 sha，配合 PLUGIN_VERSION 即可唯一确定版本；
    下次改动代码时请一并更新（无法自指自身 sha，故取基线）。 */
@@ -512,6 +512,9 @@ const DEFAULT_SETTINGS = {
   arcSide       : false,      // 支线
   arcState      : false,      // 重要状态变化
   arcUnresolved : false,      // 未解决事项
+  arcTasks      : false,      // 任务记录
+  arcOverview   : false,      // 剧情总览（剧情页顶部那段概述）
+  arcChapter    : false,      // 章回标题（剧情页顶部「第X回」）
   archiveMode   : 'append',   // 'append' | 'vector' 剧情档案模式
   diaryMode     : 'append',   // 'append' | 'vector' 角色日记模式
   vectorTopK    : 5,          // 向量检索召回条数
@@ -1488,15 +1491,9 @@ const ARCHIVE_SYSTEM_BASE = [
   '{SIDE}',
   '{STATE}',
   '{UNRES}',
-  '',
-  '任务记录：',
-  '（一行一条进行中的任务：任务名 | 来源 | 进度 | 下一步 | 期限；已完成/放弃的删掉；无则"无"。）',
-  '',
-  '剧情总览：',
-  '（80~120字，概述当前局势与主要线索，不加编号。）',
-  '',
-  '章回标题：',
-  '（第X回：XXXX，4-8字，古风含蓄点题。）',
+  '{TASKS}',
+  '{OVERVIEW}',
+  '{CHAPTER}',
 ].join('\n');
 
 
@@ -1616,13 +1613,34 @@ const ARCHIVE_SEG_UNRES = [
   '（只列仍悬着的伏笔、谜团、未兑现承诺，每条标【时间】；已解决的删掉；无则"无"。）',
 ].join('\n');
 
+const ARCHIVE_SEG_TASKS = [
+  '',
+  '任务记录：',
+  '（一行一条进行中的任务：任务名 | 来源 | 进度 | 下一步 | 期限；已完成/放弃的删掉；无则"无"。）',
+].join('\n');
+
+const ARCHIVE_SEG_OVERVIEW = [
+  '',
+  '剧情总览：',
+  '（80~120字，概述当前局势与主要线索，不加编号。）',
+].join('\n');
+
+const ARCHIVE_SEG_CHAPTER = [
+  '',
+  '章回标题：',
+  '（第X回：XXXX，4-8字，古风含蓄点题。）',
+].join('\n');
+
 /** ★ FIX27：读当前生效的档案字段开关。主线常开，其余三项默认关。 */
 function cdArchiveFieldsOf(s) {
   let st = s;
   if (!st || typeof st !== 'object') {
     try { st = (typeof cdGetSettings === 'function') ? (cdGetSettings() || {}) : {}; } catch (e) { st = {}; }
   }
-  return { side: !!st.arcSide, state: !!st.arcState, unres: !!st.arcUnresolved };
+  return {
+    side: !!st.arcSide, state: !!st.arcState, unres: !!st.arcUnresolved,
+    tasks: !!st.arcTasks, overview: !!st.arcOverview, chapter: !!st.arcChapter,
+  };
 }
 
 /** 当前要输出的字段标签（主线永远第一，其余顺序固定） */
@@ -1641,11 +1659,16 @@ function cdArchiveFieldLabels(fields) {
  *    fields = {side,state,unres} 时按开关裁剪，false 的字段整段消失。 */
 function cdArchiveBuildSys(full, style, hasOld, fields) {
   const d = full ? ARCHIVE_DIFF.full : ARCHIVE_DIFF.incremental;
-  const f = (fields && typeof fields === 'object') ? fields : { side: true, state: true, unres: true };
+  const f = (fields && typeof fields === 'object')
+    ? fields
+    : { side: true, state: true, unres: true, tasks: true, overview: true, chapter: true };
   let out = ARCHIVE_SYSTEM_BASE.split('{MAIN}').join(d.main);
   out = out.split('{SIDE}').join(f.side ? ARCHIVE_SEG_SIDE.split('{SUB}').join(d.sub) : '');
   out = out.split('{STATE}').join(f.state ? ARCHIVE_SEG_STATE : '');
   out = out.split('{UNRES}').join(f.unres ? ARCHIVE_SEG_UNRES : '');
+  out = out.split('{TASKS}').join(f.tasks ? ARCHIVE_SEG_TASKS : '');
+  out = out.split('{OVERVIEW}').join(f.overview ? ARCHIVE_SEG_OVERVIEW : '');
+  out = out.split('{CHAPTER}').join(f.chapter ? ARCHIVE_SEG_CHAPTER : '');
   out = out.split('{STATE_MODE}').join(hasOld === false ? ARCHIVE_STATE_MODE.cold : ARCHIVE_STATE_MODE.warm);
   if (style === 'plain') {
     for (let i = 0; i < CD_ARCH_PLAIN_MAP.length; i++) {
@@ -4601,7 +4624,7 @@ function cdBuildDiagnosticReport() {
     try {
       const s = cdGetSettings();
       const keys = ['enabled', 'injectPosition', 'injectDepth', 'injectRole', 'archiveStyle',
-                    'arcSide', 'arcState', 'arcUnresolved',
+                    'arcSide', 'arcState', 'arcUnresolved', 'arcTasks', 'arcOverview', 'arcChapter',
                     'summarizeInjectArchive', 'diaryVersion', 'vectorEnabled', 'autoSummary'];
       const shown = [];
       for (const k of keys) {
@@ -14643,7 +14666,10 @@ async function cdRenderSettings() {
           <div class="cds-row"><span class="cds-lab">支线</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-arc-side" ${s.arcSide ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
           <div class="cds-row"><span class="cds-lab">重要状态变化</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-arc-state" ${s.arcState ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
           <div class="cds-row"><span class="cds-lab">未解决事项</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-arc-unresolved" ${s.arcUnresolved ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
-          <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;margin:4px 0 0;line-height:1.5;"><b>主线永远输出。</b>上面三个默认关闭——关掉后该字段整段不再发给 AI（不是让它写「无」），档案会明显变短、更省 token。已经记下来的旧内容不会被删，只是不再更新它。打开后从下次总结开始生效。</p>
+          <div class="cds-row"><span class="cds-lab">任务记录</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-arc-tasks" ${s.arcTasks ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+          <div class="cds-row"><span class="cds-lab">剧情总览</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-arc-overview" ${s.arcOverview ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+          <div class="cds-row"><span class="cds-lab">章回标题</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-arc-chapter" ${s.arcChapter ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+          <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;margin:4px 0 0;line-height:1.5;"><b>主线永远输出。</b>上面三个默认关闭——关掉后该字段整段不再发给 AI（不是让它写「无」），档案会明显变短、更省 token。已经记下来的旧内容不会被删，只是不再更新它。打开后从下次总结开始生效。关掉「剧情总览」和「章回标题」后，剧情页顶部不再显示「第X回」和那段概述。</p>
         </div>
       </details>
 
@@ -15135,6 +15161,9 @@ async function cdRenderSettings() {
       arcSide: $('#cd-s-arc-side').is(':checked'),
       arcState: $('#cd-s-arc-state').is(':checked'),
       arcUnresolved: $('#cd-s-arc-unresolved').is(':checked'),
+      arcTasks: $('#cd-s-arc-tasks').is(':checked'),
+      arcOverview: $('#cd-s-arc-overview').is(':checked'),
+      arcChapter: $('#cd-s-arc-chapter').is(':checked'),
       // ★ 收集过滤标签
       filterTags: $('#cd-filter-tags-container .cd-filter-tag-row').map(function () {
         return {
@@ -27758,44 +27787,223 @@ function _cgOpenMembers() {
   function cdPhoneReport() { cdPhoneCloseFab(); _phGenReport(); }
   /* 设置 · 记忆注入面板（悬浮球「设置」） */
 // ==================== ★ LIWE 小助手 v5（会话进全部会话 · 确认键在消息下方 · 上报由模型主动问）====================
-  var LIWE_ASSIST_DEFAULT_KB = '你是「LIWE 记忆引擎」的记忆管理员。管理/检索/修改本插件记忆并回答插件用法。' +
-'### 数据结构' +
-'diaries[角色]=[{turn,date,entry,mood,attitude_to_user,secret,key_events,relationship_with_others,message_id}]' +
-'relations[from][to]={type,attitude,note}' +
-'archive={mainline/sideline/states/unresolved(文本)；locations(数组)；itemsHold/tasks([{line}])；timeAnchor；custom{key:[{time,desc}]}}' +
-'memo(备忘录) ' +
-'### 覆盖式(直接赋值清旧) vs 追加式(整体替换丢历史)' +
-'覆盖式：mainline/sideline/states/unresolved/timeAnchor/itemsHold/tasks/relations格' +
-'追加式：items/locations/diaries(用push)/cards/snapshots' +
-'### 改时间为具体数字' +
-'文本字段：正则替换【xxx】→【2026年3月17日 14:30】再整体赋值' +
-'数组字段：遍历逐条改 it.time' +
-'改完 await cdSaveData + cdRefreshInjection' +
-'### 时间铁律' +
-'所有时间必须具体数字(年月日时分)。原文没有就按剧情顺序顺延成不同数字，严禁全写同一天、严禁"某年某月/未知时间/第N天傍晚"。' +
-'### 执行规则(必守)' +
-'1. 写操作(改/删/覆盖/清理/合并)必须先预览说明将改什么，结尾问"确认?"等用户确认。' +
-'2. 用户点"✔ 确认执行"按钮时，前端把你的 MEM_ACTION 指令执行；你只需说明将改动内容。' +
-'3. 指令格式 [MEM_ACTION:{"action":"...","target":"...","params":{...}}]，要严格合法 JSON，不允许多余符号。' +
-'### 结构化输出规范(推荐，v6)' +
-'除自然语言回复外，可在末尾输出一个 ```json {…} ``` 块，前端优先解析为结构化控件。字段如下：' +
-'{ "reply":"给用户看的正文",' +
-'  "progress":{"done":"已完成的事","status":"ok|warn|fail","result":"关键结果","next":"下一步"},' +
-'  "suggestion":{"text":"1条建设性建议","reason":"建议理由"},' +
-'  "options":[{"key":"A","label":"具体可做动作A"},{"key":"B","label":"具体动作B"},{"key":"C","label":"具体动作C"}],' +
-'  "need_report":true,' +
-'  "report":{"type":"结果不对|卡顿|数据丢失|报错|其他","severity":"high|mid|low","data_list":["archive","overview","settings","version"]} }' +
-'要求：progress 的 result/next 要说人话≤5行；suggestion 只给1条并说明理由；options 三分支都要给"具体可做动作"；只有确实需要上报才置 need_report:true 并给 report。' +
-'用户若说"直接做/别给选项"后，前端不再展示 options，你按最合理路径直接执行并汇报。' +
-'### 上报' +
-'用户说"上报/报告/发给管理员/救命/我不行了"时前端会直接弹上报，你无需额外操作；若你判断问题严重也可以输出 need_report:true 触发上报卡，并如实填 report.type 和 report.data_list。' +
-'### 可用 action(仅以下会被真正执行)' +
-'read(读)、show_data(展示)、replace(替换 from/to)、rewrite_time(改时间)、update_diary(加日记 name/entry)、dedupe(去重删残缺)、set_setting(改设置 key/value)。' +
-'注意：clear/compress 尚未实现，不要使用这两个动作。' ;
+  var LIWE_ASSIST_DEFAULT_KB = [
+    '你是「LIWE 助手」——角色日记插件的客服、排障员、记忆管理员。',
+    '跟你说话的多半是新手：看不懂术语、不知道按钮在哪、出问题会慌。',
+    '',
+    '【三条工作方式（最重要）】',
+    '1. 先给结论，再给步骤。步骤要具体到「打开哪个页、点哪个按钮、填什么」，禁止只说「去设置里改一下」。',
+    '2. 能替他改的直接改。改完说清「已改成什么」+「在哪个页面能改回来」。只有删数据、覆盖大段档案才要他点确认。',
+    '3. 信息不够时一次问完（最多 2 个问题），不要一句问一个。',
+    '',
+    '【这个插件是干什么的】',
+    '把聊天记录交给 AI，自动整理成两类记忆，再注入回对话，让 AI 记住剧情、不忘事。',
+    '- 角色日记：每个角色第一人称的内心日记（情绪、秘密、对主角的态度）。',
+    '- 剧情档案：第三人称的事件流水（主线事件、当前状态、关系、未解决伏笔）。',
+    '总结是「AI 另开一次请求」做的，所以必须配好模型，跟你聊天用的模型是同一套 API 配置。',
+    '',
+    '【新手第一次用，三步】',
+    '第1步 配模型：设置 → API 配置 → 填 地址 / 密钥 / 模型名 → 点「测试连接」。测试通过才算配好。',
+    '第2步 开功能：设置 → 打开「启用角色日记」「启用剧情档案」「自动总结」。',
+    '第3步 正常聊：聊 6~10 层会自动总结一次；想立刻总结就点悬浮球 →「立即总结」。',
+    '',
+    '【设置地图（新手最常找不到的）】',
+    '- 地址/密钥/模型/温度 → 设置 →「API 配置」',
+    '- 总开关、自动总结、总结间隔、楼层窗口 → 设置 →「基础」',
+    '- 角色日记 / 剧情档案 / 关系 三个功能开关 → 设置 →「功能开关」',
+    '- 注入回对话（让 AI 记住）→ 设置 →「注入」',
+    '- 档案记哪些字段（支线/状态/未解决/任务/总览/章回）→ 设置 →「剧情档案记录风格」',
+    '- 楼层自动隐藏、自动压缩 → 设置 →「自动隐藏楼层」「自动压缩」',
+    '- 日志、诊断报告、检查更新 → 设置最下面「工具 / 关于」',
+    '',
+    '【常见故障 → 怎么查】',
+    '1. 点了总结没反应：先确认总开关和「自动总结」有没有开；再看日志面板有没有 error；也可以直接用 get_status 工具查。',
+    '2. 总结出来是空的、只剩标题：多半是模型太弱或输出被截断。换强一点的模型，或把「楼层窗口」调小。若档案字段全关，只输出主线是正常的。',
+    '3. AI 记不住前面的事：「注入剧情档案」「注入角色日记」没开；或注入内容被长上下文挤掉，把注入位置改成「末尾」、深度 1~2。',
+    '4. 同一段被记了两条：v2.18.6 之前的并发 bug，已修复。还出现就让他复制设置里「诊断报告」。',
+    '5. 档案越来越长、token 爆炸：开「自动压缩」，或让他把 剧情总览/章回标题/任务记录 这些附加字段关掉。',
+    '6. 手机上不总结：手机端和电脑端共用同一份设置和 API 配置，先确认手机能联网、以及设置是在同一份存档里改的。',
+    '7. 数据会不会丢：存在聊天记录的 chatMetadata 里，跟着聊天走。换设备只要同步了聊天就同步了。建议定期在「存档」里存一份。',
+    '8. 怎么更新：设置 → 关于 →「检查更新」→「下载更新」。',
+    '',
+    '【名词表】',
+    '- 注入：把记忆拼成一段文字，塞进发给 AI 的上下文里。',
+    '- 向量库：用语义相似度只捞相关的几条记忆，比全文注入省 token，但要先建库。',
+    '- 楼层窗口：每次总结喂给 AI 的最近对话条数。',
+    '- warm / cold：warm=这次能看到上一轮状态，只写变化的维度；cold=看不到，必须全量写。',
+    '',
+    '【工具调用】需要看真实数据时输出一行：[MEM_ACTION:{"action":"...","target":"...","params":{...}}]',
+    '只读工具（前端直接执行，结果回给你，你再据此回答）：',
+    '- get_status：体检。开关状态、档案字数、日记条数、API 是否配好、最近错误。',
+    '- get_settings：读关键设置的当前值。',
+    '- get_logs：最近 error / warn 日志。',
+    '- read：读数据，target = archive | diaries | relations | memo。',
+    '写操作（先给用户看，他点「确认执行」才真正改动）：',
+    '- set_setting：改设置。target = 设置键名，params.value = 新值。键名见下面【关键设置键名】。',
+    '- replace：档案里替换文字，params.from / params.to。',
+    '- dedupe：档案去重、清掉重复行与断裂行。',
+    '- rewrite_time：把模糊时间改成具体数字时间。',
+    '- update_diary：给某角色追加一条日记，target=角色名，params.entry=内容。',
+    '注意：clear / compress 尚未实现，不要使用。',
+    '',
+    '【关键设置键名（代改设置时用这些）】',
+    'enabled=插件总开关 / autoSummary=自动总结 / enableDiary=角色日记 / enableArchive=剧情档案 / enableRelation=关系',
+    'injectDiary / injectArchive / injectRelation = 是否注入回对话',
+    'summarizeInjectDiary / summarizeInjectArchive = 总结时是否带上旧档案',
+    'arcSide=支线 / arcState=重要状态变化 / arcUnresolved=未解决事项 / arcTasks=任务记录 / arcOverview=剧情总览 / arcChapter=章回标题',
+    'archiveStyle = dialogue(对话版) | plain(常规版) / archiveMode = append(全文) | vector(向量)',
+    'autoHideEnabled=自动隐藏楼层 / autoCompress=自动压缩',
+    '',
+    '【数据结构（改数据时才需要）】',
+    'diaries[角色] = [{turn,date,entry,mood,attitude_to_user,secret,key_events,relationship_with_others,message_id}]',
+    'relations[from][to] = {type,attitude,note}',
+    'archive = {mainline/sideline/states/unresolved(文本)；locations(数组)；itemsHold/tasks([{line}])；timeAnchor；custom{key:[{time,desc}]}}',
+    '覆盖式（整体替换）：mainline/sideline/states/unresolved/timeAnchor/itemsHold/tasks/关系格',
+    '追加式（push 追加）：items/locations/diaries/cards/snapshots',
+    '改完记得 await cdSaveData(d) + cdRefreshInjection()。',
+    '',
+    '【时间铁律】所有时间必须具体数字（年月日时分）。原文没有就按剧情顺序顺延成不同数字，严禁全写同一天、严禁「某年某月 / 未知时间 / 第N天傍晚」。',
+    '',
+    '【输出格式】',
+    '正文用中文说人话；步骤用 1. 2. 3.，每步写清点哪里。',
+    '只有确实存在两条不同路线时，才在末尾加一个 json 块给按钮：',
+    '```json {"options":[{"key":"A","label":"具体可做动作"},{"key":"B","label":"具体动作"}]} ```',
+    '没有分支就不要加 json、不要为了凑格式硬造选项；也不要每次都给建议，用户没问建议就不用给。',
+    '用户说过「别给选项 / 直接做」之后，就彻底不给 options，直接执行并汇报。',
+  ].join('\n');
+
+  /* ★ FIX28：离线快速应答。新手最常卡的恰恰是「API 没配好」——
+     这时助手自己也调不通模型，必须有一层不依赖网络的兜底，否则直接「无响应」。
+     命中关键词就直接回固定答案，还能顺手帮他改设置。 */
+  var LIWE_QUICK_QA = [
+    {
+      k: /(怎么|如何|在哪).{0,6}(配|填|设置).{0,6}(api|模型|密钥|key|地址|端点)|api.{0,6}(在哪|怎么|怎么配)|密钥.{0,4}(在哪|怎么|填)|测试连接|连不上|401|403|超时|请求失败/i,
+      a: [
+        '配模型在【设置 → API 配置】，三步：',
+        '1. 填「接口地址」：OpenAI 兼容的填 .../v1/chat/completions 这类完整地址；Gemini 填 Google 的地址。',
+        '2. 填「密钥」：就是你买 API 时拿到的那一长串 key。',
+        '3. 填「模型名」：必须和供应商给的完全一致（大小写、版本号都不能错）。',
+        '填完点「测试连接」。显示成功才算配好；失败会告诉你原因（多半是地址少了 /v1 或模型名拼错）。',
+        '配好之后总结才会动——因为总结是另开一次请求做的。',
+      ].join('\n'),
+      setK: 'api',
+    },
+    {
+      k: /(为什么|怎么).{0,4}(不|没).{0,3}(总结|记|更新)|总结.{0,4}(没|不).{0,3}(反应|动|生效)|点了.{0,4}总结/i,
+      a: [
+        '按这个顺序查，一般第一或第二步就中：',
+        '1. 【设置 → 功能开关】确认「启用角色日记」「启用剧情档案」是开的。',
+        '2. 【设置 → 基础】确认「自动总结」是开的；没开就手动点悬浮球 →「立即总结」。',
+        '3. 【设置 → API 配置】点「测试连接」，不通就是模型问题，跟插件无关。',
+        '4. 看【设置 → 日志】有没有红色 error，那里会写具体原因。',
+        '如果你愿意，我可以直接帮你体检一遍（读开关状态 + 最近错误），说「帮我查一下」就行。',
+      ].join('\n'),
+    },
+    {
+      k: /档案.{0,4}(空|没内容|只有|不全)|总结.{0,8}(空|没内容|太少|只有|只剩)|只[出剩].{0,4}标题/i,
+      a: [
+        '三种常见原因：',
+        '1. 模型太弱：小模型经常只回一句「已总结」或只给标题。换成能力更强的模型。',
+        '2. 输出被截断：楼层窗口太大，把「楼层窗口」调到 6~10 再试。',
+        '3. 字段开关全关：现在默认只输出「主线」，支线/状态这些要在【设置 → 剧情档案记录风格】里打开才有。',
+      ].join('\n'),
+    },
+    {
+      k: /记不住|忘了|不记得|上下文|失忆|没注入|注入.{0,4}(没|不)/i,
+      a: [
+        'AI 靠「注入」记住剧情，检查两个开关：',
+        '1. 【设置 → 注入】把「注入角色日记」「注入剧情档案」打开。',
+        '2. 注入位置选「末尾」，深度 1~2。位置太靠前会被后面的长对话挤掉。',
+        '开完继续聊一两句就会生效，不用重启。',
+      ].join('\n'),
+    },
+    {
+      k: /向量|vector|语义检索/i,
+      a: [
+        '向量库是「只捞相关的几条记忆」的省 token 方案，适合剧情很长（几千层）的时候。',
+        '新手阶段建议先不开，用默认的全文注入就够。',
+        '要开的话：设置 →「向量模式」→ 先建库（会花时间），再设检索条数 5、阈值 0.6 左右。',
+      ].join('\n'),
+    },
+    {
+      k: /(重复|两份|双份).{0,10}(档案|注入|消息|系统|一样|相同|两)|(档案|注入|消息).{0,6}(重复|两份|两条)|(被)?记了两?次|两条.{0,4}(一样|相同)/i,
+      a: [
+        '这是 v2.18.6 之前修掉的并发 bug（同一轮被触发两次）。',
+        '先确认插件已更新到 v2.18.6 或更高：设置 → 关于 → 检查更新。',
+        '更新后还出现，就在设置 → 日志面板点「复制诊断报告」，把内容发给我，里面会记录触发间隔和监听数量。',
+      ].join('\n'),
+    },
+    {
+      k: /太长|膨胀|token|占.{0,3}(空间|内存)|压缩/i,
+      a: [
+        '三个开关能立刻瘦身：',
+        '1. 【设置 → 剧情档案记录风格】把「剧情总览」「章回标题」「任务记录」关掉（默认已关）。',
+        '2. 【设置 → 自动压缩】打开自动压缩，超过阈值自动精简。',
+        '3. 【设置 → 注入】把注入内容限制到最近 N 条。',
+      ].join('\n'),
+    },
+    {
+      k: /数据.{0,4}(丢|备份|在哪|存)|备份|导出|换手机|存档/i,
+      a: [
+        '数据存在每条聊天的 chatMetadata 里，跟着聊天走。',
+        '- 换设备：只要聊天记录同步过去，档案就跟着过去。',
+        '- 备份：插件「存档」页可以存快照，出问题能回滚。',
+        '- 导出：档案页底部有原文编辑框，可以整段复制出来。',
+      ].join('\n'),
+    },
+    {
+      k: /更新|新版|升级|检查更新/i,
+      a: [
+        '设置 → 关于 → 点「检查更新」。',
+        '发现新版本会多出一个「下载更新」按钮，点它才会真正拉取安装。',
+        '装完要重启酒馆（刷新页面）才生效。',
+      ].join('\n'),
+    },
+    {
+      k: /(剧情档案|档案).{0,4}(是什么|干什么|有什么用)|角色日记.{0,4}(是|和).{0,4}区别/i,
+      a: [
+        '两个是不同东西：',
+        '- 剧情档案：第三人称的「发生了什么」，给 AI 当事实依据（谁在哪做了什么、状态怎么变）。',
+        '- 角色日记：第一人称的「心里怎么想」，给 AI 当情绪依据（这个角色对你什么态度、藏了什么秘密）。',
+        '两个都开效果最好；只开一个也能用，看你想让 AI 记住事实还是记住情绪。',
+      ].join('\n'),
+    },
+    {
+      k: /新手指南|怎么用|第一次|入门|教程|上手/i,
+      a: [
+        '三步就能跑起来：',
+        '1. 配模型：设置 → API 配置 → 填地址/密钥/模型 → 测试连接。',
+        '2. 开功能：设置 → 打开角色日记 + 剧情档案 + 自动总结。',
+        '3. 正常聊天，聊 6~10 层会自动总结；想手动就点悬浮球 →「立即总结」。',
+        '哪一步卡住了，直接说卡在哪一步，我带你过。',
+      ].join('\n'),
+    },
+  ];
+  function liweAssistQuickAnswer(q) {
+    var t = String(q || '');
+    for (var i = 0; i < LIWE_QUICK_QA.length; i++) {
+      if (LIWE_QUICK_QA[i].k.test(t)) return LIWE_QUICK_QA[i];
+    }
+    return null;
+  }
+
+  /* ★ FIX28：助手用到的这几个在别处都没挂 window（之前只挂了 cdGetData / cdGetSettings），
+     只靠闭包引用不稳：一旦被包进别的作用域就是 undefined，症状是「工具报没就绪」。
+     这里显式补挂一次，幂等。 */
+  (function liweAssistBindDeps() {
+    try {
+      if (typeof window === 'undefined') return;
+      if (!window.cdApiComplete && typeof cdApiComplete === 'function') window.cdApiComplete = cdApiComplete;
+      if (!window.cdGetLogs && typeof cdGetLogs === 'function') window.cdGetLogs = cdGetLogs;
+      if (!window.cdSaveSettings && typeof cdSaveSettings === 'function') window.cdSaveSettings = cdSaveSettings;
+      if (!window.cdAddLog && typeof cdAddLog === 'function') window.cdAddLog = cdAddLog;
+      if (!window.PLUGIN_VERSION && typeof PLUGIN_VERSION === 'string') window.PLUGIN_VERSION = PLUGIN_VERSION;
+    } catch (e) { /* 绑定失败不影响主流程，fallback 分支还在 */ }
+  })();
 
   function liweAssistGetKB() { try { var s = localStorage.getItem('liweAssistKnowledge'); if (s && s.trim()) return s; } catch (e) {} return LIWE_ASSIST_DEFAULT_KB; }
   var LIWE_ASSIST_SYSTEM = liweAssistGetKB();
-  var _liweAssist = { hist: [], curChar: null, pending: null };
+  var _liweAssist = { hist: [], curChar: null, pending: null, thinkingRow: null };
   var LIWE_AST_CHARNAME = '小助手';
   /* 进入小助手会话页：像角色单聊一样 */
   function liweAssistTools() {
@@ -27827,9 +28035,19 @@ function _cgOpenMembers() {
   }
   function liweAssistBack() { cdRenderPhone(); }
   function liweAssistEnter(e) { if (e.key === 'Enter') { e.preventDefault(); liweAssistSend(); } }
+  /* ★ FIX28：「（思考中…）」「（执行中…）」这种占位以前从来不删，
+     最后会和答案并排留在屏幕上。Agent 循环会等更久，占位更显眼，所以渲染新消息前先清掉旧的。 */
+  function liweAssistClearThinking() {
+    var r = _liweAssist.thinkingRow; _liweAssist.thinkingRow = null;
+    try { if (r && r.parentNode) r.parentNode.removeChild(r); } catch (e) {}
+  }
+
   /* 渲染消息（并追加到历史 + 存 IndexedDB single_小助手） */
   function asstRenderMsg(who, text) {
     var b = document.getElementById('asstBody'); if (!b) return;
+    if (String(text || '').indexOf('（思考中…）') !== 0 && String(text || '').indexOf('（执行中…）') !== 0) {
+      liweAssistClearThinking();
+    }
     var isMe = (who === 'me');
     var row = document.createElement('div');
     row.style.cssText = 'display:flex;flex-direction:column;margin:6px 8px;align-items:' + (isMe ? 'flex-end' : 'flex-start') + ';';
@@ -28007,69 +28225,153 @@ function _cgOpenMembers() {
     if (liweAssistTryPrefCmd(q)) return;
     // 上报触发词（保留：用户主动要上报，直接弹，不走对话）
     if (/上报|报告|发给管理员|救命|我不行了|发给管理/i.test(q)) { liweAssistReport(); return; }
+    /* ★ FIX28：命中常见问题就直接本地答，不走模型。
+       这样即使 API 没配好、或者模型挂了，新手也能得到有用答案。 */
+    var _quick = null;
+    try { _quick = liweAssistQuickAnswer(q); } catch (e) { _quick = null; }
+    if (_quick) {
+      _liweAssist.hist.push({ q: q, a: _quick.a });
+      asstRenderMsg('me', q);
+      asstRenderMsg('assistant', _quick.a);
+      asstSave();
+      var _qb = document.getElementById('asstBody'); if (_qb) _qb.scrollTop = _qb.scrollHeight;
+      return;
+    }
     _liweAssist.hist.push({ q: q, a: '' });
     asstRenderMsg('me', q);
-    asstRenderMsg('assistant', '（思考中…）');
+    _liweAssist.thinkingRow = asstRenderMsg('assistant', '（思考中…）');
     liweAssistDispatch(q);
   }
-  /* 核心发送：调 API -> 结构化JSON优先 -> MEM_ACTION 兜底 -> 纯文本兜底 */
+  /* ★ FIX28：助手统一走主插件的 API 配置（与总结同一套），不再用论坛的。
+     失败时给出能看懂的原因，而不是一句「无响应」。 */
+  async function liweAssistCallApi(msgs) {
+    var s = (typeof window !== 'undefined' && typeof window.cdGetSettings === 'function')
+      ? window.cdGetSettings() : (typeof cdGetSettings === 'function' ? cdGetSettings() : {});
+    if (!s || typeof s !== 'object') throw new Error('读不到插件设置，请刷新页面后重试');
+    /* ★ 不在这里预检「地址/密钥有没有填」：
+       s.source 可能是 'tavern'（直接用酒馆自带模型），这时 endpoints 是空的但照样能用；
+       预检会把这类用户误判成「没配好」。交给 cdApiComplete 自己路由，它报的错已经是人话。 */
+    var apiFn = (typeof window !== 'undefined' && typeof window.cdApiComplete === 'function')
+      ? window.cdApiComplete : (typeof cdApiComplete === 'function' ? cdApiComplete : null);
+    if (!apiFn) throw new Error('模型调用接口没就绪，请刷新页面后重试');
+    var r = await apiFn(msgs, s);
+    return String((r && r.text) || r || '').trim();
+  }
+
+  /* ★ FIX28：核心发送。改成 Agent 循环 ——
+     模型可以先调只读工具（体检 / 读设置 / 读日志），拿到真实数据再回答，最多 3 轮。
+     原因：新手报「不总结」时，靠自己描述往往说不清；让助手自己去查开关和日志，
+     一次就能定位。写数据仍要用户点「确认执行」，改设置按用户要求直接代改。 */
+  function liweAssistParseAction(out) {
+    var ac = String(out || '').match(/\[MEM_ACTION:(\{[\s\S]*?\})\]/);
+    if (!ac) return null;
+    var rawJson = ac[1];
+    try { var p = JSON.parse(rawJson); if (p && typeof p.action === 'string') return p; } catch (e) {}
+    try {
+      var mA = rawJson.match(/"action"\s*:\s*"([^"]+)"/);
+      if (mA) {
+        var mT = rawJson.match(/"target"\s*:\s*"([^"]+)"/);
+        var mV = rawJson.match(/"value"\s*:\s*(true|false|-?\d+|"[^"]*")/);
+        var params = {};
+        if (mV) { var vv = mV[1]; params.value = (vv === 'true') ? true : (vv === 'false') ? false : (vv.charAt(0) === '"' ? vv.slice(1, -1) : parseFloat(vv)); }
+        return { action: mA[1], target: (mT ? mT[1] : 'archive'), params: params };
+      }
+    } catch (e2) {}
+    return null;
+  }
+  function liweAssistIsReadAction(a) {
+    return a === 'read' || a === 'show_data' || a === 'get_status' || a === 'check'
+      || a === 'diagnose' || a === 'get_settings' || a === 'get_config' || a === 'get_logs';
+  }
+
   async function liweAssistDispatch(q) {
     try {
       var sys = liweAssistGetKB();
-      var hist = _liweAssist.hist.slice(-8);
+      /* 历史里最后一条就是本次问题（liweAssistSend 已经 push 过），旧代码又 push 一次
+         ⇒ 同一句话发两遍。这里先排掉最后一条，再补回一次。 */
+      var hist = _liweAssist.hist.slice(0, -1).slice(-8);
       var msgs = [{ role: 'system', content: sys }];
       hist.forEach(function (h) { if (h.q) msgs.push({ role: 'user', content: h.q }); if (h.a) msgs.push({ role: 'assistant', content: h.a }); });
       msgs.push({ role: 'user', content: q });
-      var out = '';
-      if (typeof window !== 'undefined' && typeof window.cdForumApiComplete === 'function') { out = String(await window.cdForumApiComplete(msgs) || '').trim(); }
-      if (!out) throw new Error('助手无响应');
-      // 1) 结构化 JSON 块优先（v6 主通道：reply/progress/suggestion/options/need_report）
-      var struct = asstTryParseStructured(out);
-      if (struct) {
-        var sReply = struct.reply || '';
-        var memText = String(out);
-        if (_liweAssist.hist.length) _liweAssist.hist[_liweAssist.hist.length - 1].a = memText;
-        asstRenderRich(struct, sReply);
-        asstSave();
-        var b0 = document.getElementById('asstBody'); if (b0) b0.scrollTop = b0.scrollHeight;
-        return;
-      }
-      // 2) MEM_ACTION 兜底（老流程）
-      var ac = out.match(/\[MEM_ACTION:(\{[\s\S]*?\})\]/);
-      var action = null, isLegit = false;
-      if (ac) {
-        var rawJson = ac[1];
-        try { var parsed = JSON.parse(rawJson); if (parsed && typeof parsed.action === 'string') { action = parsed; isLegit = true; } } catch (e) {}
-        if (!isLegit) {
-          try {
-            var mAct = rawJson.match(/"action"\s*:\s*"([^"]+)"/);
-            var mTgt = rawJson.match(/"target"\s*:\s*"([^"]+)"/);
-            var act = mAct ? mAct[1] : '';
-            if (act) { action = { action: act, target: (mTgt ? mTgt[1] : 'archive'), params: {} }; isLegit = true; }
-          } catch (e2) { isLegit = false; }
-        }
-      }
-      var preview = out.replace(/\[MEM_ACTION:[\s\S]*?\]/, '').trim();
-      if (_liweAssist.hist.length) _liweAssist.hist[_liweAssist.hist.length - 1].a = preview || '（助手消息）';
-      var lastRow = null;
-      if (isLegit && action) {
-        var isRead = (action.action === 'read' || action.action === 'show_data');
-        if (isRead) {
-          var readRes = await liweAssistTryExec(action);
-          if (_liweAssist.hist.length) _liweAssist.hist[_liweAssist.hist.length - 1].a = (preview || '读取结果') + '\n' + (readRes || '');
-          lastRow = asstRenderMsg('assistant', (preview ? preview + '\n\n' : '') + (readRes || '（无内容）'));
+
+      var out = '', rounds = 0, pendingWrite = null, lastText = '';
+      while (rounds < 3) {
+        rounds++;
+        out = await liweAssistCallApi(msgs);
+        if (!out) break;
+        lastText = out;
+
+        /* A) 结构化 JSON（带 options 的分支）→ 直接当最终答案 */
+        var struct = asstTryParseStructured(out);
+        if (struct) {
+          _liweAssist.hist[_liweAssist.hist.length - 1].a = String(out);
+          asstRenderRich(struct, struct.reply || '');
           asstSave();
-        } else {
-          _liweAssist.pending = action;
-          lastRow = asstRenderMsg('assistant', (preview ? preview : '以下操作待确认：' + JSON.stringify(action)) + '\n（点下方「✔ 确认执行」后我再动手）');
-          addConfirmBtn(lastRow);
+          var b0 = document.getElementById('asstBody'); if (b0) b0.scrollTop = b0.scrollHeight;
+          return;
         }
+
+        /* B) 工具调用 */
+        var ac = liweAssistParseAction(out);
+        if (!ac) break;
+
+        if (liweAssistIsReadAction(ac.action)) {
+          /* 只读：执行 → 把真实结果喂回去 → 再问一次 */
+          var res = '';
+          try { res = await liweAssistTryExec(ac); } catch (eR) { res = '（工具执行失败：' + (eR && eR.message) + '）'; }
+          msgs.push({ role: 'assistant', content: out });
+          msgs.push({
+            role: 'user',
+            content: '【工具执行结果 · ' + ac.action + '】\n' + String(res || '（无内容）')
+              + '\n\n以上是插件里的真实数据。请直接基于它回答用户，不要再调用同一个工具。'
+          });
+          continue;
+        }
+
+        /* 设置类改动：用户要求「能代改就代改」⇒ 直接执行并告知 */
+        if (ac.action === 'set_setting') {
+          var rSet = await liweAssistTryExec(ac);
+          msgs.push({ role: 'assistant', content: out });
+          msgs.push({ role: 'user', content: '【已代改设置】' + rSet + '\n\n请用一两句话告诉用户改成了什么、在哪个页面能改回来。不要再调用工具。' });
+          pendingWrite = null;
+          continue;
+        }
+
+        /* 其它写操作（改档案/删数据）→ 仍然要确认 */
+        pendingWrite = ac;
+        break;
+      }
+
+      var preview = String(out || '').replace(/\[MEM_ACTION:[\s\S]*?\]/g, '').trim();
+      if (pendingWrite) {
+        _liweAssist.pending = pendingWrite;
+        var rest = preview || ('以下操作待确认：' + JSON.stringify(pendingWrite));
+        var row = asstRenderMsg('assistant', rest + '\n\n（点下面「确认执行」我才真正改数据）');
+        addConfirmBtn(row);
+        _liweAssist.hist[_liweAssist.hist.length - 1].a = rest;
       } else {
-        lastRow = asstRenderMsg('assistant', out);
+        if (!preview && lastText) preview = String(lastText).replace(/\[MEM_ACTION:[\s\S]*?\]/g, '').trim();
+        if (!preview) preview = '（模型这次没返回可用内容，换个模型或再说一次试试）';
+        _liweAssist.hist[_liweAssist.hist.length - 1].a = preview;
+        asstRenderMsg('assistant', preview);
       }
       asstSave();
     } catch (e) {
-      asstRenderMsg('assistant', '⚠ ' + String(e.message || e) + ' （如需帮助，可回复"上报"让我整理问题给管理员）');
+      /* ★ FIX28：报错要说人话。新手看到「ReferenceError: xxx is not defined」只会更慌。 */
+      var msg = String((e && e.message) || e);
+      var hint = '';
+      if (/未填接口地址|未配置|没有配置|未选择/.test(msg)) {
+        hint = '\n\n（提示：总结和助手用的是同一套配置。三选一就能通——'
+          + '\n① 去【设置 → API 配置】填 地址 / 密钥 / 模型，填完点「测试连接」；'
+          + '\n② 把接口来源选成「当前酒馆」，直接用酒馆的模型；'
+          + '\n③ 打开「允许降级到酒馆通道」）';
+      }
+      else if (/超时|timeout/i.test(msg)) hint = '\n\n（请求超时：模型太久没回。换个小一点的模型，或稍后再试）';
+      else if (/401|403|unauthorized|auth|密钥|api.?key/i.test(msg)) hint = '\n\n（鉴权失败：密钥不对或过期了，去【设置 → API 配置】重填一次）';
+      else if (/404/i.test(msg)) hint = '\n\n（404：接口地址多半少了 /v1，或者路径写错）';
+      else if (/429|rate.?limit|quota|额度|余额/i.test(msg)) hint = '\n\n（额度用完或被限流：换密钥、换模型，或等一会儿）';
+      else if (/无响应/.test(msg)) hint = '\n\n（模型没返回内容：先点【设置 → API 配置】里的「测试连接」确认通不通）';
+      asstRenderMsg('assistant', '⚠ ' + msg + hint + '\n\n如果还想不通，说「上报」，我把当前情况整理成一份报告给你。');
       asstSave();
     }
     var b = document.getElementById('asstBody'); if (b) b.scrollTop = b.scrollHeight;
@@ -28086,7 +28388,7 @@ function _cgOpenMembers() {
   async function liweAssistConfirm() {
     var action = _liweAssist.pending; _liweAssist.pending = null;
     if (!action) { asstRenderMsg('assistant', '没有待执行的操作。'); return; }
-    asstRenderMsg('assistant', '（执行中…）');
+    _liweAssist.thinkingRow = asstRenderMsg('assistant', '（执行中…）');
     var res = await liweAssistTryExec(action);
     _liweAssist.hist.push({ q: '确认执行', a: '执行结果：' + (res || '已完成') });
     // 执行后详细向主人汇报（不只是「已完成」）
@@ -28194,6 +28496,69 @@ function _cgOpenMembers() {
   async function liweAssistTryExec(action) {
     if (!action || !action.action) return '无有效操作';
     try {
+      /* ★ FIX28：体检。让助手能看真实数据再回答「为什么不总结」，而不是凭猜。 */
+      if (action.action === 'get_status' || action.action === 'check' || action.action === 'diagnose') {
+        var _s = (typeof window.cdGetSettings === 'function') ? (window.cdGetSettings() || {}) : {};
+        var _d = {}; try { _d = await window.cdGetData(); } catch (e0) { _d = {}; }
+        var _a = (_d && _d.archive) || {};
+        var _L = [];
+        var _bt = function (v) { return v ? '开' : '关'; };
+        _L.push('— 开关 —');
+        _L.push('插件总开关 enabled：' + _bt(_s.enabled !== false));
+        _L.push('自动总结 autoSummary：' + _bt(!!_s.autoSummary) + '（关着就只能手动点「立即总结」）');
+        _L.push('角色日记 enableDiary：' + _bt(_s.enableDiary !== false));
+        _L.push('剧情档案 enableArchive：' + _bt(_s.enableArchive !== false));
+        _L.push('注入日记 injectDiary：' + _bt(!!_s.injectDiary));
+        _L.push('注入档案 injectArchive：' + _bt(!!_s.injectArchive));
+        _L.push('注入关系 injectRelation：' + _bt(!!_s.injectRelation));
+        _L.push('总结时带旧档案 summarizeInjectArchive：' + _bt(!!_s.summarizeInjectArchive));
+        _L.push('— 档案字段 —');
+        _L.push('主线=永远输出；支线=' + _bt(!!_s.arcSide) + '；状态=' + _bt(!!_s.arcState) + '；未解决=' + _bt(!!_s.arcUnresolved)
+          + '；任务=' + _bt(!!_s.arcTasks) + '；总览=' + _bt(!!_s.arcOverview) + '；章回=' + _bt(!!_s.arcChapter));
+        _L.push('记录风格 archiveStyle：' + String(_s.archiveStyle || 'dialogue') + '；档案模式：' + String(_s.archiveMode || 'append') + '；日记模式：' + String(_s.diaryMode || 'append'));
+        _L.push('— 数据量 —');
+        _L.push('主线 ' + String(_a.mainline || '').length + ' 字；支线 ' + String(_a.sideline || '').length + ' 字；状态 ' + String(_a.states || '').length + ' 字');
+        _L.push('日记角色数 ' + Object.keys((_d && _d.diaries) || {}).length + '；关系角色数 ' + Object.keys((_d && _d.relations) || {}).length);
+        _L.push('— API 配置（总结和助手共用）—');
+        var _src = String(_s.source || 'openai');
+        var _ep = (_s.endpoints && _s.endpoints[_src]) ? _s.endpoints[_src] : {};
+        _L.push('来源 ' + _src + '；地址 ' + (_ep.url ? '已填' : '★空') + '；密钥 ' + (_ep.key ? '已填' : '★空') + '；模型 ' + (_ep.model || '★空'));
+        _L.push('— 最近错误 —');
+        var _logs = [];
+        try { _logs = (typeof window.cdGetLogs === 'function' ? window.cdGetLogs() : (typeof cdGetLogs === 'function' ? cdGetLogs() : [])) || []; } catch (e1) { _logs = []; }
+        var _errs = _logs.filter(function (l) { return l && (l.level === 'error' || l.level === 'warn'); }).slice(-5);
+        if (!_errs.length) _L.push('（最近没有 error / warn）');
+        else _errs.forEach(function (l) { _L.push('[' + (l.level || '') + '] ' + String(l.message || '').slice(0, 120)); });
+        _L.push('插件版本：' + ((typeof PLUGIN_VERSION === 'string') ? PLUGIN_VERSION : (window.PLUGIN_VERSION || '未知')));
+        return _L.join('\n');
+      }
+
+      /* ★ FIX28：读关键设置当前值 */
+      if (action.action === 'get_settings' || action.action === 'get_config') {
+        var _s2 = (typeof window.cdGetSettings === 'function') ? (window.cdGetSettings() || {}) : {};
+        var _keys = ['enabled', 'autoSummary', 'autoSummaryDelay', 'enableDiary', 'enableArchive', 'enableRelation',
+          'injectDiary', 'injectArchive', 'injectRelation', 'summarizeInjectDiary', 'summarizeInjectArchive',
+          'arcSide', 'arcState', 'arcUnresolved', 'arcTasks', 'arcOverview', 'arcChapter',
+          'archiveStyle', 'archiveMode', 'diaryMode', 'vectorTopK', 'vectorThreshold',
+          'autoHideEnabled', 'autoHideKeep', 'autoCompress', 'summarySource', 'interval', 'maxWindowFloors'];
+        var _o = [];
+        _keys.forEach(function (k) { if (_s2[k] !== undefined) _o.push(k + ' = ' + JSON.stringify(_s2[k])); });
+        return _o.length ? _o.join('\n') : '（读不到设置，可能还没初始化）';
+      }
+
+      /* ★ FIX28：读最近日志 */
+      if (action.action === 'get_logs') {
+        var _lg = [];
+        try { _lg = (typeof window.cdGetLogs === 'function' ? window.cdGetLogs() : (typeof cdGetLogs === 'function' ? cdGetLogs() : [])) || []; } catch (e2) { _lg = []; }
+        var _want = String((action.params && action.params.level) || 'err');
+        var _picked = (_want === 'all') ? _lg.slice(-20)
+          : _lg.filter(function (l) { return l && (l.level === 'error' || l.level === 'warn'); }).slice(-15);
+        if (!_picked.length) return '（没有符合条件的日志）';
+        return _picked.map(function (l) {
+          return '[' + (l.time || '') + '][' + (l.level || '') + '] ' + String(l.message || '').slice(0, 160);
+        }).join('\n');
+      }
+
       if (action.action === 'read' || action.action === 'show_data') {
         var d = await window.cdGetData(); var t = action.target || 'archive';
         if (t === 'archive') { var a = d.archive || {}; return '主线:' + (a.mainline||'').slice(0,120) + '\n支线:' + (a.sideline||'').slice(0,60) + '\n状态:' + (a.states||'').slice(0,60) + '\n未解决:' + (a.unresolved||'').slice(0,60) + '\n时间轴:' + (a.timeAnchor||'(空)'); }
@@ -28233,11 +28598,31 @@ function _cgOpenMembers() {
         await window.cdSaveData(d5); if (typeof window.cdRefreshInjection === 'function') await window.cdRefreshInjection();
         return '去重/清理完成：处理 ' + touched + ' 个字段（删除完全重复行与断裂行）';
       }
+      /* ★ FIX28：改设置。旧版只认 boolean、且不回报真实结果 ⇒ 改了没生效也不知道。
+         现在支持 字符串/数字/布尔，改完读回真实值告诉用户到底成没成。 */
       if (action.action === 'set_setting') {
-        var s2 = window.cdGetSettings(); var p = (action.params && action.params.value !== undefined) ? action.params.value : action.params;
         var key = action.target || (action.params && action.params.key) || '';
-        if (key && s2[key] !== undefined && typeof p === 'boolean') { s2[key] = p; window.cdSaveSettings({ [key]: p }); return '已设置 ' + key + ' = ' + p; }
-        return '暂不支持该设置';
+        var val = (action.params && action.params.value !== undefined) ? action.params.value : undefined;
+        if (!key) return '缺少要改的设置名（target 写键名，如 arcSide）';
+        if (val === undefined) return '缺少新值（params.value）';
+        var s2 = (typeof window.cdGetSettings === 'function') ? (window.cdGetSettings() || {}) : {};
+        if (s2[key] === undefined) {
+          return '没有这个设置项：' + key + '。可改的键名见知识库【关键设置键名】。';
+        }
+        var before = s2[key];
+        if (typeof val === 'string') {
+          if (val === 'true' || val === '开') val = true;
+          else if (val === 'false' || val === '关') val = false;
+          else if (/^-?\d+(\.\d+)?$/.test(val)) val = parseFloat(val);
+        }
+        var saveFn = (typeof window.cdSaveSettings === 'function') ? window.cdSaveSettings
+          : (typeof cdSaveSettings === 'function' ? cdSaveSettings : null);
+        if (!saveFn) return '保存设置的接口没就绪，请刷新页面后重试';
+        var patch = {}; patch[key] = val; saveFn(patch);
+        var after = (typeof window.cdGetSettings === 'function') ? (window.cdGetSettings() || {}) : {};
+        var okWrite = String(after[key]) === String(val);
+        return '设置 ' + key + '：' + JSON.stringify(before) + ' → ' + JSON.stringify(after[key])
+          + (okWrite ? '（✓ 已生效）' : '（★ 没写进去，可能这个键被别处覆盖了）');
       }
       return '该操作（' + action.action + '）当前仅预览，未改动数据。';
     } catch (e) { console.warn('[小助手执行] 失败', e); return '执行失败:' + (e && e.message); }
