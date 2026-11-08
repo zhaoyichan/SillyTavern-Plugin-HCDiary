@@ -240,13 +240,40 @@ function cdCharOptions(cur) {
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.18.8';
+const PLUGIN_VERSION = '2.18.9';
 /* ★ FIX23：构建标识，用于定位用户跑的是哪批代码。
    CD_BUILD = 本版所基于的提交短 sha，配合 PLUGIN_VERSION 即可唯一确定版本；
    下次改动代码时请一并更新（无法自指自身 sha，故取基线）。 */
-const CD_BUILD = '015ca7b';
-const CD_BUILD_DATE = '2026-11-01';
+const CD_BUILD = '25fceaa';
+const CD_BUILD_DATE = '2026-11-08';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
+
+/* ★ FIX30：插件自己的脚本地址。index.js 是 classic script，顶层执行时
+   document.currentScript 指的就是它自己 —— 这是浏览器里唯一可靠的「自指」办法。
+   取不到时退回扫 <script>（有些加载方式下 currentScript 为 null）。 */
+const CD_SELF_URL = (function () {
+  try {
+    if (document.currentScript && document.currentScript.src) return document.currentScript.src;
+    var ss = document.querySelectorAll('script[src]');
+    for (var i = 0; i < ss.length; i++) {
+      if (/HCDiary/i.test(ss[i].src)) return ss[i].src;
+    }
+  } catch (e) {}
+  return '';
+})();
+let _cdSelfSrcCache = null;
+/** 读插件自己的源码文本（带缓存）。取不到返回空串，调用方必须自己判断并如实告知。 */
+async function cdReadSelfSource() {
+  if (_cdSelfSrcCache) return _cdSelfSrcCache;
+  if (!CD_SELF_URL) return '';
+  const r = await fetch(CD_SELF_URL, { cache: 'no-store' });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const t = await r.text();
+  if (!t || t.length < 1000) throw new Error('返回内容不像源码（' + (t ? t.length : 0) + ' 字符）');
+  _cdSelfSrcCache = t;
+  return t;
+}
+try { window.cdReadSelfSource = cdReadSelfSource; window.CD_SELF_URL = CD_SELF_URL; } catch (e) {}
 
 /** 调试开关 */
 const DEBUG = true;
@@ -4987,7 +5014,18 @@ function cdRenderLog() {
      '　报告含版本、设备、注入次数对账与最近日志；不含剧情正文。</p>') : '';
 
   if (!logs.length) {
-    html = testBtnHtml + injLogHtml + diagBtnHtml + `<div class="cd-empty${cdCharEmptyCls()}"${cdCharEmptyAttr()}><p>暂无日志</p><p class="cd-empty-sub">每次总结会在这里留下一条「任务批次」，成功失败一眼看得出</p></div>`;
+    /* ★ FIX29f：日志空 ＝ 还没跑过总结，不是出错。说清楚，并给「怎么让它跑一次」 */
+    html = testBtnHtml + injLogHtml + diagBtnHtml + cdEmptyGuide({
+      icon: 'fa-regular fa-file-lines',
+      title: '暂无日志',
+      desc: '每次总结会在这里留一条「任务批次」，成功失败一眼看得出。',
+      steps: [
+        '这里空着说明还没跑过总结，不是出错',
+        '想验证整条链路：点悬浮球 →「立即总结」，再回来看这里有没有记录',
+        '真的出问题时，点上面「复制诊断报告」把内容贴给开发者'
+      ],
+      actions: [{ text: '去开「自动总结」', jump: 'runtime' }]
+    });
   } else {
     html = testBtnHtml + barHtml + injLogHtml + diagBtnHtml +
       `<div class="cd-log-stats-container">${statsHtml}</div>` +
@@ -10668,7 +10706,8 @@ async function cdSwitchView(mode, el) {
   } catch (_eStack) {}
   // ★ FIX10：切视图前提醒未应用的设置
   try {
-    if (mode !== '__settings' && typeof cdSettingsDirty === 'function' && cdSettingsDirty()) {
+    /* ★ FIX29：小助手发起的跳转不该弹「有还没应用的改动」——用户根本没在编辑设置 */
+    if (!window._cdJumpSilent && mode !== '__settings' && typeof cdSettingsDirty === 'function' && cdSettingsDirty()) {
       if (confirm('有还没点「应用设置」的改动，要先应用吗？（选取消则丢弃）')) $('#cd-btn-save-settings').trigger('click');
     }
   } catch (_eDirty2) {}
@@ -10707,6 +10746,342 @@ function cdTopbarProgress(action) {
     return p;
   } catch (e) { return null; }
 }
+
+
+/* ============================== 设置项就地解释（FIX29e） ==============================
+   ★ key 用控件 id（cd-s-xxx），不用 label 文字 ——「角色日记」在生成内容 / 注入 /
+     总结注入三处都有，按文字索引必然张冠李戴。
+   ★ 只给「没有内联小字 + 容易设错」的行写解释。面板里已有 40 多条 .cds-hint 小字，
+     再给每行挂问号就是纯视觉噪音。
+   ★ 每条三段式：这是什么 / 设成什么 / 常见误区（有的项没有误区就两段）。
+   ★ 以后加设置项：在这里补一条即可，设置面板 HTML 一个字都不用改。
+   ================================================================================== */
+const CD_SETTING_HELP = {
+  'cd-s-enabled': ['插件总闸。关掉后既不自动总结，也不往对话里注入任何记忆。',
+                   '已有日记和档案一条都不会删，只是暂停。想「先停一停」关这个。'],
+  'cd-s-fab': ['聊天界面右下角那个可以拖的小球，点开是快捷菜单。',
+               '关掉后只能从「全部功能 → 设置」进面板。手机上建议开着。'],
+  'cd-font-scale-range': ['面板内所有文字整体缩放。',
+                          '手机觉得字小就拉到 120%~150%。',
+                          '调太大卡片会挤成一列，看着反而更累。'],
+  'cd-btn-reset-onboarding': ['把新手引导重置，下次打开面板会再走一遍。',
+                              '第一次没看懂、或者想给朋友演示时点它。'],
+  'cd-s-temp': ['总结时的随机性（temperature）。',
+                '0.3 ~ 0.5 最稳：不容易跑题、不容易编造细节。',
+                '设到 1 以上档案会开始发散；不要设成 0，有些模型会直接返回空。'],
+  'cd-s-diary': ['关掉后不再生成新的角色日记。',
+                 '已经写好的日记还在、还能看，只是不再增加。'],
+  'cd-s-archive': ['关掉后不再生成剧情档案，也不再注入给 AI。',
+                   '★「点了总结没反应」最常见的原因就是这个开关被关了，先查这里。'],
+  'cd-s-worldbook': ['打开后，总结时会参考你绑定的世界书设定（人名、地名、专有名词对得上）。',
+                     '没绑世界书就无所谓，开着也不吃亏。'],
+  'cd-s-inject-diary': ['决定 AI 聊天时能不能看见已经写好的日记。',
+                        '关掉 ＝ 日记照写但不给 AI 看：省 token，但 AI 会明显健忘。'],
+  'cd-s-inject-archive': ['决定剧情档案要不要注入给 AI。',
+                          '★「AI 记不住前面的事」先看这个开关有没有关。'],
+  'cd-s-injpos': ['注入内容插在对话的哪个位置。',
+                  '默认「对话末尾」效果最好。',
+                  '选「开头」会被后面越来越长的对话挤掉，等于没注入。'],
+  'cd-s-injrole': ['注入那条消息用谁的身份发出去。',
+                   '「系统」最不容易被 AI 当成你说的话。',
+                   '个别模型（Claude 系）对系统消息敏感，改「用户」反而更听话。'],
+  'cd-s-injdepth': ['从对话末尾往前数第几条插入。',
+                    '1~2 最合适。数字越大插得越靠前，效果越弱。'],
+  'cd-s-archive-style': ['只影响剧情档案，角色日记不受影响。',
+                         '对话版：保留关键台词原话，更详实也更长。',
+                         '常规版：只记事实经过，短得多、省 token。切换后下次总结生效。'],
+  'cd-s-arc-side': ['支线：主线之外的次要情节。',
+                    '剧情盘根错节、想留住伏笔时打开；只追主线就关着，档案短一半。'],
+  'cd-s-arc-state': ['重要状态变化：身体、地址、资产、好感度这些。',
+                     '★ 好感度记在这个字段里 —— 想看好感度数字就必须打开它。'],
+  'cd-s-arc-unresolved': ['未解决事项：埋下但还没收的伏笔。',
+                          '长线剧情建议开；短篇关掉更干净。'],
+  'cd-s-arc-tasks': ['任务记录：当前在办的事、委托、期限。',
+                     '有明确任务线的剧本开着有用，日常向关掉即可。'],
+  'cd-s-arc-overview': ['剧情总览：一段话概括整体进展。',
+                        '★ 关掉后剧情页顶部不再显示这段概述。'],
+  'cd-s-arc-chapter': ['章回标题：给每段剧情起个「第X回 某某」的标题。',
+                       '★ 关掉后剧情页顶部不再显示「第X回」。'],
+  'cd-s-summary-source': ['总结时从哪里读楼层。',
+                          '「现有方式」用酒馆聊天数组，楼层特别多时可能只加载到最近一部分。',
+                          '「jsonl 全量」直接读存档文件，能根治分片导致的自动总结卡住。切换后要重启酒馆。'],
+  'cd-s-autohide': ['已经记录过的旧楼层从 AI 上下文里拿掉，省 token。',
+                    '界面还在（B 模式），随时能恢复，数据不会丢。'],
+  'cd-s-autohide-mode': ['B：楼层在界面还看得见，只是不发给 AI（可恢复）。',
+                         'A：界面上也一起隐藏掉，彻底干净。',
+                         '新手建议留在 B，选 A 会以为自己把聊天弄丢了。'],
+  'cd-s-autocompress': ['档案太长时自动合并压缩一次。',
+                        '开了省 token，但压缩本身也要再调一次模型、也要花钱。',
+                        '短篇剧情不用开。'],
+  'cd-s-url': ['接口地址，要填完整路径。',
+               'OpenAI 兼容的一般是 https://xxx/v1/chat/completions 这种，别漏 /v1。',
+               '★ 少写 /v1 是「404 找不到」的头号原因。'],
+  'cd-s-key': ['供应商发给你的那串密钥，形如 sk-...',
+               '只存在你自己机器上，插件不会往别处发。'],
+  'cd-s-model': ['模型名必须和供应商写的完全一致，大小写、日期后缀都不能错。',
+                 '点下面「获取可用模型」可以从列表里挑，比自己敲稳。',
+                 '★ 拼错的表现通常是 404 或「模型不存在」，不是报密钥错误。'],
+  'cd-s-backend-proxy': ['直连被浏览器 CORS / 预检拦住时打开它，改由酒馆后端转发请求。',
+                         '模型还是你填的那个，不会换成主模型。',
+                         '直连本来是通的就别开，多一层转发反而慢。'],
+  'cd-s-allowfb': ['关着：直连没配好或请求失败就如实报错，不会偷偷改用你主模型的额度。',
+                   '开着：失败时退回酒馆当前连接（花的是你主模型的钱）。',
+                   '新手建议保持关 —— 否则出了问题你根本不知道它在用哪个模型。'],
+  'cd-s-strict': ['开着：只把要总结的楼层发过去，不带角色卡 / 世界书 / 预设 / 破限。',
+                  '省 token、结果更干净。',
+                  '关掉：会把酒馆当前预设一起带上，AI 更「懂」你的设定，但更贵、也更容易跑偏。'],
+  'cd-s-notifycard': ['屏幕顶部那条小横条，告诉你总结开始 / 成功 / 失败。',
+                      '失败那条不会自动消失，带「重试」和「看日志」两个按钮。',
+                      '嫌烦可以关，但关了就只能在日志里看结果了。'],
+  'cd-s-interval': ['每 N 条楼层自动总结一次（你一条 + AI 一条算 2 条）。',
+                    '6 ~ 10 比较合适。',
+                    '★ 设成 1 会每聊一句就调一次模型，钱烧得飞快。'],
+  'cd-s-asdelay': ['触发后先等 N 秒才真的发请求。',
+                   '这样你还在连续打字时不会白跑一趟。20 秒左右够用。'],
+  'cd-s-offset': ['总结时跳过末尾 N 条不算进去（这几种还没写完整）。',
+                  '默认 2。改成 0 会把「正在发生」的半截剧情也总结进去。'],
+  'cd-s-cameo': ['路人角色出场满 N 次后升级成正式角色，才开始给他写日记。',
+                 '默认 3。设成 1 会给每个跑龙套的都建档案，列表会很乱。'],
+  'cd-s-retry': ['请求失败后自动重试几次、每次隔几秒。',
+                 '网络不稳或者用便宜网关时调大一点（3 次 / 2 秒是默认）。']
+};
+
+/** 给设置面板里有解释的行加「?」，点开在行下方展开说明。幂等，可重复调用。 */
+function cdApplySettingHelp(root) {
+  try {
+    root = root || document.getElementById('cd-settings-panel');
+    if (!root) return 0;
+    var n = 0;
+    var rows = root.querySelectorAll('.cds-row');
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      if (row.querySelector('.cds-q')) continue;      // 已加过
+      var ctl = row.querySelector('[id]');
+      if (!ctl) continue;
+      var lines = CD_SETTING_HELP[ctl.id];
+      if (!lines) continue;
+      var lab = row.querySelector('.cds-lab');
+      if (!lab) continue;
+
+      var q = document.createElement('span');
+      q.className = 'cds-q';
+      q.textContent = '?';
+      q.setAttribute('role', 'button');
+      q.setAttribute('title', '点开看这项是干什么的');
+      q.onclick = (function (rowEl) {
+        return function (e) {
+          if (e && e.stopPropagation) e.stopPropagation();
+          var box = rowEl.nextElementSibling;
+          if (box && box.classList && box.classList.contains('cds-help')) {
+            box.style.display = (box.style.display === 'none') ? 'block' : 'none';
+            return;
+          }
+          var d = document.createElement('div');
+          d.className = 'cds-help';
+          var html = '';
+          for (var k = 0; k < lines.length; k++) {
+            html += '<div class="cds-help-l">' + escapeHtml(String(lines[k])) + '</div>';
+          }
+          d.innerHTML = html;
+          if (rowEl.parentNode) rowEl.parentNode.insertBefore(d, rowEl.nextSibling);
+          n++;
+        };
+      })(row);
+      lab.appendChild(q);
+      n++;
+    }
+    return n;
+  } catch (e) { return 0; }
+}
+try { window.cdApplySettingHelp = cdApplySettingHelp; window.CD_SETTING_HELP = CD_SETTING_HELP; } catch (e) {}
+
+/* ============================== 界面跳转（FIX29） ==============================
+   ★ 为什么要有这一块：
+     小助手以前只会说「去【设置 → API 配置】」「去【设置 → 功能开关】」，
+     但设置面板上根本没有这两个标题 —— 真实的卡片是：
+     检查更新 / 基本 · 总控 / 额度与提示词 / 运行参数 / 生成内容 / 注入 AI 上下文 / 高级。
+     API 在【高级 → API 来源】，剧情档案记录风格也在【高级】里。
+     新手照着一层层找必然迷路，所以答案里带跳转标记，点一下直接到位置并高亮。
+
+   ★ 维护约定：这张表的 key 同时被「助手知识库」「离线问答」「模型提示词」三处引用。
+     以后增删设置卡片时，这三处要一起改，否则按钮会跳空（跳空时 cdJumpTo 返回 false，
+     前端会退回成纯文字，不会白屏 —— 故意这么设计，宁可少个按钮也不要报错）。
+   ============================================================================= */
+const CD_JUMP_TARGETS = {
+  /* 设置：直接落卡片 */
+  'update':    { t: 'settings', card: 'update',   label: '设置 · 检查更新' },
+  'basic':     { t: 'settings', card: 'basic',    label: '设置 · 基本 / 总控' },
+  'quota':     { t: 'settings', card: 'quota',    label: '设置 · 额度与提示词' },
+  'runtime':   { t: 'settings', card: 'runtime',  label: '设置 · 运行参数' },
+  'generate':  { t: 'settings', card: 'generate', label: '设置 · 生成内容' },
+  'injsetting':{ t: 'settings', card: 'inject',   label: '设置 · 注入 AI 上下文' },
+  /* 设置：落「高级」里的折叠项 */
+  'api':       { t: 'settings', card: 'advanced', detail: 'api',           label: '高级 → API 来源' },
+  'arcstyle':  { t: 'settings', card: 'advanced', detail: 'archive-style', label: '高级 → 剧情档案记录风格' },
+  'filter':    { t: 'settings', card: 'advanced', detail: 'filter',        label: '高级 → 内容过滤' },
+  'aifilter':  { t: 'settings', card: 'advanced', detail: 'aifilter',      label: '高级 → AI 返回过滤' },
+  'compress':  { t: 'settings', card: 'advanced', detail: 'compress',      label: '高级 → 自动压缩剧情档案' },
+  'sumsrc':    { t: 'settings', card: 'advanced', detail: 'sumsrc',        label: '高级 → 自动总结数据源' },
+  'hidefloor': { t: 'settings', card: 'advanced', detail: 'hidefloor',     label: '高级 → 自动隐藏楼层' },
+  /* 功能页 */
+  'home':      { t: 'view', view: 'home',     label: '主界面' },
+  'diary':     { t: 'view', view: 'browse',   label: '角色日记' },
+  'archive':   { t: 'view', view: 'archive',  label: '剧情档案' },
+  'log':       { t: 'view', view: 'log',      label: '日志' },
+  'studio':    { t: 'view', view: 'studio',   label: '内容管理' },
+  'timeline':  { t: 'view', view: 'theatre',  label: '时间线' },
+  'savepage':  { t: 'view', view: 'save',     label: '存档' },
+  'injpage':   { t: 'view', view: 'inject',   label: '注入预览' },
+  'phonepage': { t: 'view', view: 'phone',    label: '手机' },
+  'helppage':  { t: 'view', view: 'help',     label: '帮助' },
+  'manage':    { t: 'view', view: 'manage',   label: '数据管理' }
+};
+
+function cdJumpLabel(key) {
+  var t = CD_JUMP_TARGETS[key];
+  return t ? t.label : '';
+}
+
+function cdJumpFlash(node) {
+  try {
+    if (!node) return;
+    node.classList.remove('cds-hl');
+    void node.offsetWidth;          // 强制回流，否则连点两次不会再播动画
+    node.classList.add('cds-hl');
+    setTimeout(function () { try { node.classList.remove('cds-hl'); } catch (e) {} }, 4000);
+  } catch (e) {}
+}
+
+/** 跳到某个界面位置。key 必须在 CD_JUMP_TARGETS 里。返回 Promise<boolean>。 */
+async function cdJumpTo(key) {
+  var t = CD_JUMP_TARGETS[key];
+  if (!t) { try { if (typeof cdAddLog === 'function') cdAddLog('warn', '[跳转] 未知目标 ' + key); } catch (e) {} return false; }
+
+  /* 小助手是一层页面，盖在上面看不见目标 —— 先退出来（退到手机页，不关整个面板） */
+  try {
+    if (document.getElementById('asstBody') && typeof liweAssistBack === 'function') liweAssistBack();
+  } catch (e) {}
+
+  /* 面板本身没开就先开 */
+  try {
+    if (!document.getElementById(MODAL_ID)) { if (typeof cdOpenPanel === 'function') await cdOpenPanel(); }
+  } catch (e) {}
+
+  if (t.t === 'view') {
+    window._cdJumpSilent = true;
+    try { await cdSwitchView(t.view); } catch (e) {}
+    window._cdJumpSilent = false;
+    return true;
+  }
+
+  /* ---- 设置：打开面板 → 展开折叠项 → 滚动 → 高亮 ---- */
+  try {
+    $('#cd-body').hide();
+    await cdRenderSettings();
+    $('#cd-settings-panel').show();
+    try {
+      window._cdViewStack = window._cdViewStack || [];
+      if (window._cdViewStack[window._cdViewStack.length - 1] !== '__settings') window._cdViewStack.push('__settings');
+    } catch (e) {}
+    try { cdSyncCrumb('__settings'); } catch (e) {}
+  } catch (e) { return false; }
+
+  /* 等一帧，让 html 写进 DOM 并完成布局，否则 scrollIntoView 落点会偏 */
+  await new Promise(function (r) { setTimeout(r, 60); });
+
+  var panel = document.getElementById('cd-settings-panel');
+  if (!panel) return false;
+
+  var detailNode = null;
+  if (t.detail) {
+    detailNode = panel.querySelector('[data-cds="' + t.detail + '"]');
+    if (detailNode) { try { detailNode.setAttribute('open', ''); } catch (e) {} }
+  }
+  var cardNode = panel.querySelector('[data-cds="' + t.card + '"]');
+  var target = detailNode || cardNode || panel;
+
+  try { target.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+  catch (e) { try { target.scrollIntoView(); } catch (e2) {} }
+
+  /* 有折叠项时两块都闪：先让眼睛看到卡片，再看到具体那一行 */
+  if (cardNode) cdJumpFlash(cardNode);
+  if (detailNode && detailNode !== cardNode) setTimeout(function () { cdJumpFlash(detailNode); }, 260);
+  return true;
+}
+
+try { window.cdJumpTo = cdJumpTo; window.CD_JUMP_TARGETS = CD_JUMP_TARGETS; } catch (e) {}
+try { window.cdEmptyGuide = cdEmptyGuide; } catch (e) {}
+
+/* ============================== 空状态引导（FIX29f） ==============================
+   ★ 为什么要有：
+     「暂无剧情档案」对一个老手是正常信息，对新手是「插件坏了」。
+     空状态必须回答三件事：这里是什么 / 为什么是空的 / 点哪里能产生第一条。
+   ★ 按钮走 data-jump + CD_JUMP_TARGETS，点了直接落到对应设置卡片，
+     所以「看到空 → 知道该开哪个开关 → 一步跳过去」是闭环。
+   ★ 委托只绑一次（window._cdEmptyActBound 守卫）。不要在这里再写第二处委托，
+     同一元素多个不同选择器各写一遍 .off().on() 会互相残杀（铁律 5）。
+   ============================================================================ */
+function cdEmptyGuide(o) {
+  o = o || {};
+  var esc = (typeof escapeHtml === 'function') ? escapeHtml : function (x) { return String(x == null ? '' : x); };
+  var steps = '';
+  var arr = o.steps || [];
+  for (var i = 0; i < arr.length; i++) {
+    steps += '<div class="cd-eg-step"><span class="cd-eg-n">' + (i + 1) + '</span>'
+      + '<span class="cd-eg-t">' + esc(arr[i]) + '</span></div>';
+  }
+  var acts = '';
+  var aa = o.actions || [];
+  for (var j = 0; j < aa.length; j++) {
+    acts += '<button type="button" class="cd-btn-secondary cd-empty-act" data-jump="'
+      + esc(aa[j].jump || '') + '">' + esc(aa[j].text || '') + '</button>';
+  }
+  return '<div class="cd-empty cd-empty-guide">'
+    + '<i class="' + (o.icon || 'fa-regular fa-circle-info') + '"></i>'
+    + '<p>' + esc(o.title || '') + '</p>'
+    + (o.desc ? '<p class="cd-empty-sub">' + esc(o.desc) + '</p>' : '')
+    + (steps ? '<div class="cd-eg-steps">' + steps + '</div>' : '')
+    + (acts ? '<div class="cd-eg-acts">' + acts + '</div>' : '')
+    + '</div>';
+}
+
+/* 样式只注入一次。用独立的 <style>，不去动设置面板那一块（它们是不同的选择器域） */
+(function cdEmptyGuideStyle() {
+  try {
+    if (document.getElementById('cd-eg-style')) return;
+    var st = document.createElement('style');
+    st.id = 'cd-eg-style';
+    st.textContent =
+      '#cd-content .cd-empty-guide{padding:22px 18px;text-align:center;}'
+      + '#cd-content .cd-empty-guide>i{font-size:26px;opacity:.35;margin-bottom:8px;display:block;}'
+      + '#cd-content .cd-eg-steps{max-width:340px;margin:12px auto 0;text-align:left;}'
+      + '#cd-content .cd-eg-step{display:flex;gap:8px;align-items:flex-start;margin:5px 0;'
+        + 'font-size:calc(0.62rem * var(--cd-fs, 1));line-height:1.6;opacity:.85;}'
+      + '#cd-content .cd-eg-n{flex:0 0 auto;width:16px;height:16px;border-radius:50%;'
+        + 'display:inline-flex;align-items:center;justify-content:center;font-size:10px;'
+        + 'background:rgba(201,168,124,.22);color:#8a6a3a;margin-top:1px;}'
+      + '#cd-content .cd-eg-acts{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:14px;}'
+      + '#cd-content .cd-eg-acts .cd-btn-secondary{font-size:calc(0.62rem * var(--cd-fs, 1));min-width:auto;}'
+      /* 深色主题：文字反相，圆点提亮 */
+      + '#cd-modal-root.cd-night #cd-content .cd-eg-n{background:rgba(232,199,122,.2);color:#e0c48f;}'
+      + '#cd-modal-root.cd-night #cd-content .cd-eg-step{opacity:.92;}';
+    (document.head || document.documentElement).appendChild(st);
+  } catch (e) {}
+})();
+
+/* 空状态里的「去开启」按钮 —— 全文档只绑一次 */
+(function cdEmptyGuideBind() {
+  try {
+    if (window._cdEmptyActBound) return;
+    window._cdEmptyActBound = 1;
+    $(document).on('click.cdempty', '.cd-empty-act', function (e) {
+      if (e && e.preventDefault) e.preventDefault();
+      var k = $(this).attr('data-jump');
+      if (k && typeof cdJumpTo === 'function') { try { cdJumpTo(k); } catch (err) {} }
+    });
+  } catch (e) {}
+})();
+
 
 function cdToggleFullscreen() {
   const root = document.getElementById(MODAL_ID);
@@ -12169,7 +12544,17 @@ async function cdRenderGraph() {
           ${renderRoleField('备注', row['备注'] || row['其他'])}
         </div>
       </div>`;
-  }).join('') : '<div class="cd-empty"><p>暂无角色状态</p><p class="cd-empty-sub">写日记时 AI 会记录各角色的状态与好感</p></div>';
+  }).join('') : cdEmptyGuide({
+    icon: 'fa-regular fa-id-card',
+    title: '暂无角色状态',
+    desc: '这里列出每个角色当前的身体、地址、资产和好感度。',
+    steps: [
+      '「高级 → 剧情档案记录风格」里把「重要状态变化」打开（默认是关的）',
+      '注意：好感度就记在这个字段里，不开就永远看不到数字',
+      '打开后等下一次总结，这里就会有内容'
+    ],
+    actions: [{ text: '去开「重要状态变化」', jump: 'arcstyle' }]
+  });
 
   $('#cd-content').html(
     protCard +
@@ -12275,7 +12660,21 @@ async function cdRenderArchive() {
   let undoHtml = '';
   
   if (empty) {
-    $('#cd-content').html(customHtml + undoHtml + `<div class="cd-empty"><i class="fa-solid fa-box-archive"></i><p>暂无剧情档案</p><p class="cd-empty-sub">写日记时将自动生成，AI 会为每条事件标注时间</p></div>`);
+    /* ★ FIX29f：空档案对老手是信息，对新手是「坏了」。给出「为什么空 + 点哪能长出第一条」 */
+    $('#cd-content').html(customHtml + undoHtml + cdEmptyGuide({
+      icon: 'fa-solid fa-box-archive',
+      title: '暂无剧情档案',
+      desc: '这里按时间顺序记录「谁在哪做了什么」，并注入给 AI 当事实依据。',
+      steps: [
+        '「生成内容」里确认「剧情档案」是开着的（默认开）',
+        '「运行参数」里确认「自动总结」是开着的',
+        '回聊天继续对话，每 6~10 层自动总结一次；想马上看效果就点悬浮球 →「立即总结」'
+      ],
+      actions: [
+        { text: '去开「生成内容」', jump: 'generate' },
+        { text: '去开「自动总结」', jump: 'runtime' }
+      ]
+    }));
     return;
   }
 
@@ -14484,7 +14883,25 @@ async function cdRenderSettings() {
       '#cd-settings-panel .cds-action{display:flex;justify-content:flex-end;padding-top:6px;}' +
       '#cd-settings-panel .cds-tog{background:rgba(255,255,255,.35);border:1px solid rgba(190,160,110,.35);color:inherit;border-radius:10px;padding:5px 12px;font-size:12px;cursor:pointer;opacity:.65;transition:opacity .2s,background .2s,color .2s;}' +
       '#cd-modal-root.cd-night #cd-settings-panel .cds-tog{background:rgba(255,255,255,.06);}' +
-      '#cd-settings-panel .cds-tog:hover{opacity:.9;}';
+      '#cd-settings-panel .cds-tog:hover{opacity:.9;}' +
+      /* ★ FIX29：跳转落点高亮。金圈闪 3 下，让用户一眼看到「就是这里」 */
+      '#cd-settings-panel .cds-hl{animation:cdsHl 1.1s ease 3;}' +
+      '@keyframes cdsHl{0%,100%{box-shadow:0 2px 8px rgba(120,90,50,.05);}50%{box-shadow:0 0 0 2px rgba(201,168,124,.95),0 6px 20px rgba(201,168,124,.35);}}' +
+      '#cd-modal-root.cd-night #cd-settings-panel .cds-hl{animation:cdsHlN 1.1s ease 3;}' +
+      '@keyframes cdsHlN{0%,100%{box-shadow:none;}50%{box-shadow:0 0 0 2px rgba(232,199,122,.9),0 6px 20px rgba(232,199,122,.25);}}' +
+      /* ★ FIX29e：设置项「?」与就地说明。手机没有 hover，所以一律点击展开，不用 title 悬浮 */
+      '#cd-settings-panel .cds-q{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;'
+        + 'margin-left:5px;border-radius:50%;border:1px solid rgba(190,160,110,.75);color:#8a6a3a;font-size:10px;'
+        + 'line-height:1;cursor:pointer;vertical-align:middle;opacity:.8;user-select:none;}' +
+      '#cd-settings-panel .cds-q:hover{opacity:1;background:rgba(201,168,124,.18);}' +
+      '#cd-modal-root.cd-night #cd-settings-panel .cds-q{border-color:rgba(232,199,122,.6);color:#e0c48f;}' +
+      '#cd-modal-root.cd-night #cd-settings-panel .cds-q:hover{background:rgba(232,199,122,.15);}' +
+      '#cd-settings-panel .cds-help{margin:2px 0 8px;padding:7px 10px;border-left:2px solid rgba(201,168,124,.8);'
+        + 'border-radius:0 8px 8px 0;background:rgba(201,168,124,.09);font-size:10.5px;line-height:1.65;'
+        + 'color:#7a6142;white-space:normal;}' +
+      '#cd-modal-root.cd-night #cd-settings-panel .cds-help{background:rgba(232,199,122,.08);color:#d9c6a2;}' +
+      '#cd-settings-panel .cds-help-l{margin:0;}' +
+      '#cd-settings-panel .cds-help-l + .cds-help-l{margin-top:3px;}';
     (document.head || document.documentElement).appendChild(st);
   })();
   var _selGold = 'style="background:linear-gradient(135deg,#d8c39a,#c9a87c);color:#fff;border-color:#c9a87c;font-weight:600"';
@@ -14532,14 +14949,14 @@ async function cdRenderSettings() {
   panel.html(`
 <h2 class="cd-settings-h2"><i class="fa-regular fa-gear"></i> 设置</h2>
 
-    <div class="cds-card">
+    <div class="cds-card" data-cds="update">
       <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-arrows-rotate"></i></span><span><span class="cds-gtitle">检查更新</span><span class="cds-gsub">一键检测新版本</span></span></div>
       <div class="cds-row"><span class="cds-lab">当前版本</span><span class="cds-ctrl"><span class="cds-val" id="cd-upd-local">v${PLUGIN_VERSION}</span></span></div>
       <div class="cds-row"><span class="cds-lab">最新版本</span><span class="cds-ctrl"><span class="cds-val" id="cd-upd-remote" style="min-width:58px;">-</span></span></div>
       <div class="cds-row" style="justify-content:flex-start;gap:8px;"><button class="cd-btn-secondary" id="cd-btn-check-update"><i class="fa-solid fa-magnifying-glass" style="margin-right:5px;"></i>检查更新</button><button class="cd-btn-secondary" id="cd-btn-download-update" style="display:none;color:#c84632;border-color:#e0b8ae;background:#fdf0ec;"><i class="fa-solid fa-download" style="margin-right:5px;"></i>下载更新</button></div>
       <div class="cds-hint" id="cd-upd-status" style="white-space:normal;line-height:1.6;margin-top:4px;"></div>
     </div>
-    <div class="cds-card">
+    <div class="cds-card" data-cds="basic">
       <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-power-off"></i></span><span><span class="cds-gtitle">基本 · 总控</span><span class="cds-gsub">插件总开关与悬浮球</span></span></div>
       <div class="cds-row"><span class="cds-lab">角色图 <span class="cds-hint">悬浮球 / 引导页 / 空状态</span></span><span class="cds-ctrl"><select id="cd-s-charimg" class="cd-input" style="width:auto;min-width:120px;text-align:left;">${cdCharOptions(s.charImage || 'levi-mochizuki')}</select></span></div>
 <div class="cds-row"><span class="cds-lab">不显示角色图 <span class="cds-hint">只留纯文字界面</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-charoff" ${s.charImageOff ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
@@ -14572,7 +14989,7 @@ async function cdRenderSettings() {
       <div class="cds-row"><span class="cds-lab">新手引导</span><span class="cds-ctrl"><button class="cd-btn-secondary" id="cd-btn-reset-onboarding" style="padding:3px 12px;font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;">重新显示</button></span></div>
     </div>
 
-    <div class="cds-card">
+    <div class="cds-card" data-cds="quota">
       <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-shield-halved"></i></span><span><span class="cds-gtitle">额度与提示词</span><span class="cds-gsub">不浪费额度 / 不乱发预设 / 看得见结果</span></span></div>
       <div class="cds-row"><span class="cds-lab">允许降级到酒馆通道 <span class="cds-hint">关=直连失败就报错，绝不偷用主模型</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-allowfb" ${s.allowTavernFallback ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
       <div class="cds-hint" style="white-space:normal;line-height:1.6;margin:2px 0 6px;">关掉后：直连接口没填地址或请求失败（含 CORS）时，插件<b>直接报错</b>，不会静默改走酒馆当前连接（那会消耗你主模型的额度）。想保留旧行为就打开它。</div>
@@ -14582,7 +14999,7 @@ async function cdRenderSettings() {
       <div class="cds-hint" style="white-space:normal;line-height:1.6;margin:2px 0 6px;">成功后 5 秒自动消失（也能自己关）；失败或 AI 返回空时<b>常驻</b>，带「重试」「看日志」两个按钮。</div>
     </div>
 
-    <div class="cds-card">
+    <div class="cds-card" data-cds="runtime">
       <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-sliders"></i></span><span><span class="cds-gtitle">运行参数</span><span class="cds-gsub">自动处理的频率与稳定性</span></span></div>
       <div class="cds-row"><span class="cds-lab">自动总结 <span class="cds-hint">关=只手动触发</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-autosummary" ${s.autoSummary !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
       <div class="cds-hint" style="white-space:normal;line-height:1.6;margin:2px 0 6px;">关掉后不再自动跑总结（NSFW 场景常用）。首页<b>工具</b>那排第一个就是它的一键开关，点一下就能暂停/恢复。</div>
@@ -14594,7 +15011,7 @@ async function cdRenderSettings() {
       <div class="cds-row"><span class="cds-lab">自动重试 <span class="cds-hint">失败重试</span></span><span class="cds-ctrl"><input type="number" id="cd-s-retry" value="${s.retryTimes !== undefined ? s.retryTimes : 3}" min="0" max="10" class="cd-input" style="width:46px;"><span class="cds-hint">次</span><input type="number" id="cd-s-retrydelay" value="${s.retryDelay !== undefined ? s.retryDelay : 2}" min="0" max="30" step="1" class="cd-input" style="width:46px;"><span class="cds-hint">秒</span></span></div>
     </div>
 
-    <div class="cds-card">
+    <div class="cds-card" data-cds="generate">
       <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-feather"></i></span><span><span class="cds-gtitle">生成内容</span><span class="cds-gsub">AI 会自动产出哪些</span></span></div>
       <div class="cds-row"><span class="cds-lab"><i class="fa-regular fa-book"></i> 角色日记</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-diary" ${s.enableDiary !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
       <details class="cds-collapse"><summary><i class="fa-regular fa-rectangle-list"></i> 日记版本</summary>
@@ -14608,7 +15025,7 @@ async function cdRenderSettings() {
       <div class="cds-row"><span class="cds-lab"><i class="fa-regular fa-book-bookmark"></i> 世界书联动</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-worldbook" ${s.worldbookLink !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
     </div>
 
-    <div class="cds-card">
+    <div class="cds-card" data-cds="inject">
       <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-arrow-up-right-dots"></i></span><span><span class="cds-gtitle">注入 AI 上下文</span><span class="cds-gsub">发送给模型的内容</span></span></div>
       <div class="cds-row"><span class="cds-lab">角色日记</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-inject-diary" ${s.injectDiary !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
       <details class="cds-collapse"><summary>角色日记记忆（按登场人物抽取）</summary>
@@ -14637,17 +15054,17 @@ async function cdRenderSettings() {
       </details>
     </div>
 
-    <div class="cds-card">
+    <div class="cds-card" data-cds="advanced">
       <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-gear"></i></span><span><span class="cds-gtitle">高级</span><span class="cds-gsub">内容过滤 / 自动整理 / API</span></span></div>
 
-      <details class="cds-collapse" open><summary><i class="fa-regular fa-filter"></i> 内容过滤</summary>
+      <details class="cds-collapse" open data-cds="filter"><summary><i class="fa-regular fa-filter"></i> 内容过滤</summary>
         <div>
           <div id="cd-filter-tags-container">${_filterRows}</div>
           <button class="cd-btn-secondary" id="cd-filter-add" style="margin-top:4px;font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;">+ 添加一组</button>
         </div>
       </details>
 
-      <details class="cds-collapse" open><summary><i class="fa-regular fa-brain"></i> AI 返回过滤（思维链）</summary>
+      <details class="cds-collapse" open data-cds="aifilter"><summary><i class="fa-regular fa-brain"></i> AI 返回过滤（思维链）</summary>
         <div>
           <div class="cds-row"><span class="cds-lab">过滤 AI 返回的思维链 <span class="cds-hint">DeepSeek 的 &lt;think&gt; 等</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-aifilter" ${s.aiFilterEnabled !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
           <div style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;line-height:1.55;margin:2px 0 6px;">推理模型会把思考过程用标签包起来返回。不剥掉的话，这些推理文字会被当成正文收进角色日记和剧情档案。<br>默认已内置 <code>&lt;think&gt;</code>、<code>&lt;reasoning&gt;</code>、<code>&lt;analysis&gt;</code> 等常见标签，可自行增删。清空全部标签则不启用过滤。</div>
@@ -14659,7 +15076,7 @@ async function cdRenderSettings() {
         </div>
       </details>
 
-      <details class="cds-collapse"><summary><i class="fa-regular fa-scroll"></i> 剧情档案记录风格</summary>
+      <details class="cds-collapse" data-cds="archive-style"><summary><i class="fa-regular fa-scroll"></i> 剧情档案记录风格</summary>
         <div>
           <div class="cds-row"><span class="cds-lab">记录风格</span><span class="cds-ctrl"><select id="cd-s-archive-style" class="cd-input" style="max-width:280px;"><option value="dialogue" ${s.archiveStyle !== 'plain' ? 'selected' : ''}>对话版（保留关键对话原话）</option><option value="plain" ${s.archiveStyle === 'plain' ? 'selected' : ''}>常规版（只总结事实经过）</option></select></span></div>
           <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;margin:4px 0 0;line-height:1.5;">「对话版」是原有行为：每条事件要求带 1~2 句关键台词原文，档案更详实但更长。「常规版」只记事实经过（谁 + 做了什么 + 结果），禁止引用任何对话原文，档案明显更短、更省 token。<b>只影响剧情档案</b>，角色日记保持不变。切换后下次总结生效。</p>
@@ -14673,14 +15090,14 @@ async function cdRenderSettings() {
         </div>
       </details>
 
-      <details class="cds-collapse"><summary><i class="fa-regular fa-database"></i> 自动总结数据源</summary>
+      <details class="cds-collapse" data-cds="sumsrc"><summary><i class="fa-regular fa-database"></i> 自动总结数据源</summary>
         <div>
           <div class="cds-row"><span class="cds-lab">自动总结数据源</span><span class="cds-ctrl"><select id="cd-s-summary-source" class="cd-input" style="max-width:260px;"><option value="chat" ${s.summarySource !== 'jsonl' ? 'selected' : ''}>现有方式（用聊天数组）</option><option value="jsonl" ${s.summarySource === 'jsonl' ? 'selected' : ''}>jsonl 全量楼层（根治分片）</option></select></span></div>
           <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;margin:4px 0 0;line-height:1.5;">「现有方式」用酒馆聊天数组，可能受分片加载影响（只加载最近楼层）。「jsonl 全量楼层」直接从存档 jsonl 读全部楼层，彻底根治分片导致的自动总结死锁。切换后重启酒馆生效。</p>
         </div>
       </details>
 
-      <details class="cds-collapse"><summary><i class="fa-regular fa-eye-slash"></i> 自动隐藏楼层</summary>
+      <details class="cds-collapse" data-cds="hidefloor"><summary><i class="fa-regular fa-eye-slash"></i> 自动隐藏楼层</summary>
         <div>
           <div class="cds-row"><span class="cds-lab">总结/补写后自动隐藏旧楼层</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-autohide" ${s.autoHideEnabled ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
           <div class="cds-row"><span class="cds-lab">保留最新楼层数(含用户)</span><span class="cds-ctrl"><input type="number" id="cd-s-autohide-keep" value="${s.autoHideKeep || 5}" min="1" max="100" class="cd-input"></span></div>
@@ -14694,7 +15111,7 @@ async function cdRenderSettings() {
         </div>
       </details>
 
-      <details class="cds-collapse"><summary><i class="fa-regular fa-compress"></i> 自动压缩剧情档案</summary>
+      <details class="cds-collapse" data-cds="compress"><summary><i class="fa-regular fa-compress"></i> 自动压缩剧情档案</summary>
         <div>
           <div class="cds-row"><span class="cds-lab">超阈值时自动压缩</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-autocompress" ${s.autoCompress ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
           <div class="cds-row"><span class="cds-lab">触发方式</span><span class="cds-ctrl">
@@ -14707,7 +15124,7 @@ async function cdRenderSettings() {
         </div>
       </details>
 
-      <details class="cds-collapse"><summary><i class="fa-regular fa-server"></i> API 来源</summary>
+      <details class="cds-collapse" data-cds="api"><summary><i class="fa-regular fa-server"></i> API 来源</summary>
         <div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px;">
             <button class="cds-tog cd-s-src-btn" data-source="tavern" ${_srcT}>当前酒馆</button>
@@ -14729,6 +15146,9 @@ async function cdRenderSettings() {
 
     <div class="cds-action"><button class="cd-btn-primary" id="cd-btn-save-settings">应用设置</button><button class="cd-btn-secondary" id="cd-btn-revert-settings" style="margin-left:8px">放弃更改</button></div>
   `);
+  /* ★ FIX29e：面板是整体 innerHTML 重建的，所以每次渲染后都要重新挂「?」
+     （旧节点连同监听一起被丢弃，不会重复绑定） */
+  try { cdApplySettingHelp(document.getElementById('cd-settings-panel')); } catch (_eQ) {}
 
   // ★ FIX10：即时生效项原先被误放在「浏览视图空态分支」，正常路径根本绑不上
   //   →「卡片封面」「面板主题」成了死开关。挪到这里（设置面板渲染之后）才每次都绑得住。
@@ -27790,69 +28210,131 @@ function _cgOpenMembers() {
   var LIWE_ASSIST_DEFAULT_KB = [
     '你是「LIWE 助手」——角色日记插件的客服、排障员、记忆管理员。',
     '跟你说话的多半是新手：看不懂术语、不知道按钮在哪、出问题会慌。',
+    '你要做到「一步到位」：他问一句，你就把该做的全给完，别让他再追问一轮。',
     '',
-    '【三条工作方式（最重要）】',
-    '1. 先给结论，再给步骤。步骤要具体到「打开哪个页、点哪个按钮、填什么」，禁止只说「去设置里改一下」。',
-    '2. 能替他改的直接改。改完说清「已改成什么」+「在哪个页面能改回来」。只有删数据、覆盖大段档案才要他点确认。',
+    '【五条工作方式（最重要）】',
+    '1. 先给结论，再给步骤。步骤具体到「打开哪个页面、点哪个按钮、看到什么算成功」，禁止只说「去设置里改一下」。',
+    '2. 能替他改的直接改。改完说清「改成了什么」+「在哪个页面能改回来」。只有删数据、覆盖大段档案才要他点确认。',
     '3. 信息不够时一次问完（最多 2 个问题），不要一句问一个。',
+    '4. ★需要他自己去某个界面操作时，在句末加跳转标记（形如 [[go:api]]），界面上会变成可点按钮。',
+    '   例：「填好点「测试连接」，通过就算配完。[[go:api]]」',
+    '   一次最多给 2 个标记。不确定 key 就只写文字路径，绝对不要瞎编 key。',
+    '5. 别一次抛一堆概念。他问什么答什么，答完告诉他下一步做什么。',
     '',
     '【这个插件是干什么的】',
     '把聊天记录交给 AI，自动整理成两类记忆，再注入回对话，让 AI 记住剧情、不忘事。',
     '- 角色日记：每个角色第一人称的内心日记（情绪、秘密、对主角的态度）。',
-    '- 剧情档案：第三人称的事件流水（主线事件、当前状态、关系、未解决伏笔）。',
-    '总结是「AI 另开一次请求」做的，所以必须配好模型，跟你聊天用的模型是同一套 API 配置。',
+    '- 剧情档案：第三人称的事件流水（主线经过、当前状态、未解决伏笔）。',
+    '总结是「AI 另开一次请求」做的 —— 所以必须配好模型；它跟你聊天用的是同一套 API 配置。',
     '',
     '【新手第一次用，三步】',
-    '第1步 配模型：设置 → API 配置 → 填 地址 / 密钥 / 模型名 → 点「测试连接」。测试通过才算配好。',
-    '第2步 开功能：设置 → 打开「启用角色日记」「启用剧情档案」「自动总结」。',
+    '第1步 配模型：设置 → 滑到最下面「高级」→ 展开「API 来源」→ 选来源 → 填 地址 / 密钥 / 模型名 → 点「测试连接」。[[go:api]]',
+    '       也可以用「当前酒馆」直接走酒馆自己的连接，那样这三项都不用填。',
+    '第2步 开功能：设置 →「生成内容」打开「角色日记」「剧情档案」；设置 →「运行参数」打开「自动总结」。[[go:generate]]',
     '第3步 正常聊：聊 6~10 层会自动总结一次；想立刻总结就点悬浮球 →「立即总结」。',
+    '三步走完就能用了，其它设置一律不用动。',
     '',
-    '【设置地图（新手最常找不到的）】',
-    '- 地址/密钥/模型/温度 → 设置 →「API 配置」',
-    '- 总开关、自动总结、总结间隔、楼层窗口 → 设置 →「基础」',
-    '- 角色日记 / 剧情档案 / 关系 三个功能开关 → 设置 →「功能开关」',
-    '- 注入回对话（让 AI 记住）→ 设置 →「注入」',
-    '- 档案记哪些字段（支线/状态/未解决/任务/总览/章回）→ 设置 →「剧情档案记录风格」',
-    '- 楼层自动隐藏、自动压缩 → 设置 →「自动隐藏楼层」「自动压缩」',
-    '- 日志、诊断报告、检查更新 → 设置最下面「工具 / 关于」',
+    '【界面结构（找东西先看这个）】',
+    '主界面（首页）是六格卡片：总结开关 / 日记 / 内容管理 / 剧情档案 / 状态 / 存档。',
+    '- 日记：所有角色的日记列表，长文阅读。',
+    '- 剧情档案：主线时间线 + 当前状态。',
+    '- 内容管理：批量编辑、删除日记和档案条目（不是楼层）。',
+    '- 存档：手动存一份快照，怕数据丢就在这里存。',
+    '- 悬浮球：浮在聊天上的小圆球，点开是快捷菜单（立即总结等）。',
+    '顶部「…」=「全部功能」，里面有：日志、帮助、更新日志、数据管理、注入预览、时间线、手机、论坛。',
     '',
-    '【常见故障 → 怎么查】',
-    '1. 点了总结没反应：先确认总开关和「自动总结」有没有开；再看日志面板有没有 error；也可以直接用 get_status 工具查。',
-    '2. 总结出来是空的、只剩标题：多半是模型太弱或输出被截断。换强一点的模型，或把「楼层窗口」调小。若档案字段全关，只输出主线是正常的。',
-    '3. AI 记不住前面的事：「注入剧情档案」「注入角色日记」没开；或注入内容被长上下文挤掉，把注入位置改成「末尾」、深度 1~2。',
-    '4. 同一段被记了两条：v2.18.6 之前的并发 bug，已修复。还出现就让他复制设置里「诊断报告」。',
-    '5. 档案越来越长、token 爆炸：开「自动压缩」，或让他把 剧情总览/章回标题/任务记录 这些附加字段关掉。',
-    '6. 手机上不总结：手机端和电脑端共用同一份设置和 API 配置，先确认手机能联网、以及设置是在同一份存档里改的。',
-    '7. 数据会不会丢：存在聊天记录的 chatMetadata 里，跟着聊天走。换设备只要同步了聊天就同步了。建议定期在「存档」里存一份。',
-    '8. 怎么更新：设置 → 关于 →「检查更新」→「下载更新」。',
+    '【设置面板完整地图（7 张卡片，从上到下）】',
+    '★新手找不到东西，九成是因为「设置」是一张长页面，要往下滑，不是分页签。',
+    '1. 检查更新 —— 当前版本 / 最新版本 / 检查更新 / 下载更新。',
+    '2. 基本 · 总控 —— 角色图、不显示角色图、卡片封面、面板主题、界面字号、主开关、',
+    '   快捷入口（悬浮球）、小红点通知、论坛直达、回复结束提示音、回复后回到开头、新手引导。',
+    '3. 额度与提示词 —— 允许降级到酒馆通道、严格裸提示、顶部小通知条。',
+    '4. 运行参数 —— 自动总结、处理频率、总结延迟、记忆锚点偏移、临时角色转正、生成温度、自动重试。',
+    '5. 生成内容 —— 角色日记、日记版本（复杂版/精简版）、剧情档案、世界书联动。',
+    '6. 注入 AI 上下文 —— 注入角色日记、按登场人物注入（每人近期篇数 / 登场判定窗口）、',
+    '   注入剧情档案、注入策略（位置 / 角色 / 深度）、总结时注入历史。',
+    '7. 高级 —— 内容过滤、AI 返回过滤（思维链）、剧情档案记录风格、自动总结数据源、',
+    '   自动隐藏楼层、自动压缩剧情档案、API 来源。',
+    '※「API 来源」在最后这张「高级」卡里，不在前面几张。这是新手最容易找错的一处。',
+    '※「剧情档案记录风格」也在「高级」里，点开才是那六个字段开关。',
+    '',
+    '【常见故障 → 怎么查（按顺序，不要跳步）】',
+    '1. 点了总结没反应：①「生成内容」确认角色日记/剧情档案开着 → ②「运行参数」确认「自动总结」开着',
+    '   → ③「高级 → API 来源」点「测试连接」→ ④看日志面板有没有红色 error。[[go:generate]][[go:log]]',
+    '2. 总结出来是空的、只剩标题：①模型太弱（小模型常只回一句「已总结」）换强一点的；',
+    '   ②「运行参数 → 生成温度」降到 0.3~0.5；③字段开关全关时只输出主线，这是正常的。[[go:runtime]]',
+    '3. AI 记不住前面的事：「注入 AI 上下文」里「注入角色日记」「注入剧情档案」要开着；',
+    '   注入位置选「对话末尾」，层内深度 1~2。[[go:injsetting]]',
+    '4. 同一段被记了两条 / 系统消息出现两份：v2.18.6 之前的并发 bug，已修。',
+    '   还出现就去日志面板点「复制诊断报告」发给管理员。[[go:log]]',
+    '5. 档案越写越长、token 爆炸：①「高级 → 自动压缩剧情档案」打开；',
+    '   ②「高级 → 剧情档案记录风格」把 支线 / 重要状态变化 / 未解决事项 / 任务记录 / 剧情总览 / 章回标题 关掉，只留主线。[[go:arcstyle]]',
+    '6. 剧情档案顶部不再显示「第X回」和概述：因为「剧情总览」「章回标题」默认关了（v2.18.7 起为省 token 默认关），',
+    '   要回来就在「高级 → 剧情档案记录风格」里打开。[[go:arcstyle]]',
+    '7. 手机上不总结 / 手机上没数据：手机端和电脑端共用同一份设置与 API 配置，手机要能联网；',
+    '   不同聊天之间的记忆是分开的（数据跟着聊天走），这点不算故障。',
+    '8. 数据会不会丢：存在聊天的 chatMetadata 里，跟着聊天走，同步聊天就同步记忆。',
+    '   建议在「存档」里定期存一份快照。[[go:savepage]]',
+    '9. 怎么更新：设置最上面「检查更新」→ 点「检查更新」→ 有新版才出现「下载更新」。[[go:update]]',
+    '10. 人物关系不显示：这个功能已停用，界面里是隐藏的，不是坏了。',
+    '11. 注入的内容会不会污染剧情：它是一条系统消息，只在发给 AI 时存在，不会写进你的正文。',
+    '    嫌碍事就在「注入 AI 上下文」里把注入关掉。[[go:injsetting]]',
+    '12. 只想它能用：照【新手第一次用，三步】走一遍，其它设置全不用动。',
     '',
     '【名词表】',
-    '- 注入：把记忆拼成一段文字，塞进发给 AI 的上下文里。',
+    '- 注入：把记忆拼成一段文字，塞进发给 AI 的上下文里，让 AI「想起来」。',
     '- 向量库：用语义相似度只捞相关的几条记忆，比全文注入省 token，但要先建库。',
     '- 楼层窗口：每次总结喂给 AI 的最近对话条数。',
     '- warm / cold：warm=这次能看到上一轮状态，只写变化的维度；cold=看不到，必须全量写。',
+    '- 主线 / 支线：主线是推动故事的核心经过，支线是旁枝（配角动向、伏笔）。',
+    '',
+    '【跳转标记表（只能用下面这些 key，写错不会报错但按钮不显示）】',
+    '设置页：update=检查更新 basic=基本·总控 quota=额度与提示词 runtime=运行参数 generate=生成内容',
+    'injsetting=注入AI上下文 api=高级·API来源 arcstyle=高级·剧情档案记录风格 filter=高级·内容过滤',
+    'aifilter=高级·AI返回过滤 compress=高级·自动压缩 sumsrc=高级·自动总结数据源 hidefloor=高级·自动隐藏楼层',
+    '功能页：home=主界面 diary=角色日记 archive=剧情档案 log=日志 studio=内容管理 timeline=时间线',
+    'savepage=存档 injpage=注入预览 phonepage=手机 helppage=帮助 manage=数据管理',
     '',
     '【工具调用】需要看真实数据时输出一行：[MEM_ACTION:{"action":"...","target":"...","params":{...}}]',
-    '只读工具（前端直接执行，结果回给你，你再据此回答）：',
-    '- get_status：体检。开关状态、档案字数、日记条数、API 是否配好、最近错误。',
+    '只读工具（前端直接执行，结果回给你，你再据此回答，可以连续调 3 轮）：',
+    '- get_status：体检。开关状态、档案字数、日记条数、API 是否配好、最近错误。用户说「帮我查一下」就先调它。',
     '- get_settings：读关键设置的当前值。',
     '- get_logs：最近 error / warn 日志。',
+    '- read_source：读插件自己的源码。params.keyword = 函数名或报错里的标识符；params.context = 前后几行（默认 6）。',
+    '  怀疑是代码问题时先调它，别凭想象改。函数名大多以 cd 开头。',
     '- read：读数据，target = archive | diaries | relations | memo。',
-    '写操作（先给用户看，他点「确认执行」才真正改动）：',
+    '写操作（先给用户看，他点「确认执行」才真正改动；设置类可直接执行并回报）：',
     '- set_setting：改设置。target = 设置键名，params.value = 新值。键名见下面【关键设置键名】。',
     '- replace：档案里替换文字，params.from / params.to。',
     '- dedupe：档案去重、清掉重复行与断裂行。',
     '- rewrite_time：把模糊时间改成具体数字时间。',
     '- update_diary：给某角色追加一条日记，target=角色名，params.entry=内容。',
+    '- self_heal：修档案里的重复行。只删一字不差的重复，不动其它内容，改完会报删了几行。',
     '注意：clear / compress 尚未实现，不要使用。',
     '',
     '【关键设置键名（代改设置时用这些）】',
-    'enabled=插件总开关 / autoSummary=自动总结 / enableDiary=角色日记 / enableArchive=剧情档案 / enableRelation=关系',
-    'injectDiary / injectArchive / injectRelation = 是否注入回对话',
+    'enabled=主开关 / enableDiary=角色日记 / enableArchive=剧情档案 / autoSummarize=自动总结',
+    'summaryInterval=处理频率 / summaryDelay=总结延迟 / floorWindow=楼层窗口',
+    'injectDiary / injectArchive = 注入角色日记 / 注入剧情档案',
+    'diaryCharFilter=按登场人物注入 / diaryCharLimit=每人近期篇数 / diaryCharWindow=登场判定窗口',
+    'injectPosition=after|chat|before / injectRole=0系统 1用户 2助手 / injectDepth=层内深度',
     'summarizeInjectDiary / summarizeInjectArchive = 总结时是否带上旧档案',
     'arcSide=支线 / arcState=重要状态变化 / arcUnresolved=未解决事项 / arcTasks=任务记录 / arcOverview=剧情总览 / arcChapter=章回标题',
     'archiveStyle = dialogue(对话版) | plain(常规版) / archiveMode = append(全文) | vector(向量)',
     'autoHideEnabled=自动隐藏楼层 / autoCompress=自动压缩',
+    '',
+    '【遇到「插件像有 bug」怎么办（能改到什么程度）】',
+    '第0步 先分清：是设置不对，还是真代码问题。八成的「没反应」是开关没开或 API 没配 ——',
+    '        先 get_status 看一眼，不要一上来就怀疑代码。',
+    '第1步 真怀疑代码：read_source 找到那个函数，把真实代码贴出来再判断。禁止凭印象说「这里应该加个判断」。',
+    '第2步 能做的三件事：',
+    '        ① 数据层自愈：self_heal 去重复行 / 修断裂行（这个能持久生效，刷新也在）',
+    '        ② 给补丁建议：写成「改哪个函数 + 改动前 / 改动后」，让他或开发者照着改',
+    '        ③ 给临时验证办法：比如先在控制台跑一句看变量值',
+    '第3步 ★ 必须说清的边界：插件跑在浏览器里，我改的是内存里的代码，写不回磁盘文件，',
+    '        刷新页面就还原。所以不要说「已经帮你改好了」这种话。',
+    '        正确说法：「这是补丁，要更新插件版本才会真正生效。要我把它整理成给开发者的说明吗？」',
+    '第4步 给补丁的格式：用 ```js 代码块，只贴要改的那几行（前后各带 3 行上下文），别贴整个函数。',
     '',
     '【数据结构（改数据时才需要）】',
     'diaries[角色] = [{turn,date,entry,mood,attitude_to_user,secret,key_events,relationship_with_others,message_id}]',
@@ -27879,25 +28361,27 @@ function _cgOpenMembers() {
     {
       k: /(怎么|如何|在哪).{0,6}(配|填|设置).{0,6}(api|模型|密钥|key|地址|端点)|api.{0,6}(在哪|怎么|怎么配)|密钥.{0,4}(在哪|怎么|填)|测试连接|连不上|401|403|超时|请求失败/i,
       a: [
-        '配模型在【设置 → API 配置】，三步：',
+        '配模型在【设置 →「高级」→「API 来源」】，三步：',
         '1. 填「接口地址」：OpenAI 兼容的填 .../v1/chat/completions 这类完整地址；Gemini 填 Google 的地址。',
         '2. 填「密钥」：就是你买 API 时拿到的那一长串 key。',
         '3. 填「模型名」：必须和供应商给的完全一致（大小写、版本号都不能错）。',
         '填完点「测试连接」。显示成功才算配好；失败会告诉你原因（多半是地址少了 /v1 或模型名拼错）。',
         '配好之后总结才会动——因为总结是另开一次请求做的。',
       ].join('\n'),
+      go: ['api'],
       setK: 'api',
     },
     {
       k: /(为什么|怎么).{0,4}(不|没).{0,3}(总结|记|更新)|总结.{0,4}(没|不).{0,3}(反应|动|生效)|点了.{0,4}总结/i,
       a: [
         '按这个顺序查，一般第一或第二步就中：',
-        '1. 【设置 → 功能开关】确认「启用角色日记」「启用剧情档案」是开的。',
-        '2. 【设置 → 基础】确认「自动总结」是开的；没开就手动点悬浮球 →「立即总结」。',
-        '3. 【设置 → API 配置】点「测试连接」，不通就是模型问题，跟插件无关。',
-        '4. 看【设置 → 日志】有没有红色 error，那里会写具体原因。',
+        '1. 【设置 →「生成内容」】确认「角色日记」「剧情档案」是开的。',
+        '2. 【设置 →「运行参数」】确认「自动总结」是开的；没开就手动点悬浮球 →「立即总结」。',
+        '3. 【设置 →「高级」→「API 来源」】点「测试连接」，不通就是模型问题，跟插件无关。',
+        '4. 看【全部功能 → 日志】有没有红色 error，那里会写具体原因。',
         '如果你愿意，我可以直接帮你体检一遍（读开关状态 + 最近错误），说「帮我查一下」就行。',
       ].join('\n'),
+      go: ['generate', 'log'],
     },
     {
       k: /档案.{0,4}(空|没内容|只有|不全)|总结.{0,8}(空|没内容|太少|只有|只剩)|只[出剩].{0,4}标题/i,
@@ -27905,42 +28389,47 @@ function _cgOpenMembers() {
         '三种常见原因：',
         '1. 模型太弱：小模型经常只回一句「已总结」或只给标题。换成能力更强的模型。',
         '2. 输出被截断：楼层窗口太大，把「楼层窗口」调到 6~10 再试。',
-        '3. 字段开关全关：现在默认只输出「主线」，支线/状态这些要在【设置 → 剧情档案记录风格】里打开才有。',
+        '3. 字段开关全关：现在默认只输出「主线」，支线/状态这些要在【设置 →「高级」→「剧情档案记录风格」】里打开才有。',
       ].join('\n'),
+      go: ['arcstyle'],
     },
     {
       k: /记不住|忘了|不记得|上下文|失忆|没注入|注入.{0,4}(没|不)/i,
       a: [
         'AI 靠「注入」记住剧情，检查两个开关：',
-        '1. 【设置 → 注入】把「注入角色日记」「注入剧情档案」打开。',
+        '1. 【设置 →「注入 AI 上下文」】把「注入角色日记」「注入剧情档案」打开。',
         '2. 注入位置选「末尾」，深度 1~2。位置太靠前会被后面的长对话挤掉。',
         '开完继续聊一两句就会生效，不用重启。',
       ].join('\n'),
+      go: ['injsetting'],
     },
     {
       k: /向量|vector|语义检索/i,
       a: [
         '向量库是「只捞相关的几条记忆」的省 token 方案，适合剧情很长（几千层）的时候。',
         '新手阶段建议先不开，用默认的全文注入就够。',
-        '要开的话：设置 →「向量模式」→ 先建库（会花时间），再设检索条数 5、阈值 0.6 左右。',
+        '要开的话：得先把 archiveMode 设成 vector 并建库（会花时间），再设检索条数 5、阈值 0.6 左右。',
+        '这个功能目前没有界面开关，新手完全不用管。',
       ].join('\n'),
     },
     {
       k: /(重复|两份|双份).{0,10}(档案|注入|消息|系统|一样|相同|两)|(档案|注入|消息).{0,6}(重复|两份|两条)|(被)?记了两?次|两条.{0,4}(一样|相同)/i,
       a: [
         '这是 v2.18.6 之前修掉的并发 bug（同一轮被触发两次）。',
-        '先确认插件已更新到 v2.18.6 或更高：设置 → 关于 → 检查更新。',
-        '更新后还出现，就在设置 → 日志面板点「复制诊断报告」，把内容发给我，里面会记录触发间隔和监听数量。',
+        '先确认插件已更新到最新版：设置最上面那张「检查更新」卡 → 点「检查更新」。',
+        '更新后还出现，就在【全部功能 → 日志】面板点「复制诊断报告」，把内容发给我，里面会记录触发间隔和监听数量。',
       ].join('\n'),
+      go: ['log'],
     },
     {
       k: /太长|膨胀|token|占.{0,3}(空间|内存)|压缩/i,
       a: [
         '三个开关能立刻瘦身：',
-        '1. 【设置 → 剧情档案记录风格】把「剧情总览」「章回标题」「任务记录」关掉（默认已关）。',
-        '2. 【设置 → 自动压缩】打开自动压缩，超过阈值自动精简。',
-        '3. 【设置 → 注入】把注入内容限制到最近 N 条。',
+        '1. 【设置 →「高级」→「剧情档案记录风格」】把「剧情总览」「章回标题」「任务记录」关掉（默认已关）。',
+        '2. 【设置 →「高级」→「自动压缩剧情档案」】打开，超过阈值自动精简。',
+        '3. 在【设置 →「注入 AI 上下文」】里减少注入内容。',
       ].join('\n'),
+      go: ['arcstyle', 'compress'],
     },
     {
       k: /数据.{0,4}(丢|备份|在哪|存)|备份|导出|换手机|存档/i,
@@ -27950,14 +28439,16 @@ function _cgOpenMembers() {
         '- 备份：插件「存档」页可以存快照，出问题能回滚。',
         '- 导出：档案页底部有原文编辑框，可以整段复制出来。',
       ].join('\n'),
+      go: ['savepage'],
     },
     {
       k: /更新|新版|升级|检查更新/i,
       a: [
-        '设置 → 关于 → 点「检查更新」。',
+        '设置最上面那张「检查更新」卡 → 点「检查更新」。',
         '发现新版本会多出一个「下载更新」按钮，点它才会真正拉取安装。',
         '装完要重启酒馆（刷新页面）才生效。',
       ].join('\n'),
+      go: ['update'],
     },
     {
       k: /(剧情档案|档案).{0,4}(是什么|干什么|有什么用)|角色日记.{0,4}(是|和).{0,4}区别/i,
@@ -27972,11 +28463,12 @@ function _cgOpenMembers() {
       k: /新手指南|怎么用|第一次|入门|教程|上手/i,
       a: [
         '三步就能跑起来：',
-        '1. 配模型：设置 → API 配置 → 填地址/密钥/模型 → 测试连接。',
-        '2. 开功能：设置 → 打开角色日记 + 剧情档案 + 自动总结。',
+        '1. 配模型：设置 →「高级」→「API 来源」→ 填地址/密钥/模型 → 测试连接。',
+        '2. 开功能：设置 →「生成内容」开角色日记 + 剧情档案；设置 →「运行参数」开自动总结。',
         '3. 正常聊天，聊 6~10 层会自动总结；想手动就点悬浮球 →「立即总结」。',
         '哪一步卡住了，直接说卡在哪一步，我带你过。',
       ].join('\n'),
+      go: ['api', 'generate'],
     },
   ];
   function liweAssistQuickAnswer(q) {
@@ -28005,9 +28497,21 @@ function _cgOpenMembers() {
      但如果存的是「老版默认知识库」，新版重写的知识库就永远不生效 —— 用户会以为改了没效果。
      老默认的独有指纹：「LIWE 记忆引擎」+「clear/compress 尚未实现」两句同时出现，
      用户自己写的知识库不可能同时有这两句，所以按指纹判定不会误伤自定义内容。 */
+  /* ★ FIX29：指纹改成「命中任一历史默认版的独有句子」。
+     原来的实现是「两个句子必须同时出现」，但 FIX28 版第一句已经改成「LIWE 助手」，
+     老指纹认不出它 —— 结果浏览器里存的 FIX28 版会永久挡住新版知识库，用户以为白改了。
+     历史默认版指：
+       v1：第一句「你是「LIWE 记忆引擎」…」
+       v2：含「【三条工作方式（最重要）】」（v2 起改成「五条」）
+     用户自己写的知识库不会出现这种带括号的章节标题，所以不会误伤。 */
+  var LIWE_KB_LEGACY_MARKS = ['LIWE 记忆引擎', '【三条工作方式（最重要）】', '设置 → API 配置', '设置 → 功能开关'];
   function liweAssistIsLegacyKB(txt) {
     var t = String(txt || '');
-    return t.indexOf('LIWE 记忆引擎') >= 0 && t.indexOf('clear/compress 尚未实现') >= 0;
+    if (!t.trim()) return false;
+    for (var i = 0; i < LIWE_KB_LEGACY_MARKS.length; i++) {
+      if (t.indexOf(LIWE_KB_LEGACY_MARKS[i]) >= 0) return true;
+    }
+    return false;
   }
   function liweAssistGetKB() {
     try {
@@ -28064,18 +28568,72 @@ function _cgOpenMembers() {
   }
 
   /* 渲染消息（并追加到历史 + 存 IndexedDB single_小助手） */
-  function asstRenderMsg(who, text) {
+  /* ★ FIX29：跳转目标表在顶层是 const，助手代码隔着几层作用域，走 window 取最稳 */
+  function liweAssistJumpMap() {
+    try { return window.CD_JUMP_TARGETS || {}; } catch (e) { return {}; }
+  }
+  /* 把 [[go:api]] 从正文里摘出来变成按钮；未知 key 静默丢弃（老对话记录里的死标记不该露给用户） */
+  function liweAssistRenderJumpBar(keys) {
+    var map = liweAssistJumpMap();
+    var bar = document.createElement('div');
+    bar.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;max-width:82%;';
+    var n = 0;
+    for (var i = 0; i < keys.length; i++) {
+      var k = String(keys[i] || '').toLowerCase();
+      var t = map[k];
+      if (!t) continue;
+      (function (kk, tt) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = '去 ' + tt.label;
+        btn.style.cssText = 'display:inline-flex;align-items:center;padding:4px 11px;border:1px solid #d8c39a;border-radius:999px;'
+          + 'background:#fbf6ec;color:#8a6a3a;font-size:11px;line-height:1.35;cursor:pointer;white-space:nowrap;';
+        btn.onclick = function (e) {
+          if (e && e.stopPropagation) e.stopPropagation();
+          try { if (typeof cdJumpTo === 'function') cdJumpTo(kk); } catch (err) {}
+        };
+        bar.appendChild(btn);
+        n++;
+      })(k, t);
+    }
+    return n ? bar : null;
+  }
+
+  function asstRenderMsg(who, text, jumpKeys) {
     var b = document.getElementById('asstBody'); if (!b) return;
     if (String(text || '').indexOf('（思考中…）') !== 0 && String(text || '').indexOf('（执行中…）') !== 0) {
       liweAssistClearThinking();
     }
     var isMe = (who === 'me');
+
+    /* 摘跳转标记：显式参数 + 正文里的 [[go:key]] 合并去重 */
+    var map = liweAssistJumpMap();
+    var jumps = [];
+    if (Array.isArray(jumpKeys)) {
+      for (var ji = 0; ji < jumpKeys.length; ji++) {
+        var jk = String(jumpKeys[ji] || '').toLowerCase();
+        if (map[jk] && jumps.indexOf(jk) < 0) jumps.push(jk);
+      }
+    }
+    var raw = String(text || '');
+    raw = raw.replace(/\[\[\s*go\s*[:：]\s*([a-z\-]+)\s*\]\]/gi, function (m0, k) {
+      var kk = String(k || '').toLowerCase();
+      if (map[kk] && jumps.indexOf(kk) < 0) jumps.push(kk);
+      return '';   // 无论认不认识都不留标记在正文里
+    });
+    /* 摘掉标记后常留下空行和行尾空格，收一下 */
+    raw = raw.replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').replace(/^\n+/, '').replace(/\s+$/, '');
+
     var row = document.createElement('div');
     row.style.cssText = 'display:flex;flex-direction:column;margin:6px 8px;align-items:' + (isMe ? 'flex-end' : 'flex-start') + ';';
     var bubble = document.createElement('div');
     bubble.style.cssText = 'max-width:82%;padding:7px 11px;border-radius:12px;font-size:12px;line-height:1.65;color:#2e3337;' + (isMe ? 'background:#dbeaf7;border-bottom-right-radius:3px;' : 'background:#f2f4f7;border-bottom-left-radius:3px;white-space:pre-wrap;word-break:break-word;');
-    bubble.textContent = (isMe ? '我：' : '') + String(text || '');
+    bubble.textContent = (isMe ? '我：' : '') + raw;
     row.appendChild(bubble);
+    if (!isMe && jumps.length) {
+      var bar = liweAssistRenderJumpBar(jumps);
+      if (bar) row.appendChild(bar);
+    }
     b.appendChild(row);
     b.scrollTop = b.scrollHeight;
     return row; // 返回 row，供下面挂确认按钮
@@ -28114,7 +28672,7 @@ function _cgOpenMembers() {
     var b = document.getElementById('asstBody'); if (!b) return;
     var row = null;
     if (out && out.reply) {
-      row = asstRenderMsg('assistant', out.reply);
+      row = asstRenderMsg('assistant', out.reply, out.go);
     } else if (rawText) {
       row = asstRenderMsg('assistant', rawText);
     }
@@ -28253,7 +28811,7 @@ function _cgOpenMembers() {
     if (_quick) {
       _liweAssist.hist.push({ q: q, a: _quick.a });
       asstRenderMsg('me', q);
-      asstRenderMsg('assistant', _quick.a);
+      asstRenderMsg('assistant', _quick.a, _quick.go);
       asstSave();
       var _qb = document.getElementById('asstBody'); if (_qb) _qb.scrollTop = _qb.scrollHeight;
       return;
@@ -28302,7 +28860,9 @@ function _cgOpenMembers() {
   }
   function liweAssistIsReadAction(a) {
     return a === 'read' || a === 'show_data' || a === 'get_status' || a === 'check'
-      || a === 'diagnose' || a === 'get_settings' || a === 'get_config' || a === 'get_logs';
+      || a === 'diagnose' || a === 'get_settings' || a === 'get_config' || a === 'get_logs'
+      /* ★ FIX30：读源码是只读操作，自动执行、结果回喂。self_heal 不在这里（它会删行，要确认） */
+      || a === 'read_source' || a === 'read_code' || a === 'src';
   }
 
   async function liweAssistDispatch(q) {
@@ -28588,6 +29148,74 @@ function _cgOpenMembers() {
         if (t === 'memo') return '备忘录:' + (d.memo||'(空)').slice(0,80);
         return '';
       }
+      /* ★ FIX30：读插件自己的源码。定位问题时不要凭想象改代码 —— 先看真实代码。 */
+      if (action.action === 'read_source' || action.action === 'read_code' || action.action === 'src') {
+        var _kw = String((action.params && (action.params.keyword || action.params.q)) || action.target || '').trim();
+        if (!_kw) return '需要给一个关键词（函数名 / 报错里的标识符 / 设置项 id），例如 read_source 关键词 cdArchiveBuildSys';
+        var _txt = '';
+        try { _txt = await cdReadSelfSource(); }
+        catch (eS) { return '读不到源码：' + ((eS && eS.message) || '未知原因') + '。\n可以让用户把「复制诊断报告」的内容发你，版本号能定位问题。'; }
+        if (!_txt) return '读不到源码：拿不到插件脚本地址（有些加载方式不暴露）。\n请改为让用户把「复制诊断报告」发你，或让他描述界面上的具体现象。';
+        var _lines = _txt.split('\n');
+        var _low = _kw.toLowerCase(), _hits = [];
+        for (var _i = 0; _i < _lines.length && _hits.length < 40; _i++) {
+          if (_lines[_i].toLowerCase().indexOf(_low) >= 0) _hits.push(_i);
+        }
+        if (!_hits.length) return '源码（' + _lines.length + ' 行）里没找到「' + _kw + '」。\n换个关键词试试：函数名通常以 cd 开头（cdSaveSettings / cdBuildDiaryInjectionText）。';
+        var _ctx = parseInt((action.params && action.params.context), 10);
+        if (!isFinite(_ctx)) _ctx = 6;
+        _ctx = Math.max(1, Math.min(40, _ctx));
+        var _seen = {}, _buf = [], _chars = 0;
+        for (var _h = 0; _h < _hits.length && _h < 10 && _chars < 5200; _h++) {
+          var _ln = _hits[_h];
+          var _s0 = Math.max(0, _ln - _ctx), _e0 = Math.min(_lines.length - 1, _ln + _ctx);
+          for (var _j = _s0; _j <= _e0; _j++) {
+            if (_seen[_j]) continue;
+            _seen[_j] = 1;
+            var _row = (_j + 1) + ': ' + String(_lines[_j]).slice(0, 240);
+            _buf.push(_row); _chars += _row.length;
+          }
+          _buf.push('   …');
+        }
+        return '命中 ' + _hits.length + ' 处（最多列 10 处，含前后 ' + _ctx + ' 行；总行数 ' + _lines.length + '）：\n'
+          + _buf.join('\n');
+      }
+
+      /* ★ FIX30：数据层自愈（持久）。只删「一字不差」的重复行 —— 宁可少修，不能误删剧情。
+         这是写操作，不走自动执行，要用户点「确认执行」。 */
+      if (action.action === 'self_heal' || action.action === 'dedupe_archive' || action.action === 'fix_data') {
+        var _d7 = {};
+        try { _d7 = await window.cdGetData(); } catch (e7) { return '读不到数据：' + ((e7 && e7.message) || ''); }
+        if (!_d7 || !_d7.archive) return '没有档案数据，无从修复。';
+        var _a7 = _d7.archive, _rep7 = [], _tot7 = 0;
+        ['mainline', 'sideline', 'states', 'unresolved'].forEach(function (k) {
+          var raw = String(_a7[k] || '');
+          if (!raw) return;
+          var arr = raw.split('\n'), seenL = {}, kept = [], dup = 0, junk = 0;
+          arr.forEach(function (ln) {
+            var t = String(ln).trim();
+            if (!t) { kept.push(''); return; }
+            var key = t.replace(/^[·•\-\*]\s*/, '');
+            /* ★ 只把「去掉符号后什么都不剩」的行当空碎片。原先写 key.length < 2，
+               会把「·是」「·呵」这种单字行当碎片删掉 —— 那是用户剧情，不是垃圾。 */
+            if (!key.trim()) { junk++; return; }
+            if (seenL[key]) { dup++; return; }
+            seenL[key] = 1;
+            kept.push(ln);
+          });
+          var cleaned = kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+          if (dup || junk) {
+            _a7[k] = cleaned;
+            _rep7.push(k + '：删重复 ' + dup + ' 行、空碎片 ' + junk + ' 行');
+            _tot7 += dup + junk;
+          }
+        });
+        if (!_tot7) return '检查完了：档案里没有一字不差的重复行，不需要修。\n（如果看着还是重复，那是内容相近但措辞不同，这种情况不该自动删。）';
+        await window.cdSaveData(_d7);
+        if (typeof window.cdRefreshInjection === 'function') await window.cdRefreshInjection();
+        return '已修复 ' + _tot7 + ' 处（只删一字不差的重复行，其它内容一个字没动）：\n' + _rep7.join('\n');
+      }
+
       if (action.action === 'replace') {
         var from = (action.params && action.params.from) || '', to = (action.params && action.params.to) || '';
         var d2 = await window.cdGetData(); var changed = 0;
