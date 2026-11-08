@@ -28001,7 +28001,28 @@ function _cgOpenMembers() {
     } catch (e) { /* 绑定失败不影响主流程，fallback 分支还在 */ }
   })();
 
-  function liweAssistGetKB() { try { var s = localStorage.getItem('liweAssistKnowledge'); if (s && s.trim()) return s; } catch (e) {} return LIWE_ASSIST_DEFAULT_KB; }
+  /* ★ FIX28：知识库优先读 localStorage（用户可自定义）。
+     但如果存的是「老版默认知识库」，新版重写的知识库就永远不生效 —— 用户会以为改了没效果。
+     老默认的独有指纹：「LIWE 记忆引擎」+「clear/compress 尚未实现」两句同时出现，
+     用户自己写的知识库不可能同时有这两句，所以按指纹判定不会误伤自定义内容。 */
+  function liweAssistIsLegacyKB(txt) {
+    var t = String(txt || '');
+    return t.indexOf('LIWE 记忆引擎') >= 0 && t.indexOf('clear/compress 尚未实现') >= 0;
+  }
+  function liweAssistGetKB() {
+    try {
+      var s = localStorage.getItem('liweAssistKnowledge');
+      if (s && s.trim()) {
+        if (liweAssistIsLegacyKB(s)) {
+          try { localStorage.removeItem('liweAssistKnowledge'); } catch (e2) {}
+          try { if (typeof cdAddLog === 'function') cdAddLog('info', '[小助手] 检测到旧版默认知识库，已自动升级为新版'); } catch (e3) {}
+          return LIWE_ASSIST_DEFAULT_KB;
+        }
+        return s;
+      }
+    } catch (e) {}
+    return LIWE_ASSIST_DEFAULT_KB;
+  }
   var LIWE_ASSIST_SYSTEM = liweAssistGetKB();
   var _liweAssist = { hist: [], curChar: null, pending: null, thinkingRow: null };
   var LIWE_AST_CHARNAME = '小助手';
