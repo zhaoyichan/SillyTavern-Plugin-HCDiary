@@ -240,13 +240,19 @@ function cdCharOptions(cur) {
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.19.0';
+const PLUGIN_VERSION = '2.20.0';
 /* ★ FIX23：构建标识，用于定位用户跑的是哪批代码。
    CD_BUILD = 本版所基于的提交短 sha，配合 PLUGIN_VERSION 即可唯一确定版本；
    下次改动代码时请一并更新（无法自指自身 sha，故取基线）。 */
-const CD_BUILD = 'aec1927';
+const CD_BUILD = '8268fc2';
 const CD_BUILD_DATE = '2026-11-10';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
+/* ★ FIX32：更新探测的另外两条入口。
+   —— 只用 releases/latest 时，一旦忘了建 Release，「检查更新」就永久假死：
+      v2.18.2 之后整整六批修复对用户全部不可见，根因就在这里。
+   REPO_RELEASES_URL 一次取多条，能当更新日志用；REPO_MANIFEST_RAW 是兜底。 */
+const REPO_RELEASES_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases?per_page=5';
+const REPO_MANIFEST_RAW = 'https://raw.githubusercontent.com/zhaoyichan/SillyTavern-Plugin-HCDiary/main/manifest.json';
 
 /* ★ FIX30：插件自己的脚本地址。index.js 是 classic script，顶层执行时
    document.currentScript 指的就是它自己 —— 这是浏览器里唯一可靠的「自指」办法。
@@ -2944,35 +2950,252 @@ async function cdSearchVectors(queryText, vectors, topK = 5, threshold = 0.6) {
     .slice(0, topK);
 }
 
-/* ============================== 检查更新 ============================== */
+/* ============================== 检查更新 / 更新中心 ============================== */
+/* ★ FIX32：三件事一起做
+   ① 探测来源双保险：Release 列表为主（带更新日志），main 上的 manifest.json 兜底。
+      只用 releases/latest 的后果是——忘建一次 Release，检查更新就永久假死。
+   ② 结果结构化存进 window.__cdUpdInfo，主界面角标 / 更新中心 / 弹窗共用同一份数据，不各算各的。
+   ③ 同一版本只自动弹一次（updSeenVer），不重复骚扰。 */
 
-/** 检查 GitHub 上是否有新版本，如果有则 toastr 提示 */
-async function cdCheckForUpdates(silent = true) {
-  try {
-    const resp = await fetch(REPO_URL);
-    if (!resp.ok) return;
-    const data = await resp.json();
-    const remoteVer = (data.tag_name || data.name || '').replace(/^v/, '').trim();
-    const localVer = PLUGIN_VERSION;
-    // ★ 语义化版本比较：拆分数字逐段比，避免本地版本号更高时被误报"有新版本"（如本地 2.9.7 > 远端 2.9.6）
-    const cmpVer = (a, b) => {
-      const pa = String(a || '0').split('.').map(n => parseInt(n, 10) || 0);
-      const pb = String(b || '0').split('.').map(n => parseInt(n, 10) || 0);
-      const len = Math.max(pa.length, pb.length);
-      for (let i = 0; i < len; i++) {
-        const x = pa[i] || 0, y = pb[i] || 0;
-        if (x !== y) return x > y ? 1 : -1;
-      }
-      return 0;
-    };
-    if (remoteVer && cmpVer(remoteVer, localVer) > 0) {
-      const msg = `发现新版本 v${remoteVer}（当前 v${localVer}），请运行 git pull 更新`;
-      toastr.warning(msg, '角色日记', { timeOut: 10000, extendedTimeOut: 15000 });
-      cdLog('[更新] ' + msg);
-    }
-  } catch (e) {
-    if (!silent) cdWarn('检查更新失败', e);
+/** 语义化版本比较：a>b 返回 1，a<b 返回 -1，相等 0
+    逐段比数字，避免字符串比较把 2.9.7 判成大于 2.10.0 */
+function cdCmpVer(a, b) {
+  const pa = String(a || '0').split('.').map(function (n) { return parseInt(n, 10) || 0; });
+  const pb = String(b || '0').split('.').map(function (n) { return parseInt(n, 10) || 0; });
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const x = pa[i] || 0, y = pb[i] || 0;
+    if (x !== y) return x > y ? 1 : -1;
   }
+  return 0;
+}
+
+/** 更新相关 HTML 转义。自己实现而不是复用 escapeHtml：
+    后者定义在本文件后段，虽然函数声明会提升，但少一层依赖就少一个踩坑面。 */
+function cdUpdEsc(t) {
+  return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) {
+    return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+  });
+}
+
+/** 拉取远端最新版本。返回 {ok, ver, body, date, url, source, err} */
+async function cdFetchLatestVersion() {
+  // ① 首选 Release：带正文，正好当更新日志
+  try {
+    const r = await fetch(REPO_RELEASES_URL, { cache: 'no-store' });
+    if (r.ok) {
+      const arr = await r.json();
+      const list = Array.isArray(arr) ? arr.filter(function (x) { return x && !x.draft && !x.prerelease; }) : [];
+      if (list.length) {
+        const top = list[0];
+        const ver = String(top.tag_name || top.name || '').replace(/^v/i, '').trim();
+        if (ver) {
+          return {
+            ok: true, ver: ver, body: top.body || '', date: top.published_at || '',
+            url: top.html_url || '', source: 'release', list: list
+          };
+        }
+      }
+    }
+  } catch (e) { /* 落兜底 */ }
+  // ② 兜底：直接读 main 分支的 manifest.json（Release 没建 / 被墙时仍能判版本，只是没有日志）
+  try {
+    const r2 = await fetch(REPO_MANIFEST_RAW + '?t=' + Date.now(), { cache: 'no-store' });
+    if (r2.ok) {
+      const m = await r2.json();
+      const ver = String((m && m.version) || '').trim();
+      if (ver) {
+        return {
+          ok: true, ver: ver, body: '', date: '',
+          url: 'https://github.com/zhaoyichan/SillyTavern-Plugin-HCDiary', source: 'manifest', list: []
+        };
+      }
+    }
+  } catch (e2) { /* 两条都不通 */ }
+  return { ok: false, err: '连不上 GitHub（检查网络 / 代理后重试）' };
+}
+
+/** 只探测、不做任何弹窗：写缓存 + 刷角标，返回结构化结果。
+    设置页手动检查走这里（结果就地显示在行内，不弹窗，少打扰） */
+async function cdProbeUpdate() {
+  const localVer = PLUGIN_VERSION;
+  let info;
+  try { info = await cdFetchLatestVersion(); }
+  catch (e) { info = { ok: false, err: (e && e.message) || '网络错误' }; }
+  const out = Object.assign({ localVer: localVer, newer: false }, info);
+  if (info.ok) out.newer = cdCmpVer(info.ver, localVer) > 0;
+  window.__cdUpdInfo = out;
+  try { cdUpdBadgeRender(); } catch (_e) {}
+  return out;
+}
+
+/** 启动时的检查：发现新版本、且这个版本没弹过 → 弹一次更新日志。
+    silent=false 仅供内部诊断调用，不再往 toastr 里丢「请运行 git pull」那种废话。 */
+async function cdCheckForUpdates(silent = true) {
+  const out = await cdProbeUpdate();
+  if (!out.ok) {
+    if (!silent) console.warn('[CD] 检查更新失败：' + out.err);
+    return out;
+  }
+  if (out.newer) {
+    const seen = cdGetSettings().updSeenVer;
+    if (seen !== out.ver) {
+      cdShowUpdateDialog(out);
+      try { cdSaveSettings({ updSeenVer: out.ver }); } catch (_e) {}
+    }
+    try { cdAddLog('info', '[更新] 发现新版本', { local: out.localVer, remote: out.ver, src: out.source }); } catch (_e2) {}
+  } else {
+    try { cdAddLog('info', '[更新] 已是最新 v' + out.localVer, { src: out.source }); } catch (_e3) {}
+  }
+  return out;
+}
+
+/** 把后端/网络错误翻译成人话。
+    ★ 单一真源：设置页「下载更新」和弹窗「立即更新」都走这里，不再各写一份 */
+function cdUpdFriendlyErr(m) {
+  if (!m) return '未知错误，请查看日志或稍后重试';
+  const t = String(m);
+  if (/404|not found|not found at/i.test(t) && /extensions/i.test(t)) return '找不到插件安装目录（可能安装位置不在此处）';
+  if (/409|mutation|already running/i.test(t)) return '有另一个更新正在执行，请稍等几秒再试';
+  if (/timeout|ETIMEDOUT|talking to the server|socket|ECONN/i.test(t)) return '连不上 GitHub（网络不稳或被墙），检查网络后重试';
+  if (/IO error|git fetch|prepare git/i.test(t)) return '从 GitHub 拉取失败（多为网络问题或仓库连接异常），检查网络后重试';
+  if (/auth|forbidden|401|403|token/i.test(t)) return '权限/认证失败，无法访问该仓库';
+  if (/500|502|503|504/i.test(t)) return '服务器暂时出错（多为网络问题），稍后重试';
+  return t.slice(0, 120);
+}
+
+/** 真正执行更新：POST /api/extensions/update。
+    ★ 单一真源：设置页按钮与更新弹窗共用，避免两处逻辑分叉。
+    返回 Promise<boolean>，不 reject —— 调用方不需要再写 catch。 */
+function cdDoUpdate(btn, statusEl) {
+  return new Promise(function (resolve) {
+    const oldHtml = btn ? btn.innerHTML : '';
+    function setSt(t) { if (statusEl) statusEl.textContent = t; }
+    try {
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right:5px;"></i>下载中…';
+      }
+      setSt('正在从 GitHub 拉取并覆盖插件文件，请稍候…（网络慢时可能要几十秒）');
+      const ctx2 = (typeof SillyTavern !== 'undefined' && SillyTavern.getContext) ? SillyTavern.getContext() : null;
+      const hdr = (ctx2 && typeof ctx2.getRequestHeaders === 'function') ? ctx2.getRequestHeaders() : { 'Content-Type': 'application/json' };
+      fetch('/api/extensions/update', {
+        method: 'POST',
+        headers: hdr || { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ extensionName: 'SillyTavern-Plugin-HCDiary', global: true })
+      })
+        .then(function (r) {
+          if (!r.ok) {
+            return r.text().then(function (t) {
+              throw new Error('HTTP ' + r.status + (String(t || '').slice(0, 200) ? ' ' + String(t).slice(0, 200) : ''));
+            });
+          }
+          if (btn) { btn.disabled = false; btn.innerHTML = oldHtml; btn.style.display = 'none'; }
+          setSt('更新成功！插件文件已覆盖，请完全重启酒馆生效（只刷新页面不够）。');
+          if (typeof toastr === 'function') toastr.success('更新成功，请完全重启酒馆生效');
+          try { cdAddLog('warn', '[更新][OK] 一键更新成功', { extension: 'SillyTavern-Plugin-HCDiary' }); } catch (_e) {}
+          setTimeout(function () { try { location.reload(); } catch (_e2) {} }, 1500);
+          resolve(true);
+        })
+        .catch(function (e2) {
+          if (btn) { btn.disabled = false; btn.innerHTML = oldHtml; }
+          const msg = (e2 && e2.message) || '未知错误';
+          const nice = cdUpdFriendlyErr(msg);
+          setSt('更新失败：' + nice);
+          if (typeof toastr === 'function') toastr.error('更新失败：' + nice);
+          try { cdAddLog('error', '[更新][FAIL] 一键更新失败', { err: msg }); } catch (_e3) {}
+          resolve(false);
+        });
+    } catch (e) {
+      if (btn) { btn.disabled = false; btn.innerHTML = oldHtml; }
+      setSt('触发更新失败：' + cdUpdFriendlyErr(e && e.message));
+      resolve(false);
+    }
+  });
+}
+
+/** 更新日志弹窗。挂在 #cd-modal-root 里，自动继承当前主题变量与 --cd-fs 字号缩放。
+    ★ 只显示 Release 正文的前 16 行，避免有人写几千字把弹窗撑爆 */
+function cdShowUpdateDialog(info) {
+  try {
+    const host = document.getElementById(MODAL_ID) || document.body;
+    const old = document.getElementById('cd-upd-dlg');
+    if (old) old.remove();
+    const lv = info.localVer || PLUGIN_VERSION;
+    const raw = String(info.body || '').replace(/\r/g, '');
+    let items = raw.split('\n')
+      .map(function (x) { return x.replace(/^[\s>*\-·•]+/, '').trim(); })
+      .filter(Boolean);
+    if (items.length > 16) {
+      items = items.slice(0, 16);
+      items.push('……（还有更多，点「去 GitHub 看」查看完整说明）');
+    }
+    const logHtml = items.length
+      ? items.map(function (x) { return '<li>' + cdUpdEsc(x) + '</li>'; }).join('')
+      : '<li class="cd-upd-mut">这一版没有填写更新说明。想看具体改了什么，点下面的「去 GitHub 看」。</li>';
+    const dateTxt = info.date ? String(info.date).slice(0, 10) : '';
+    const box = document.createElement('div');
+    box.id = 'cd-upd-dlg';
+    box.innerHTML =
+      '<div class="cd-upd-mask" id="cd-upd-mask"></div>' +
+      '<div class="cd-upd-box" role="dialog" aria-modal="true" aria-label="发现新版本">' +
+        '<div class="cd-upd-hd">' +
+          '<span class="cd-upd-ic"><i class="fa-solid fa-arrow-up-from-bracket"></i></span>' +
+          '<span class="cd-upd-tt">发现新版本 v' + cdUpdEsc(String(info.ver || '')) + '</span>' +
+          '<button class="cd-upd-x" id="cd-upd-x" title="关闭"><i class="fa-solid fa-xmark"></i></button>' +
+        '</div>' +
+        '<div class="cd-upd-meta">当前 v' + cdUpdEsc(String(lv)) +
+          (dateTxt ? ('　·　发布于 ' + cdUpdEsc(dateTxt)) : '') + '</div>' +
+        '<div class="cd-upd-logwrap"><ul class="cd-upd-log">' + logHtml + '</ul></div>' +
+        '<div class="cd-upd-tip"><i class="fa-regular fa-circle-info"></i> 更新会覆盖插件文件（index.js / style.css）。' +
+          '更新完成后<b>必须完全重启酒馆</b>才生效，只刷新页面不够。</div>' +
+        '<div class="cd-upd-ft">' +
+          '<button class="cd-btn-secondary" id="cd-upd-later">稍后再说</button>' +
+          '<button class="cd-btn-secondary" id="cd-upd-gh">去 GitHub 看</button>' +
+          '<button class="cd-btn-primary" id="cd-upd-go"><i class="fa-solid fa-download" style="margin-right:5px;"></i>立即更新</button>' +
+        '</div>' +
+        '<div class="cd-upd-st" id="cd-upd-dlg-st"></div>' +
+      '</div>';
+    host.appendChild(box);
+
+    const q = function (id) { return document.getElementById(id); };
+    const close = function () { try { box.remove(); } catch (_e) {} };
+    if (q('cd-upd-x')) q('cd-upd-x').onclick = close;
+    if (q('cd-upd-mask')) q('cd-upd-mask').onclick = close;
+    if (q('cd-upd-later')) q('cd-upd-later').onclick = close;
+    if (q('cd-upd-gh')) q('cd-upd-gh').onclick = function () {
+      try {
+        window.open(info.url || 'https://github.com/zhaoyichan/SillyTavern-Plugin-HCDiary/releases', '_blank');
+      } catch (_e) {}
+    };
+    if (q('cd-upd-go')) q('cd-upd-go').onclick = function () {
+      cdDoUpdate(q('cd-upd-go'), q('cd-upd-dlg-st'));
+    };
+  } catch (e) { console.warn('[CD] 更新弹窗渲染失败', e); }
+}
+
+/** 主界面工具格「更新记录」的角标。没有新版本就干干净净，不留红点。
+    单独抽出来是因为检查结果是异步回来的，那时首页早就渲染完了，只能就地补 DOM。 */
+function cdUpdBadgeRender() {
+  try {
+    const info = window.__cdUpdInfo;
+    const newer = !!(info && info.ok && info.newer);
+    const tiles = document.querySelectorAll('.cd-tgrid .cd-ti[data-ht="changelog"]');
+    for (let i = 0; i < tiles.length; i++) {
+      const el = tiles[i];
+      if (newer) el.classList.add('hot'); else el.classList.remove('hot');
+      const b = el.querySelector('.cd-ti-badge');
+      if (newer && !b) {
+        const sp = document.createElement('span');
+        sp.className = 'cd-ti-badge';
+        sp.textContent = '新';
+        sp.title = '有可用更新 v' + info.ver;
+        el.appendChild(sp);
+      } else if (!newer && b) {
+        b.remove();
+      }
+    }
+  } catch (e) {}
 }
 
 /* ============================== JSON 鲁棒解析 ============================== */
@@ -9891,7 +10114,7 @@ const CD_DASH_TOOLS = [
   { ic: 'fa-regular fa-table',           t: '情报表',   mode: 'table'   },
   { ic: 'fa-regular fa-download',        t: '导出',     mode: 'export'  },
   { ic: 'fa-regular fa-clipboard-list',  t: '日志',     mode: 'log'     },
-  { ic: 'fa-regular fa-tag',             t: '更新记录', mode: 'changelog' },
+  { ic: 'fa-regular fa-tag',             t: '更新记录', mode: 'changelog', upd: true },
   { ic: 'fa-regular fa-circle-question', t: '帮助',     mode: 'help'    },
   { ic: 'fa-regular fa-gem',             t: '彩蛋',     mode: 'egg'     }
 ];
@@ -10445,7 +10668,13 @@ async function cdRenderHome() {
   /* ★ FIX18：总结开关已升为概览大卡第一位（见上方 _asHtml），工具格不再重复放一格。 */
   h += '<div class="cd-hsec"><span>工具</span><span class="cd-hsec-ln"></span></div>';
   h += '<div class="cd-tgrid">' + CD_DASH_TOOLS.map(function (t) {
-    return '<div class="cd-ti' + (t.dn ? ' dn' : '') + '" data-ht="' + t.mode + '"><i class="' + t.ic + '"></i><span>' + t.t + '</span></div>';
+    /* ★ FIX32：更新记录格在有新版本时带 hot 态 + 角标。
+       同步渲染一次给「已知有新版」的情况，异步回来后再由 cdUpdBadgeRender() 就地补 */
+    const _un = !!(t.upd && window.__cdUpdInfo && window.__cdUpdInfo.ok && window.__cdUpdInfo.newer);
+    return '<div class="cd-ti' + (t.dn ? ' dn' : '') + (_un ? ' hot' : '') + '" data-ht="' + t.mode + '">' +
+      '<i class="' + t.ic + '"></i><span>' + t.t + '</span>' +
+      (_un ? '<span class="cd-ti-badge" title="有可用更新 v' + cdUpdEsc(window.__cdUpdInfo.ver) + '">新</span>' : '') +
+      '</div>';
   }).join('') + '</div>';
 
   $('#cd-content').html(h);
@@ -15457,83 +15686,32 @@ async function cdRenderSettings() {
     cdSaveSettings({ autoScrollTop: $(this).is(':checked') });
     if (typeof toastr !== 'undefined') toastr.success('回复后回到开头' + ($(this).is(':checked') ? '已开启' : '已关闭'));
   });
-  // ★ [2026-09-18] 检查更新按钮：探测本机原生"扩展更新/安装"接口可行性(true auto-update)，全程写日志供主人导出
-  // ===== 「检查更新」：只检测版本，检测到新版则显示「下载更新」按钮 =====
+  // ★ FIX32：设置页两个按钮改走顶层单一实现，与更新弹窗共用同一套逻辑
+  //   （原来这里还藏着一个只在本函数内可见的 cdFriendlyUpdateErr，已提到顶层做单一真源）
   $('#cd-btn-check-update').off('click').on('click', function () {
-    try {
-      if (typeof toastr === 'function') toastr.info('正在检查更新…');
-      var st = document.getElementById('cd-upd-status'); if(st) st.textContent='检查中…';
-      fetch(REPO_URL).then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
-        .then(function(data){
-          var rv=(data&&(data.tag_name||data.name)||'').replace(/^v/,'').trim();
-          var lv=(typeof PLUGIN_VERSION!=='undefined')?String(PLUGIN_VERSION):'';
-          var el=document.getElementById('cd-upd-remote'); if(el) el.textContent= rv?('v'+rv):'未知';
-          var newer=false;
-          var fa=String(rv||'0').split('.').map(function(n){return parseInt(n,10)||0;});
-          var fb=String(lv||'0').split('.').map(function(n){return parseInt(n,10)||0;});
-          for(var i=0;i<Math.max(fa.length,fb.length);i++){ var x=fa[i]||0, y=fb[i]||0; if(x!==y){ newer=x>y; break; } }
-          var dl=document.getElementById('cd-btn-download-update');
-          if(newer){
-            if(st) st.textContent='发现新版本 v'+rv+'（当前 v'+lv+'），点击「下载更新」安装';
-            if(dl) dl.style.display='inline-flex';
-            if(typeof toastr==='function') toastr.warning('发现新版本 v'+rv+'（当前 v'+lv+'），可点击「下载更新」安装');
-          } else {
-            if(st) st.textContent='已是最新版本 v'+(lv||'?');
-            if(dl) dl.style.display='none';
-            if(typeof toastr==='function') toastr.success('已是最新版本 v'+(lv||'?'));
-          }
-        })
-        .catch(function(e){
-          if(st) st.textContent='检查失败：'+((e&&e.message)||'网络错误')+'（请检查网络或稍后重试）';
-          if(typeof toastr==='function') toastr.error('检查更新失败：'+((e&&e.message)||'网络错误'));
-        });
-    } catch(e){ if(typeof toastr==='function') toastr.error('检查更新异常'); }
+    const st = document.getElementById('cd-upd-status');
+    if (st) st.textContent = '检查中…';
+    if (typeof toastr === 'function') toastr.info('正在检查更新…');
+    cdProbeUpdate().then(function (out) {
+      const remoteEl = document.getElementById('cd-upd-remote');
+      const dl = document.getElementById('cd-btn-download-update');
+      if (remoteEl) remoteEl.textContent = out.ok ? ('v' + out.ver) : '读取失败';
+      if (dl) dl.style.display = (out.ok && out.newer) ? 'inline-flex' : 'none';
+      if (!st) return;
+      if (!out.ok) {
+        st.textContent = '检查失败：' + (out.err || '网络错误') + '（检查网络后重试）';
+      } else if (out.newer) {
+        st.textContent = '发现新版本 v' + out.ver + '（当前 v' + out.localVer + '），点「下载更新」安装';
+      } else {
+        st.textContent = '已是最新版本 v' + out.localVer;
+      }
+    });
   });
 
-  // ===== 「下载更新」：触发酒馆后端 /api/extensions/update，界面反馈 下载中/成功/失败原因 =====
+  // ===== 「下载更新」：调顶层 cdDoUpdate，界面反馈 下载中/成功/失败原因 =====
   $('#cd-btn-download-update').off('click').on('click', function () {
-    var btn=document.getElementById('cd-btn-download-update');
-    var st=document.getElementById('cd-upd-status');
-    var oldHtml = btn ? btn.innerHTML : '';
-    try{
-      if(btn){ btn.disabled=true; btn.innerHTML='<i class="fa-solid fa-spinner fa-spin" style="margin-right:5px;"></i>下载中…'; }
-      if(st) st.textContent='正在下载更新并安装，请稍候…（可能需要一点时间）';
-      var ctx2=(typeof SillyTavern!=='undefined'&&SillyTavern.getContext)?SillyTavern.getContext():null;
-      var hdr=(ctx2&&typeof ctx2.getRequestHeaders==='function')?ctx2.getRequestHeaders():{'Content-Type':'application/json'};
-      var extName='SillyTavern-Plugin-HCDiary';
-      fetch('/api/extensions/update',{method:'POST',headers:hdr||{'Content-Type':'application/json'},body:JSON.stringify({extensionName:extName,global:true})})
-        .then(function(r){
-          if(!r.ok){ return r.text().then(function(t){ var m='HTTP '+r.status+(String(t||'').slice(0,200)?' '+String(t).slice(0,200):''); throw new Error(m); }); }
-          if(btn){ btn.disabled=false; btn.innerHTML=oldHtml; btn.style.display='none'; }
-          var lv=(typeof PLUGIN_VERSION!=='undefined')?String(PLUGIN_VERSION):'';
-          if(st) st.textContent='更新成功！插件文件已更新，请完全重启酒馆生效。';
-          if(typeof toastr==='function') toastr.success('更新成功，插件文件已更新，请完全重启酒馆生效');
-          if(typeof cdAddLog==='function'){ try{ cdAddLog('warn','[更新][OK] 一键更新成功',{extension:extName}); }catch(_e){} }
-          setTimeout(function(){ try{ location.reload(); }catch(_e2){ } }, 1500);
-        })
-        .catch(function(e2){
-          if(btn){ btn.disabled=false; btn.innerHTML=oldHtml; }
-          var msg=(e2&&e2.message)||'未知错误';
-          var nice=cdFriendlyUpdateErr(msg);
-          if(st) st.textContent='更新失败：'+nice;
-          if(typeof toastr==='function') toastr.error('更新失败：'+nice);
-          if(typeof cdAddLog==='function'){ try{ cdAddLog('error','[更新][FAIL] 一键更新失败',{err:msg}); }catch(_e3){} }
-        });
-    }catch(e){ if(btn){ btn.disabled=false; btn.innerHTML=oldHtml; } if(typeof toastr==='function') toastr.error('触发更新异常'); }
+    cdDoUpdate(document.getElementById('cd-btn-download-update'), document.getElementById('cd-upd-status'));
   });
-
-  // 把后端错误翻译成用户可读的原因（网络/目录/Git 等）
-  function cdFriendlyUpdateErr(m){
-    if(!m) return '未知错误，请查看日志或稍后重试';
-    var s=String(m);
-    if(/404|not found|not found at/i.test(s) && /extensions/i.test(s)) return '找不到插件安装目录（可能安装位置不在此处）';
-    if(/409|mutation|already running/i.test(s)) return '有另一个更新正在执行，请稍等几秒再试';
-    if(/timeout|ETIMEDOUT|talking to the server|socket|ECONN/i.test(s)) return '网络连接 GitHub 失败（可能是网络不稳定或被墙），请检查网络后重试';
-    if(/IO error|git fetch|prepare git/i.test(s)) return 'GitHub 拉取失败（多为网络问题或仓库连接异常），请检查网络后重试';
-    if(/auth|forbidden|401|403|token/i.test(s)) return '权限/认证失败，无法访问该仓库';
-    if(/500|502|503|504/i.test(s)) return '服务器暂时出错（多为网络问题），请稍后重试';
-    return s.slice(0,120);
-  }
 
   // 立即试听（用当前生效音：用户 uri 优先）
   $('#cd-btn-tone-preview').off('click').on('click', function () {
@@ -15978,6 +16156,18 @@ async function cdRenderEgg() {
 
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
+    {
+    version: 'v2.20.0',
+    date: '2026-11-10',
+    items: [
+      '【更新中心】「检查更新」原来只读 GitHub Release，一旦忘建 Release 就永久假死（v2.18.2 之后六批修复全部不可见）。改为 Release 为主 + main 分支 manifest.json 兜底；发现新版弹更新日志弹窗（含版本、日期、正文、重启提示）并可一键更新；主界面「更新记录」格出现角标。同一版本只自动弹一次。',
+      '【兼容 Gemini 3.6+】Google 新模型禁用「请求以 model 回合结尾」，否则直接 HTTP 400，导致总结全线失败。五处 assistant 预填充后各追加一条 user 提示（预填充保留当格式示范，不删——删了档案会写成「主线：内容」同行、内容全丢）。只对 Gemini/中转命名含 gemini/gemma 的模型生效。',
+      '【手机小助手重做】身份从「记忆管理员」改为新手引导 + 排障 + 记忆管理三合一；新增 11 组离线问答兜底（没配好 API 时也能答，原来会死锁）；API 改用与总结同一套而非论坛那套。',
+      '【新手引导】23 个跳转目标可从回答里直达（退小助手→开面板→展开折叠项→滚动高亮）；39 条设置项旁加「?」就地解释；空状态给分步引导。',
+      '【剧情档案】一个【时间·地点】只跟一条叙述，多件事用分号串起（原来一条一个动作，几十行看不过来）；地点一变必须写新地点；新增六个字段开关默认全关，关掉的整段不进提示词。',
+      '【本版说明】v2.19.0 未单独发版，其内容一并包含在本版内。',
+    ],
+  },
     {
     version: 'v2.18.2',
     date: '2026-09-19',
@@ -16492,7 +16682,31 @@ const CHANGELOG = [
 ];
 
 function cdRenderChangelog() {
-  $('#cd-content').html(`
+  /* ★ FIX32：这一页从「只罗列历史」升级成「更新中心」——
+     顶部给当前版本 / 最新版本 / 检查更新 / 一键更新，下面照旧是完整更新记录。
+     手动检查走 cdProbeUpdate()，结果就地显示，不弹窗（这一页本身就是结果页）。 */
+  const lv = PLUGIN_VERSION;
+  const info = window.__cdUpdInfo || null;
+  const newer = !!(info && info.ok && info.newer);
+  const remoteTxt = (info && info.ok) ? ('v' + cdUpdEsc(info.ver))
+    : (info && !info.ok ? '读取失败' : '未检查');
+  let head = '';
+  head += '<div class="cd-egg"><div class="cd-egg-section cd-upd-center">';
+  head += '<h3 class="cd-write-title"><i class="fa-solid fa-arrows-rotate"></i> 更新中心</h3>';
+  head += '<div class="cd-upd-kv"><span>当前版本</span><b>v' + cdUpdEsc(lv) + '</b></div>';
+  head += '<div class="cd-upd-kv"><span>最新版本</span><b id="cd-upc-remote">' + remoteTxt + '</b></div>';
+  head += '<div class="cd-upd-kv"><span>构建标识</span><b>' + cdUpdEsc(CD_BUILD) + ' · ' + cdUpdEsc(CD_BUILD_DATE) + '</b></div>';
+  head += '<div class="cd-upd-acts">' +
+    '<button class="cd-btn-secondary" id="cd-upc-check"><i class="fa-solid fa-magnifying-glass" style="margin-right:5px;"></i>检查更新</button>' +
+    (newer ? '<button class="cd-btn-primary" id="cd-upc-go"><i class="fa-solid fa-download" style="margin-right:5px;"></i>更新到 v' + cdUpdEsc(info.ver) + '</button>' : '') +
+    '</div>';
+  head += '<div class="cd-upd-st2" id="cd-upc-st">' +
+    (newer ? ('有新版本可用：v' + cdUpdEsc(info.ver) + '。更新完成后需完全重启酒馆。')
+      : (info && !info.ok ? ('检查失败：' + cdUpdEsc(info.err || '网络错误')) : '')) +
+    '</div>';
+  head += '</div><div class="cd-write-divider"></div></div>';
+
+  const body = `
     <div class="cd-egg">
       ${CHANGELOG.map(ver => `
         <div class="cd-egg-section">
@@ -16503,7 +16717,35 @@ function cdRenderChangelog() {
         </div>
         <div class="cd-write-divider"></div>
       `).join('')}
-    </div>`);
+    </div>`;
+
+  $('#cd-content').html(head + body);
+
+  const chk = document.getElementById('cd-upc-check');
+  if (chk) {
+    chk.onclick = function () {
+      const st = document.getElementById('cd-upc-st');
+      if (st) st.textContent = '检查中…';
+      chk.disabled = true;
+      cdProbeUpdate().then(function (out) {
+        chk.disabled = false;
+        const rEl = document.getElementById('cd-upc-remote');
+        if (rEl) rEl.textContent = out.ok ? ('v' + out.ver) : '读取失败';
+        if (st) {
+          st.textContent = !out.ok ? ('检查失败：' + (out.err || '网络错误'))
+            : (out.newer ? ('有新版本可用：v' + out.ver + '。')
+              : ('已是最新版本 v' + out.localVer + '。'));
+        }
+        try { cdRenderChangelog(); } catch (_e) {}   // 状态变了要整页重画，才能冒出「更新到 vX」按钮
+      });
+    };
+  }
+  const go = document.getElementById('cd-upc-go');
+  if (go) {
+    go.onclick = function () {
+      cdDoUpdate(go, document.getElementById('cd-upc-st'));
+    };
+  }
 }
 
 function cdRenderHelp() {
@@ -16513,7 +16755,7 @@ function cdRenderHelp() {
       <div class="cd-egg-section" style="text-align:center;padding:12px 8px;">
         <h3 style="font-size: calc(0.95rem * var(--cd-fs, 1));font-weight:700;color:#4a3a2a;margin:0 0 4px;"><i class="fa-regular fa-book"></i> LIWE · RAG 记忆引擎</h3>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#8b7355;margin:0 0 2px;">为每个角色自动撰写第一人称日记，并持续沉淀剧情记忆 · 关系图谱 · 向量检索</p>
-        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v2.18.2 · 【liwe】</p>
+        <p style="font-size: calc(0.6rem * var(--cd-fs, 1));color:#8b7355;opacity:0.5;">SillyTavern 插件 · v${PLUGIN_VERSION} · 【liwe】</p>
         <p style="font-size: calc(0.68rem * var(--cd-fs, 1));color:#6b5a48;margin:8px 0 0;padding:6px 10px;background:rgba(205,182,155,0.1);border-radius:8px;display:inline-block;">
           <i class="fa-regular fa-sliders"></i> 点击右上角「设置」按钮进入设置，配置好 API 即可使用
         </p>

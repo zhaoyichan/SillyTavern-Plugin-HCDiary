@@ -3745,6 +3745,7 @@
 .cd-root .cd-ti{
   background:var(--cd-card);border:1px solid var(--cd-lineS);border-radius:9px;
   padding:9px 6px;text-align:center;cursor:pointer;transition:.16s;box-shadow:var(--cd-csh);
+  position:relative;   /* ★ FIX32：给 .cd-ti-badge 的绝对定位做参照，否则角标会飘到面板左上角 */
 }
 .cd-root .cd-ti:hover{background:var(--cd-cardH);border-color:var(--cd-line)}
 .cd-root .cd-ti i{font-size:15px;color:var(--cd-ink3);display:block;margin-bottom:5px}
@@ -4361,4 +4362,99 @@
   .cd-root .cd-studio-ebd{flex-direction:column;}
   .cd-root .cd-studio-elist{width:auto;max-height:34%;border-right:none;border-bottom:1px solid var(--cd-lineS);display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;}
   .cd-root .cd-studio-eitem{flex:none;min-width:132px;margin-bottom:0;}
+}
+
+/* ===== FIX32 · 更新中心 / 更新弹窗 ===== */
+/* 说明：新增组件只用 --cd-* 令牌取色，不硬编码色值 —— 四主题（墨底鎏金/素瓷/宣纸/石墨）
+   才会一起跟着变；写死 #c9a86a 这种只会在 night 下好看，白天就糊成一片。 */
+
+/* 工具格「更新记录」：有新版本时描金边、图标与文字转金 */
+.cd-root .cd-tgrid .cd-ti.hot{border-color:var(--cd-gold);box-shadow:var(--cd-glow,0 0 12px rgba(201,168,106,.22))}
+.cd-root .cd-tgrid .cd-ti.hot i,
+.cd-root .cd-tgrid .cd-ti.hot span{color:var(--cd-gold)}
+
+/* 更新记录页顶部「更新中心」 */
+.cd-root .cd-upd-center .cd-upd-kv{
+  display:flex;justify-content:space-between;align-items:center;gap:10px;padding:3px 0;
+  font-size:calc(0.68rem * var(--cd-fs,1));color:var(--cd-ink2);line-height:1.6;
+}
+.cd-root .cd-upd-center .cd-upd-kv b{
+  font-weight:600;color:var(--cd-ink);font-family:ui-monospace,Consolas,monospace;
+  font-size:calc(0.66rem * var(--cd-fs,1));
+}
+.cd-root .cd-upd-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.cd-root .cd-upd-acts .cd-btn-primary,
+.cd-root .cd-upd-acts .cd-btn-secondary{width:auto;padding:7px 14px;font-size:calc(0.66rem * var(--cd-fs,1))}
+.cd-root .cd-upd-st2{
+  font-size:calc(0.64rem * var(--cd-fs,1));color:var(--cd-gold);
+  line-height:1.65;margin-top:7px;
+}
+.cd-root .cd-upd-st2:empty{display:none}
+
+/* ---- 更新日志弹窗 ---- */
+/* 用 fixed 而不是 absolute：弹窗挂在 #cd-modal-root 里，那个根节点不一定是定位祖先，
+   用 absolute 会按 initial containing block 算，一旦面板没开就会算到整页去。 */
+.cd-root .cd-upd-mask{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:400}
+.cd-root .cd-upd-box{
+  position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:min(440px,calc(100% - 28px));max-height:calc(100% - 44px);
+  display:flex;flex-direction:column;
+  background:var(--cd-card);border:1px solid var(--cd-lineG);border-radius:14px;
+  box-shadow:var(--cd-shadow);z-index:401;overflow:hidden;
+}
+.cd-root .cd-upd-hd{
+  display:flex;align-items:center;gap:9px;padding:14px 14px 8px;
+}
+.cd-root .cd-upd-ic{
+  width:30px;height:30px;border-radius:50%;flex:none;
+  border:1px solid var(--cd-lineG);color:var(--cd-goldHi);
+  display:flex;align-items:center;justify-content:center;font-size:13px;
+}
+.cd-root .cd-upd-tt{
+  flex:1;min-width:0;font-size:calc(0.82rem * var(--cd-fs,1));font-weight:600;
+  color:var(--cd-ink);letter-spacing:.03em;
+}
+.cd-root .cd-upd-x{
+  flex:none;width:26px;height:26px;border-radius:7px;cursor:pointer;
+  border:1px solid var(--cd-lineS);background:transparent;color:var(--cd-ink3);
+  display:flex;align-items:center;justify-content:center;font-size:12px;
+}
+.cd-root .cd-upd-x:hover{border-color:var(--cd-gold);color:var(--cd-gold)}
+.cd-root .cd-upd-meta{
+  padding:0 14px 8px;font-size:calc(0.62rem * var(--cd-fs,1));color:var(--cd-ink3);
+}
+.cd-root .cd-upd-logwrap{
+  flex:1;min-height:0;overflow-y:auto;margin:0 14px;
+  border:1px solid var(--cd-lineS);border-radius:10px;background:var(--cd-panel2);
+}
+.cd-root .cd-upd-log{
+  margin:0;padding:10px 12px 10px 26px;
+  font-size:calc(0.66rem * var(--cd-fs,1));line-height:1.75;color:var(--cd-ink2);
+}
+.cd-root .cd-upd-log li{margin:0 0 5px}
+.cd-root .cd-upd-log li:last-child{margin-bottom:0}
+.cd-root .cd-upd-log li.cd-upd-mut{list-style:none;margin-left:-12px;color:var(--cd-ink3)}
+.cd-root .cd-upd-tip{
+  padding:10px 14px 0;font-size:calc(0.61rem * var(--cd-fs,1));line-height:1.7;color:var(--cd-ink3);
+}
+.cd-root .cd-upd-tip b{color:var(--cd-gold)}
+.cd-root .cd-upd-ft{
+  display:flex;gap:8px;padding:12px 14px 6px;justify-content:flex-end;flex-wrap:wrap;
+}
+.cd-root .cd-upd-ft .cd-btn-primary,
+.cd-root .cd-upd-ft .cd-btn-secondary{
+  width:auto;padding:8px 15px;font-size:calc(0.66rem * var(--cd-fs,1));
+}
+.cd-root .cd-upd-st{
+  padding:0 14px 12px;font-size:calc(0.61rem * var(--cd-fs,1));
+  color:var(--cd-ink2);line-height:1.6;
+}
+.cd-root .cd-upd-st:empty{display:none}
+
+/* 手机窄屏：按钮竖排，别挤成三个小方块 */
+@media (max-width:620px){
+  .cd-root .cd-upd-ft{flex-direction:column-reverse}
+  .cd-root .cd-upd-ft .cd-btn-primary,
+  .cd-root .cd-upd-ft .cd-btn-secondary{width:100%;text-align:center;justify-content:center}
+  .cd-root .cd-upd-box{width:calc(100% - 20px);max-height:calc(100% - 28px)}
 }
