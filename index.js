@@ -240,12 +240,12 @@ function cdCharOptions(cur) {
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.18.9';
+const PLUGIN_VERSION = '2.19.0';
 /* ★ FIX23：构建标识，用于定位用户跑的是哪批代码。
    CD_BUILD = 本版所基于的提交短 sha，配合 PLUGIN_VERSION 即可唯一确定版本；
    下次改动代码时请一并更新（无法自指自身 sha，故取基线）。 */
-const CD_BUILD = '25fceaa';
-const CD_BUILD_DATE = '2026-11-08';
+const CD_BUILD = 'aec1927';
+const CD_BUILD_DATE = '2026-11-10';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 
 /* ★ FIX30：插件自己的脚本地址。index.js 是 classic script，顶层执行时
@@ -768,6 +768,51 @@ function cdWarn(...args) {
  * 调用 LLM API，返回 { text, elapsed, tokenUsage }
  * @returns {Promise<{text:string, elapsed:number, tokenUsage:object|null}>}
  */
+/* ★ FIX31：Gemini 3.6+ 不允许请求以 model（assistant）回合结尾，直接 400。
+   我们从日记/档案/关系到 NPC 全都靠 assistant 预填充来逼格式，在 Gemini 上会全线报错：
+   "Requests ending with a model turn are not supported."
+   这里判断「这次是不是发给 Gemini 的」，决定要不要补末尾的 user。 */
+function cdTrailIsGemini(effSrc, s) {
+  if (effSrc === 'gemini') return true;
+  try {
+    const md = (effSrc && effSrc !== 'tavern' && s && s.endpoints && s.endpoints[effSrc])
+      ? String(s.endpoints[effSrc].model || '') : '';
+    /* 走中转网关（source 记成 openai）但模型名是 gemini 的，一样会被 Google 拦 */
+    return /gemini|gemma/i.test(md);
+  } catch (e) { return false; }
+}
+
+/* 末尾归一化：故意保留 assistant 预填充（那是格式示范），只在其后追加一条 user，
+   让最后一个回合变成 user。返回新数组，不改原数组。 */
+function cdNormalizeTrailingTurn(messages, effSrc, s) {
+  if (!Array.isArray(messages) || !messages.length) return messages;
+  if (!cdTrailIsGemini(effSrc, s)) return messages;
+  /* 找最后一条「非 system 且内容非空」的消息 —— Gemini 判的是最后一条非空回合 */
+  let last = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    var _m = messages[i];
+    if (_m && _m.role !== 'system' && String(_m.content == null ? '' : _m.content).trim()) { last = i; break; }
+  }
+  if (last < 0 || messages[last].role !== 'assistant') return messages;
+  var head = String(messages[last].content || '');
+  var hint = head.length > 40 ? (head.slice(0, 40) + '…') : head;
+  var nudge = {
+    role: 'user',
+    content: '【系统指令·续写】上面最后一条是你自己要输出的内容的开头，被截断在这里了。'
+      + '请紧接着它继续输出剩余部分：'
+      + '不要重复这个开头（「' + hint + '」不要再写一遍），'
+      + '不要任何开场白、解释或结束语，直接从下一个字符开始写。'
+  };
+  var out = messages.slice();
+  out.push(nudge);
+  try {
+    if (typeof cdAddLog === 'function') {
+      cdAddLog('api_req', '[API] 末尾是 assistant（' + head.slice(0, 20) + '），已补一条 user 避免 Gemini 400');
+    }
+  } catch (e) {}
+  return out;
+}
+
 async function cdApiComplete(messages, s) {
   const start = Date.now();
   let text;
@@ -791,6 +836,8 @@ async function cdApiComplete(messages, s) {
     if (typeof cdAddLog === 'function') cdAddLog('warn', '[API] 未配置 ' + effSrc + ' 地址，已降级到酒馆通道（你开启了「允许降级」）');
     effSrc = 'tavern';
   }
+  /* ★ FIX31：Gemini 3.6+ 遇到 assistant 结尾会 400，这里统一在入口补末尾 user */
+  messages = cdNormalizeTrailingTurn(messages, effSrc, s);
   switch (effSrc) {
     case 'tavern': text = await callTavern(messages, s); break;
     case 'openai': text = await callOpenAI(messages, s.endpoints.openai, s); break;
@@ -1152,7 +1199,18 @@ async function callGemini(messages, ep, s) {
   if (system) body.systemInstruction = { parts: [{ text: system }] };
   const url = `${base}/models/${encodeURIComponent(ep.model)}:generateContent?key=${encodeURIComponent(ep.key)}`;
   const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  if (!res.ok) throw new Error(`Gemini ${res.status}: ${await textOr(res)}`);
+  if (!res.ok) {
+    var _gErr = await textOr(res);
+    /* ★ FIX31：这句 400 是我们自己要防的，真出现了说明还有别处以 assistant 结尾，
+       或是走的通道没经过 cdNormalizeTrailingTurn。报错翻译成人话 + 指路。 */
+    if (/ending with a model turn|last turn.*model|end(s)? with an? (empty )?model/i.test(String(_gErr))) {
+      throw new Error('Gemini 拒绝了这次请求：它不允许对话以「模型发言」结尾（Gemini 3.6 起的新规则）。'
+        + '插件已自动补一条用户消息来避免，但仍然报错，说明这条请求没走到自动修补那一层。'
+        + '请点日志面板「复制诊断报告」发给开发者。原始报错：'
+        + String(_gErr).slice(0, 300));
+    }
+    throw new Error(`Gemini ${res.status}: ${_gErr}`);
+  }
   const j = await res.json();
   var _gparts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
   var _gTxt = _gparts.map(p => p.text || '').join('');
