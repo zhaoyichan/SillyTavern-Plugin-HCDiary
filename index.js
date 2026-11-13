@@ -240,7 +240,7 @@ function cdCharOptions(cur) {
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.22.1';
+const PLUGIN_VERSION = '2.22.2';
 /* ★ FIX23：构建标识，用于定位用户跑的是哪批代码。
    CD_BUILD = 本版所基于的提交短 sha，配合 PLUGIN_VERSION 即可唯一确定版本；
    下次改动代码时请一并更新（无法自指自身 sha，故取基线）。 */
@@ -11398,7 +11398,64 @@ const CD_SETTING_HELP = {
   'cd-s-cameo': ['路人角色出场满 N 次后升级成正式角色，才开始给他写日记。',
                  '默认 3。设成 1 会给每个跑龙套的都建档案，列表会很乱。'],
   'cd-s-retry': ['请求失败后自动重试几次、每次隔几秒。',
-                 '网络不稳或者用便宜网关时调大一点（3 次 / 2 秒是默认）。']
+                 '网络不稳或者用便宜网关时调大一点（3 次 / 2 秒是默认）。'],
+
+  /* ★ FIX37b：补齐剩下的设置项说明。跳过 4 个，原因留在这里别改回去：
+       cd-tone-file          —— 隐藏的 <input type=file>，问号会挂到「触发时机」那一行上，位置错
+       cd-tone-name          —— 纯展示文字（当前提示音名字），不是能改的设置
+       cd-s-relation         —— 该行 display:none（人物关系功能已停用），问号根本看不见
+       cd-s-inject-relation  —— 同上，注入侧也已停用 */
+  'cd-s-charimg': ['悬浮球、引导页欢迎条、日记空状态用的那张角色头像。',
+                   '内置 9 张，选你当前在聊的那个角色。',
+                   '这是插件自己的装饰图，和酒馆角色卡的头像互不影响。'],
+  'cd-s-charoff': ['打开后整个插件只留纯文字界面，头像、封面、欢迎条横图全部不显示。',
+                   '嫌花哨，或者内置角色图跟你现在聊的角色对不上时打开。',
+                   '打开它以后，下面那个「卡片封面」开关才真正看得出区别。'],
+  'cd-s-cardcover': ['首页日记卡、存档槽用角色图当背景封面（关掉是纯色卡）。',
+                     '默认开。',
+                     '★ 必须先打开上面的「不显示角色图」才有效 —— 否则整块图都在，这个开关看不出变化。'],
+  'cd-s-theme': ['插件面板的配色，四套：墨底鎏金（深色）/ 素瓷（冷白）/ 宣纸（米黄）/ 石墨（灰）。',
+                 '「跟随酒馆」会按酒馆当前是深色还是浅色自动切。',
+                 '换主题不影响任何数据，随时可以换回来。'],
+  'cd-s-dotnotify': ['新日记写出来时，悬浮球上冒一个小红点。',
+                     '不开的话得自己点进去才知道写没写。',
+                     '红点只是提示，看过就消失，不是错误。'],
+  'cd-s-forumdirect': ['打开：点悬浮球直接进「世界论坛」；关掉：点悬浮球进插件主页。',
+                       '你主要在用论坛就打开，能省一次点击。',
+                       '不确定就关着，主页里一样进得去。'],
+  'cd-s-replytone': ['AI 那段回复整段生成完毕时播一声，提醒你可以回来看了。',
+                     '默认开着，嫌吵可以关。',
+                     '下面「触发时机」决定它什么时候响：只在回复后 / 只在总结后 / 两者都响。'],
+  'cd-s-autoscrolltop': ['AI 回复完，界面平滑滚回这条回复的开头。',
+                         '回复很长时省得自己往上翻。',
+                         '不喜欢页面自己动就关掉。'],
+  'cd-s-autosummary': ['到了「处理频率」就自动跑一次总结（写日记 + 更新剧情档案）。',
+                       '关掉 = 只在你手动点总结时才跑。',
+                       '★ NSFW 场景常关掉。首页「工具」那排第一个就是一键暂停/恢复，不用进设置。'],
+  'cd-s-diaryver': ['角色日记写多长：复杂版 300~520 字（有内心戏和细节），精简版 100 字以内（只记关键事）。',
+                    '复杂版更耐读，也更费 token。',
+                    '已经写好的日记不会被改写，这项只影响之后新写的。'],
+  'cd-s-diarycharfilter': ['开：每次只注入「当前这段剧情里出场过的角色」的日记。关：每个角色的最新几篇全塞进去。',
+                           '角色多的时候开着明显省 token。',
+                           '判定靠下面的「登场判定窗口」—— 窗口那些楼层里出现过谁，就注入谁。'],
+  'cd-s-diarycharlimit': ['每个角色注入最近几篇日记。',
+                          '默认 3。设 1 只给最新一篇；设 5 以上前后更连贯，但更贵。',
+                          '配合上面的「按登场人物注入」用，单独改它意义不大。'],
+  'cd-s-diarycharwindow': ['往回看多少条楼层来判断「谁登场了」。',
+                           '默认 16。',
+                           '★ 设太小（2~4）会漏人；设太大（40 以上）会把早就走掉的角色也算进来。'],
+  'cd-s-sum-inject-diary': ['自动/手动总结时，除了要总结的楼层，要不要把已有的角色日记也一起发给 AI。',
+                            '默认不勾：最省 token，但 AI 不知道自己之前写过什么。',
+                            '勾上更连贯，也更贵。'],
+  'cd-s-sum-inject-archive': ['总结时是否把现有剧情档案一并发送。',
+                              '默认不勾（省 token）。档案很长时勾上会明显变贵。',
+                              '如果发现 AI 总把已经归档过的事再写一遍，可以勾上试试。'],
+  'cd-s-aifilter': ['把推理模型返回的思考过程（DeepSeek 的 <think>、<reasoning> 之类）剥掉，不当正文收进日记。',
+                    '默认开着，内置了几个常见标签，也可以自己往下面的列表里加。',
+                    '★ 关掉的话，思考过程会被当成剧情内容写进日记和档案。'],
+  'cd-s-autohide-keep': ['自动隐藏旧楼层时，末尾留多少条不隐藏（用户楼层也算在内）。',
+                         '默认 5。',
+                         '★ 太小会把刚聊的内容也藏掉；太大（30 以上）等于没隐藏，token 白花。']
 };
 
 /** 给设置面板里有解释的行加「?」，点开在行下方展开说明。幂等，可重复调用。 */
@@ -11413,7 +11470,10 @@ function cdApplySettingHelp(root) {
       if (row.querySelector('.cds-q')) continue;      // 已加过
       var ctl = row.querySelector('[id]');
       if (!ctl) continue;
-      var lines = CD_SETTING_HELP[ctl.id];
+      // ★ FIX37：必须是 const + 传参。原来 `var lines` 在 for 里只声明一次，
+      //   所有 onclick 闭包共享同一个变量，循环结束后它停在最后一行 ⇒
+      //   点哪个问号都显示最后一条说明（用户报「不同按键的小问号内容一样」）。
+      const lines = CD_SETTING_HELP[ctl.id];
       if (!lines) continue;
       var lab = row.querySelector('.cds-lab');
       if (!lab) continue;
@@ -11423,7 +11483,7 @@ function cdApplySettingHelp(root) {
       q.textContent = '?';
       q.setAttribute('role', 'button');
       q.setAttribute('title', '点开看这项是干什么的');
-      q.onclick = (function (rowEl) {
+      q.onclick = (function (rowEl, linesArr) {
         return function (e) {
           if (e && e.stopPropagation) e.stopPropagation();
           var box = rowEl.nextElementSibling;
@@ -11434,14 +11494,14 @@ function cdApplySettingHelp(root) {
           var d = document.createElement('div');
           d.className = 'cds-help';
           var html = '';
-          for (var k = 0; k < lines.length; k++) {
-            html += '<div class="cds-help-l">' + escapeHtml(String(lines[k])) + '</div>';
+          for (var k = 0; k < linesArr.length; k++) {
+            html += '<div class="cds-help-l">' + escapeHtml(String(linesArr[k])) + '</div>';
           }
           d.innerHTML = html;
           if (rowEl.parentNode) rowEl.parentNode.insertBefore(d, rowEl.nextSibling);
           n++;
         };
-      })(row);
+      })(row, lines);
       lab.appendChild(q);
       n++;
     }
