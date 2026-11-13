@@ -240,7 +240,7 @@ function cdCharOptions(cur) {
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.22.0';
+const PLUGIN_VERSION = '2.22.1';
 /* ★ FIX23：构建标识，用于定位用户跑的是哪批代码。
    CD_BUILD = 本版所基于的提交短 sha，配合 PLUGIN_VERSION 即可唯一确定版本；
    下次改动代码时请一并更新（无法自指自身 sha，故取基线）。 */
@@ -1343,7 +1343,7 @@ async function cdBuildDiaryPrompt(windowFloors, data, s) {
     }).join('\n');
   }).filter(Boolean).join('\n') : '');
   // ★ 楼层文本经过标签过滤
-  const scene = windowFloors.map(m => `[#${m.message_id} ${m.name}] ${cdFilterText(m.mes, s)}`).join('\n\n');
+  const scene = cdFilteredSceneLines(windowFloors, s).join('\n\n');
 
   // ★ 按登场人物捕获（方案B）：正则从剧情捕获登场角色，只推这些角色的近期日记（替代全量注入）
   let diaryMemory = memory;
@@ -1424,7 +1424,7 @@ function cdBuildCombinedPrompt(windowFloors, data, s) {
     }).join('\n');
   }).filter(Boolean).join('\n');
   // ★ FIX35：这里原来直接拼 m.mes，压根不过滤 —— 开合并总结时设置里的过滤规则一条都没生效
-  const scene = windowFloors.map(m => `[#${m.message_id} ${m.name}] ${cdFilterText(m.mes, s)}`).join('\n\n');
+  const scene = cdFilteredSceneLines(windowFloors, s).join('\n\n');
   const existing = data.archive || emptyData().archive;
   
   const sys = [
@@ -1795,7 +1795,7 @@ async function cdBuildArchivePrompt(windowFloors, data, _s, archiveFull, forceCo
     return `已知${f.label}：\n` + arr.map(it => it.time ? `【${it.time}】${it.desc}` : it.desc).join('\n');
   }).filter(Boolean).join('\n');
   // ★ 楼层文本经过标签过滤
-  const scene = windowFloors.map(m => `[#${m.message_id} ${m.name}] ${cdFilterText(m.mes, _s)}`).join('\n\n');
+  const scene = cdFilteredSceneLines(windowFloors, _s).join('\n\n');
 
   // ★★★ 诊断日志：确认传入剧情档案的楼层数与内容是否完整 ★★★
   try {
@@ -1821,7 +1821,7 @@ async function cdBuildArchivePrompt(windowFloors, data, _s, archiveFull, forceCo
       const topK = _s.vectorTopK || 5;
       const threshold = _s.vectorThreshold || 0.6;
       // 用当前楼层文本做检索
-      const sceneText = windowFloors.map(m => `${m.name}: ${cdFilterText(m.mes, _s)}`).join('\n');
+      const sceneText = cdFilteredSceneLines(windowFloors, _s, m => (m.name || '') + ':').join('\n');
       let results = await cdSearchVectors(sceneText, vectors, topK, threshold);
       // ★ rerank 重排序（剧情档案链路）
       results = await cdRerankResults(sceneText, results, _s, 'story');
@@ -2265,7 +2265,7 @@ function parseArchiveJson(text, customDefs) {
 function cdBuildRelationPrompt(windowFloors, data, _s) {
   const known = Object.keys(data.diaries);
   // ★ 楼层文本经过标签过滤
-  const scene = windowFloors.map(m => `[#${m.message_id} ${m.name}] ${cdFilterText(m.mes, _s)}`).join('\n\n');
+  const scene = cdFilteredSceneLines(windowFloors, _s).join('\n\n');
   const sys = [
     '你是一个角色关系分析员。阅读给定剧情片段, 提取角色之间的"单向主观关系"。',
     '要求:',
@@ -2462,6 +2462,30 @@ function cdFilterText(text, s) {
     return cdFilterByKeep(text, _st.filterKeepTags);
   }
   return cdFilterTags(text, _st.filterTags);
+}
+
+/**
+ * 把若干层正文按标签规则过滤后拼成提示词行数组（FIX36）。
+ * ★ 过滤后为空 / 只剩空白的层直接丢掉，不占位。
+ *   白名单（只保留）模式下大量楼层会被清空，照旧拼成 `[#12 名字] ` 就是一堆空壳行，
+ *   白占 token，还会让 AI 以为「这一层什么都没发生」。
+ * @param floors  楼层数组 { message_id, name, mes }
+ * @param s       设置对象（读 filterKeepTags / filterTags）
+ * @param labelFn 可选，m => 前缀字符串；返回空串表示不要前缀
+ */
+function cdFilteredSceneLines(floors, s, labelFn) {
+  const list = Array.isArray(floors) ? floors : [];
+  const out = [];
+  for (let i = 0; i < list.length; i++) {
+    const m = list[i];
+    if (!m) continue;
+    const raw = (m.mes != null ? m.mes : (m.message != null ? m.message : ''));
+    const t = cdFilterText(raw, s);
+    if (!t || !String(t).trim()) continue;   // ★ FIX36 空层跳过
+    const lb = labelFn ? String(labelFn(m) || '') : ('[#' + m.message_id + ' ' + (m.name || '') + ']');
+    out.push(lb ? (lb + ' ' + t) : String(t));
+  }
+  return out;
 }
 
 /** 根据用户自定义的标签对，过滤掉不需要发送给AI的内容 */
@@ -4040,9 +4064,8 @@ async function cdBuildDiaryInjectionText() {
           const chat2 = (typeof _cdGetChat === 'function') ? _cdGetChat() : [];
           // ★ 只取「最近楼层窗口」判定登场角色（避免整个聊天把所有角色都算登场）
           const _win = (chat2 && chat2.length) ? chat2.slice(-(Math.max(2, parseInt(s.diaryCharWindow,10)||16))) : (chat2 || []);
-          const sceneTxt = _win
-            .map(m => (m && (m.mes || m.message)) ? (m.name || '') + ': ' + (m.mes || m.message) : '')
-            .join('\n');
+          // ★ FIX36：白名单模式下也只从标签内文字判定登场角色（人物名写在标签外会漏判）
+          const sceneTxt = cdFilteredSceneLines(_win, s, m => (m.name || '') + ':').join('\n');
           const capt = cdCaptureCast(sceneTxt, data);
           if (capt && capt.length) namesToInject = capt;
           // ★ 运行时诊断：真实注入时到底捕获了谁、窗口多大
@@ -4093,8 +4116,8 @@ async function cdBuildDiaryInjectionText() {
       // ★ 向量模式：从历史档案中检索最相关的几条注入，避免全量几万 token
       if (s.archiveMode === 'vector' && Array.isArray(data.archiveVectors) && data.archiveVectors.length > 0 && typeof cdSearchVectors === 'function') {
         const chat = _cdGetChat();
-        const recent = (Array.isArray(chat) ? chat.slice(-6) : [])
-          .map(function (m) { return (m && m.mes) ? m.mes : ''; }).join('\n');
+        // ★ FIX36：白名单模式下检索词也只取标签内文字（原来直接拼 m.mes，标签外正文会被当成 query）
+        const recent = cdFilteredSceneLines(Array.isArray(chat) ? chat.slice(-6) : [], s, function () { return ''; }).join('\n');
         const topK = s.vectorTopK || 5;
         const threshold = s.vectorThreshold || 0.6;
         let results = await cdSearchVectors(recent || '当前剧情', data.archiveVectors, topK, threshold);
