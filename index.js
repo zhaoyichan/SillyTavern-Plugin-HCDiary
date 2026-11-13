@@ -244,7 +244,7 @@ const PLUGIN_VERSION = '2.22.0';
 /* ★ FIX23：构建标识，用于定位用户跑的是哪批代码。
    CD_BUILD = 本版所基于的提交短 sha，配合 PLUGIN_VERSION 即可唯一确定版本；
    下次改动代码时请一并更新（无法自指自身 sha，故取基线）。 */
-const CD_BUILD = '67e3b48';
+const CD_BUILD = '8096bc8';
 const CD_BUILD_DATE = '2026-11-13';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 /* ★ FIX32：更新探测的另外两条入口。
