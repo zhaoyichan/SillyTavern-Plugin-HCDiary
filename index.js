@@ -240,12 +240,12 @@ function cdCharOptions(cur) {
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.20.0';
+const PLUGIN_VERSION = '2.21.0';
 /* ★ FIX23：构建标识，用于定位用户跑的是哪批代码。
    CD_BUILD = 本版所基于的提交短 sha，配合 PLUGIN_VERSION 即可唯一确定版本；
    下次改动代码时请一并更新（无法自指自身 sha，故取基线）。 */
 const CD_BUILD = '8268fc2';
-const CD_BUILD_DATE = '2026-11-10';
+const CD_BUILD_DATE = '2026-11-13';
 const REPO_URL = 'https://api.github.com/repos/zhaoyichan/SillyTavern-Plugin-HCDiary/releases/latest';
 /* ★ FIX32：更新探测的另外两条入口。
    —— 只用 releases/latest 时，一旦忘了建 Release，「检查更新」就永久假死：
@@ -536,6 +536,14 @@ const DEFAULT_SETTINGS = {
   autoCompressThreshold : 30,    // 累计多少条事件触发压缩（count 模式）
   autoCompressSize : 2000,       // 累计多少字触发压缩（size 模式，含自定义追踪项）
   customFields : [],             // 用户自定义剧情追踪项定义 [{ key, label, desc }]
+  /* ★ FIX34：三类提示词的用户自定义。append=在官方提示词后追加要求；
+     override=整段接管（高级，接管后该提示词的自动适配会失效）；useOverride=接管开关。
+     ★ 默认全是空字符串/false ⇒ 不配置就与之前完全一致。 */
+  promptCustom : {
+    diary   : { append: '', override: '', useOverride: false },
+    archive : { append: '', override: '', useOverride: false },
+    compress: { append: '', override: '', useOverride: false }
+  },
   injectMemo   : true,          // [v2.9.3] 备忘录注入开关：状态界面手动写的备忘录是否在对话时注入给AI
   summarySource: 'chat',      // [v2.9.4] 自动总结数据源: 'chat'=现有(用chat数组) | 'jsonl'=从jsonl读全量楼层(根治分片)
   archiveStyle  : 'dialogue', // [v2.12+] 剧情档案记录风格: 'dialogue'=对话版(每条事件带关键对话原话) | 'plain'=常规版(只总结事实经过,不引用原文)
@@ -1371,34 +1379,7 @@ async function cdBuildDiaryPrompt(windowFloors, data, s) {
     } catch (e) { cdWarn('日记向量检索失败（降级为全量记忆）:', e); }
   }
   const _dv = (s && s.diaryVersion === 'lite') ? 'lite' : 'full';
-  const sys = [
-    '你是一个"角色日记"记录员。读剧情时，让每个有名有戏份的角色，用第一人称写下此刻自己心里真正在想什么。',
-    (typeof data === 'object' && data !== null && typeof data.lastFloor === 'number' && data.lastFloor === -1)
-      ? '- ★★★ 本次是这段剧情的【首次】记录。开头【第0楼的开场白】包含背景设定、时间地点、登场人物及彼此当前的关系状态，应从中领会这些设定，但不要复述开场白，只把这层背景融进角色此刻的心境。'
-      : '',
-    '【给谁写】只给有名有戏份的角色写。纯路人忽略；不代玩家/主角写。',
-    s.mainCardIsGM ? '- 旁白/系统/上帝视角/GM式叙述者，不要为其写。' : '',
-    '【这是写给自己的心里话，不是剧情汇报】',
-    '- 顺着这个角色此刻的情绪和脾气去写，别像背课文一样复述今天发生了啥。只写他亲眼看见、亲耳听见、亲身体会到、并且心里真这么想的事。',
-    '- 全知禁令：绝不能像上帝一样说出另一个角色心里在想什么，不能写这个角色不知道、没经历的情节。',
-    '【重头戏】把这段剧情里真正戳到他心上的那件事写出来——他可能因为这件事对某人改观了、记上了、心动了、后怕了、感激了、气笑了、或者狠狠吐槽了一顿自己；也可能就是心里咯噔一下、自己也说不清的那种滋味。跟着他那个人物该有的反应走：高兴就高兴、酸就酸、认就认、恼就恼。重点是这件事带着情绪落进了他心里，让他对某个人或自己有了点新的看法或态度。',
-    '【口吻】像深夜一个人碎碎念：可以有潜台词、说一半咽回去、突然自嘲一下、或者嘴硬两句；会反复、会矛盾——人本来就是这样的。别文艺腔、别打官腔、别每句都解释为什么。',
-    '【记忆】想起旧事就带一句呼应，想不起就不带，不强求。',
-    '【语言】跟随剧情片段的主要语言。',
-    '【露骨情节】性/暴力等只一句话带过（如"与他发生了关系"、"被他压制"），严禁描写动作、器官、体液等细节。日记记的是感受与判断，不是还原过程。',
-    (_dv === 'lite'
-      ? '【本批为精简档】正文 100 字以内，就写三样压干的话：① 此刻心里怎么想（爽不爽/憋不憋屈/放下没放下）② 今天最要紧的一件事（一句话带过，带出他的态度——吐槽/感激/记仇/心动都行）③ 这件事里他想留住的一个记忆点。一句是一句，不堆词儿、不啰嗦。'
-      : '【本批为完整档】正文 300~520 字。顺着情绪铺开：可以有心理活动、有口吻，把戳到他的那件事写到有分量。宁缺毋滥，别空洞凑字。'),
-    '【结构】只输出JSON，字段照旧、不得删减：',
-    '{"npcs":[{"name":"主名","aliases":["别名"],"is_minor":false,"date":"剧情时间或第N楼","turn":楼号数字,"entry":"第一人称心里话正文", "mood":"心情(限用以下词之一：开心、难过、生气、紧张、平静、困惑、惊讶、思念)","attitude_to_user":"对用户态度","secret":"没说出口的心思(可与entry有重叠但更私密更短)","key_events":["关键事件"],"relationship_with_others":{"某角色":"关系描述"}}]}',
-    '字段说明：',
-    '- entry：就是这个角色此刻的心里话正文（按上面的精简/完整档字数写）。',
-    '- mood：当下心情；attitude_to_user：对用户的态度；secret：没说出口的心思。',
-    '- key_events：他亲历、且对他个人有分量的事件。',
-    '- relationship_with_others：他对自己与别人关系的印象（主观、按他经历来写，不是上帝视角的结论）。',
-    '- 复用已知角色名单里的主名；识别出别名则归并到主名并在 aliases 补充。',
-    '- 用 is_minor 标记角色分量：主角/重要配角/有名有戏份NPC标 false；只在片段里露面一两句的纯路人标 true。',
-  ].filter(Boolean).join('\n');
+  const sys = cdDiarySysOf(s, data, _dv);
   // ★ 世界书联动：在函数体顶部异步获取登场角色的世界书设定（loadWorldInfo 为异步 API）
   let _worldbookTxtDiary = '';
   if (s && s.summarizeInjectDiary && s.worldbookLink !== false) {
@@ -1420,7 +1401,7 @@ async function cdBuildDiaryPrompt(windowFloors, data, s) {
     '请输出 JSON。',
   ].filter(Boolean).join('\n\n');
   return [
-    { role: 'system', content: JAILBREAK + '\n\n' + sys },
+    { role: 'system', content: JAILBREAK + '\n\n' + cdApplyPromptCustom('diary', sys) },
     { role: 'user', content: usr },
     { role: 'assistant', content: '{"npcs":[' },
   ];
@@ -1518,7 +1499,7 @@ function cdBuildCombinedPrompt(windowFloors, data, s) {
   ].join('\n\n');
   
   return [
-    { role: 'system', content: JAILBREAK + '\n\n' + sys },
+    { role: 'system', content: JAILBREAK + '\n\n' + cdApplyPromptCustom('diary', sys) },
     { role: 'user', content: usr },
     { role: 'assistant', content: '{"npcs":[' },
   ];
@@ -1782,7 +1763,7 @@ function cdArchiveSystemOf(full, s, hasOld) {
     try { st = (typeof cdGetSettings === 'function') ? String((cdGetSettings() || {}).archiveStyle || '') : ''; }
     catch (e) { st = ''; }
   }
-  return cdArchiveBuildSys(!!full, st === 'plain' ? 'plain' : 'dialogue', hasOld, cdArchiveFieldsOf(s));
+  return cdApplyPromptCustom('archive', cdArchiveBuildSys(!!full, st === 'plain' ? 'plain' : 'dialogue', hasOld, cdArchiveFieldsOf(s)));
 }
 
 async function cdBuildArchivePrompt(windowFloors, data, _s, archiveFull, forceCold) {
@@ -2528,6 +2509,136 @@ function cdParseCompressedBlocks(text, labels) {
  * @param {object} s         设置
  * @param {boolean} isAuto   是否由自动触发调用（true=触发后记录基线；手动 false=不记基线）
  */
+/* ============================== 提示词自定义（FIX34） ============================== */
+/* 三类可自定义的提示词。key 同时是设置里的字段名和页面 tab 的标识。
+   ★ 新增一类时，记得同时在 DEFAULT_SETTINGS.promptCustom 里加默认值，否则读取时是 undefined。 */
+const CD_PROMPT_KINDS = [
+  { key: 'diary',    name: '总结（日记）', icon: 'fa-regular fa-book',
+    desc: '每次让 AI 写角色日记时用的提示词。合并模式（一次跑日记+关系+档案）也吃这一份。',
+    warn: '日记必须让 AI 输出包含 "npcs" 数组的 JSON，格式改坏会导致解析失败、整批日记丢失。' },
+  { key: 'archive',  name: '剧情档案', icon: 'fa-regular fa-scroll',
+    desc: '生成剧情档案（主线/支线/状态/未解决）时用的提示词。',
+    warn: '档案要求「标签独占一行、内容写在后续行」。写成「主线：内容」同行，内容会被整段丢掉。' },
+  { key: 'compress', name: '档案压缩', icon: 'fa-regular fa-compress',
+    desc: '把累积的剧情档案压缩融合成一版更短的时候用的提示词。',
+    warn: '压缩提示词不涉及输出格式解析，改坏了最多压得不理想，不会丢档案。' }
+];
+
+/* 追加要求的包装头。措辞要点：既让用户的要求有优先级，又禁止它改变输出格式，
+   否则用户写一句「随便写写」就把 JSON 结构带跑了。 */
+const CD_PROMPT_APPEND_HEAD = '\n\n【用户自定义要求（优先级高于上面所有规则，但不得改变上面的输出格式与字段名）】\n';
+
+/** 取某一类提示词的自定义配置（永不抛错，读不到就当没配过） */
+function cdPromptCfg(kind) {
+  try {
+    const s = (typeof cdGetSettings === 'function') ? cdGetSettings() : null;
+    const all = (s && s.promptCustom && typeof s.promptCustom === 'object') ? s.promptCustom : null;
+    const c = all ? all[kind] : null;
+    if (!c || typeof c !== 'object') return { append: '', override: '', useOverride: false };
+    return {
+      append: typeof c.append === 'string' ? c.append : '',
+      override: typeof c.override === 'string' ? c.override : '',
+      useOverride: !!c.useOverride
+    };
+  } catch (e) { return { append: '', override: '', useOverride: false }; }
+}
+
+/** 把用户的自定义应用到默认提示词上。
+    - 没配过 → 原样返回（老用户逐字节不变，不会因这个功能改变任何现有行为）
+    - 整段接管且非空 → 用用户的文本整体替换默认值
+    - 只写了追加 → 默认值 + 自定义段
+   ★ 这是所有构建路径的唯一入口。改这里，三条提示词一起变；不要在别处另写判断。 */
+function cdApplyPromptCustom(kind, text) {
+  const base = String(text == null ? '' : text);
+  const c = cdPromptCfg(kind);
+  if (c.useOverride && String(c.override).trim()) return String(c.override).trim();
+  const ap = String(c.append).trim();
+  if (!ap) return base;
+  return base + CD_PROMPT_APPEND_HEAD + ap;
+}
+
+/** 当前生效的默认提示词文本（给编辑页展示用，不含用户自定义） */
+function cdPromptDefaultText(kind) {
+  try {
+    if (kind === 'diary') return cdDiarySysOf({}, {}, 'full');
+    if (kind === 'archive') return cdArchiveSystemOf(false, {}, false);
+    if (kind === 'compress') return CD_COMPRESS_PROMPT;
+  } catch (e) {
+    return '（读取默认提示词失败：' + (e && e.message ? e.message : e) + '）';
+  }
+  return '';
+}
+
+/* FIX34：压缩提示词提到顶层，提示词编辑页要展示/接管它，必须与发出去的是同一份。 */
+const CD_COMPRESS_PROMPT = `你是一个剧情档案整理员。把下面按【标题】分段的剧情总结，压缩融合成一版"只留推动剧情的关键事件、其余一律舍弃"的剧情档案。
+
+【第一铁律：只留推动剧情的事件】
+- 这个"压缩"是筛掉不推动剧情的内容，只保留会影响后续走向的事件：人物的关键抉择、关系的实质变化、重大得失、立下的承诺与威胁、暴露或揭开的秘密、结下的恩怨。
+- 以下内容一律丢弃，不要保留、也不要合并进主线：日常寒暄与无关对话、吃饭喝水洗漱睡觉这类生活琐事、环境氛围与情绪渲染、过渡衔接、路人角色的一次性互动、以及任何没有产生后果的动作。
+- 严禁把保留下来的事件写成抽象概括（如"遇到一些麻烦""发生了不少事"这类含糊句，不许出现）——留下的每一条都必须是能看懂的完整事实。
+- 允许明显缩短：压到原文的 1/3 甚至更短都属正常。宁可短，也不要把琐事塞回来。
+
+【时间与地点铁律】
+- 【时间标记】必须原样保留：每条事件都要带它原本的【时间】标注，不得删除或合并时间标记；不得把带【时间】的条目改写成无时间标记的连续叙述。
+- 事件先后顺序、跨时间的因果链不能乱、不能跳段。
+- 若原文含【地点】字段或 <<<LOCATIONS>>>…<<<LOCATIONS_END>>> 标记段，必须原样保留这些地点序列，不得删除或改写核心地名。
+
+【可清除项（放心地狠狠丢）】
+- 未解决事项：只需保留"当前最要紧、仍在推进"的少数几条；旧的、已翻篇的未解决可以直接清掉（下一轮会重新记录新的一批）。
+- 长期伏笔、未揭晓谜团、未兑现承诺、铺垫性线索、跨楼层伏线——可以大量清理，不必原样保留。
+- 环境氛围、情绪渲染、碎日常、过渡衔接——直接删除。
+
+【格式铁律（与自动写档案完全一致，压缩时也必须遵守，禁止破坏现有格式）】：
+1. 重要状态变化（states）必须保持固定分格格式，用 | 分隔不同维度、一格一值，禁止把多个维度混在同一个值里。每行 = 一个对象（主角/环境/某个角色），以换行分隔：
+   - 主角行：主角：身份【…】| 身体【…】| 精神【…】| 地址【…】| 资产【…】| 外在【…】| 好感【…】| 备注【…】
+   - 环境行：环境：布局【…】| 温度天气【…】
+   - 其他角色行：角色名：身体【…】| 地址【…】| 资产【…】| 外在【…】| 好感【…】| 备注【…】
+   压缩时保持这些分格与维度不丢失；已变化才更新该格，未变化保留或留空，不要用“无”填满所有格。
+2. 覆盖式与追加式语义保持：主线/支线为追加式（保留已发生的全部进展）；重要状态变化/未解决事项为覆盖式（保留当前仍然有效的最新全貌）。
+3. 若原文状态行末尾带【时间标记】（如【第3天 傍晚】），必须保留该时间标记标注状态最近变化时间。
+
+请严格按以下分段输出，每段以【标题】开头，标题保持原样，不得改动标题文字：
+- 【主线】…（每条事件仍以【时间】开头，一条一行）
+- 【支线】…（每条事件仍以【时间】开头，一条一行）
+- 【重要状态变化】…（每条事件仍以【时间】开头，一条一行；并按上面的分格格式保留各角色/主角/环境状态行）
+- 【未解决事项】…（每条事件仍以【时间】开头，一条一行）
+- 其余自定义追踪项：按原标题原样输出【标题】段落。
+- 【地点】（若原文存在则原样输出，用 <<<LOCATIONS>>>…<<<LOCATIONS_END>>> 包裹，一行一个核心地名）
+无内容的分段可省略。只输出压缩后的文本，不要任何解释。`;
+
+/* FIX34：日记 SYSTEM 提示词抽成独立函数，作为唯一真源。
+   提示词编辑页展示的「当前默认」和实际发给 AI 的都是这一份，避免两份文本漂移。 */
+function cdDiarySysOf(s, data, dv) {
+  return [
+    '你是一个"角色日记"记录员。读剧情时，让每个有名有戏份的角色，用第一人称写下此刻自己心里真正在想什么。',
+    (typeof data === 'object' && data !== null && typeof data.lastFloor === 'number' && data.lastFloor === -1)
+      ? '- ★★★ 本次是这段剧情的【首次】记录。开头【第0楼的开场白】包含背景设定、时间地点、登场人物及彼此当前的关系状态，应从中领会这些设定，但不要复述开场白，只把这层背景融进角色此刻的心境。'
+      : '',
+    '【给谁写】只给有名有戏份的角色写。纯路人忽略；不代玩家/主角写。',
+    s.mainCardIsGM ? '- 旁白/系统/上帝视角/GM式叙述者，不要为其写。' : '',
+    '【这是写给自己的心里话，不是剧情汇报】',
+    '- 顺着这个角色此刻的情绪和脾气去写，别像背课文一样复述今天发生了啥。只写他亲眼看见、亲耳听见、亲身体会到、并且心里真这么想的事。',
+    '- 全知禁令：绝不能像上帝一样说出另一个角色心里在想什么，不能写这个角色不知道、没经历的情节。',
+    '【重头戏】把这段剧情里真正戳到他心上的那件事写出来——他可能因为这件事对某人改观了、记上了、心动了、后怕了、感激了、气笑了、或者狠狠吐槽了一顿自己；也可能就是心里咯噔一下、自己也说不清的那种滋味。跟着他那个人物该有的反应走：高兴就高兴、酸就酸、认就认、恼就恼。重点是这件事带着情绪落进了他心里，让他对某个人或自己有了点新的看法或态度。',
+    '【口吻】像深夜一个人碎碎念：可以有潜台词、说一半咽回去、突然自嘲一下、或者嘴硬两句；会反复、会矛盾——人本来就是这样的。别文艺腔、别打官腔、别每句都解释为什么。',
+    '【记忆】想起旧事就带一句呼应，想不起就不带，不强求。',
+    '【语言】跟随剧情片段的主要语言。',
+    '【露骨情节】性/暴力等只一句话带过（如"与他发生了关系"、"被他压制"），严禁描写动作、器官、体液等细节。日记记的是感受与判断，不是还原过程。',
+    (dv === 'lite'
+      ? '【本批为精简档】正文 100 字以内，就写三样压干的话：① 此刻心里怎么想（爽不爽/憋不憋屈/放下没放下）② 今天最要紧的一件事（一句话带过，带出他的态度——吐槽/感激/记仇/心动都行）③ 这件事里他想留住的一个记忆点。一句是一句，不堆词儿、不啰嗦。'
+      : '【本批为完整档】正文 300~520 字。顺着情绪铺开：可以有心理活动、有口吻，把戳到他的那件事写到有分量。宁缺毋滥，别空洞凑字。'),
+    '【结构】只输出JSON，字段照旧、不得删减：',
+    '{"npcs":[{"name":"主名","aliases":["别名"],"is_minor":false,"date":"剧情时间或第N楼","turn":楼号数字,"entry":"第一人称心里话正文", "mood":"心情(限用以下词之一：开心、难过、生气、紧张、平静、困惑、惊讶、思念)","attitude_to_user":"对用户态度","secret":"没说出口的心思(可与entry有重叠但更私密更短)","key_events":["关键事件"],"relationship_with_others":{"某角色":"关系描述"}}]}',
+    '字段说明：',
+    '- entry：就是这个角色此刻的心里话正文（按上面的精简/完整档字数写）。',
+    '- mood：当下心情；attitude_to_user：对用户的态度；secret：没说出口的心思。',
+    '- key_events：他亲历、且对他个人有分量的事件。',
+    '- relationship_with_others：他对自己与别人关系的印象（主观、按他经历来写，不是上帝视角的结论）。',
+    '- 复用已知角色名单里的主名；识别出别名则归并到主名并在 aliases 补充。',
+    '- 用 is_minor 标记角色分量：主角/重要配角/有名有戏份NPC标 false；只在片段里露面一两句的纯路人标 true。',
+  ].filter(Boolean).join('\n');
+}
+
 async function cdCompressArchive(data, s, isAuto) {
   if (!data || !data.archive) return;
   const archive = data.archive;
@@ -2560,53 +2671,10 @@ async function cdCompressArchive(data, s, isAuto) {
   const joinText = blocks.join('\n\n');
   if (!joinText) { cdLog('cdCompressArchive: 无内容可压缩'); return; }
 
-  const COMPRESS_PROMPT = `你是一个剧情档案整理员。把下面按【标题】分段的剧情总结，压缩融合成一版"更紧凑、但每一件已发生的事都不丢"的剧情档案。
-
-【第一铁律：瘦身不截肢，不是挑重点】
-- 这个"压缩"是把每一段话用更短的句式重述，目标是留下一份【信息完整、事件全集】的档案，而不是只挑几件关键事出来。
-- 主线、支线里所有"已经发生的事"，即使再小、显得次要，也一件都不能删——每一件都要以更精炼的方式保留下来（可合并同类小事为一句，但不得当成没发生过）。
-- 严禁把具体事实压缩成抽象概括（如"遇到一些麻烦""发生了不少事"这类含糊句，不许出现）。
-- 压缩后长度应约为原文的 1/2~2/3：让句子更紧、段落更密，但绝不压到只留下几条主线。宁可稍微长一点，也不许丢经历过的事。
-
-【时间与地点铁律】
-- 【时间标记】必须原样保留：每条事件都要带它原本的【时间】标注，不得删除或合并时间标记；不得把带【时间】的条目改写成无时间标记的连续叙述。
-- 事件先后顺序、跨时间的因果链不能乱、不能跳段。
-- 若原文含【地点】字段或 <<<LOCATIONS>>>…<<<LOCATIONS_END>>> 标记段，必须原样保留这些地点序列，不得删除或改写核心地名。
-
-【可清除项（放心地狠狠丢）】
-- 未解决事项：只需保留"当前最要紧、仍在推进"的少数几条；旧的、已翻篇的未解决可以直接清掉（下一轮会重新记录新的一批）。
-- 长期伏笔、未揭晓谜团、未兑现承诺、铺垫性线索、跨楼层伏线——可以大量清理，不必原样保留。
-- 环境氛围、情绪渲染、碎日常、过渡衔接——直接删除。
-
-【格式铁律（与自动写档案完全一致，压缩时也必须遵守，禁止破坏现有格式）】：
-1. 重要状态变化（states）必须保持固定分格格式，用 | 分隔不同维度、一格一值，禁止把多个维度混在同一个值里。每行 = 一个对象（主角/环境/某个角色），以换行分隔：
-   - 主角行：主角：身份【…】| 身体【…】| 精神【…】| 地址【…】| 资产【…】| 外在【…】| 好感【…】| 备注【…】
-   - 环境行：环境：布局【…】| 温度天气【…】
-   - 其他角色行：角色名：身体【…】| 地址【…】| 资产【…】| 外在【…】| 好感【…】| 备注【…】
-   压缩时保持这些分格与维度不丢失；已变化才更新该格，未变化保留或留空，不要用“无”填满所有格。
-2. 好感度数值铁律（必须严格遵守，压缩时不可破坏）：
-   - 好感度必须以数字单独写出（如“对主角好感 62”或“对主角好感 -90”），禁止用“好感大幅提升”“好感下降”等模糊表述。
-   - 负好感必须带负号（-），如“对主角好感 -90”，绝不可写成正值或绝对值；覆盖式汇总时已有负好感必须原样带负号保留。
-   - 压缩只是精简表述，不得擅自更改好感数值本身；数值必须与压缩前的连续衔接。
-3. 覆盖式与追加式语义保持：主线/支线为追加式（保留已发生的全部进展）；重要状态变化/未解决事项为覆盖式（保留当前仍然有效的最新全貌）。
-4. 若原文状态行末尾带【时间标记】（如【第3天 傍晚】），必须保留该时间标记标注状态最近变化时间。
-
-请严格按以下分段输出，每段以【标题】开头，标题保持原样，不得改动标题文字：
-- 【主线】…（每条事件仍以【时间】开头，一条一行）
-- 【支线】…（每条事件仍以【时间】开头，一条一行）
-- 【重要状态变化】…（每条事件仍以【时间】开头，一条一行；并按上面的分格格式保留各角色/主角/环境状态行）
-- 【未解决事项】…（每条事件仍以【时间】开头，一条一行）
-- 其余自定义追踪项：按原标题原样输出【标题】段落。
-- 【地点】（若原文存在则原样输出，用 <<<LOCATIONS>>>…<<<LOCATIONS_END>>> 包裹，一行一个核心地名）
-无内容的分段可省略。只输出压缩后的文本，不要任何解释。
-【敏感内容·部署铁律（必须严格遵守，宁可输出长也不许丢/截断）】：
-- 原文若包含暴力、成人互动、羞辱、胁迫、伤病、血腥、病态关系、生理/精神状态变化等敏感内容，【必须原样完整保留该事件】，不得因内容尺度而跳过、删减、模糊化、概括化，更不得只保留该条目的后半截或只给摘要。
-- 禁止把含敏感词的事件"截断成只保留尾部"或"只输出不痛不痒的部分"——每条事件要么完整保留（允许用客观中性措辞，但不许丢关键事实），要么明示该事件被跳过的原因，绝不能再无提示地丢掉内容。
-- 你不是在创作剧情，只是在为已发生的剧情做客观压缩归档，因此不存在内容尺度风险；越敏感、越涉及多主体状态/关系/威胁承诺/胁迫/亲密的条目，越必须完整如实压缩保留，确保后续续写能接得上。
-- 若因任何理由做不到完整保留，宁可输出比 2/3 更长，也不许存在"断尾、丢头、只留结尾"的输出。请数一遍，确保输出的每个字段都比输入完整、不缺事件。`;
+  const COMPRESS_PROMPT = CD_COMPRESS_PROMPT;
 
   const res = await cdWithTimeout(cdApiComplete([
-    { role: 'system', content: (function () { const _jb = (typeof JAILBREAK !== "undefined" && JAILBREAK) ? (Array.isArray(JAILBREAK) ? JAILBREAK.join("\n") : String(JAILBREAK)) : ""; return (_jb ? _jb + "\n\n" : "") + COMPRESS_PROMPT; })() },
+    { role: 'system', content: (function () { const _jb = (typeof JAILBREAK !== "undefined" && JAILBREAK) ? (Array.isArray(JAILBREAK) ? JAILBREAK.join("\n") : String(JAILBREAK)) : ""; return (_jb ? _jb + "\n\n" : "") + cdApplyPromptCustom('compress', COMPRESS_PROMPT); })() },
     { role: 'user', content: joinText },
   ], s), 180000, '自动压缩');
 
@@ -2617,19 +2685,32 @@ async function cdCompressArchive(data, s, isAuto) {
     const out = cdParseCompressedBlocks(res.text, labels);
     // ★ DIAG: 解析结果逐字段
     cdAddLog('info', '[COMPRESS-DIAG] 解析结果 out', (function () { const o = {}; for (const f of fields) o[labels[f]] = (out[f] && String(out[f]).length) || 0; return o; })());
-    let replacedAny = false;
+    // FIX33: 允许「真空」。旧写法要求 length>0，AI 把某段压成空时会被跳过，
+    // 旧内容原样残留 —— 这就是用户感觉「怎么压都压不下去」的真凶。
+    // 解析层只给出现过的标题赋值，未输出的是 undefined，因此用 typeof 判断即可：
+    // 空串 = AI 明确清空（放行），undefined = 没提到（跳过，不误清）。
+    // ★ 顺序铁律：先算 projected 再写 archive。校验必须在写之前完成，
+    //   否则抛错时档案已经被改坏，「报错」和「保住原档案」只做到一件（FIX33c 踩过）。
+    const projected = {};
+    let replacedCount = 0;
     for (const f of fields) {
-      if (out[f] && typeof out[f] === 'string' && out[f].length) {
-        cdAddLog('info', `自动压缩 ${labels[f]}: ${String(archive[f] || '').length}→${out[f].length} 字`);
-        archive[f] = out[f];
-        replacedAny = true;
-      }
+      if (typeof out[f] === 'string') { projected[f] = out[f]; replacedCount++; }
+      else projected[f] = archive[f];
     }
-    if (!replacedAny) {
+    if (!replacedCount) {
       // 有返回但一个字段都没解析出来：明确报错，不再假装成功
       throw new Error('压缩失败：AI 返回了内容但未能按【主线】等标题解析，请检查返回格式（见日志 COMPRESS-DIAG）');
     }
-    cdAddLog('info', '[COMPRESS-DIAG] 回填成功，替换了 ' + replacedAny + ' 个字段', { mainline: String(archive.mainline || '').length, sideline: String(archive.sideline || '').length, states: String(archive.states || '').length, unresolved: String(archive.unresolved || '').length });
+    // 四个主字段全被清空不属于「压缩」，是 AI 输出异常。此时 archive 尚未改动，直接拒绝。
+    if (fields.every(f => !String(projected[f] || '').trim())) {
+      throw new Error('压缩失败：AI 把所有字段都清空了（这不是压缩，是丢档案），已保留原档案，请重试');
+    }
+    for (const f of fields) {
+      if (typeof out[f] !== 'string') continue;
+      cdAddLog('info', `自动压缩 ${labels[f]}: ${String(archive[f] || '').length}→${out[f].length} 字`);
+      archive[f] = out[f];
+    }
+    cdAddLog('info', '[COMPRESS-DIAG] 回填成功，替换了 ' + replacedCount + ' 个字段', { mainline: String(archive.mainline || '').length, sideline: String(archive.sideline || '').length, states: String(archive.states || '').length, unresolved: String(archive.unresolved || '').length });
     // 自定义追踪项：若 AI 按自定义标题输出了合并版，尝试回填（简化为：保留原值 + 折叠超额旧条目）
   } else {
     // 无返回文本：明确报错
@@ -9205,6 +9286,7 @@ async function cdRefreshPanelContent() {
     case 'save':     cdRenderSave(); break;
     case 'phone':    cdRenderPhone(); break;
     case 'inject':   cdRenderInject(); break;
+    case 'prompt':   cdRenderPromptPage(); break;   // ★ FIX34 提示词编辑
     case 'theatre':  cdRenderTheatre(); break;
     case 'vector':   cdRenderVector(); break;
     case 'manage':   await cdRenderManage(); break;
@@ -10114,6 +10196,7 @@ const CD_DASH_TOOLS = [
   { ic: 'fa-regular fa-table',           t: '情报表',   mode: 'table'   },
   { ic: 'fa-regular fa-download',        t: '导出',     mode: 'export'  },
   { ic: 'fa-regular fa-clipboard-list',  t: '日志',     mode: 'log'     },
+  { ic: 'fa-regular fa-pen-to-square',  t: '提示词',   mode: 'prompt'  },
   { ic: 'fa-regular fa-tag',             t: '更新记录', mode: 'changelog', upd: true },
   { ic: 'fa-regular fa-circle-question', t: '帮助',     mode: 'help'    },
   { ic: 'fa-regular fa-gem',             t: '彩蛋',     mode: 'egg'     }
@@ -10914,7 +10997,7 @@ function cdMarkSettingsClean() {
    并把名字统一成入口卡片上的叫法，避免面包屑与按钮文案对不上。 */
 var CD_VIEW_LABEL = { home: '首页', browse: '日记', archive: '剧情', graph: '状态', save: '存档', phone: '手机', inject: '注入',
   vector: '向量库', manage: '数据管理', floors: '楼层补写', backfill: '回填', clear: '清理', timeline: '时间线', export: '导出',
-  studio: '内容管理',
+  studio: '内容管理', prompt: '提示词',
   egg: '彩蛋', log: '日志', changelog: '更新日志', help: '帮助', forum: '论坛', theatre: '剧场', table: '情报表',
   __settings: '设置', __forum: '论坛' };
 function cdSyncCrumb(mode) {
@@ -13976,6 +14059,155 @@ async function cdDiagFloorSource(resultBox) {
   if (typeof toastr !== 'undefined') toastr.info('楼层数据源诊断完成，结果已显示在下方');
 }
 
+/* ============================== 提示词编辑页（FIX34） ============================== */
+/* 三类提示词的自定义入口。页面只负责「读写设置 + 展示默认值」，
+   真正把自定义拼进提示词的是 cdApplyPromptCustom，二者用同一个 key 对齐。 */
+var _cdPromptTab = 'diary';
+
+/** 整段接管后各自会失去什么（按类分开写，避免一句笼统的「会失效」让用户不明白代价） */
+function cdPromptOvNote(kind) {
+  if (kind === 'diary') return '接管后：首次记录那一行、精简档/完整档的字数要求、GM 模式的排除规则都不再自动变化，全靠你这份文本。';
+  if (kind === 'archive') return '接管后：设置里的剧情档案字段开关（支线/状态/未解决/任务/总览/章回）不再生效，叙事风格（对话版/常规版）也不再切换。';
+  if (kind === 'compress') return '接管后：只影响压缩这一次的输出格式要求，不会动档案结构。';
+  return '';
+}
+
+/** 单块面板的 HTML。默认文本一律现取，不缓存。 */
+function cdPromptPaneHtml(kind) {
+  var meta = null;
+  for (var i = 0; i < CD_PROMPT_KINDS.length; i++) if (CD_PROMPT_KINDS[i].key === kind) meta = CD_PROMPT_KINDS[i];
+  if (!meta) return '';
+  var cfg = cdPromptCfg(kind);
+  var def = cdPromptDefaultText(kind);
+  var esc = (typeof _cdEsc === 'function') ? _cdEsc : function (x) { return String(x == null ? '' : x); };
+  return '' +
+    '<div class="cd-pc-pane" data-pc-kind="' + kind + '">' +
+      '<p class="cd-pc-desc">' + esc(meta.desc) + '</p>' +
+      '<div class="cd-pc-warn"><i class="fa-regular fa-triangle-exclamation"></i> ' + esc(meta.warn) + '</div>' +
+
+      '<div class="cd-pc-label">追加要求<span class="cd-pc-sub">（官方提示词一个字不动，你的要求接在最后）</span></div>' +
+      '<textarea class="cd-input cd-pc-ta" id="cd-pc-append" rows="6" placeholder="例如：日记再短一点，每条不超过 200 字；多写某某角色心里的不甘，别只写表面发生了什么。">' + esc(cfg.append) + '</textarea>' +
+
+      '<label class="cd-pc-sw"><input type="checkbox" id="cd-pc-useoverride"' + (cfg.useOverride ? ' checked' : '') + '>' +
+        '<span>高级：整段接管官方提示词</span></label>' +
+
+      '<div class="cd-pc-ov" id="cd-pc-ovwrap"' + (cfg.useOverride ? '' : ' style="display:none;"') + '>' +
+        '<div class="cd-pc-note">' + esc(cdPromptOvNote(kind)) + '</div>' +
+        '<textarea class="cd-input cd-pc-ta cd-pc-ta-lg" id="cd-pc-override" rows="16" placeholder="点下面「载入当前默认」把官方原文填进来再改，比从空白开始安全。">' + esc(cfg.override) + '</textarea>' +
+        '<button type="button" class="cd-btn-secondary" id="cd-pc-loaddef" style="margin-top:6px;">载入当前默认（覆盖本框）</button>' +
+      '</div>' +
+
+      '<details class="cd-pc-defbox"><summary>查看当前默认提示词（只读 · ' + def.length + ' 字符）</summary>' +
+        '<pre class="cd-pc-pre">' + esc(def) + '</pre></details>' +
+
+      '<div class="cd-pc-acts">' +
+        '<button type="button" class="cd-btn-primary" id="cd-pc-save">保存这一块</button>' +
+        '<button type="button" class="cd-btn-secondary" id="cd-pc-reset">恢复默认（清空自定义）</button>' +
+      '</div>' +
+      '<p class="cd-pc-tip">改完必须点「保存这一块」。只读框里那份是官方原文，改不了；要改就开「整段接管」。</p>' +
+    '</div>';
+}
+
+/** 只重绘面板，不重绘整页（切 tab 用） */
+function cdPromptPaintPane(kind) {
+  var box = document.getElementById('cd-pc-body');
+  if (!box) return;
+  box.innerHTML = cdPromptPaneHtml(kind);
+  var tabs = document.querySelectorAll('.cd-studio-tab[data-pc-tab]');
+  for (var i = 0; i < tabs.length; i++) {
+    var on = tabs[i].getAttribute('data-pc-tab') === kind;
+    tabs[i].className = 'cd-studio-tab' + (on ? ' on' : '');
+  }
+}
+
+/** 把当前面板上的输入写进设置（kind 省略则取当前 tab） */
+function cdPromptSavePane(kind) {
+  kind = kind || _cdPromptTab;
+  var apEl = document.getElementById('cd-pc-append');
+  var ovEl = document.getElementById('cd-pc-override');
+  var swEl = document.getElementById('cd-pc-useoverride');
+  if (!apEl && !ovEl && !swEl) return false;
+  var s = cdGetSettings();
+  var all = Object.assign({}, (s && s.promptCustom) || {});
+  all[kind] = {
+    append: apEl ? String(apEl.value || '') : '',
+    override: ovEl ? String(ovEl.value || '') : '',
+    useOverride: swEl ? !!swEl.checked : false
+  };
+  cdSaveSettings({ promptCustom: all });
+  /* 读回核对：不核对就等于「点了保存但没写进去」，日志里也看不出来 */
+  var back = cdPromptCfg(kind);
+  return back.append === all[kind].append && back.override === all[kind].override && back.useOverride === all[kind].useOverride;
+}
+
+async function cdRenderPromptPage() {
+  var esc = (typeof _cdEsc === 'function') ? _cdEsc : function (x) { return String(x == null ? '' : x); };
+  var tabs = CD_PROMPT_KINDS.map(function (k) {
+    return '<div class="cd-studio-tab' + (k.key === _cdPromptTab ? ' on' : '') + '" data-pc-tab="' + k.key + '">' +
+      '<i class="' + k.icon + '"></i>' + esc(k.name) + '</div>';
+  }).join('');
+
+  var h = '' +
+    '<div class="cd-prompt-page">' +
+      '<details class="cd-tip">' +
+        '<summary>这个页面是干嘛的？会不会改坏？<span class="cd-tip-toggle"></span></summary>' +
+        '<div class="cd-tip-body">' +
+          '<p><b>两种改法，按需要选一个：</b></p>' +
+          '<div class="tip-step"><b>①</b><span><b>追加要求</b>（推荐）：官方提示词不动，你写的要求接在最后。适合「写短一点」「多写某人心理」这类。格式不会被改坏。</span></div>' +
+          '<div class="tip-step"><b>②</b><span><b>整段接管</b>（高级）：用你写的整段替换官方提示词。自由度最高，但官方那些自动变化的规则会一起失效，写错格式还可能丢内容。</span></div>' +
+          '<p class="tip-warn"><i class="fa-regular fa-triangle-exclamation"></i> 不配置就与以前完全一样。任何时候点「恢复默认（清空自定义）」都能回到官方原文。</p>' +
+          '<p class="tip-warn"><i class="fa-regular fa-circle-info"></i> 合并模式（设置里一次跑日记+关系+档案）会吃「追加要求」；但它的档案段是独立写的，所以「剧情档案」的自定义在合并模式下不生效。</p>' +
+        '</div>' +
+      '</details>' +
+      '<div class="cd-studio-tabs">' + tabs + '</div>' +
+      '<div id="cd-pc-body"></div>' +
+    '</div>';
+
+  $('#cd-content').html(h);
+  cdPromptPaintPane(_cdPromptTab);
+
+  /* ★ 一次性 off 再连续 on（铁律 5：多个选择器各写一遍 off.on 会互相残杀） */
+  var $sc = $('#cd-content');
+  $sc.off('.prompt');
+
+  $sc.on('click.prompt', '.cd-studio-tab[data-pc-tab]', function () {
+    var k = $(this).attr('data-pc-tab');
+    if (!k || k === _cdPromptTab) return;
+    cdPromptSavePane(_cdPromptTab);   // 切走前先存，避免改完没点保存就没了
+    _cdPromptTab = k;
+    cdPromptPaintPane(k);
+  });
+
+  $sc.on('change.prompt', '#cd-pc-useoverride', function () {
+    var w = document.getElementById('cd-pc-ovwrap');
+    if (w) w.style.display = this.checked ? '' : 'none';
+  });
+
+  $sc.on('click.prompt', '#cd-pc-loaddef', function () {
+    var t = document.getElementById('cd-pc-override');
+    if (!t) return;
+    if (String(t.value || '').trim() && !confirm('这个框里已经有内容了，载入默认会把它覆盖掉。继续？')) return;
+    t.value = cdPromptDefaultText(_cdPromptTab);
+  });
+
+  $sc.on('click.prompt', '#cd-pc-save', function () {
+    var ok = cdPromptSavePane(_cdPromptTab);
+    if (ok) { toastr.success('已保存，下一轮总结起生效'); }
+    else { toastr.error('保存失败：设置没写进去，请看日志'); }
+  });
+
+  $sc.on('click.prompt', '#cd-pc-reset', function () {
+    if (!confirm('确定清空这一块的自定义（追加和接管都恢复为空）？清空后就是官方原文。')) return;
+    var s = cdGetSettings();
+    var all = Object.assign({}, (s && s.promptCustom) || {});
+    all[_cdPromptTab] = { append: '', override: '', useOverride: false };
+    cdSaveSettings({ promptCustom: all });
+    cdPromptPaintPane(_cdPromptTab);
+    toastr.info('已恢复默认');
+  });
+}
+if (typeof window !== 'undefined') window.cdRenderPromptPage = cdRenderPromptPage;
+
 async function cdRenderFloors() {
   const data = await cdGetData();
   const allAi = await cdGetAiFloorsSmart();   // ★ 跟随 summarySource：jsonl 全量 / chat
@@ -16156,6 +16388,16 @@ async function cdRenderEgg() {
 
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
+  {
+    version: 'v2.21.0',
+    date: '2026-11-13',
+    items: [
+      '【档案压缩：真的能压了】原来的压缩提示词明文写着「一件都不能删」「压缩后长度约为原文 1/2~2/3」「宁可稍微长一点」，等于在阻止压缩。改成「只留推动剧情的事件」+ 明确的丢弃清单（日常寒暄、生活琐事、氛围渲染、过渡衔接、路人一次性互动、无后果动作），允许压到 1/3 甚至更短；删掉「好感度数值铁律」与「敏感内容·部署铁律」两大段约束。',
+      '【修掉「压不下去」的真凶】回填时只替换「有内容」的字段，AI 把某段压成空时会被直接跳过、旧内容原样留着。改为：AI 明确输出空段落 = 真的清空；没输出的段落 = 保持原样（两者严格区分，不会误删）。另加保护：四段全被清空视为异常，报错并原样保留档案。',
+      '【新增「提示词」页】主界面工具格第 11 格。可自定义「总结（日记）」「剧情档案」「档案压缩」三类提示词：① 追加要求（官方提示词不动，你的要求接在后面，格式不会被改坏）② 整段接管（高级，用你自己的文本完全替换，页面会写明接管后哪些自动适配会失效）。每个分块都有「查看当前默认提示词」「载入当前默认」「恢复默认」。不配置就与以前完全一样。',
+      '【顺手修】压缩失败时会明确告诉你失败原因（AI 没返回 / 没按标题解析 / 把字段全清了），不再假装成功。'
+    ]
+  },
     {
     version: 'v2.20.0',
     date: '2026-11-10',

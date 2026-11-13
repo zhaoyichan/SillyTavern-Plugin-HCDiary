@@ -4458,3 +4458,67 @@
   .cd-root .cd-upd-ft .cd-btn-secondary{width:100%;text-align:center;justify-content:center}
   .cd-root .cd-upd-box{width:calc(100% - 20px);max-height:calc(100% - 28px)}
 }
+
+
+/* ============================== 提示词编辑页（FIX34） ============================== */
+.cd-root .cd-prompt-page{padding:0 0 18px;}
+.cd-root .cd-pc-pane{padding:12px;display:flex;flex-direction:column;gap:8px;}
+.cd-root .cd-pc-desc{margin:0;font-size:calc(0.62rem * var(--cd-fs,1));line-height:1.6;color:var(--cd-ink2);}
+.cd-root .cd-pc-warn{
+  display:flex;gap:6px;align-items:flex-start;
+  font-size:calc(0.56rem * var(--cd-fs,1));line-height:1.55;
+  color:var(--cd-ink2);background:var(--cd-panel2);
+  border:1px solid var(--cd-lineS);border-left:3px solid var(--cd-gold);
+  border-radius:6px;padding:7px 9px;
+}
+.cd-root .cd-pc-warn i{margin-top:2px;color:var(--cd-gold);flex-shrink:0;}
+.cd-root .cd-pc-label{
+  font-size:calc(0.62rem * var(--cd-fs,1));font-weight:700;color:var(--cd-ink);
+  display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;margin-top:2px;
+}
+.cd-root .cd-pc-sub{font-weight:400;font-size:calc(0.54rem * var(--cd-fs,1));color:var(--cd-ink3);}
+.cd-root .cd-pc-ta{
+  width:100%;box-sizing:border-box;resize:vertical;
+  font-family:inherit;line-height:1.6;
+  font-size:calc(0.6rem * var(--cd-fs,1));
+  min-height:96px;
+}
+.cd-root .cd-pc-ta-lg{min-height:280px;font-size:calc(0.56rem * var(--cd-fs,1));}
+.cd-root .cd-pc-sw{
+  display:flex;align-items:center;gap:8px;cursor:pointer;
+  font-size:calc(0.6rem * var(--cd-fs,1));color:var(--cd-ink2);
+  padding:4px 0;user-select:none;
+}
+.cd-root .cd-pc-ov{
+  display:flex;flex-direction:column;gap:6px;
+  border:1px dashed var(--cd-lineG);border-radius:8px;padding:9px;
+  background:var(--cd-panel2);
+}
+.cd-root .cd-pc-note{font-size:calc(0.54rem * var(--cd-fs,1));line-height:1.6;color:var(--cd-ink3);}
+.cd-root .cd-pc-defbox{
+  border:1px solid var(--cd-lineS);border-radius:8px;background:var(--cd-panel);
+  padding:7px 10px;
+}
+.cd-root .cd-pc-defbox summary{
+  cursor:pointer;list-style:none;
+  font-size:calc(0.58rem * var(--cd-fs,1));color:var(--cd-ink2);
+}
+.cd-root .cd-pc-defbox summary::-webkit-details-marker{display:none;}
+.cd-root .cd-pc-pre{
+  margin:8px 0 0;padding:8px;max-height:320px;overflow:auto;
+  white-space:pre-wrap;word-break:break-word;
+  font-family:ui-monospace,Consolas,monospace;
+  font-size:calc(0.52rem * var(--cd-fs,1));line-height:1.6;
+  color:var(--cd-ink2);background:var(--cd-card);
+  border:1px solid var(--cd-lineS);border-radius:6px;
+}
+.cd-root .cd-pc-acts{display:flex;gap:7px;flex-wrap:wrap;margin-top:2px;}
+.cd-root .cd-pc-tip{
+  margin:0;font-size:calc(0.53rem * var(--cd-fs,1));line-height:1.6;color:var(--cd-ink3);
+}
+@media (max-width:620px){
+  .cd-root .cd-pc-pane{padding:10px 8px;}
+  .cd-root .cd-pc-ta{min-height:80px;}
+  .cd-root .cd-pc-ta-lg{min-height:200px;}
+  .cd-root .cd-pc-pre{max-height:220px;}
+}
