@@ -4522,3 +4522,39 @@
   .cd-root .cd-pc-ta-lg{min-height:200px;}
   .cd-root .cd-pc-pre{max-height:220px;}
 }
+
+
+/* ===== FIX35 正文标签扫描面板 =====
+ * 全部使用 --cd-* 令牌，四主题自动跟随。
+ * 不要在这里写死颜色：设置页在 .cd-root 内，硬编码会让 day1/day2 主题下出现深色块。
+ */
+.cd-root .cd-tagscan-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px;}
+.cd-root .cd-tagscan-barhint{font-size:calc(0.55rem * var(--cd-fs,1));color:var(--cd-ink3);line-height:1.5;flex:1;min-width:130px;}
+.cd-root #cd-tagscan-panel{margin:0 0 9px;padding:10px 11px;border:1px solid var(--cd-line);border-radius:10px;background:var(--cd-panel2);color:var(--cd-ink);}
+.cd-root .cd-tagscan-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.cd-root .cd-tagscan-nav{width:26px;height:26px;flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--cd-lineG);border-radius:7px;background:var(--cd-card);color:var(--cd-gold);font-size:15px;line-height:1;cursor:pointer;padding:0;}
+.cd-root .cd-tagscan-nav:disabled{opacity:.32;cursor:default;}
+.cd-root .cd-tagscan-pos{flex:1;text-align:center;font-size:calc(0.6rem * var(--cd-fs,1));color:var(--cd-ink2);}
+.cd-root .cd-tagscan-tip{font-size:calc(0.55rem * var(--cd-fs,1));line-height:1.65;color:var(--cd-ink2);background:var(--cd-glow);border-left:2px solid var(--cd-goldDim);padding:6px 8px;border-radius:0 6px 6px 0;margin-bottom:8px;}
+.cd-root .cd-tagscan-tip b{color:var(--cd-err);}
+.cd-root .cd-tagscan-list{display:flex;flex-direction:column;gap:6px;max-height:290px;overflow-y:auto;padding-right:2px;}
+.cd-root .cd-tagscan-row{display:flex;align-items:flex-start;gap:7px;padding:7px 8px;border:1px solid var(--cd-lineS);border-radius:8px;background:var(--cd-card);}
+.cd-root .cd-tagscan-ck{position:relative;flex:0 0 auto;display:inline-flex;align-items:center;cursor:pointer;font-size:calc(0.54rem * var(--cd-fs,1));font-weight:700;padding:2px 7px;border-radius:999px;border:1px solid var(--cd-line);color:var(--cd-ink3);user-select:none;}
+.cd-root .cd-tagscan-ck input{position:absolute;opacity:0;width:0;height:0;pointer-events:none;}
+.cd-root .cd-tagscan-ck-drop.on{color:var(--cd-err);border-color:var(--cd-err);background:rgba(196,122,99,.14);}
+.cd-root .cd-tagscan-ck-keep.on{color:var(--cd-gold);border-color:var(--cd-gold);background:var(--cd-glow);}
+.cd-root .cd-tagscan-body{flex:1;min-width:0;}
+.cd-root .cd-tagscan-name{font-size:calc(0.58rem * var(--cd-fs,1));font-weight:700;color:var(--cd-ink);font-family:ui-monospace,Consolas,monospace;word-break:break-all;}
+.cd-root .cd-tagscan-meta{font-weight:400;color:var(--cd-ink3);font-family:inherit;margin-left:4px;}
+.cd-root .cd-tagscan-sample{font-size:calc(0.52rem * var(--cd-fs,1));color:var(--cd-ink3);line-height:1.5;margin-top:2px;font-family:ui-monospace,Consolas,monospace;word-break:break-all;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.cd-root .cd-tagscan-empty{font-size:calc(0.57rem * var(--cd-fs,1));line-height:1.7;color:var(--cd-ink2);padding:10px 8px;text-align:center;}
+.cd-root .cd-tagscan-empty code{font-family:ui-monospace,Consolas,monospace;color:var(--cd-goldDim);}
+.cd-root .cd-tagscan-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:9px;flex-wrap:wrap;}
+.cd-root .cd-tagscan-keepbar{display:flex;align-items:center;gap:5px;flex-wrap:wrap;font-size:calc(0.55rem * var(--cd-fs,1));line-height:1.6;color:var(--cd-gold);background:var(--cd-glow);border:1px solid var(--cd-lineG);border-radius:8px;padding:6px 9px;margin:0 0 8px;}
+.cd-root .cd-tagscan-keepbar b{color:var(--cd-goldHi);}
+.cd-root .cd-tagscan-keepbar i{color:var(--cd-gold);}
+@media (max-width:620px){
+  .cd-root .cd-tagscan-row{flex-wrap:wrap;}
+  .cd-root .cd-tagscan-body{flex:1 1 100%;order:3;}
+  .cd-root .cd-tagscan-list{max-height:46vh;}
+}

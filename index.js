@@ -240,7 +240,7 @@ function cdCharOptions(cur) {
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.21.0';
+const PLUGIN_VERSION = '2.22.0';
 /* ★ FIX23：构建标识，用于定位用户跑的是哪批代码。
    CD_BUILD = 本版所基于的提交短 sha，配合 PLUGIN_VERSION 即可唯一确定版本；
    下次改动代码时请一并更新（无法自指自身 sha，故取基线）。 */
@@ -515,6 +515,9 @@ const DEFAULT_SETTINGS = {
     { start: '', end: '' },
     { start: '<!--', end: '-->' },
   ],
+  // ★ FIX35：白名单（只保留）。非空时优先于上面的 filterTags ——
+  //   只保留这些名字的标签块，标签块之外的文字一律丢弃（用户明确要的最激进一档）。
+  filterKeepTags  : [],
   // ★ FIX15：AI【返回内容】里的思维链/注释标签过滤（默认开）。
   //   保护日记和剧情档案不被推理过程污染；可自定义，清空列表则不启用过滤。
   aiFilterEnabled : true,
@@ -1340,8 +1343,7 @@ async function cdBuildDiaryPrompt(windowFloors, data, s) {
     }).join('\n');
   }).filter(Boolean).join('\n') : '');
   // ★ 楼层文本经过标签过滤
-  const tags = s.filterTags || [];
-  const scene = windowFloors.map(m => `[#${m.message_id} ${m.name}] ${cdFilterTags(m.mes, tags)}`).join('\n\n');
+  const scene = windowFloors.map(m => `[#${m.message_id} ${m.name}] ${cdFilterText(m.mes, s)}`).join('\n\n');
 
   // ★ 按登场人物捕获（方案B）：正则从剧情捕获登场角色，只推这些角色的近期日记（替代全量注入）
   let diaryMemory = memory;
@@ -1421,7 +1423,8 @@ function cdBuildCombinedPrompt(windowFloors, data, s) {
       return `【${name}】${e.date ? '第' + e.date : '第' + e.turn + '楼'}: ${(e.entry || '').trim()}`;
     }).join('\n');
   }).filter(Boolean).join('\n');
-  const scene = windowFloors.map(m => `[#${m.message_id} ${m.name}] ${m.mes}`).join('\n\n');
+  // ★ FIX35：这里原来直接拼 m.mes，压根不过滤 —— 开合并总结时设置里的过滤规则一条都没生效
+  const scene = windowFloors.map(m => `[#${m.message_id} ${m.name}] ${cdFilterText(m.mes, s)}`).join('\n\n');
   const existing = data.archive || emptyData().archive;
   
   const sys = [
@@ -1792,8 +1795,7 @@ async function cdBuildArchivePrompt(windowFloors, data, _s, archiveFull, forceCo
     return `已知${f.label}：\n` + arr.map(it => it.time ? `【${it.time}】${it.desc}` : it.desc).join('\n');
   }).filter(Boolean).join('\n');
   // ★ 楼层文本经过标签过滤
-  const tags = _s?.filterTags || [];
-  const scene = windowFloors.map(m => `[#${m.message_id} ${m.name}] ${cdFilterTags(m.mes, tags)}`).join('\n\n');
+  const scene = windowFloors.map(m => `[#${m.message_id} ${m.name}] ${cdFilterText(m.mes, _s)}`).join('\n\n');
 
   // ★★★ 诊断日志：确认传入剧情档案的楼层数与内容是否完整 ★★★
   try {
@@ -1819,7 +1821,7 @@ async function cdBuildArchivePrompt(windowFloors, data, _s, archiveFull, forceCo
       const topK = _s.vectorTopK || 5;
       const threshold = _s.vectorThreshold || 0.6;
       // 用当前楼层文本做检索
-      const sceneText = windowFloors.map(m => `${m.name}: ${cdFilterTags(m.mes, tags)}`).join('\n');
+      const sceneText = windowFloors.map(m => `${m.name}: ${cdFilterText(m.mes, _s)}`).join('\n');
       let results = await cdSearchVectors(sceneText, vectors, topK, threshold);
       // ★ rerank 重排序（剧情档案链路）
       results = await cdRerankResults(sceneText, results, _s, 'story');
@@ -2263,8 +2265,7 @@ function parseArchiveJson(text, customDefs) {
 function cdBuildRelationPrompt(windowFloors, data, _s) {
   const known = Object.keys(data.diaries);
   // ★ 楼层文本经过标签过滤
-  const tags = _s?.filterTags || [];
-  const scene = windowFloors.map(m => `[#${m.message_id} ${m.name}] ${cdFilterTags(m.mes, tags)}`).join('\n\n');
+  const scene = windowFloors.map(m => `[#${m.message_id} ${m.name}] ${cdFilterText(m.mes, _s)}`).join('\n\n');
   const sys = [
     '你是一个角色关系分析员。阅读给定剧情片段, 提取角色之间的"单向主观关系"。',
     '要求:',
@@ -2374,6 +2375,95 @@ function cdCleanAiField(v) {
 
 /* ============================== 内容过滤（发送给AI） ============================== */
 
+/** 找出文本里所有「最外层的成对尖括号标签块」
+ *  @returns {Array<{name:string,start:number,end:number,raw:string}>}
+ *  ★ FIX35：用栈配对，见文件头注释。同名嵌套、空元素、未闭合三种情况都处理了。
+ */
+function cdAngleBlocks(text) {
+  const src = String(text || '');
+  if (!src || src.indexOf('<') < 0) return [];
+  // 空元素不入栈：它们没有闭合标签，入栈会让后面整段被吞进块里
+  const VOID = { br: 1, hr: 1, img: 1, input: 1, meta: 1, link: 1, source: 1, wbr: 1, area: 1, base: 1, col: 1, embed: 1, param: 1, track: 1 };
+  // ★ 名字不能用 [A-Za-z]：AI 经常输出 <注意>…</注意> 这种中文标签，只认 ASCII 的话一个都扫不到。
+  //   用「不含空白/尖括号/斜杠」做名字，既支持中文又不会把「< 10 」这种小于号当标签。
+  const re = /<\s*\/?\s*([^\s<>/]+)(?:\s[^<>]*?)?(\/?)\s*>/g;
+  const stack = [];
+  const all = [];
+  let m;
+  while ((m = re.exec(src))) {
+    const raw = m[0];
+    const name = String(m[1] || '').toLowerCase();
+    if (!name) continue;
+    if (VOID[name] || m[2] === '/') continue;
+    const isClose = /^<\s*\//.test(raw);
+    if (!isClose) {
+      stack.push({ name: name, start: m.index });
+    } else {
+      for (let i = stack.length - 1; i >= 0; i--) {
+        if (stack[i].name === name) {
+          const op = stack[i];
+          stack.length = i;                 // 弹出它以及更内层没闭合的
+          all.push({ name: name, start: op.start, end: m.index + raw.length });
+          break;
+        }
+      }
+    }
+  }
+  if (!all.length) return [];
+  all.sort(function (a, b) { return a.start - b.start || b.end - a.end; });
+  const out = [];
+  let lastEnd = -1;
+  for (const b of all) {
+    if (b.start >= lastEnd) { out.push(b); lastEnd = b.end; }   // 只留最外层
+  }
+  return out.map(function (b) {
+    return { name: b.name, start: b.start, end: b.end, raw: src.slice(b.start, b.end) };
+  });
+}
+
+/** 扫描一层正文里出现了哪些标签（按名字聚合，按占用字符数从大到小排） */
+function cdScanTagStats(text) {
+  const blocks = cdAngleBlocks(text);
+  const map = Object.create(null);
+  for (const b of blocks) {
+    if (!map[b.name]) map[b.name] = { name: b.name, count: 0, len: 0, sample: '' };
+    map[b.name].count += 1;
+    map[b.name].len += b.raw.length;
+    if (!map[b.name].sample) map[b.name].sample = b.raw.replace(/\s+/g, ' ').slice(0, 56);
+  }
+  return Object.keys(map).map(function (k) { return map[k]; })
+    .sort(function (a, b) { return b.len - a.len; });
+}
+
+/** 白名单过滤：只保留 keepNames 里的标签块，其余文字（含其他标签块）全部丢弃
+ *  ★ 这是用户明确选的「最激进一档」，界面必须写清楚它会连正文叙述一起删。
+ */
+function cdFilterByKeep(text, keepNames) {
+  const src = String(text || '');
+  const keep = (Array.isArray(keepNames) ? keepNames : [])
+    .map(function (x) { return String(x || '').toLowerCase().trim(); })
+    .filter(Boolean);
+  if (!keep.length) return src;
+  const out = [];
+  for (const b of cdAngleBlocks(src)) {
+    if (keep.indexOf(b.name) >= 0) out.push(b.raw);
+  }
+  return out.join('\n').trim();
+}
+
+/** 统一过滤入口：白名单非空时走白名单，否则走原有的黑名单 filterTags
+ *  ★ 所有「把楼层正文拼进提示词」的地方都必须走这里，不要直接调 cdFilterTags，
+ *    否则白名单模式下会漏掉那一处（历史教训：合并模式就漏了整整一年）。
+ */
+function cdFilterText(text, s) {
+  if (!text) return text;
+  const _st = s || {};
+  if (Array.isArray(_st.filterKeepTags) && _st.filterKeepTags.length) {
+    return cdFilterByKeep(text, _st.filterKeepTags);
+  }
+  return cdFilterTags(text, _st.filterTags);
+}
+
 /** 根据用户自定义的标签对，过滤掉不需要发送给AI的内容 */
 function cdFilterTags(text, tags) {
   if (!text || !Array.isArray(tags) || !tags.length) return text;
@@ -2382,6 +2472,30 @@ function cdFilterTags(text, tags) {
     const start = String(pair?.start || '').trim();
     const end = String(pair?.end || '').trim();
     if (!start || !end) continue;
+    // ★ FIX35：尖括号成对标签走栈配对 —— 原来用 indexOf 找 '<tag>'，
+    //   遇到 '<tag class="x">' 就一个都找不到，用户以为规则生效了其实没生效。
+    const mTag = /^<\s*([^\s<>/]+)\s*>$/.exec(start);
+    if (mTag) {
+      const nm = String(mTag[1]).toLowerCase();
+      const blocks = cdAngleBlocks(result);
+      let hit = 0;
+      for (let i = blocks.length - 1; i >= 0; i--) {
+        if (blocks[i].name === nm) {
+          result = result.slice(0, blocks[i].start) + result.slice(blocks[i].end);
+          hit += 1;
+        }
+      }
+      if (!hit) {
+        // ★ 没有成对块时，沿用老规矩：开标签没闭合 → 截断到开头。
+        //   这是「发给 AI 侧」的既定口径（宁丢勿脏）：未闭合通常意味着正文被截断，
+        //   留着后半截反而会给 AI 一段脏上下文。不要因为「安全」把它删掉。
+        const safe = nm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const om = new RegExp('<\\s*' + safe + '(?=[\\s/>])', 'i').exec(result);
+        if (om) result = result.slice(0, om.index);
+      }
+      continue;
+    }
+    // 普通字符串对（如 <!-- -->）：保持原有行为，向后兼容
     let si = result.indexOf(start);
     while (si !== -1) {
       const ei = result.indexOf(end, si + start.length);
@@ -5096,6 +5210,54 @@ function cdCopyDiagnostic() {
     }
   } catch (e) { /* 继续走降级 */ }
   cdDiagnosticFallback(text);
+}
+
+/** 通用复制到剪贴板（FIX35）：clipboard 失败自动降级到 execCommand 文本框
+ *  ★ 不要直接调 navigator.clipboard：酒馆常跑在 http:// 局域网地址，
+ *    非安全上下文下 clipboard 可能不存在或被拒绝，直接调会静默失败、用户以为点了没反应。
+ *  @param {string} text 要复制的文本
+ *  @param {string} [okMsg] 成功提示
+ *  @param {string} [emptyMsg] 内容为空时的提示
+ */
+function cdCopyPlain(text, okMsg, emptyMsg) {
+  const t = String(text == null ? '' : text);
+  if (!t.trim()) {
+    if (typeof toastr !== 'undefined' && toastr.info) toastr.info(emptyMsg || '这段是空的，没有可复制的内容');
+    return;
+  }
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(t).then(function () {
+        if (typeof toastr !== 'undefined' && toastr.success) toastr.success(okMsg || '已复制');
+      }).catch(function () { cdCopyPlainFallback(t, okMsg); });
+      return;
+    }
+  } catch (e) { /* 继续走降级 */ }
+  cdCopyPlainFallback(t, okMsg);
+}
+
+/** cdCopyPlain 的降级实现：造一个看不见的 textarea + execCommand('copy') */
+function cdCopyPlainFallback(text, okMsg) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (_e) { ok = false; }
+    try { document.body.removeChild(ta); } catch (_e2) {}
+    if (ok) {
+      if (typeof toastr !== 'undefined' && toastr.success) toastr.success(okMsg || '已复制');
+    } else if (typeof toastr !== 'undefined' && toastr.info) {
+      toastr.info('浏览器不让自动复制，请手动选中文字复制');
+    }
+  } catch (e) {
+    if (typeof toastr !== 'undefined' && toastr.error) toastr.error('复制失败：' + ((e && e.message) || e));
+  }
 }
 
 
@@ -13371,8 +13533,10 @@ try {
   };
   var _arcSec = function (lab, txt, ph) {
     var _t = String(txt || '');
-    return '<div style="margin-bottom:12px;">' +
-      '<div style="font-size: calc(0.62rem * var(--cd-fs,1));font-weight:700;color:#6b4a1b;margin:0 0 4px;letter-spacing:.5px;display:flex;align-items:center;gap:6px;">— ' + escapeHtml(lab) + ' —' + _arcFmtTag(lab) + '</div>' +
+    return '<div class="cd-arch-sec" data-arch-lab="' + escapeAttr(lab) + '" style="margin-bottom:12px;">' +
+      '<div style="font-size: calc(0.62rem * var(--cd-fs,1));font-weight:700;color:#6b4a1b;margin:0 0 4px;letter-spacing:.5px;display:flex;align-items:center;gap:6px;">— ' + escapeHtml(lab) + ' —' + _arcFmtTag(lab) +
+      '<button type="button" class="cd-arch-copy" data-arch-copy="' + escapeAttr(lab) + '" title="只复制这一段" style="margin-left:auto;font-size:calc(0.54rem * var(--cd-fs,1));font-weight:600;color:#8b6a2f;background:#fbf5e6;border:1px solid #e3d5b8;border-radius:6px;padding:1px 8px;cursor:pointer;display:inline-flex;align-items:center;gap:3px;letter-spacing:0;"><i class="fa-regular fa-copy"></i>复制</button>' +
+      '</div>' +
       '<textarea spellcheck="false" rows="4" data-arch-key="' + escapeAttr(lab) + '" placeholder="' + escapeAttr(ph) + '" style="width:100%;box-sizing:border-box;padding:6px;font-size: calc(0.62rem * var(--cd-fs,1));background:#fffdf6;border:1px solid #e3d5b8;border-radius:6px;color:#3c2f1f;resize:vertical;line-height:1.6;">' + escapeHtml(_t) + '</textarea>' +
       '</div>';
   };
@@ -13390,10 +13554,30 @@ try {
     '<div style="padding:10px 12px 12px;border-top:1px solid #ede2cc;">' +
     '<p style="font-size: calc(0.55rem * var(--cd-fs,1));color:#8b7355;margin:0 0 10px;line-height:1.6;">此为整份剧情档案原文，用于编辑这份将发送给 AI 的内容。黑色小标题「— 主线 —」等不可删，直接改标题下方文字即可；改动仅在点右下角「保存」后生效，会同步到上方时间线。</p>' +
     _archEditHtml +
-    '<div style="display:flex;justify-content:flex-end;margin-top:8px;">' +
+    '<div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;">' +
+    '<button type="button" class="cd-btn-secondary" id="cd-arch-copy-all" style="font-size: calc(0.65rem * var(--cd-fs,1));padding:6px 14px;min-width:auto;"><i class="fa-regular fa-copy"></i> 复制整份档案</button>' +
     '<button type="button" class="cd-btn-primary" id="cd-arch-rawedit-save" style="font-size: calc(0.65rem * var(--cd-fs,1));padding:6px 16px;min-width:auto;"><i class="fa-regular fa-floppy-disk"></i> 保存</button>' +
     '</div></div></details></div>';
   $('#cd-content').append(_archEditBlock);
+  // ★ FIX35 一键复制：一次性 off('.archcopy') 再连续 on，
+  //   不要每个选择器各写一遍 off —— 会把彼此清掉（FIX19c 教训）。
+  $('#cd-content').off('.archcopy')
+    .on('click.archcopy', '.cd-arch-copy', function () {
+      const $sec = $(this).closest('.cd-arch-sec');
+      const lab = String($sec.attr('data-arch-lab') || '');
+      const txt = $sec.find('textarea').first().val();
+      cdCopyPlain(txt, '已复制「' + lab + '」这一段', '「' + lab + '」是空的，没有可复制的内容');
+    })
+    .on('click.archcopy', '#cd-arch-copy-all', function () {
+      const parts = [];
+      $('#cd-content .cd-arch-sec').each(function () {
+        const lab = String($(this).attr('data-arch-lab') || '');
+        const txt = String($(this).find('textarea').first().val() || '').trim();
+        if (txt) parts.push('— ' + lab + ' —\n' + txt);
+      });
+      cdCopyPlain(parts.join('\n\n'), '整份剧情档案已复制（' + parts.length + ' 段）', '整份档案是空的，没有可复制的内容');
+    });
+
   // 保存：把每个 textarea 按标签写回 archive 字段
   $('#cd-content').off('click', '#cd-arch-rawedit-save').on('click', '#cd-arch-rawedit-save', async function () {
     try {
@@ -15362,6 +15546,147 @@ function cdRenderExport() {
 }
 
 /* ============================== 设置面板 ============================== */
+/* ============================== ★ FIX35 正文标签扫描面板 ==============================
+ * 用户要的是：看到这一层正文里到底有哪些 <xxx> 标签，自己勾「删」或「留」，不用手敲。
+ * 三条铁律（改之前先读，否则会做坏）：
+ *   1) 只扫「当前这一层」，默认最新，可上下翻。用户明确说过「就是一条就行了，别检测那么多」。
+ *   2) 「删」和「留」同一行互斥：勾一个自动取消另一个。允许都不勾（= 不动这个标签）。
+ *   3) 只要有任何一行勾了「留」，整份按白名单走 —— 标签块之外的正文全部丢弃。
+ *      ★ 这是用户明确选的最激进一档；界面上必须写明，否则以后没人知道总结为什么变空。
+ */
+
+/** 取可扫描的楼层（排除 system 与空楼层），保持原有顺序 */
+function cdGetScannableFloors() {
+  try {
+    const ctx = (typeof SillyTavern !== 'undefined' && SillyTavern.getContext) ? SillyTavern.getContext() : null;
+    const chat = (ctx && Array.isArray(ctx.chat)) ? ctx.chat : [];
+    return chat.filter(function (m) {
+      return m && !m.is_system && String(m.mes || '').trim();
+    });
+  } catch (e) {
+    try { cdWarn('cdGetScannableFloors 取聊天失败', e); } catch (_e) {}
+    return [];
+  }
+}
+
+/** 打开扫描面板：默认扫最新一层 */
+function cdTagScanStart() {
+  const floors = cdGetScannableFloors();
+  if (!floors.length) {
+    if (typeof toastr !== 'undefined' && toastr.info) toastr.info('当前聊天还没有可扫描的楼层');
+    return;
+  }
+  window.__cdTagScan = { floors: floors, idx: floors.length - 1, stats: [], acts: {} };
+  cdTagScanLoad();
+}
+
+/** 重新扫描当前 idx 对应的楼层 */
+function cdTagScanLoad() {
+  const st = window.__cdTagScan;
+  if (!st) return;
+  const f = st.floors[st.idx] || {};
+  st.stats = cdScanTagStats(f.mes || '');
+  st.acts = {};
+  cdRenderTagScanPanel();
+}
+
+/** 渲染扫描面板 */
+function cdRenderTagScanPanel() {
+  const st = window.__cdTagScan;
+  const $p = $('#cd-tagscan-panel');
+  if (!$p.length) return;
+  if (!st) { $p.hide().empty(); return; }
+
+  const total = st.floors.length;
+  const f = st.floors[st.idx] || {};
+  const who = f.name || (f.is_user ? '你' : '角色');
+
+  let h = '';
+  h += '<div class="cd-tagscan-head">';
+  h += '<button type="button" class="cd-tagscan-nav" data-ts="prev"' + (st.idx <= 0 ? ' disabled' : '') + '>‹</button>';
+  h += '<span class="cd-tagscan-pos">第 ' + (st.idx + 1) + ' / ' + total + ' 层 · ' + escapeHtml(who) + '</span>';
+  h += '<button type="button" class="cd-tagscan-nav" data-ts="next"' + (st.idx >= total - 1 ? ' disabled' : '') + '>›</button>';
+  h += '</div>';
+
+  if (!st.stats.length) {
+    h += '<div class="cd-tagscan-empty">这一层没有成对的 <code>&lt;xxx&gt;…&lt;/xxx&gt;</code> 标签。<br>'
+      + '<span style="opacity:.75;">要么本来就没有，要么标签没闭合 —— 没闭合的会被当成普通文字，不列出来（避免误删半截正文）。</span></div>';
+    h += '<div class="cd-tagscan-actions"><button type="button" class="cd-btn-secondary" data-ts="close">关闭</button></div>';
+    $p.html(h).show();
+    return;
+  }
+
+  h += '<div class="cd-tagscan-tip">勾「删」= 整块删掉；勾「留」= 只保留这块。'
+    + '<b>只要有一行勾了「留」，标签块之外的正文会被全部删除</b>，总结就只剩这些标签里的内容。'
+    + '同一行两个勾互斥，都不勾 = 不动这个标签。</div>';
+
+  h += '<div class="cd-tagscan-list">';
+  st.stats.forEach(function (it) {
+    const act = st.acts[it.name] || '';
+    h += '<div class="cd-tagscan-row" data-tag="' + escapeAttr(it.name) + '">';
+    h += '<label class="cd-tagscan-ck cd-tagscan-ck-drop' + (act === 'drop' ? ' on' : '') + '">'
+      + '<input type="checkbox" class="cd-tagscan-act" data-tag="' + escapeAttr(it.name) + '" data-act="drop"' + (act === 'drop' ? ' checked' : '') + '> 删</label>';
+    h += '<label class="cd-tagscan-ck cd-tagscan-ck-keep' + (act === 'keep' ? ' on' : '') + '">'
+      + '<input type="checkbox" class="cd-tagscan-act" data-tag="' + escapeAttr(it.name) + '" data-act="keep"' + (act === 'keep' ? ' checked' : '') + '> 留</label>';
+    h += '<div class="cd-tagscan-body">';
+    h += '<div class="cd-tagscan-name">&lt;' + escapeHtml(it.name) + '&gt; <span class="cd-tagscan-meta">' + it.count + ' 处 · ' + it.len + ' 字符</span></div>';
+    h += '<div class="cd-tagscan-sample">' + escapeHtml(it.sample) + '</div>';
+    h += '</div></div>';
+  });
+  h += '</div>';
+
+  h += '<div class="cd-tagscan-actions">';
+  h += '<button type="button" class="cd-btn-primary" data-ts="apply">应用到内容过滤</button>';
+  h += '<button type="button" class="cd-btn-secondary" data-ts="close">取消</button>';
+  h += '</div>';
+
+  $p.html(h).show();
+}
+
+/** 把勾选结果写进设置 */
+function cdTagScanApply() {
+  const st = window.__cdTagScan;
+  if (!st) return;
+  const drops = [], keeps = [];
+  Object.keys(st.acts || {}).forEach(function (k) {
+    if (st.acts[k] === 'drop') drops.push(k);
+    else if (st.acts[k] === 'keep') keeps.push(k);
+  });
+  if (!drops.length && !keeps.length) {
+    if (typeof toastr !== 'undefined' && toastr.info) toastr.info('一个都没勾，没有可应用的规则');
+    return;
+  }
+
+  const s = cdGetSettings();
+  if (keeps.length) {
+    // ★ 白名单必须是覆盖写入。追加写法会让用户勾来勾去越留越多，最后等于没过滤。
+    cdSaveSettings({ filterKeepTags: keeps.slice() });
+  } else {
+    const cur = Array.isArray(s.filterTags) ? s.filterTags.slice() : [];
+    const seen = Object.create(null);
+    cur.forEach(function (p) { seen[String((p && p.start) || '').trim().toLowerCase()] = 1; });
+    drops.forEach(function (n) {
+      const start = '<' + n + '>';
+      if (seen[start]) return;
+      cur.push({ start: start, end: '</' + n + '>' });
+      seen[start] = 1;
+    });
+    // 走黑名单时清空白名单，否则旧白名单会继续压着，用户会以为「删」没生效
+    cdSaveSettings({ filterTags: cur, filterKeepTags: [] });
+  }
+
+  if (typeof toastr !== 'undefined' && toastr.success) {
+    toastr.success(keeps.length
+      ? ('已开启「只保留」：' + keeps.join('、') + '。标签块之外的正文不再发给 AI')
+      : ('已加入过滤：' + drops.join('、')));
+  }
+
+  window.__cdTagScan = null;
+  $('#cd-tagscan-panel').hide().empty();
+  // 设置页要重绘才能显示新规则；延后一拍，避免在事件回调里同步拆自己的 DOM
+  setTimeout(function () { try { cdRenderSettings(); } catch (e) {} }, 0);
+}
+
 async function cdRenderSettings() {
   const s = cdGetSettings();
   const panel = $('#cd-settings-panel');
@@ -15446,6 +15771,16 @@ async function cdRenderSettings() {
       '<input type="text" class="cd-input cd-filter-end" value="' + escapeAttr(pair.end || '') + '" placeholder="下标签" style="flex:1;text-align:left;min-width:50px;">' +
       '<button class="cd-btn-danger cd-filter-del" style="padding:2px 8px;min-width:auto;">×</button></div>';
   }).join('');
+
+  // ★ FIX35：白名单（只保留）状态条 —— 开了就必须一直显眼，否则用户会忘了自己
+  //   为什么总结内容突然只剩几百字。
+  var _keepTagsNow = Array.isArray(s.filterKeepTags) ? s.filterKeepTags : [];
+  var _keepBar = _keepTagsNow.length
+    ? ('<div class="cd-tagscan-keepbar"><i class="fa-solid fa-circle-exclamation"></i> <b>只保留模式已开启</b>：只发送 ' +
+        _keepTagsNow.map(function (t) { return '&lt;' + escapeHtml(t) + '&gt;'; }).join('、') +
+        ' 这些标签块，<b>标签块之外的正文不会发给 AI</b>。' +
+        '<button type="button" class="cd-btn-secondary" id="cd-filter-keep-clear" style="margin-left:8px;font-size:calc(0.58rem * var(--cd-fs,1));min-width:auto;padding:2px 9px;">清除</button></div>')
+    : '';
 
   // API 是否已配置（★ FIX10：原先算了却没用，现在真的用起来 —— 没配就在顶部给一条引导）
   const _hasApi = !!((s.endpoints && (s.endpoints.openai?.url || s.endpoints.claude?.url || s.endpoints.gemini?.url)) || !s.source || s.source === 'tavern');
@@ -15565,6 +15900,12 @@ async function cdRenderSettings() {
 
       <details class="cds-collapse" open data-cds="filter"><summary><i class="fa-regular fa-filter"></i> 内容过滤</summary>
         <div>
+          <div class="cd-tagscan-bar">
+            <button class="cd-btn-secondary" id="cd-tagscan-open" style="font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;"><i class="fa-solid fa-magnifying-glass" style="margin-right:4px;"></i>扫描当前楼层标签</button>
+            <span class="cd-tagscan-barhint">自动列出正文里的 &lt;xxx&gt; 标签，勾选后直接写成规则，不用自己敲</span>
+          </div>
+          <div id="cd-tagscan-panel" style="display:none;"></div>
+          ${_keepBar}
           <div id="cd-filter-tags-container">${_filterRows}</div>
           <button class="cd-btn-secondary" id="cd-filter-add" style="margin-top:4px;font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;">+ 添加一组</button>
         </div>
@@ -15690,6 +16031,46 @@ async function cdRenderSettings() {
     cdSaveSettings({ themeMode: v });
     cdApplyTheme(getEffectiveTheme());
     if (typeof toastr !== 'undefined') toastr.info('面板主题：' + (v === 'auto' ? '跟随酒馆' : cdThemeName(getEffectiveTheme())));
+  });
+
+  // ★ FIX35 标签扫描：一次性 off('.tagscan') 后连续 on。
+  //   千万不要每个选择器各写一遍 off(ns).on(ns,sel) —— 每 off 一次都会把上一条清掉，
+  //   最后只有最后一个选择器还能用（FIX19c 就是这个病，别重犯）。
+  $(document).off('.tagscan');
+  $(document).on('click.tagscan', '#cd-tagscan-open', function () {
+    cdTagScanStart();
+  }).on('click.tagscan', '#cd-tagscan-panel [data-ts]', function () {
+    const act = String($(this).attr('data-ts') || '');
+    if (act === 'prev' || act === 'next') {
+      const st = window.__cdTagScan; if (!st) return;
+      const next = st.idx + (act === 'prev' ? -1 : 1);
+      if (next < 0 || next >= st.floors.length) return;
+      st.idx = next; cdTagScanLoad();
+    } else if (act === 'apply') {
+      cdTagScanApply();
+    } else if (act === 'close') {
+      window.__cdTagScan = null;
+      $('#cd-tagscan-panel').hide().empty();
+    }
+  }).on('change.tagscan', '.cd-tagscan-act', function () {
+    const st = window.__cdTagScan; if (!st) return;
+    const tag = String($(this).attr('data-tag') || '');
+    const act = String($(this).attr('data-act') || '');
+    if (!tag) return;
+    const $row = $(this).closest('.cd-tagscan-row');
+    if ($(this).prop('checked')) {
+      st.acts[tag] = act;
+      // 同行互斥：另一个勾自动取消
+      $row.find('.cd-tagscan-act').not(this).prop('checked', false);
+    } else if (st.acts[tag] === act) {
+      delete st.acts[tag];
+    }
+    $row.find('.cd-tagscan-ck').removeClass('on');
+    $row.find('.cd-tagscan-act:checked').closest('.cd-tagscan-ck').addClass('on');
+  }).on('click.tagscan', '#cd-filter-keep-clear', function () {
+    cdSaveSettings({ filterKeepTags: [] });
+    if (typeof toastr !== 'undefined' && toastr.success) toastr.success('已清除「只保留」白名单');
+    setTimeout(function () { try { cdRenderSettings(); } catch (e) {} }, 0);
   });
 
   // 记录当前编辑来源（★ FIX10：与输入框同一口径，按当前选择来源，不再 openai 优先）
@@ -16375,6 +16756,17 @@ async function cdRenderEgg() {
 
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
+  {
+    version: 'v2.22.0',
+    date: '2026-11-13',
+    items: [
+      '【新增：扫描当前楼层标签】设置 → 高级 → 内容过滤里多了「扫描当前楼层标签」按钮。点它就自动列出这一层正文里的 &lt;xxx&gt;…&lt;/xxx&gt; 成对标签（几种、各几处、占多少字符、开头长什么样），默认最新一层，面板上能用 ‹ › 上下翻。每行两个勾：「删」= 整块删掉，「留」= 只保留这块，同行互斥。勾完点「应用到内容过滤」，规则直接写进设置，以后每次总结自动生效，不用再手敲上下标签。',
+      '【新增：只保留模式（白名单）】以前只能「删掉什么」，现在还能「只留什么」。只要有一行勾了「留」，整份就按白名单走：只保留勾选的标签块，<b>标签块之外的正文全部丢弃</b>。设置页会一直挂一条金色提醒告诉你白名单开着，免得以后忘了总结为什么突然只剩几百字。',
+      '【修掉：带属性的标签填了规则也不生效】原来过滤是按字符串找 &lt;status&gt;，而正文里实际写的是 &lt;status class="x"&gt;，一个都对不上 —— 你以为规则生效了，其实什么都没删。现在改成先配对再删，带不带属性都能认。顺带支持中文标签名（&lt;注意&gt;…&lt;/注意&gt;）。',
+      '【修掉：合并模式压根不过滤】开「合并总结」（一次调用同时产出日记 + 关系 + 档案）时，那条路径直接拼原始正文，设置里填的过滤规则一条都没生效过。现在五条正文路径（日记 / 合并 / 剧情档案 / 向量检索 / 关系图）全部走同一个过滤入口。',
+      '【新增：剧情档案一键复制】档案页底部的「剧情档案原文编辑」里，每段标题右边多了一个「复制」小按钮（只复制这一段），底下多了一个「复制整份档案」（按「— 段名 —」拼起来整份复制）。浏览器不让自动复制时会提示手动选中，不会静默失败。',
+    ],
+  },
   {
     version: 'v2.21.0',
     date: '2026-11-13',
