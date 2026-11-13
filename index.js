@@ -14213,19 +14213,6 @@ async function cdRenderFloors() {
   const allAi = await cdGetAiFloorsSmart();   // ★ 跟随 summarySource：jsonl 全量 / chat
   const lastRecordedFloor = data.lastFloor ?? -1;
   const s = cdGetSettings();
-  const COMPRESS_PROMPT = `【你现在不是陪聊助手，而是"剧情档案整理员"。
-
-你的任务是把多次已经确认过的剧情总结，融合压缩成一版"更紧凑、但每一件已发生的事都不丢"的累计总结正文。
-
-要求：
-1. 沿用当前累计总结已经形成的写法和风格，不要强行改成另一种格式。
-2. 【瘦身不截肢，不是挑重点】所谓压缩是把每段话用更短的句式重述，目标是保留一份【事件全集】，而不是只挑几件关键事。所有已经发生的事，即使再小也不能删；可合并同类小事为一句，但不得当成没发生过。严禁把具体事实压缩成抽象词或概括句（如"遇到一些麻烦"这类含糊表述）。
-3. 保留日期、时段、地点、事件先后顺序、跨时间的因果链——时间线不能乱、不能跳段。
-4. 保留关系变化、身份变化、伤病或生理状态变化、承诺与交易、关键物品或证据流转。
-5. 可清理项：未解决事项只留"当前最要紧、仍在推进"的少数几条，旧的、已翻篇的可以清掉；长期伏笔、铺垫线索、环境氛围、情绪渲染、碎日常直接删除。
-6. 压缩后长度约为原文的 1/2~2/3：让句子更紧、段落更密，但绝不压到只留下几条主干。宁可稍微长一点，也不许丢发生过的事。
-7. 如果多次总结里有重复信息，要融合，不要机械重复抄写。
-8. 输出纯文本，不要解释，不要多余说明。】`;
   const arc = data.archive || {};
   const hasArchive = !!(arc.mainline || arc.sideline || arc.states || arc.unresolved || (Array.isArray(arc.items) && arc.items.length) || (arc.custom && Object.values(arc.custom).some(a => Array.isArray(a) && a.length)));
 
