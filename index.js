@@ -7983,26 +7983,14 @@ async function cdOnMessageReceivedJsonl() {
   const newFloors = res.floors.filter(function (fl) {
     return fl.i > baselineUse && _pfSet.indexOf(fl.i) < 0 && fl.mes && String(fl.mes).trim();
   });
+  // ★ 锚点滚动（与 chat 路径一致）：攒够 interval+offset 才触发；本轮只写前 interval 层，末尾 offset 层不打标记、下一轮带回
   const totalNew = newFloors.length;
-  if (totalNew < interval) {
-    if (typeof cdAddLog === 'function') cdAddLog('info', '自动总结[jsonl]', { 未触发: '新增AI不足一整批', 新增: totalNew, 间隔: interval, 基线: baseline, 全量总楼层: res.floors.length });
+  const needFloors = interval + offset;
+  if (totalNew < needFloors) {
+    if (typeof cdAddLog === 'function') cdAddLog('info', '自动总结[jsonl]', { 未触发: '未攒够 间隔+锚点', 新增: totalNew, 需要: needFloors, 间隔: interval, 偏移: offset, 基线: baseline, 全量总楼层: res.floors.length });
     return;
   }
-  // 锚点偏移 + 分批（与 chat 路径一致）
-  // ★ [Bug2修复] 边界处真正跳过最新 offset 条：稳定区(stable=totalNew-offset)不足一整批但总新增已够整批时，
-  //   只推进「稳定区全部」，绝不再强行取满 interval 条而把最新 offset 条不稳定楼层写进记忆。
-  const stable = Math.max(0, totalNew - offset);
-  let takeCount = Math.floor(stable / interval) * interval;
-  if (takeCount < interval) {
-    if (stable >= interval) {
-      takeCount = Math.floor(stable / interval) * interval;   // 稳定区能凑整批 → 按整批
-    } else if (totalNew >= interval) {
-      takeCount = stable;                                     // 稳定区不足整批 → 只取稳定区全部（跳过最新 offset 条），防死锁
-    } else {
-      if (typeof cdAddLog === 'function') cdAddLog('info', '自动总结[jsonl]', { 未触发: '新增AI不足一整批', 新增: totalNew, 间隔: interval, 偏移: offset, 基线: baseline });
-      return;
-    }
-  }
+  const takeCount = interval;
   // 最大批次限制，避免 token 爆（一次性处理几百楼会超预算）
   const maxW = Math.max(1, parseInt(s.maxWindowFloors, 10) || 40);
   if (takeCount > maxW) takeCount = maxW;
@@ -8185,35 +8173,15 @@ async function cdOnMessageReceived() {
     }
   }
 
-  // ★ 锚点偏移：本轮不立刻写入最新 offset 条（留给下一轮待其稳定），
-  //   但触发判定用完整新增量，避免「单轮新增 < offset」时永久不触发。
-  // ★ [Bug2修复] 边界处真正跳过最新 offset 条：稳定区(stable=totalNew-offset)不足一整批但总新增已够整批时，
-  //   只推进「稳定区全部」，绝不再强行取满 interval 条而把最新 offset 条不稳定楼层写进记忆。
+  // ★ 锚点滚动（主人确认的规则）：攒够 interval+offset 才触发；
+  //   本轮只写前 interval 层，末尾 offset 层不打标记、下一轮随新楼层自然带回滚动。
   const totalNew = aiFloors.length;
-  const stable = Math.max(0, totalNew - offset);
-  let takeCount = Math.floor(stable / interval) * interval;
-  if (takeCount < interval) {
-    if (stable >= interval) {
-      takeCount = Math.floor(stable / interval) * interval;   // 稳定区能凑整批 → 按整批
-    } else if (totalNew >= interval) {
-      // 防死锁：稳定区不足一整批但完整新增已够整批时，只推进「稳定区全部」（=跳过最新 offset 条，早已稳定），
-      //         不再取满 interval 条而把最新 offset 条不稳定楼层也写进记忆
-      takeCount = stable;
-    } else {
-      // ★ 扫描 chat 结构，定位“AI楼层在哪、为何新增不足”
-      try {
-        const _scan = [];
-        for (let _i = 0; _i < currentLen; _i++) {
-          const _m = chat[_i];
-          _scan.push({ i: _i, user: !!(_m && _m.is_user), sys: !!(_m && _m.is_system), ai: !!(_m && !_m.is_user && !_m.is_system), name: (_m && _m.name) || '', type: (_m && (_m.role || (_m.is_user ? 'user' : _m.is_system ? 'system' : 'AI'))) });
-        }
-        const _aiIdx = _scan.filter(x => x.ai).map(x => x.i);
-        cdAddLog('info', '[chat结构扫描] 全部AI下标=' + JSON.stringify(_aiIdx), {共: currentLen, lastFloor: baseline, AI总数: _aiIdx.length, lastFloor之后的AI: _aiIdx.filter(i => i > baseline)});
-      } catch (_e) {}
-      cdAddLog('info', '自动总结', {未触发原因:'新增AI不足一整批', 新增AI: totalNew, 间隔: interval, 锚点偏移: offset, 基线: baseline, 聊天数: currentLen});
-      return;
-    }
+  const needFloors = interval + offset;
+  if (totalNew < needFloors) {
+    cdAddLog('info', '自动总结', {未触发:'未攒够 间隔+锚点', 新增AI: totalNew, 需要: needFloors, 间隔: interval, 锚点偏移: offset, 基线: baseline, 聊天数: currentLen});
+    return;
   }
+  const takeCount = interval;
 
   let windowFloors = aiFloors.slice(0, takeCount);
   /* ★ FIX16：这里不再自己截尾。原先 slice(-N) 会把更早的楼层直接丢掉，
