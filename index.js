@@ -240,7 +240,7 @@ function cdCharOptions(cur) {
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.23.0';
+const PLUGIN_VERSION = '2.23.1';
 /* ★ FIX23：构建标识，用于定位用户跑的是哪批代码。
    CD_BUILD = 本版所基于的提交短 sha，配合 PLUGIN_VERSION 即可唯一确定版本；
    下次改动代码时请一并更新（无法自指自身 sha，故取基线）。 */
@@ -532,7 +532,8 @@ const DEFAULT_SETTINGS = {
     { start: '<!--', end: '-->' },
   ],
   processMode     : 'summary',    // 正文处理方式: 'summary'=AI总结 | 'collect'=从正文标签框框采集摘要（不调API）
-  collectTag      : 'state',      // [采集] 要抓取的标签名（如 state → 匹配 <state>…</state>）
+  collectTag      : 'state',      // [采集] 兼容旧版单标签；新版以 collectTags 为准
+  collectTags     : ['state'],    // [采集] 要抓取的标签名清单（点选，可多选；如 state → 匹配 <state>…</state>）
   collectBoxes    : ['摘要', '时间'], // [采集] 标签内要抓取的框框名清单（如 [摘要] [时间]），按勾选拼接进档案主线
   autoHideEnabled : false,        // 自动隐藏已总结楼层
   autoHideKeep    : 5,            // 保留最新 N 条楼层可见（用户+AI）
@@ -2913,32 +2914,69 @@ async function cdCompressArchive(data, s, isAuto) {
 /* ============================== 正文采集（processMode='collect'）============================== */
 
 /**
- * ★ 扫描聊天里出现过的标签框框名，供设置界面生成勾选清单。
- *   只扫 <tag>…</tag> 内部形如 [框框名] 的方括号标记。
+ * ★ 扫描聊天正文里出现过的 <标签> 名，供设置界面生成「选标签」点选清单。
+ *   扫所有楼层 mes 里的 <xxx>…</xxx>（排除常见的 html / 系统标签）。
+ * @returns 去重后的标签名数组（按首次出现顺序）
+ */
+function cdScanCollectTags() {
+  let chat = [];
+  try { const ctx = SillyTavern.getContext(); chat = (ctx && Array.isArray(ctx.chat)) ? ctx.chat : []; } catch (e) {}
+  const found = [];
+  const seen = {};
+  // 排除明显不是剧情标签的 html 标签
+  const SKIP = { state:1, div:1, span:1, br:1, p:1, b:1, i:1, img:1, a:1, table:1, tr:1, td:1, ul:1, li:1, h1:1, h2:1, h3:1, hr:1, think:1, reasoning:1, analysis:1, reflection:1, details:1, summary:1, code:1, pre:1, font:1, center:1, small:1, sub:1, sup:1 };
+  try {
+    const anyTagRe = /<([a-zA-Z][\w-]{0,19})\s*>/g;
+    for (const m of chat) {
+      const mes = String((m && m.mes) || '');
+      if (!mes) continue;
+      let tm;
+      anyTagRe.lastIndex = 0;
+      while ((tm = anyTagRe.exec(mes)) !== null) {
+        const name = tm[1];
+        if (!name || SKIP[name.toLowerCase()]) continue;
+        // 必须有对应的闭合标签才算「剧情标签块」
+        if (mes.indexOf('</' + name + '>') < 0 && mes.indexOf('</' + name + ' ') < 0) continue;
+        if (!seen[name]) { seen[name] = true; found.push(name); }
+      }
+    }
+  } catch (e) {}
+  return found;
+}
+
+/**
+ * ★ 扫描聊天里选中标签内的框框名，供设置界面生成勾选清单。
+ *   只扫 <tag>…</tag> 内部形如 [框框名] 的方括号标记（多标签合并）。
  * @returns 去重后的框框名数组（按首次出现顺序）
  */
 function cdScanCollectBoxes() {
   const s = (typeof cdGetSettings === 'function') ? cdGetSettings() : {};
-  const tag = String(s.collectTag || 'state').replace(/[.*+?^${}()|[\]\\]/g, '\\$&') || 'state';
+  let tags = Array.isArray(s.collectTags) && s.collectTags.length ? s.collectTags.slice()
+    : (s.collectTag ? [String(s.collectTag)] : ['state']);
+  if (!tags.length) tags = ['state'];
   let chat = [];
   try { const ctx = SillyTavern.getContext(); chat = (ctx && Array.isArray(ctx.chat)) ? ctx.chat : []; } catch (e) {}
   const found = [];
   const seen = {};
   try {
-    const tagRe = new RegExp('<' + tag + '\\s*>([\\s\\S]*?)<\\/' + tag + '\\s*>', 'gi');
     const boxRe = /\[([^\]\[\n]{1,20})\]/g;
     for (const m of chat) {
       const mes = String((m && m.mes) || '');
       if (!mes) continue;
-      let tm;
-      tagRe.lastIndex = 0;
-      while ((tm = tagRe.exec(mes)) !== null) {
-        const inner = String(tm[1] || '');
-        let bm;
-        boxRe.lastIndex = 0;
-        while ((bm = boxRe.exec(inner)) !== null) {
-          const name = bm[1].trim();
-          if (name && !seen[name]) { seen[name] = true; found.push(name); }
+      for (const tag0 of tags) {
+        const tag = String(tag0).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        if (!tag) continue;
+        const tagRe = new RegExp('<' + tag + '\\s*>([\\s\\S]*?)<\\/' + tag + '\\s*>', 'gi');
+        let tm;
+        tagRe.lastIndex = 0;
+        while ((tm = tagRe.exec(mes)) !== null) {
+          const inner = String(tm[1] || '');
+          let bm;
+          boxRe.lastIndex = 0;
+          while ((bm = boxRe.exec(inner)) !== null) {
+            const name = bm[1].trim();
+            if (name && !seen[name]) { seen[name] = true; found.push(name); }
+          }
         }
       }
     }
@@ -2951,23 +2989,32 @@ function cdScanCollectBoxes() {
  *   读原始 mes（不走标签白名单过滤），找 <tag>…</tag>，在其中按 collectBoxes 顺序抓 [框框名] 后的文字。
  * @returns 拼接好的一段文本（可能为空）
  */
-function cdExtractCollectFromMes(mes, tag, boxes) {
+function cdExtractCollectFromMes(mes, tags, boxes) {
   const raw = String(mes || '');
   if (!raw.trim()) return '';
-  const tagEsc = String(tag || 'state').replace(/[.*+?^${}()|[\]\\]/g, '\\$&') || 'state';
-  const tagRe = new RegExp('<' + tagEsc + '\\s*>([\\s\\S]*?)<\\/' + tagEsc + '\\s*>', 'gi');
+  let tagList = Array.isArray(tags) && tags.length ? tags.slice() : [String(tags || 'state')];
+  if (!tagList.length) tagList = ['state'];
   const wanted = Array.isArray(boxes) ? boxes.map(function (b) { return String(b || '').trim(); }).filter(Boolean) : [];
   if (!wanted.length) return '';
   const out = [];
-  let tm;
-  tagRe.lastIndex = 0;
-  while ((tm = tagRe.exec(raw)) !== null) {
-    const inner = String(tm[1] || '');
+  // 按楼层里标签出现的先后顺序抓；每个标签块内按 boxes 勾选顺序输出
+  const tagSpans = [];
+  for (const tag0 of tagList) {
+    const tagEsc = String(tag0 || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (!tagEsc) continue;
+    const tagRe = new RegExp('<' + tagEsc + '\\s*>([\\s\\S]*?)<\\/' + tagEsc + '\\s*>', 'gi');
+    let tm;
+    tagRe.lastIndex = 0;
+    while ((tm = tagRe.exec(raw)) !== null) {
+      tagSpans.push({ at: tm.index, inner: String(tm[1] || '') });
+    }
+  }
+  tagSpans.sort(function (a, b) { return a.at - b.at; });
+  for (const span of tagSpans) {
+    const inner = span.inner;
     const parts = [];
-    // 按 collectBoxes 顺序输出，保证拼接顺序与勾选顺序一致
     for (const box of wanted) {
       const boxEsc = box.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      // 抓 [box] 之后到下一个 [xxx] 或结尾的文字
       const re = new RegExp('\\[' + boxEsc + '\\]\\s*([\\s\\S]*?)(?=\\s*\\[[^\\]\\[\\n]{1,20}\\]|$)');
       const mm = re.exec(inner);
       if (mm && mm[1] && String(mm[1]).trim()) {
@@ -2985,17 +3032,19 @@ function cdExtractCollectFromMes(mes, tag, boxes) {
  * @returns {ok:boolean, count:number, text:string}
  */
 async function cdCollectIntoArchive(windowFloors, data, s) {
-  const tag = String(s.collectTag || 'state').trim() || 'state';
+  let tags = Array.isArray(s.collectTags) && s.collectTags.length ? s.collectTags.slice()
+    : (s.collectTag ? [String(s.collectTag)] : ['state']);
+  if (!tags.length) tags = ['state'];
   const boxes = Array.isArray(s.collectBoxes) ? s.collectBoxes : ['摘要', '时间'];
   if (!data.archive || typeof data.archive !== 'object') data.archive = (typeof emptyData === 'function') ? emptyData().archive : {};
 
   const pieces = [];
   for (const wf of (windowFloors || [])) {
-    const one = cdExtractCollectFromMes((wf && wf.mes) || '', tag, boxes);
+    const one = cdExtractCollectFromMes((wf && wf.mes) || '', tags, boxes);
     if (one) pieces.push(one);
   }
   if (!pieces.length) {
-    cdAddLog('info', '[采集] 本批未抓到任何摘要框框', { 标签: tag, 框框: boxes, 楼层数: (windowFloors || []).length });
+    cdAddLog('info', '[采集] 本批未抓到任何摘要框框', { 标签: tags, 框框: boxes, 楼层数: (windowFloors || []).length });
     return { ok: false, count: 0, text: '' };
   }
 
@@ -3011,7 +3060,7 @@ async function cdCollectIntoArchive(windowFloors, data, s) {
     data.archive.mainline = before.trimEnd() + '\n\n' + key;
     added++;
   }
-  cdAddLog('info', '[采集] 摘要已并入档案主线', { 标签: tag, 框框: boxes, 新增段: added, 主线字数: String(data.archive.mainline || '').length });
+  cdAddLog('info', '[采集] 摘要已并入档案主线', { 标签: tags, 框框: boxes, 新增段: added, 主线字数: String(data.archive.mainline || '').length });
   return { ok: added > 0, count: added, text: pieces.join('\n\n') };
 }
 
@@ -7405,7 +7454,7 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
         archiveOk = true;   // 复用通用流程：游标推进 / 自动隐藏 / 自动压缩 / 刷新注入照常走
         cdAddLog('info', '[采集模式] 档案主线已采集（本批不调 AI 总结）', { 新增段: _colRes.count });
       } else {
-        cdAddLog('info', '[采集模式] 本批无可采集摘要，楼层不打已记录标记、留待下轮', { 标签: s.collectTag || 'state', 框框: s.collectBoxes });
+        cdAddLog('info', '[采集模式] 本批无可采集摘要，楼层不打已记录标记、留待下轮', { 标签: (Array.isArray(s.collectTags) && s.collectTags.length ? s.collectTags : [s.collectTag || 'state']), 框框: s.collectBoxes });
       }
     }
     // ★ 合并模式：角色日记 + 剧情档案 用一次 API 调用（提示词动态拼接，勾哪个拼哪个）
@@ -15928,7 +15977,23 @@ async function cdRenderSettings() {
         + 'color:#7a6142;white-space:normal;}' +
       '#cd-modal-root.cd-night #cd-settings-panel .cds-help{background:rgba(232,199,122,.08);color:#d9c6a2;}' +
       '#cd-settings-panel .cds-help-l{margin:0;}' +
-      '#cd-settings-panel .cds-help-l + .cds-help-l{margin-top:3px;}';
+      '#cd-settings-panel .cds-help-l + .cds-help-l{margin-top:3px;}' +
+      /* ★ 重分类：分区标题 + 编号圆点 */
+      '#cd-settings-panel .cds-sec-head{display:flex;align-items:center;gap:9px;margin-bottom:8px;padding-bottom:7px;border-bottom:1px solid rgba(190,160,110,.18);}' +
+      '#cd-settings-panel .cds-no{width:24px;height:24px;flex:0 0 auto;border-radius:8px;background:rgba(201,168,124,.9);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:700;}' +
+      '#cd-modal-root.cd-night #cd-settings-panel .cds-no{background:#c9a87c;color:#1b1408;}' +
+      '#cd-settings-panel .cds-gsub{margin-left:2px;}' +
+      '#cd-settings-panel .cds-sec-div{height:7px;}' +
+      '#cd-settings-panel .cds-newtag{display:inline-block;font-size:9px;font-weight:600;color:#fff;background:#6a9a6a;border-radius:8px;padding:0 6px;margin-left:5px;vertical-align:middle;}' +
+      /* ★ 正文采集：自动扫描出来的标签/框框点选 chip */
+      '#cd-settings-panel .cds-collect-sec{margin:6px 0;}' +
+      '#cd-settings-panel .cds-collect-title{font-size:11.5px;font-weight:600;opacity:.82;margin:6px 0 5px;}' +
+      '#cd-settings-panel .cds-picks{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 6px;}' +
+      '#cd-settings-panel .cds-pick{display:inline-flex;align-items:center;gap:3px;border:1px solid rgba(190,160,110,.45);background:rgba(255,255,255,.4);border-radius:16px;padding:3px 11px;font-size:11.5px;cursor:pointer;transition:.15s;user-select:none;}' +
+      '#cd-settings-panel .cds-pick:has(input:checked){background:rgba(201,168,124,.9);border-color:#c9a87c;color:#fff;}' +
+      '#cd-modal-root.cd-night #cd-settings-panel .cds-pick{background:rgba(255,255,255,.06);}' +
+      '#cd-modal-root.cd-night #cd-settings-panel .cds-pick:has(input:checked){background:#c9a87c;color:#1b1408;}' +
+      '#cd-settings-panel .cds-pick input{margin:0;width:12px;height:12px;accent-color:#8a6a3a;}';
     (document.head || document.documentElement).appendChild(st);
   })();
   var _selGold = 'style="background:linear-gradient(135deg,#d8c39a,#c9a87c);color:#fff;border-color:#c9a87c;font-weight:600"';
@@ -15986,70 +16051,28 @@ async function cdRenderSettings() {
   panel.html(`
 <h2 class="cd-settings-h2"><i class="fa-regular fa-gear"></i> 设置</h2>
 
-    <div class="cds-card" data-cds="update">
-      <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-arrows-rotate"></i></span><span><span class="cds-gtitle">检查更新</span><span class="cds-gsub">一键检测新版本</span></span></div>
-      <div class="cds-row"><span class="cds-lab">当前版本</span><span class="cds-ctrl"><span class="cds-val" id="cd-upd-local">v${PLUGIN_VERSION}</span></span></div>
-      <div class="cds-row"><span class="cds-lab">最新版本</span><span class="cds-ctrl"><span class="cds-val" id="cd-upd-remote" style="min-width:58px;">-</span></span></div>
-      <div class="cds-row" style="justify-content:flex-start;gap:8px;"><button class="cd-btn-secondary" id="cd-btn-check-update"><i class="fa-solid fa-magnifying-glass" style="margin-right:5px;"></i>检查更新</button><button class="cd-btn-secondary" id="cd-btn-download-update" style="display:none;color:#c84632;border-color:#e0b8ae;background:#fdf0ec;"><i class="fa-solid fa-download" style="margin-right:5px;"></i>下载更新</button></div>
-      <div class="cds-hint" id="cd-upd-status" style="white-space:normal;line-height:1.6;margin-top:4px;"></div>
-    </div>
-    <div class="cds-card" data-cds="basic">
-      <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-power-off"></i></span><span><span class="cds-gtitle">基本 · 总控</span><span class="cds-gsub">插件总开关与悬浮球</span></span></div>
-      <div class="cds-row"><span class="cds-lab">角色图 <span class="cds-hint">悬浮球 / 引导页 / 空状态</span></span><span class="cds-ctrl"><select id="cd-s-charimg" class="cd-input" style="width:auto;min-width:120px;text-align:left;">${cdCharOptions(s.charImage || 'levi-mochizuki')}</select></span></div>
-<div class="cds-row"><span class="cds-lab">不显示角色图 <span class="cds-hint">只留纯文字界面</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-charoff" ${s.charImageOff ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
-<div class="cds-row"><span class="cds-lab">卡片封面 <span class="cds-hint">日记卡 / 存档槽用角色图做封面（需同时开启上面的「不显示角色图」才有效）</span></span><span class="cds-ctl"><label class="cd-switch"><input type="checkbox" id="cd-s-cardcover" ${s.cardCover !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
-<div class="cds-row"><span class="cds-lab">面板主题 <span class="cds-hint">墨底鎏金 / 素瓷 / 宣纸 / 石墨</span></span><span class="cds-ctrl"><select id="cd-s-theme" class="cd-input" style="width:auto;min-width:118px;text-align:left;">${['night:墨底鎏金','day1:素瓷','day2:宣纸','day3:石墨','auto:跟随酒馆'].map(function(x){var p=x.split(':');var cur=s.themeMode||'day1';if(cur==='day')cur='day1';return '<option value="'+p[0]+'"'+(cur===p[0]?' selected':'')+'>'+p[1]+'</option>';}).join('')}</select></span></div>
-<div class="cds-row"><span class="cds-lab">界面字号</span><span class="cds-ctrl"><input type="range" id="cd-font-scale-range" min="80" max="200" step="5" value="${fontScalePct}" style="width:110px;accent-color:#c9a87c;"><span id="cd-font-scale-val" class="cds-val">${fontScalePct}%</span></span></div>
+${_apiGuide}
+    <!-- ① 总控与更新 -->
+    <div class="cds-card cds-sec" data-cds="basic">
+      <div class="cds-sec-head"><span class="cds-no">1</span><span class="cds-gtitle">总控与更新</span><span class="cds-gsub">最常用 · 版本与开关</span></div>
+      <div data-cds="update">
+        <div class="cds-row"><span class="cds-lab">当前版本</span><span class="cds-ctrl"><span class="cds-val" id="cd-upd-local">v${PLUGIN_VERSION}</span></span></div>
+        <div class="cds-row"><span class="cds-lab">最新版本</span><span class="cds-ctrl"><span class="cds-val" id="cd-upd-remote" style="min-width:58px;">-</span></span></div>
+        <div class="cds-row" style="justify-content:flex-start;gap:8px;"><button class="cd-btn-secondary" id="cd-btn-check-update"><i class="fa-solid fa-magnifying-glass" style="margin-right:5px;"></i>检查更新</button><button class="cd-btn-secondary" id="cd-btn-download-update" style="display:none;color:#c84632;border-color:#e0b8ae;background:#fdf0ec;"><i class="fa-solid fa-download" style="margin-right:5px;"></i>下载更新</button></div>
+        <div class="cds-hint" id="cd-upd-status" style="white-space:normal;line-height:1.6;margin-top:4px;"></div>
+      </div>
+      <div class="cds-sec-div"></div>
       <div class="cds-row"><span class="cds-lab">主开关</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-enabled" ${s.enabled ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+      <div class="cds-row"><span class="cds-lab">自动总结 <span class="cds-hint">关=只手动触发</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-autosummary" ${s.autoSummary !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+      <div class="cds-hint" style="white-space:normal;line-height:1.6;margin:2px 0 6px;">关掉后不再自动跑总结（NSFW 场景常用）。首页<b>工具</b>那排第一个就是它的一键开关，点一下就能暂停/恢复。</div>
       <div class="cds-row"><span class="cds-lab">快捷入口（悬浮球）</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-fab" ${s.fabShow !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
       <div class="cds-row"><span class="cds-lab">小红点通知 <span class="cds-hint">新写日记时悬浮球显示</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-dotnotify" ${s.dotNotify !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
       <div class="cds-row"><span class="cds-lab">论坛直达 <span class="cds-hint">点悬浮球直接进论坛</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-forumdirect" ${s.fabDirectForum ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
-      <details class="cds-collapse"><summary><i class="fa-solid fa-volume-high" style="margin-right:4px;"></i>回复结束提示音</summary>
-        <div>
-          <div class="cds-row"><span class="cds-lab">AI 回复结束时响提示音 <span class="cds-hint">整段生成完毕即播放</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-replytone" ${s.replyTone !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
-          <div class="cds-row"><span class="cds-lab">触发时机 <span class="cds-hint">何时响</span></span><span class="cds-ctrl" style="flex-wrap:wrap;">
-            <label style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;flex:0 0 auto;white-space:nowrap;"><input type="radio" name="cd-s-tonemode" value="reply" ${(!s.replyToneMode || s.replyToneMode === 'reply') ? 'checked' : ''}> 回复后</label>
-            <label style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;flex:0 0 auto;white-space:nowrap;"><input type="radio" name="cd-s-tonemode" value="summary" ${s.replyToneMode === 'summary' ? 'checked' : ''}> 总结后</label>
-            <label style="display:inline-flex;align-items:center;gap:4px;flex:0 0 auto;white-space:nowrap;"><input type="radio" name="cd-s-tonemode" value="both" ${s.replyToneMode === 'both' ? 'checked' : ''}> 两者</label>
-          </span></div>
-          <input type="file" id="cd-tone-file" accept="audio/*" style="display:none">
-          <div class="cds-row"><span class="cds-lab">当前提示音</span><span class="cds-ctrl"><span id="cd-tone-name" class="cds-hint" style="white-space:normal;text-align:right;max-width:170px;overflow:hidden;text-overflow:ellipsis;">${s && s.replyToneName && String(s.replyToneName).trim() ? escapeHtml(s.replyToneName) : '内置 · 小剧场片段'}</span></span></div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
-            <button class="cd-btn-secondary" id="cd-btn-tone-upload" style="padding:3px 10px;font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;"><i class="fa-solid fa-upload" style="margin-right:4px;"></i>选择音频文件</button>
-            <button class="cd-btn-secondary" id="cd-btn-tone-preview" style="padding:3px 10px;font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;"><i class="fa-regular fa-circle-play" style="margin-right:4px;"></i>立即试听</button>
-            <button class="cd-btn-secondary" id="cd-btn-tone-reset" style="padding:3px 10px;font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;"><i class="fa-regular fa-rotate-left" style="margin-right:4px;"></i>恢复默认</button>
-          </div>
-          <div class="cds-hint" style="margin-top:4px;font-size: calc(0.55rem * var(--cd-fs, 1));opacity:.55;">选一个音频文件当提示音，选择后立即试听并保存（建议 1MB 以内，过长会占存储）</div>
-        </div>
-      </details>
-      <div class="cds-row"><span class="cds-lab">回复后回到开头 <span class="cds-hint">AI回复完平滑滚回该条开头</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-autoscrolltop" ${s.autoScrollTop ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
-      <div class="cds-row"><span class="cds-lab">新手引导</span><span class="cds-ctrl"><button class="cd-btn-secondary" id="cd-btn-reset-onboarding" style="padding:3px 12px;font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;">重新显示</button></span></div>
     </div>
 
-    <div class="cds-card" data-cds="quota">
-      <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-shield-halved"></i></span><span><span class="cds-gtitle">额度与提示词</span><span class="cds-gsub">不浪费额度 / 不乱发预设 / 看得见结果</span></span></div>
-      <div class="cds-row"><span class="cds-lab">允许降级到酒馆通道 <span class="cds-hint">关=直连失败就报错，绝不偷用主模型</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-allowfb" ${s.allowTavernFallback ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
-      <div class="cds-hint" style="white-space:normal;line-height:1.6;margin:2px 0 6px;">关掉后：直连接口没填地址或请求失败（含 CORS）时，插件<b>直接报错</b>，不会静默改走酒馆当前连接（那会消耗你主模型的额度）。想保留旧行为就打开它。</div>
-      <div class="cds-row"><span class="cds-lab">严格裸提示 <span class="cds-hint">只发总结内容，不带酒馆预设</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-strict" ${s.strictPrompt !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
-      <div class="cds-hint" style="white-space:normal;line-height:1.6;margin:2px 0 6px;">开启后：总结请求会屏蔽酒馆当前的<b>预设 / 角色卡 / 世界书 / 破限(jailbreak) / 聊天历史</b>，只把要总结的楼层内容发给模型，省 token 也更干净。</div>
-      <div class="cds-row"><span class="cds-lab">顶部小通知条 <span class="cds-hint">总结开始/成功/失败，失败可重试</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-notifycard" ${s.notifyCard !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
-      <div class="cds-hint" style="white-space:normal;line-height:1.6;margin:2px 0 6px;">成功后 5 秒自动消失（也能自己关）；失败或 AI 返回空时<b>常驻</b>，带「重试」「看日志」两个按钮。</div>
-    </div>
-
-    <div class="cds-card" data-cds="runtime">
-      <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-sliders"></i></span><span><span class="cds-gtitle">运行参数</span><span class="cds-gsub">自动处理的频率与稳定性</span></span></div>
-      <div class="cds-row"><span class="cds-lab">自动总结 <span class="cds-hint">关=只手动触发</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-autosummary" ${s.autoSummary !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
-      <div class="cds-hint" style="white-space:normal;line-height:1.6;margin:2px 0 6px;">关掉后不再自动跑总结（NSFW 场景常用）。首页<b>工具</b>那排第一个就是它的一键开关，点一下就能暂停/恢复。</div>
-      <div class="cds-row"><span class="cds-lab">处理频率 <span class="cds-hint">每 N 条楼层(AI+用户)</span></span><span class="cds-ctrl"><input type="number" id="cd-s-interval" value="${s.interval}" min="1" max="100" class="cd-input"></span></div>
-      <div class="cds-row"><span class="cds-lab">总结延迟 <span class="cds-hint">自动总结到达后等 N 秒再调用API</span></span><span class="cds-ctrl"><input type="number" id="cd-s-asdelay" value="${s.autoSummaryDelay === undefined ? 20 : s.autoSummaryDelay}" min="0" max="300" class="cd-input" style="width:52px;"><span class="cds-hint">秒</span></span></div>
-      <div class="cds-row"><span class="cds-lab">记忆锚点偏移 <span class="cds-hint">跳过末尾 N 条</span></span><span class="cds-ctrl"><input type="number" id="cd-s-offset" value="${s.memoryOffset === undefined ? 2 : s.memoryOffset}" min="0" max="20" class="cd-input" style="width:52px;"></span></div>
-      <div class="cds-row"><span class="cds-lab">临时角色转正 <span class="cds-hint">出场 N 次</span></span><span class="cds-ctrl"><input type="number" id="cd-s-cameo" value="${s.cameoThreshold}" min="1" max="50" class="cd-input"></span></div>
-      <div class="cds-row"><span class="cds-lab">生成温度</span><span class="cds-ctrl"><input type="number" id="cd-s-temp" value="${s.temperature}" step="0.1" min="0" max="2" class="cd-input"></span></div>
-      <div class="cds-row"><span class="cds-lab">自动重试 <span class="cds-hint">失败重试</span></span><span class="cds-ctrl"><input type="number" id="cd-s-retry" value="${s.retryTimes !== undefined ? s.retryTimes : 3}" min="0" max="10" class="cd-input" style="width:46px;"><span class="cds-hint">次</span><input type="number" id="cd-s-retrydelay" value="${s.retryDelay !== undefined ? s.retryDelay : 2}" min="0" max="30" step="1" class="cd-input" style="width:46px;"><span class="cds-hint">秒</span></span></div>
-    </div>
-
-    <div class="cds-card" data-cds="generate">
-      <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-feather"></i></span><span><span class="cds-gtitle">生成内容</span><span class="cds-gsub">AI 会自动产出哪些</span></span></div>
+    <!-- ② 生成内容 -->
+    <div class="cds-card cds-sec" data-cds="generate">
+      <div class="cds-sec-head"><span class="cds-no">2</span><span class="cds-gtitle">生成内容</span><span class="cds-gsub">AI 会产出哪些东西</span></div>
       <div class="cds-row"><span class="cds-lab"><i class="fa-regular fa-book"></i> 角色日记</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-diary" ${s.enableDiary !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
       <details class="cds-collapse"><summary><i class="fa-regular fa-rectangle-list"></i> 日记版本</summary>
         <div>
@@ -16060,10 +16083,45 @@ async function cdRenderSettings() {
       <div class="cds-row" style="display:none" title="人物关系功能已停用"><span class="cds-lab"><i class="fa-regular fa-diagram-project"></i> 人物关系</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-relation" ${s.enableRelation !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
       <div class="cds-row"><span class="cds-lab"><i class="fa-regular fa-timeline"></i> 剧情档案</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-archive" ${s.enableArchive !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
       <div class="cds-row"><span class="cds-lab"><i class="fa-regular fa-book-bookmark"></i> 世界书联动</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-worldbook" ${s.worldbookLink !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+      <div data-cds="archive-style">
+        <details class="cds-collapse"><summary><i class="fa-regular fa-scroll"></i> 剧情档案记录风格与字段</summary>
+          <div>
+            <div class="cds-row"><span class="cds-lab">记录风格</span><span class="cds-ctrl"><select id="cd-s-archive-style" class="cd-input" style="max-width:280px;"><option value="dialogue" ${s.archiveStyle !== 'plain' ? 'selected' : ''}>对话版（保留关键对话原话）</option><option value="plain" ${s.archiveStyle === 'plain' ? 'selected' : ''}>常规版（只总结事实经过）</option></select></span></div>
+            <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;margin:4px 0 0;line-height:1.5;">「对话版」是原有行为：每条事件要求带 1~2 句关键台词原文，档案更详实但更长。「常规版」只记事实经过（谁 + 做了什么 + 结果），禁止引用任何对话原文，档案明显更短、更省 token。<b>只影响剧情档案</b>，角色日记保持不变。切换后下次总结生效。</p>
+            <div class="cds-row"><span class="cds-lab">支线</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-arc-side" ${s.arcSide ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+            <div class="cds-row"><span class="cds-lab">重要状态变化</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-arc-state" ${s.arcState ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+            <div class="cds-row"><span class="cds-lab">未解决事项</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-arc-unresolved" ${s.arcUnresolved ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+            <div class="cds-row"><span class="cds-lab">任务记录</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-arc-tasks" ${s.arcTasks ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+            <div class="cds-row"><span class="cds-lab">剧情总览</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-arc-overview" ${s.arcOverview ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+            <div class="cds-row"><span class="cds-lab">章回标题</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-arc-chapter" ${s.arcChapter ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+            <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;margin:4px 0 0;line-height:1.5;"><b>主线永远输出。</b>上面三个默认关闭——关掉后该字段整段不再发给 AI（不是让它写「无」），档案会明显变短、更省 token。已经记下来的旧内容不会被删，只是不再更新它。打开后从下次总结开始生效。关掉「剧情总览」和「章回标题」后，剧情页顶部不再显示「第X回」和那段概述。</p>
+          </div>
+        </details>
+      </div>
     </div>
 
-    <div class="cds-card" data-cds="inject">
-      <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-arrow-up-right-dots"></i></span><span><span class="cds-gtitle">注入 AI 上下文</span><span class="cds-gsub">发送给模型的内容</span></span></div>
+    <!-- ③ 运行规则 -->
+    <div class="cds-card cds-sec" data-cds="runtime">
+      <div class="cds-sec-head"><span class="cds-no">3</span><span class="cds-gtitle">运行规则</span><span class="cds-gsub">多久总结一次 · 稳不稳</span></div>
+      <div class="cds-row"><span class="cds-lab">处理频率 <span class="cds-hint">每 N 条楼层(AI+用户)</span></span><span class="cds-ctrl"><input type="number" id="cd-s-interval" value="${s.interval}" min="1" max="100" class="cd-input"></span></div>
+      <div class="cds-row"><span class="cds-lab">总结延迟 <span class="cds-hint">自动总结到达后等 N 秒再调用API</span></span><span class="cds-ctrl"><input type="number" id="cd-s-asdelay" value="${s.autoSummaryDelay === undefined ? 20 : s.autoSummaryDelay}" min="0" max="300" class="cd-input" style="width:52px;"><span class="cds-hint">秒</span></span></div>
+      <div class="cds-row"><span class="cds-lab">记忆锚点偏移 <span class="cds-hint">跳过末尾 N 条</span></span><span class="cds-ctrl"><input type="number" id="cd-s-offset" value="${s.memoryOffset === undefined ? 2 : s.memoryOffset}" min="0" max="20" class="cd-input" style="width:52px;"></span></div>
+      <div class="cds-row"><span class="cds-lab">临时角色转正 <span class="cds-hint">出场 N 次</span></span><span class="cds-ctrl"><input type="number" id="cd-s-cameo" value="${s.cameoThreshold}" min="1" max="50" class="cd-input"></span></div>
+      <div class="cds-row"><span class="cds-lab">生成温度</span><span class="cds-ctrl"><input type="number" id="cd-s-temp" value="${s.temperature}" step="0.1" min="0" max="2" class="cd-input"></span></div>
+      <div class="cds-row"><span class="cds-lab">自动重试 <span class="cds-hint">失败重试</span></span><span class="cds-ctrl"><input type="number" id="cd-s-retry" value="${s.retryTimes !== undefined ? s.retryTimes : 3}" min="0" max="10" class="cd-input" style="width:46px;"><span class="cds-hint">次</span><input type="number" id="cd-s-retrydelay" value="${s.retryDelay !== undefined ? s.retryDelay : 2}" min="0" max="30" step="1" class="cd-input" style="width:46px;"><span class="cds-hint">秒</span></span></div>
+      <div data-cds="sumsrc">
+        <details class="cds-collapse"><summary><i class="fa-regular fa-database"></i> 自动总结数据源</summary>
+          <div>
+            <div class="cds-row"><span class="cds-lab">自动总结数据源</span><span class="cds-ctrl"><select id="cd-s-summary-source" class="cd-input" style="max-width:260px;"><option value="chat" ${s.summarySource !== 'jsonl' ? 'selected' : ''}>现有方式（用聊天数组）</option><option value="jsonl" ${s.summarySource === 'jsonl' ? 'selected' : ''}>jsonl 全量楼层（根治分片）</option></select></span></div>
+            <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;margin:4px 0 0;line-height:1.5;">「现有方式」用酒馆聊天数组，可能受分片加载影响（只加载最近楼层）。「jsonl 全量楼层」直接从存档 jsonl 读全部楼层，彻底根治分片导致的自动总结死锁。切换后重启酒馆生效。</p>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <!-- ④ 注入 AI 上下文 -->
+    <div class="cds-card cds-sec" data-cds="inject">
+      <div class="cds-sec-head"><span class="cds-no">4</span><span class="cds-gtitle">注入 AI 上下文</span><span class="cds-gsub">把哪些记忆发给模型</span></div>
       <div class="cds-row"><span class="cds-lab">角色日记</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-inject-diary" ${s.injectDiary !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
       <details class="cds-collapse"><summary>角色日记记忆（按登场人物抽取）</summary>
         <div>
@@ -16091,127 +16149,168 @@ async function cdRenderSettings() {
       </details>
     </div>
 
-    <div class="cds-card" data-cds="advanced">
-      <div class="cds-ghead"><span class="cds-gico"><i class="fa-solid fa-gear"></i></span><span><span class="cds-gtitle">高级</span><span class="cds-gsub">内容过滤 / 自动整理 / API</span></span></div>
-
-      <details class="cds-collapse" open data-cds="filter"><summary><i class="fa-regular fa-filter"></i> 内容过滤</summary>
-        <div>
-          <div class="cd-tagscan-bar">
-            <button class="cd-btn-secondary" id="cd-tagscan-open" style="font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;"><i class="fa-solid fa-magnifying-glass" style="margin-right:4px;"></i>扫描当前楼层标签</button>
-            <span class="cd-tagscan-barhint">自动列出正文里的 &lt;xxx&gt; 标签，勾选后直接写成规则，不用自己敲</span>
+    <!-- ⑤ 楼层管理 -->
+    <div class="cds-card cds-sec" data-cds="hidefloor">
+      <div class="cds-sec-head"><span class="cds-no">5</span><span class="cds-gtitle">楼层管理</span><span class="cds-gsub">隐藏旧楼层 · 压缩档案</span></div>
+      <div class="cds-row"><span class="cds-lab">总结/补写后自动隐藏旧楼层</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-autohide" ${s.autoHideEnabled ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+      <div class="cds-row"><span class="cds-lab">保留最新楼层数(含用户)</span><span class="cds-ctrl"><input type="number" id="cd-s-autohide-keep" value="${s.autoHideKeep || 5}" min="1" max="100" class="cd-input"></span></div>
+      <div class="cds-row"><span class="cds-lab">隐藏模式</span><span class="cds-ctrl"><select id="cd-s-autohide-mode" class="cd-input" style="max-width:230px;"><option value="b" ${s.autoHideMode !== 'a' ? 'selected' : ''}>B·AI屏蔽留界面(幽灵图标,可恢复)</option><option value="a" ${s.autoHideMode === 'a' ? 'selected' : ''}>A·界面也隐藏(彻底)</option></select></span></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+        <button class="cd-btn-primary" id="cd-btn-hide-recorded" style="font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;"><i class="fa-regular fa-eye-slash"></i> 立即隐藏已记录楼层</button>
+        <button class="cd-btn-secondary" id="cd-btn-show-all-floors" style="font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;"><i class="fa-regular fa-eye"></i> 恢复所有隐藏楼层</button>
+        <button class="cd-btn-secondary" id="cd-btn-rewrite-archive" style="font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;color:#8a6a3a;border-color:#d8c39a;background:#fbf6ec;"><i class="fa-solid fa-arrows-rotate" style="margin-right:5px;"></i>重写本批档案</button>
+      </div>
+      <div data-cds="compress">
+        <details class="cds-collapse"><summary><i class="fa-regular fa-compress"></i> 自动压缩剧情档案</summary>
+          <div>
+            <div class="cds-row"><span class="cds-lab">超阈值时自动压缩</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-autocompress" ${s.autoCompress ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+            <div class="cds-row"><span class="cds-lab">触发方式</span><span class="cds-ctrl">
+              <label style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;"><input type="radio" name="cd-s-autocompressmode" value="count" ${s.autoCompressMode !== 'size' ? 'checked' : ''}> 按条数</label>
+              <label style="display:inline-flex;align-items:center;gap:4px;"><input type="radio" name="cd-s-autocompressmode" value="size" ${s.autoCompressMode === 'size' ? 'checked' : ''}> 按字数</label>
+            </span></div>
+            <div class="cds-row" id="cd-s-autocompress-countrow" style="${s.autoCompressMode === 'size' ? 'display:none;' : ''}"><span class="cds-lab">触发阈值（条）</span><span class="cds-ctrl"><input type="number" id="cd-s-autocompress-threshold" value="${s.autoCompressThreshold || 30}" min="5" max="200" class="cd-input"></span></div>
+            <div class="cds-row" id="cd-s-autocompress-sizerow" style="${s.autoCompressMode === 'size' ? '' : 'display:none;'}"><span class="cds-lab">累计字数阈值（字）</span><span class="cds-ctrl"><input type="number" id="cd-s-autocompress-size" value="${s.autoCompressSize || 2000}" min="200" max="20000" step="100" class="cd-input"></span></div>
+            <div class="cds-hint" style="margin-top:4px;font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;opacity:0.7;">按条数：累计 ${s.autoCompressThreshold || 30} 条事件触发合并｜按字数：累计新增 ${s.autoCompressSize || 2000} 字触发压缩（含自定义追踪项，压缩后重置计数）</div>
           </div>
-          <div id="cd-tagscan-panel" style="display:none;"></div>
-          ${_keepBar}
-          <div id="cd-filter-tags-container">${_filterRows}</div>
-          <button class="cd-btn-secondary" id="cd-filter-add" style="margin-top:4px;font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;">+ 添加一组</button>
+        </details>
+      </div>
+    </div>
+
+    <!-- ⑥ 正文采集 -->
+    <div class="cds-card cds-sec" data-cds="collect">
+      <div class="cds-sec-head"><span class="cds-no">6</span><span class="cds-gtitle">正文采集</span><span class="cds-gsub">不调 API · 直接抓正文摘要 <span class="cds-newtag">新</span></span></div>
+      <div class="cds-row"><span class="cds-lab">处理方式</span><span class="cds-ctrl"><select id="cd-s-process-mode" class="cd-input" style="max-width:230px;"><option value="summary" ${s.processMode !== 'collect' ? 'selected' : ''}>AI 总结（原方式）</option><option value="collect" ${s.processMode === 'collect' ? 'selected' : ''}>正文采集（抓摘要框框）</option></select></span></div>
+      <div class="cds-collect-sec">
+        <div class="cds-collect-title">① 选标签 <span class="cds-hint">自动扫描当前楼层里出现过的 &lt;标签&gt;，点一下选中 / 再点取消（可多选）</span></div>
+        <div class="cds-picks" id="cd-collect-tags">
+          ${(function () {
+            var _scan = (typeof cdScanCollectTags === 'function') ? cdScanCollectTags() : [];
+            var _saved = Array.isArray(s.collectTags) ? s.collectTags : ['state'];
+            var _all = _scan.slice();
+            _saved.forEach(function (b) { if (_all.indexOf(b) < 0) _all.push(b); });
+            if (!_all.length) _all = ['state'];
+            return _all.map(function (b) {
+              var _ck = _saved.indexOf(b) >= 0 ? 'checked' : '';
+              return '<label class="cds-pick"><input type="checkbox" class="cd-collect-tag" value="' + escapeAttr(b) + '" ' + _ck + '><span>' + escapeAttr(b) + '</span></label>';
+            }).join('');
+          })()}
         </div>
-      </details>
-
-      <details class="cds-collapse" open data-cds="aifilter"><summary><i class="fa-regular fa-brain"></i> AI 返回过滤（思维链）</summary>
-        <div>
-          <div class="cds-row"><span class="cds-lab">过滤 AI 返回的思维链 <span class="cds-hint">DeepSeek 的 &lt;think&gt; 等</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-aifilter" ${s.aiFilterEnabled !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
-          <div style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;line-height:1.55;margin:2px 0 6px;">推理模型会把思考过程用标签包起来返回。不剥掉的话，这些推理文字会被当成正文收进角色日记和剧情档案。<br>默认已内置 <code>&lt;think&gt;</code>、<code>&lt;reasoning&gt;</code>、<code>&lt;analysis&gt;</code> 等常见标签，可自行增删。清空全部标签则不启用过滤。</div>
-          <div id="cd-aifilter-tags-container">${_aiFilterRows}</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">
-            <button class="cd-btn-secondary" id="cd-aifilter-add" style="font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;">+ 添加一组</button>
-            <button class="cd-btn-secondary" id="cd-aifilter-reset" style="font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;color:#8a6a3a;border-color:#d8c39a;background:#fbf6ec;">恢复内置标签</button>
-          </div>
+      </div>
+      <div class="cds-collect-sec">
+        <div class="cds-collect-title">② 选框框 <span class="cds-hint">自动列出选中标签里的 [框框]，点一下选中 / 再点取消</span></div>
+        <div class="cds-picks" id="cd-collect-boxes">
+          ${(function () {
+            var _scan = (typeof cdScanCollectBoxes === 'function') ? cdScanCollectBoxes() : [];
+            var _saved = Array.isArray(s.collectBoxes) ? s.collectBoxes : ['摘要', '时间'];
+            var _all = _scan.slice();
+            _saved.forEach(function (b) { if (_all.indexOf(b) < 0) _all.push(b); });
+            if (!_all.length) _all = ['摘要', '时间', '在场', '发展', '团队', '离线', '暗线'];
+            return _all.map(function (b) {
+              var _ck = _saved.indexOf(b) >= 0 ? 'checked' : '';
+              return '<label class="cds-pick"><input type="checkbox" class="cd-collect-box" value="' + escapeAttr(b) + '" ' + _ck + '><span>' + escapeAttr(b) + '</span></label>';
+            }).join('');
+          })()}
         </div>
-      </details>
+      </div>
+      <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;margin:6px 0 0;line-height:1.5;">
+        全程不用手打：扫到什么就列什么，点谁抓谁。「正文采集」不调 API：从每层的 <b>&lt;标签&gt;…&lt;/标签&gt;</b> 里按勾选的框框抓后面的文字，按顺序拼进<b>剧情档案主线</b>。例：<code>&lt;state&gt;[摘要]…[时间]…&lt;/state&gt;</code> 勾「摘要+时间」即抓这两段。<br>
+        保留可见层数 = 运行参数里的<b>记忆锚点偏移</b>（默认 2，最小 1），采集区块不再单独设保留数。末尾锚点层本轮不采、下轮带回，已采集旧楼层自动隐藏。<br>
+        切换为采集后，只在新楼层采集，已总结过的楼层不会重采；角色日记开关不受影响。
+      </p>
+    </div>
 
-      <details class="cds-collapse" data-cds="archive-style"><summary><i class="fa-regular fa-scroll"></i> 剧情档案记录风格</summary>
+    <!-- ⑦ 界面外观 -->
+    <div class="cds-card cds-sec" data-cds="appearance">
+      <div class="cds-sec-head"><span class="cds-no">7</span><span class="cds-gtitle">界面外观</span><span class="cds-gsub">视觉 · 交互 · 提示音</span></div>
+      <div class="cds-row"><span class="cds-lab">角色图 <span class="cds-hint">悬浮球 / 引导页 / 空状态</span></span><span class="cds-ctrl"><select id="cd-s-charimg" class="cd-input" style="width:auto;min-width:120px;text-align:left;">${cdCharOptions(s.charImage || 'levi-mochizuki')}</select></span></div>
+      <div class="cds-row"><span class="cds-lab">不显示角色图 <span class="cds-hint">只留纯文字界面</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-charoff" ${s.charImageOff ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+      <div class="cds-row"><span class="cds-lab">卡片封面 <span class="cds-hint">日记卡 / 存档槽用角色图做封面（需同时开启上面的「不显示角色图」才有效）</span></span><span class="cds-ctl"><label class="cd-switch"><input type="checkbox" id="cd-s-cardcover" ${s.cardCover !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+      <div class="cds-row"><span class="cds-lab">面板主题 <span class="cds-hint">墨底鎏金 / 素瓷 / 宣纸 / 石墨</span></span><span class="cds-ctrl"><select id="cd-s-theme" class="cd-input" style="width:auto;min-width:118px;text-align:left;">${['night:墨底鎏金','day1:素瓷','day2:宣纸','day3:石墨','auto:跟随酒馆'].map(function(x){var p=x.split(':');var cur=s.themeMode||'day1';if(cur==='day')cur='day1';return '<option value="'+p[0]+'"'+(cur===p[0]?' selected':'')+'>'+p[1]+'</option>';}).join('')}</select></span></div>
+      <div class="cds-row"><span class="cds-lab">界面字号</span><span class="cds-ctrl"><input type="range" id="cd-font-scale-range" min="80" max="200" step="5" value="${fontScalePct}" style="width:110px;accent-color:#c9a87c;"><span id="cd-font-scale-val" class="cds-val">${fontScalePct}%</span></span></div>
+      <details class="cds-collapse"><summary><i class="fa-solid fa-volume-high" style="margin-right:4px;"></i>回复结束提示音</summary>
         <div>
-          <div class="cds-row"><span class="cds-lab">记录风格</span><span class="cds-ctrl"><select id="cd-s-archive-style" class="cd-input" style="max-width:280px;"><option value="dialogue" ${s.archiveStyle !== 'plain' ? 'selected' : ''}>对话版（保留关键对话原话）</option><option value="plain" ${s.archiveStyle === 'plain' ? 'selected' : ''}>常规版（只总结事实经过）</option></select></span></div>
-          <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;margin:4px 0 0;line-height:1.5;">「对话版」是原有行为：每条事件要求带 1~2 句关键台词原文，档案更详实但更长。「常规版」只记事实经过（谁 + 做了什么 + 结果），禁止引用任何对话原文，档案明显更短、更省 token。<b>只影响剧情档案</b>，角色日记保持不变。切换后下次总结生效。</p>
-          <div class="cds-row"><span class="cds-lab">支线</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-arc-side" ${s.arcSide ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
-          <div class="cds-row"><span class="cds-lab">重要状态变化</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-arc-state" ${s.arcState ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
-          <div class="cds-row"><span class="cds-lab">未解决事项</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-arc-unresolved" ${s.arcUnresolved ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
-          <div class="cds-row"><span class="cds-lab">任务记录</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-arc-tasks" ${s.arcTasks ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
-          <div class="cds-row"><span class="cds-lab">剧情总览</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-arc-overview" ${s.arcOverview ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
-          <div class="cds-row"><span class="cds-lab">章回标题</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-arc-chapter" ${s.arcChapter ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
-          <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;margin:4px 0 0;line-height:1.5;"><b>主线永远输出。</b>上面三个默认关闭——关掉后该字段整段不再发给 AI（不是让它写「无」），档案会明显变短、更省 token。已经记下来的旧内容不会被删，只是不再更新它。打开后从下次总结开始生效。关掉「剧情总览」和「章回标题」后，剧情页顶部不再显示「第X回」和那段概述。</p>
-        </div>
-      </details>
-
-      <details class="cds-collapse" data-cds="sumsrc"><summary><i class="fa-regular fa-database"></i> 自动总结数据源</summary>
-        <div>
-          <div class="cds-row"><span class="cds-lab">自动总结数据源</span><span class="cds-ctrl"><select id="cd-s-summary-source" class="cd-input" style="max-width:260px;"><option value="chat" ${s.summarySource !== 'jsonl' ? 'selected' : ''}>现有方式（用聊天数组）</option><option value="jsonl" ${s.summarySource === 'jsonl' ? 'selected' : ''}>jsonl 全量楼层（根治分片）</option></select></span></div>
-          <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;margin:4px 0 0;line-height:1.5;">「现有方式」用酒馆聊天数组，可能受分片加载影响（只加载最近楼层）。「jsonl 全量楼层」直接从存档 jsonl 读全部楼层，彻底根治分片导致的自动总结死锁。切换后重启酒馆生效。</p>
-        </div>
-      </details>
-
-      <details class="cds-collapse" data-cds="hidefloor"><summary><i class="fa-regular fa-eye-slash"></i> 自动隐藏楼层</summary>
-        <div>
-          <div class="cds-row"><span class="cds-lab">总结/补写后自动隐藏旧楼层</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-autohide" ${s.autoHideEnabled ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
-          <div class="cds-row"><span class="cds-lab">保留最新楼层数(含用户)</span><span class="cds-ctrl"><input type="number" id="cd-s-autohide-keep" value="${s.autoHideKeep || 5}" min="1" max="100" class="cd-input"></span></div>
-          <div class="cds-row"><span class="cds-lab">隐藏模式</span><span class="cds-ctrl"><select id="cd-s-autohide-mode" class="cd-input" style="max-width:230px;"><option value="b" ${s.autoHideMode !== 'a' ? 'selected' : ''}>B·AI屏蔽留界面(幽灵图标,可恢复)</option><option value="a" ${s.autoHideMode === 'a' ? 'selected' : ''}>A·界面也隐藏(彻底)</option></select></span></div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
-            <button class="cd-btn-primary" id="cd-btn-hide-recorded" style="font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;"><i class="fa-regular fa-eye-slash"></i> 立即隐藏已记录楼层</button>
-            <button class="cd-btn-secondary" id="cd-btn-show-all-floors" style="font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;"><i class="fa-regular fa-eye"></i> 恢复所有隐藏楼层</button>
-            <button class="cd-btn-secondary" id="cd-btn-rewrite-archive" style="font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;color:#8a6a3a;border-color:#d8c39a;background:#fbf6ec;"><i class="fa-solid fa-arrows-rotate" style="margin-right:5px;"></i>重写本批档案</button>
-
-          </div>
-        </div>
-      </details>
-
-      <details class="cds-collapse" data-cds="collect"><summary><i class="fa-regular fa-highlighter"></i> 正文采集（不用 AI 总结，直接抓正文摘要）</summary>
-        <div>
-          <div class="cds-row"><span class="cds-lab">处理方式</span><span class="cds-ctrl"><select id="cd-s-process-mode" class="cd-input" style="max-width:230px;"><option value="summary" ${s.processMode !== 'collect' ? 'selected' : ''}>AI 总结（原方式）</option><option value="collect" ${s.processMode === 'collect' ? 'selected' : ''}>正文采集（抓摘要框框）</option></select></span></div>
-          <div class="cds-row"><span class="cds-lab">采集标签名</span><span class="cds-ctrl"><input type="text" id="cd-s-collect-tag" value="${escapeAttr(s.collectTag || 'state')}" class="cd-input" placeholder="state" style="width:auto;min-width:120px;text-align:left;"></span></div>
-          <div class="cds-row"><span class="cds-lab">采集框框（勾选）</span></div>
-          <div style="margin:2px 0 6px;padding:6px 8px;border:1px solid rgba(201,168,124,.35);border-radius:6px;">
-            ${(function () {
-              var _scan = (typeof cdScanCollectBoxes === 'function') ? cdScanCollectBoxes() : [];
-              var _saved = Array.isArray(s.collectBoxes) ? s.collectBoxes : ['摘要', '时间'];
-              var _all = _scan.slice();
-              _saved.forEach(function (b) { if (_all.indexOf(b) < 0) _all.push(b); });
-              if (!_all.length) _all = ['摘要', '时间', '在场', '发展', '团队', '离线', '暗线'];
-              return _all.map(function (b) {
-                var _ck = _saved.indexOf(b) >= 0 ? 'checked' : '';
-                return '<label style="display:inline-flex;align-items:center;gap:3px;margin:2px 10px 2px 0;font-size:calc(0.6rem*var(--cd-fs,1));cursor:pointer;">'
-                  + '<input type="checkbox" class="cd-collect-box" value="' + escapeAttr(b) + '" ' + _ck + '>' + escapeAttr(b) + '</label>';
-              }).join('');
-            })()}
-          </div>
-          <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;margin:4px 0 0;line-height:1.5;">
-            「正文采集」不调 API：从每层的 <b>&lt;标签&gt;…&lt;/标签&gt;</b> 里按勾选的框框抓后面的文字，按顺序拼进<b>剧情档案主线</b>。例：<code>&lt;state&gt;[摘要]…[时间]…&lt;/state&gt;</code> 勾「摘要+时间」即抓这两段。<br>
-            保留可见层数 = 运行参数里的<b>记忆锚点偏移</b>（默认 2，最小 1），采集区块不再单独设保留数。末尾锚点层本轮不采、下轮带回，已采集旧楼层自动隐藏。<br>
-            切换为采集后，只在新楼层采集，已总结过的楼层不会重采；角色日记开关不受影响。
-          </p>
-        </div>
-      </details>
-
-      <details class="cds-collapse" data-cds="compress"><summary><i class="fa-regular fa-compress"></i> 自动压缩剧情档案</summary>
-        <div>
-          <div class="cds-row"><span class="cds-lab">超阈值时自动压缩</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-autocompress" ${s.autoCompress ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
-          <div class="cds-row"><span class="cds-lab">触发方式</span><span class="cds-ctrl">
-            <label style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;"><input type="radio" name="cd-s-autocompressmode" value="count" ${s.autoCompressMode !== 'size' ? 'checked' : ''}> 按条数</label>
-            <label style="display:inline-flex;align-items:center;gap:4px;"><input type="radio" name="cd-s-autocompressmode" value="size" ${s.autoCompressMode === 'size' ? 'checked' : ''}> 按字数</label>
+          <div class="cds-row"><span class="cds-lab">AI 回复结束时响提示音 <span class="cds-hint">整段生成完毕即播放</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-replytone" ${s.replyTone !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+          <div class="cds-row"><span class="cds-lab">触发时机 <span class="cds-hint">何时响</span></span><span class="cds-ctrl" style="flex-wrap:wrap;">
+            <label style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;flex:0 0 auto;white-space:nowrap;"><input type="radio" name="cd-s-tonemode" value="reply" ${(!s.replyToneMode || s.replyToneMode === 'reply') ? 'checked' : ''}> 回复后</label>
+            <label style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;flex:0 0 auto;white-space:nowrap;"><input type="radio" name="cd-s-tonemode" value="summary" ${s.replyToneMode === 'summary' ? 'checked' : ''}> 总结后</label>
+            <label style="display:inline-flex;align-items:center;gap:4px;flex:0 0 auto;white-space:nowrap;"><input type="radio" name="cd-s-tonemode" value="both" ${s.replyToneMode === 'both' ? 'checked' : ''}> 两者</label>
           </span></div>
-          <div class="cds-row" id="cd-s-autocompress-countrow" style="${s.autoCompressMode === 'size' ? 'display:none;' : ''}"><span class="cds-lab">触发阈值（条）</span><span class="cds-ctrl"><input type="number" id="cd-s-autocompress-threshold" value="${s.autoCompressThreshold || 30}" min="5" max="200" class="cd-input"></span></div>
-          <div class="cds-row" id="cd-s-autocompress-sizerow" style="${s.autoCompressMode === 'size' ? '' : 'display:none;'}"><span class="cds-lab">累计字数阈值（字）</span><span class="cds-ctrl"><input type="number" id="cd-s-autocompress-size" value="${s.autoCompressSize || 2000}" min="200" max="20000" step="100" class="cd-input"></span></div>
-          <div class="cds-hint" style="margin-top:4px;font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;opacity:0.7;">按条数：累计 ${s.autoCompressThreshold || 30} 条事件触发合并｜按字数：累计新增 ${s.autoCompressSize || 2000} 字触发压缩（含自定义追踪项，压缩后重置计数）</div>
+          <input type="file" id="cd-tone-file" accept="audio/*" style="display:none">
+          <div class="cds-row"><span class="cds-lab">当前提示音</span><span class="cds-ctrl"><span id="cd-tone-name" class="cds-hint" style="white-space:normal;text-align:right;max-width:170px;overflow:hidden;text-overflow:ellipsis;">${s && s.replyToneName && String(s.replyToneName).trim() ? escapeHtml(s.replyToneName) : '内置 · 小剧场片段'}</span></span></div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+            <button class="cd-btn-secondary" id="cd-btn-tone-upload" style="padding:3px 10px;font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;"><i class="fa-solid fa-upload" style="margin-right:4px;"></i>选择音频文件</button>
+            <button class="cd-btn-secondary" id="cd-btn-tone-preview" style="padding:3px 10px;font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;"><i class="fa-regular fa-circle-play" style="margin-right:4px;"></i>立即试听</button>
+            <button class="cd-btn-secondary" id="cd-btn-tone-reset" style="padding:3px 10px;font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;"><i class="fa-regular fa-rotate-left" style="margin-right:4px;"></i>恢复默认</button>
+          </div>
+          <div class="cds-hint" style="margin-top:4px;font-size: calc(0.55rem * var(--cd-fs, 1));opacity:.55;">选一个音频文件当提示音，选择后立即试听并保存（建议 1MB 以内，过长会占存储）</div>
         </div>
       </details>
+      <div class="cds-row"><span class="cds-lab">回复后回到开头 <span class="cds-hint">AI回复完平滑滚回该条开头</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-autoscrolltop" ${s.autoScrollTop ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+      <div class="cds-row"><span class="cds-lab">新手引导</span><span class="cds-ctrl"><button class="cd-btn-secondary" id="cd-btn-reset-onboarding" style="padding:3px 12px;font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;">重新显示</button></span></div>
+    </div>
 
-      <details class="cds-collapse" data-cds="api"><summary><i class="fa-regular fa-server"></i> API 来源</summary>
-        <div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px;">
-            <button class="cds-tog cd-s-src-btn" data-source="tavern" ${_srcT}>当前酒馆</button>
-            <button class="cds-tog cd-s-src-btn" data-source="openai" ${_srcO}>OpenAI</button>
-            <button class="cds-tog cd-s-src-btn" data-source="claude" ${_srcC}>Claude</button>
-            <button class="cds-tog cd-s-src-btn" data-source="gemini" ${_srcG}>Gemini</button>
+    <!-- ⑧ 高级技术 -->
+    <div class="cds-card cds-sec" data-cds="advanced">
+      <div class="cds-sec-head"><span class="cds-no">8</span><span class="cds-gtitle">高级技术</span><span class="cds-gsub">API · 过滤 · 额度 · 提示词</span></div>
+      <div data-cds="api">
+        <details class="cds-collapse"><summary><i class="fa-regular fa-server"></i> API 来源</summary>
+          <div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px;">
+              <button class="cds-tog cd-s-src-btn" data-source="tavern" ${_srcT}>当前酒馆</button>
+              <button class="cds-tog cd-s-src-btn" data-source="openai" ${_srcO}>OpenAI</button>
+              <button class="cds-tog cd-s-src-btn" data-source="claude" ${_srcC}>Claude</button>
+              <button class="cds-tog cd-s-src-btn" data-source="gemini" ${_srcG}>Gemini</button>
+            </div>
+            <div id="cd-custom-api" style="display:${_apiShow};">
+              <div class="cds-row"><span class="cds-lab">接口地址</span><span class="cds-ctrl"><input type="text" id="cd-s-url" value="${apiUrl}" class="cd-input" placeholder="https://api..." style="width:auto;min-width:180px;text-align:left;"></span></div>
+              <div class="cds-row"><span class="cds-lab">密钥</span><span class="cds-ctrl"><input type="password" id="cd-s-key" value="${apiKey}" class="cd-input" placeholder="sk-..." style="width:auto;min-width:180px;text-align:left;"></span></div>
+              <div class="cds-row"><span class="cds-lab">模型</span><span class="cds-ctrl"><input type="text" id="cd-s-model" value="${apiModel}" class="cd-input" list="cd-models" placeholder="模型名" style="width:auto;min-width:180px;text-align:left;"><datalist id="cd-models"></datalist></span></div>
+              <button class="cd-btn-secondary" id="cd-btn-fetch-models" style="font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;">获取可用模型</button>
+              <div class="cds-row"><span class="cds-lab"><i class="fa-regular fa-tower-broadcast" style="margin-right:4px;color:var(--cd-acc,#5b7fa6);"></i>走后端代理直连</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-backend-proxy" ${s.backendProxy ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+              <div class="cds-hint" style="margin-top:2px;font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;opacity:0.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">直连被CORS/预检拦截时，走酒馆后端通道转发；请在酒馆把网关配为兼容连接源，避免走错源</div>
+            </div>
           </div>
-          <div id="cd-custom-api" style="display:${_apiShow};">
-            <div class="cds-row"><span class="cds-lab">接口地址</span><span class="cds-ctrl"><input type="text" id="cd-s-url" value="${apiUrl}" class="cd-input" placeholder="https://api..." style="width:auto;min-width:180px;text-align:left;"></span></div>
-            <div class="cds-row"><span class="cds-lab">密钥</span><span class="cds-ctrl"><input type="password" id="cd-s-key" value="${apiKey}" class="cd-input" placeholder="sk-..." style="width:auto;min-width:180px;text-align:left;"></span></div>
-            <div class="cds-row"><span class="cds-lab">模型</span><span class="cds-ctrl"><input type="text" id="cd-s-model" value="${apiModel}" class="cd-input" list="cd-models" placeholder="模型名" style="width:auto;min-width:180px;text-align:left;"><datalist id="cd-models"></datalist></span></div>
-            <button class="cd-btn-secondary" id="cd-btn-fetch-models" style="font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;">获取可用模型</button>
-            <div class="cds-row"><span class="cds-lab"><i class="fa-regular fa-tower-broadcast" style="margin-right:4px;color:var(--cd-acc,#5b7fa6);"></i>走后端代理直连</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-backend-proxy" ${s.backendProxy ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
-            <div class="cds-hint" style="margin-top:2px;font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;opacity:0.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">直连被CORS/预检拦截时，走酒馆后端通道转发；请在酒馆把网关配为兼容连接源，避免走错源</div>
+        </details>
+      </div>
+      <div data-cds="filter">
+        <details class="cds-collapse" open><summary><i class="fa-regular fa-filter"></i> 内容过滤</summary>
+          <div>
+            <div class="cd-tagscan-bar">
+              <button class="cd-btn-secondary" id="cd-tagscan-open" style="font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;"><i class="fa-solid fa-magnifying-glass" style="margin-right:4px;"></i>扫描当前楼层标签</button>
+              <span class="cd-tagscan-barhint">自动列出正文里的 &lt;xxx&gt; 标签，勾选后直接写成规则，不用自己敲</span>
+            </div>
+            <div id="cd-tagscan-panel" style="display:none;"></div>
+            ${_keepBar}
+            <div id="cd-filter-tags-container">${_filterRows}</div>
+            <button class="cd-btn-secondary" id="cd-filter-add" style="margin-top:4px;font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;">+ 添加一组</button>
           </div>
-        </div>
-      </details>
+        </details>
+      </div>
+      <div data-cds="aifilter">
+        <details class="cds-collapse" open><summary><i class="fa-regular fa-brain"></i> AI 返回过滤（思维链）</summary>
+          <div>
+            <div class="cds-row"><span class="cds-lab">过滤 AI 返回的思维链 <span class="cds-hint">DeepSeek 的 &lt;think&gt; 等</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-aifilter" ${s.aiFilterEnabled !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+            <div style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;line-height:1.55;margin:2px 0 6px;">推理模型会把思考过程用标签包起来返回。不剥掉的话，这些推理文字会被当成正文收进角色日记和剧情档案。<br>默认已内置 <code>&lt;think&gt;</code>、<code>&lt;reasoning&gt;</code>、<code>&lt;analysis&gt;</code> 等常见标签，可自行增删。清空全部标签则不启用过滤。</div>
+            <div id="cd-aifilter-tags-container">${_aiFilterRows}</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">
+              <button class="cd-btn-secondary" id="cd-aifilter-add" style="font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;">+ 添加一组</button>
+              <button class="cd-btn-secondary" id="cd-aifilter-reset" style="font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;color:#8a6a3a;border-color:#d8c39a;background:#fbf6ec;">恢复内置标签</button>
+            </div>
+          </div>
+        </details>
+      </div>
+      <div data-cds="quota">
+        <details class="cds-collapse"><summary><i class="fa-solid fa-shield-halved"></i> 额度与提示词</summary>
+          <div>
+            <div class="cds-row"><span class="cds-lab">允许降级到酒馆通道 <span class="cds-hint">关=直连失败就报错，绝不偷用主模型</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-allowfb" ${s.allowTavernFallback ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+            <div class="cds-hint" style="white-space:normal;line-height:1.6;margin:2px 0 6px;">关掉后：直连接口没填地址或请求失败（含 CORS）时，插件<b>直接报错</b>，不会静默改走酒馆当前连接（那会消耗你主模型的额度）。想保留旧行为就打开它。</div>
+            <div class="cds-row"><span class="cds-lab">严格裸提示 <span class="cds-hint">只发总结内容，不带酒馆预设</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-strict" ${s.strictPrompt !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+            <div class="cds-hint" style="white-space:normal;line-height:1.6;margin:2px 0 6px;">开启后：总结请求会屏蔽酒馆当前的<b>预设 / 角色卡 / 世界书 / 破限(jailbreak) / 聊天历史</b>，只把要总结的楼层内容发给模型，省 token 也更干净。</div>
+            <div class="cds-row"><span class="cds-lab">顶部小通知条 <span class="cds-hint">总结开始/成功/失败，失败可重试</span></span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-notifycard" ${s.notifyCard !== false ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
+            <div class="cds-hint" style="white-space:normal;line-height:1.6;margin:2px 0 6px;">成功后 5 秒自动消失（也能自己关）；失败或 AI 返回空时<b>常驻</b>，带「重试」「看日志」两个按钮。</div>
+          </div>
+        </details>
+      </div>
     </div>
 
     <div class="cds-action"><button class="cd-btn-primary" id="cd-btn-save-settings">应用设置</button><button class="cd-btn-secondary" id="cd-btn-revert-settings" style="margin-left:8px">放弃更改</button></div>
@@ -16625,7 +16724,8 @@ async function cdRenderSettings() {
       enableArchive: $('#cd-s-archive').is(':checked'),
       // ★ 正文采集设置
       processMode: ($('#cd-s-process-mode').length ? $('#cd-s-process-mode').val() : 'summary') === 'collect' ? 'collect' : 'summary',
-      collectTag: (($('#cd-s-collect-tag').length ? $('#cd-s-collect-tag').val() : 'state') || 'state').trim(),
+      collectTags: $('#cd-collect-tags .cd-collect-tag, .cd-collect-tag').map(function () { return $(this).is(':checked') ? String($(this).val() || '').trim() : null; }).get().filter(Boolean),
+      collectTag: ($('#cd-collect-tags .cd-collect-tag:checked, .cd-collect-tag:checked').first().val() || 'state'),
       collectBoxes: $('#cd-collect-boxes .cd-collect-box, .cd-collect-box').map(function () { return $(this).is(':checked') ? String($(this).val() || '').trim() : null; }).get().filter(Boolean),
       worldbookLink: $('#cd-s-worldbook').is(':checked'),
       injectDiary: $('#cd-s-inject-diary').is(':checked'),
@@ -16983,6 +17083,15 @@ async function cdRenderEgg() {
 
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
+  {
+    version: 'v2.23.1',
+    date: '2026-11-27',
+    items: [
+      '【设置面板重分类】全部设置按使用顺序重排成 8 大分区：①总控与更新 ②生成内容 ③运行规则 ④注入 AI 上下文 ⑤楼层管理 ⑥正文采集 ⑦界面外观 ⑧高级技术。每个分区一个大卡片带编号，设置项一个没删、文案与数据全部照旧。',
+      '【正文采集改为点选】采集的「标签」和「框框」都不用手打了：自动扫描当前楼层里出现过的 &lt;标签&gt; 和方括号 [框框]，列成可点选的小圆片，点谁抓谁、可多选；抓到的内容按正文顺序拼进剧情档案主线。',
+      '【界面细节】采集清单默认收在「正文采集」分区里；图标统一用矢量图标，无表情符号；API 地址/密钥/模型各占一行，不再挤在一起。',
+    ],
+  },
   {
     version: 'v2.23.0',
     date: '2026-11-27',
