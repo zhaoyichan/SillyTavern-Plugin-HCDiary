@@ -531,6 +531,9 @@ const DEFAULT_SETTINGS = {
     { start: '<reflection>', end: '</reflection>' },
     { start: '<!--', end: '-->' },
   ],
+  processMode     : 'summary',    // 正文处理方式: 'summary'=AI总结 | 'collect'=从正文标签框框采集摘要（不调API）
+  collectTag      : 'state',      // [采集] 要抓取的标签名（如 state → 匹配 <state>…</state>）
+  collectBoxes    : ['摘要', '时间'], // [采集] 标签内要抓取的框框名清单（如 [摘要] [时间]），按勾选拼接进档案主线
   autoHideEnabled : false,        // 自动隐藏已总结楼层
   autoHideKeep    : 5,            // 保留最新 N 条楼层可见（用户+AI）
   autoHideMode    : 'b',          // 隐藏模式: 'b'=AI屏蔽留界面(幽灵图标,可恢复) | 'a'=界面也隐藏(彻底)
@@ -1771,6 +1774,9 @@ function cdArchiveSystemOf(full, s, hasOld) {
 
 async function cdBuildArchivePrompt(windowFloors, data, _s, archiveFull, forceCold) {
   // ★ archiveFull=true 表示全量重建模式（手动补写大区间），用完整总结提示词，否则用增量提示词
+  /* ★ FIX-TDZ：existing 必须先定义再用。原先定义在下方、这里先用 → 开「总结时注入历史档案」时
+     触发 JS 暂时性死区，直接抛 ReferenceError、档案写不进去。 */
+  const existing = data.archive || emptyData().archive;
   /* ★ FIX21：只有真的把旧状态注入进提示词时，才能让 AI “只写变化的维度” */
   const _hasOldStates = !forceCold && !!(_s && _s.summarizeInjectArchive)
     && !!(existing && String(existing.states || '').trim());
@@ -1779,7 +1785,6 @@ async function cdBuildArchivePrompt(windowFloors, data, _s, archiveFull, forceCo
      （否则关掉状态后仍在注几千字旧状态，白烧 token）。 */
   const _archF = cdArchiveFieldsOf(_s);
   const _archLabels = cdArchiveFieldLabels(_archF);
-  const existing = data.archive || emptyData().archive;
   // ★ 用户自定义剧情追踪项
   const customFields = Array.isArray(_s?.customFields) ? _s.customFields.filter(f => f && f.key && f.label) : [];
   const customFormatBlock = customFields.length
@@ -2780,7 +2785,13 @@ function cdDiarySysOf(s, data, dv) {
 async function cdCompressArchive(data, s, isAuto) {
   if (!data || !data.archive) return;
   const archive = data.archive;
-  const fields = ['mainline', 'sideline', 'states', 'unresolved'];
+  /* ★ 压缩字段跟随开关：与总结一致——关掉的字段不组装、不回填、提示词里也不再要求。
+     labels 仍保留全量映射（供 cdParseCompressedBlocks 识别 AI 万一输出的标题），但 fields 只含开启项。 */
+  const _cmpF = (typeof cdArchiveFieldsOf === 'function') ? cdArchiveFieldsOf(s) : { side: true, state: true, unres: true };
+  const fields = ['mainline'];
+  if (_cmpF.side) fields.push('sideline');
+  if (_cmpF.state) fields.push('states');
+  if (_cmpF.unres) fields.push('unresolved');
   const labels = { mainline: '主线', sideline: '支线', states: '重要状态变化', unresolved: '未解决事项' };
 
   // 组装要压缩的内容块
@@ -2809,7 +2820,12 @@ async function cdCompressArchive(data, s, isAuto) {
   const joinText = blocks.join('\n\n');
   if (!joinText) { cdLog('cdCompressArchive: 无内容可压缩'); return; }
 
-  const COMPRESS_PROMPT = CD_COMPRESS_PROMPT;
+  /* ★ 压缩提示词跟随开关：关掉的字段，从「请严格按以下分段输出」清单里删掉对应那行，
+     与 fields 保持一致。这样关掉支线后，AI 不会再被要求输出【支线】段。 */
+  let COMPRESS_PROMPT = CD_COMPRESS_PROMPT;
+  if (!_cmpF.side) COMPRESS_PROMPT = COMPRESS_PROMPT.replace(/^- 【支线】[^\n]*\n?/m, '');
+  if (!_cmpF.state) COMPRESS_PROMPT = COMPRESS_PROMPT.replace(/^- 【重要状态变化】[^\n]*\n?/m, '');
+  if (!_cmpF.unres) COMPRESS_PROMPT = COMPRESS_PROMPT.replace(/^- 【未解决事项】[^\n]*\n?/m, '');
 
   const res = await cdWithTimeout(cdApiComplete([
     { role: 'system', content: (function () { const _jb = (typeof JAILBREAK !== "undefined" && JAILBREAK) ? (Array.isArray(JAILBREAK) ? JAILBREAK.join("\n") : String(JAILBREAK)) : ""; return (_jb ? _jb + "\n\n" : "") + cdApplyPromptCustom('compress', COMPRESS_PROMPT); })() },
@@ -2892,6 +2908,111 @@ async function cdCompressArchive(data, s, isAuto) {
       data._lastCompressEntryCount = cdCountArchiveEntries(archive);
     }
   }
+}
+
+/* ============================== 正文采集（processMode='collect'）============================== */
+
+/**
+ * ★ 扫描聊天里出现过的标签框框名，供设置界面生成勾选清单。
+ *   只扫 <tag>…</tag> 内部形如 [框框名] 的方括号标记。
+ * @returns 去重后的框框名数组（按首次出现顺序）
+ */
+function cdScanCollectBoxes() {
+  const s = (typeof cdGetSettings === 'function') ? cdGetSettings() : {};
+  const tag = String(s.collectTag || 'state').replace(/[.*+?^${}()|[\]\\]/g, '\\$&') || 'state';
+  let chat = [];
+  try { const ctx = SillyTavern.getContext(); chat = (ctx && Array.isArray(ctx.chat)) ? ctx.chat : []; } catch (e) {}
+  const found = [];
+  const seen = {};
+  try {
+    const tagRe = new RegExp('<' + tag + '\\s*>([\\s\\S]*?)<\\/' + tag + '\\s*>', 'gi');
+    const boxRe = /\[([^\]\[\n]{1,20})\]/g;
+    for (const m of chat) {
+      const mes = String((m && m.mes) || '');
+      if (!mes) continue;
+      let tm;
+      tagRe.lastIndex = 0;
+      while ((tm = tagRe.exec(mes)) !== null) {
+        const inner = String(tm[1] || '');
+        let bm;
+        boxRe.lastIndex = 0;
+        while ((bm = boxRe.exec(inner)) !== null) {
+          const name = bm[1].trim();
+          if (name && !seen[name]) { seen[name] = true; found.push(name); }
+        }
+      }
+    }
+  } catch (e) {}
+  return found;
+}
+
+/**
+ * ★ 从一段楼层正文里采集勾选框框后的文字。
+ *   读原始 mes（不走标签白名单过滤），找 <tag>…</tag>，在其中按 collectBoxes 顺序抓 [框框名] 后的文字。
+ * @returns 拼接好的一段文本（可能为空）
+ */
+function cdExtractCollectFromMes(mes, tag, boxes) {
+  const raw = String(mes || '');
+  if (!raw.trim()) return '';
+  const tagEsc = String(tag || 'state').replace(/[.*+?^${}()|[\]\\]/g, '\\$&') || 'state';
+  const tagRe = new RegExp('<' + tagEsc + '\\s*>([\\s\\S]*?)<\\/' + tagEsc + '\\s*>', 'gi');
+  const wanted = Array.isArray(boxes) ? boxes.map(function (b) { return String(b || '').trim(); }).filter(Boolean) : [];
+  if (!wanted.length) return '';
+  const out = [];
+  let tm;
+  tagRe.lastIndex = 0;
+  while ((tm = tagRe.exec(raw)) !== null) {
+    const inner = String(tm[1] || '');
+    const parts = [];
+    // 按 collectBoxes 顺序输出，保证拼接顺序与勾选顺序一致
+    for (const box of wanted) {
+      const boxEsc = box.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // 抓 [box] 之后到下一个 [xxx] 或结尾的文字
+      const re = new RegExp('\\[' + boxEsc + '\\]\\s*([\\s\\S]*?)(?=\\s*\\[[^\\]\\[\\n]{1,20}\\]|$)');
+      const mm = re.exec(inner);
+      if (mm && mm[1] && String(mm[1]).trim()) {
+        parts.push('【' + box + '】' + String(mm[1]).trim());
+      }
+    }
+    if (parts.length) out.push(parts.join('\n'));
+  }
+  return out.join('\n\n');
+}
+
+/**
+ * ★ 采集模式主入口：把 windowFloors 的摘要采进剧情档案主线，全程不调 API。
+ *   游标推进、自动隐藏、压缩、刷新注入沿用 cdRunDiary 的通用流程（本函数只负责产出档案内容）。
+ * @returns {ok:boolean, count:number, text:string}
+ */
+async function cdCollectIntoArchive(windowFloors, data, s) {
+  const tag = String(s.collectTag || 'state').trim() || 'state';
+  const boxes = Array.isArray(s.collectBoxes) ? s.collectBoxes : ['摘要', '时间'];
+  if (!data.archive || typeof data.archive !== 'object') data.archive = (typeof emptyData === 'function') ? emptyData().archive : {};
+
+  const pieces = [];
+  for (const wf of (windowFloors || [])) {
+    const one = cdExtractCollectFromMes((wf && wf.mes) || '', tag, boxes);
+    if (one) pieces.push(one);
+  }
+  if (!pieces.length) {
+    cdAddLog('info', '[采集] 本批未抓到任何摘要框框', { 标签: tag, 框框: boxes, 楼层数: (windowFloors || []).length });
+    return { ok: false, count: 0, text: '' };
+  }
+
+  // 逐段追加进主线，按段落去重（与总结写入一致），采过的楼层才算"已记录"
+  let added = 0;
+  for (const p of pieces) {
+    const before = String(data.archive.mainline || '');
+    const key = p.trim();
+    if (!before) { data.archive.mainline = key; added++; continue; }
+    const segs = before.split(/\n\n+/).map(function (x) { return String(x).trim(); }).filter(Boolean);
+    if (segs.some(function (seg) { return seg === key; })) continue;
+    if (before.trimEnd().endsWith(key)) continue;
+    data.archive.mainline = before.trimEnd() + '\n\n' + key;
+    added++;
+  }
+  cdAddLog('info', '[采集] 摘要已并入档案主线', { 标签: tag, 框框: boxes, 新增段: added, 主线字数: String(data.archive.mainline || '').length });
+  return { ok: added > 0, count: added, text: pieces.join('\n\n') };
 }
 
 /* ============================== 向量化工具 ============================== */
@@ -7276,13 +7397,27 @@ async function cdRunDiary({ manual = false, silent = false, extraFloors = null }
 
     // ★ 根据开关决定调哪几路 API
     const calls = [];
+    const _collectMode = (s.processMode === 'collect');
+    // ★ 采集模式：档案由正文 <tag> 框框抓摘要产出，全程不调 API；档案开关在此模式下失效（采集独占档案产出）
+    if (_collectMode) {
+      const _colRes = await cdCollectIntoArchive(windowFloors, data, s);
+      if (_colRes.ok) {
+        archiveOk = true;   // 复用通用流程：游标推进 / 自动隐藏 / 自动压缩 / 刷新注入照常走
+        cdAddLog('info', '[采集模式] 档案主线已采集（本批不调 AI 总结）', { 新增段: _colRes.count });
+      } else {
+        cdAddLog('info', '[采集模式] 本批无可采集摘要，楼层不打已记录标记、留待下轮', { 标签: s.collectTag || 'state', 框框: s.collectBoxes });
+      }
+    }
     // ★ 合并模式：角色日记 + 剧情档案 用一次 API 调用（提示词动态拼接，勾哪个拼哪个）
     const _needDiary = s.enableDiary !== false;
-    const _needArch  = s.enableArchive !== false;
+    // ★ 采集模式下档案不走 AI 那一路（已由采集产出），避免同一批既 AI 总结又采集 → 档案主线重复
+    const _needArch  = s.enableArchive !== false && !_collectMode;
     const _archiveFull = false;   // 区间补写不触发全量重建（只总结本次楼层，不塞全部历史）
     if (_archiveFull && _needArch) cdAddLog('info', '[档案] 手动补写 → 全量重建模式（完整总结全部楼层）');
     if (_needDiary || _needArch) {
-      const comboMsgs = await cdBuildDiaryArchiveCombined(windowFloors, data, s, _archiveFull);
+      // 采集模式下若日记仍开：合并提示词只拼日记段（传 enableArchive:false），档案交给采集
+      const _comboS = (_collectMode && _needDiary) ? Object.assign({}, s, { enableArchive: false }) : s;
+      const comboMsgs = await cdBuildDiaryArchiveCombined(windowFloors, data, _comboS, _archiveFull);
       calls.push({ name: '日记+档案', msgs: comboMsgs });
     }
     // ★ FIX11：该功能界面已停用隐藏，但历史设置可能仍为 true → 每次总结偷偷多发一路请求。
@@ -7758,8 +7893,16 @@ if (arc.unresolved !== undefined) {
       // ★ 自动隐藏旧楼层（统一入口：自动总结或手动补写成功后都会触发，需开启「自动隐藏楼层」开关）
       if (s.autoHideEnabled) {
         try {
-          await cdHideOldFloors(s.autoHideKeep || 5);
-          cdAddLog('info', `自动隐藏完成，保留最新 ${s.autoHideKeep || 5} 条楼层(含用户)`);
+          if (_collectMode) {
+            // ★ 采集模式：保留数 = 锚点数（默认1往上），两者相等⇒末尾未采的正是可见的，天然不重复；
+            //   且只藏真正进过 processedFloors（采集成功）的楼层，没抓到摘要的不误藏。
+            const _keep = Math.max(1, parseInt(s.memoryOffset, 10) || 1);
+            await cdHideRecordedKeepNewest(_keep);
+            cdAddLog('info', `采集模式自动隐藏完成，保留最新 ${_keep} 条(=锚点数)，只藏已采集楼层`);
+          } else {
+            await cdHideOldFloors(s.autoHideKeep || 5);
+            cdAddLog('info', `自动隐藏完成，保留最新 ${s.autoHideKeep || 5} 条楼层(含用户)`);
+          }
         } catch (e) {
           cdLog('自动隐藏失败（不影响主流程）:', e.message);
         }
@@ -7990,8 +8133,10 @@ async function cdOnMessageReceivedJsonl() {
     if (typeof cdAddLog === 'function') cdAddLog('info', '自动总结[jsonl]', { 未触发: '未攒够 间隔+锚点', 新增: totalNew, 需要: needFloors, 间隔: interval, 偏移: offset, 基线: baseline, 全量总楼层: res.floors.length });
     return;
   }
-  const takeCount = interval;
+  let takeCount = interval;
   // 最大批次限制，避免 token 爆（一次性处理几百楼会超预算）
+  // ★ FIX-CONST：takeCount 必须是 let（下方会按 maxW 截断重新赋值）；原先写成 const，
+  //   interval > maxWindowFloors 时抛 TypeError → jsonl 自动总结整条路径崩溃。
   const maxW = Math.max(1, parseInt(s.maxWindowFloors, 10) || 40);
   if (takeCount > maxW) takeCount = maxW;
   const windowFloors = newFloors.slice(0, takeCount).map(function (fl) {
@@ -16009,6 +16154,33 @@ async function cdRenderSettings() {
         </div>
       </details>
 
+      <details class="cds-collapse" data-cds="collect"><summary><i class="fa-regular fa-highlighter"></i> 正文采集（不用 AI 总结，直接抓正文摘要）</summary>
+        <div>
+          <div class="cds-row"><span class="cds-lab">处理方式</span><span class="cds-ctrl"><select id="cd-s-process-mode" class="cd-input" style="max-width:230px;"><option value="summary" ${s.processMode !== 'collect' ? 'selected' : ''}>AI 总结（原方式）</option><option value="collect" ${s.processMode === 'collect' ? 'selected' : ''}>正文采集（抓摘要框框）</option></select></span></div>
+          <div class="cds-row"><span class="cds-lab">采集标签名</span><span class="cds-ctrl"><input type="text" id="cd-s-collect-tag" value="${escapeAttr(s.collectTag || 'state')}" class="cd-input" placeholder="state" style="width:auto;min-width:120px;text-align:left;"></span></div>
+          <div class="cds-row"><span class="cds-lab">采集框框（勾选）</span></div>
+          <div style="margin:2px 0 6px;padding:6px 8px;border:1px solid rgba(201,168,124,.35);border-radius:6px;">
+            ${(function () {
+              var _scan = (typeof cdScanCollectBoxes === 'function') ? cdScanCollectBoxes() : [];
+              var _saved = Array.isArray(s.collectBoxes) ? s.collectBoxes : ['摘要', '时间'];
+              var _all = _scan.slice();
+              _saved.forEach(function (b) { if (_all.indexOf(b) < 0) _all.push(b); });
+              if (!_all.length) _all = ['摘要', '时间', '在场', '发展', '团队', '离线', '暗线'];
+              return _all.map(function (b) {
+                var _ck = _saved.indexOf(b) >= 0 ? 'checked' : '';
+                return '<label style="display:inline-flex;align-items:center;gap:3px;margin:2px 10px 2px 0;font-size:calc(0.6rem*var(--cd-fs,1));cursor:pointer;">'
+                  + '<input type="checkbox" class="cd-collect-box" value="' + escapeAttr(b) + '" ' + _ck + '>' + escapeAttr(b) + '</label>';
+              }).join('');
+            })()}
+          </div>
+          <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;margin:4px 0 0;line-height:1.5;">
+            「正文采集」不调 API：从每层的 <b>&lt;标签&gt;…&lt;/标签&gt;</b> 里按勾选的框框抓后面的文字，按顺序拼进<b>剧情档案主线</b>。例：<code>&lt;state&gt;[摘要]…[时间]…&lt;/state&gt;</code> 勾「摘要+时间」即抓这两段。<br>
+            保留可见层数 = 运行参数里的<b>记忆锚点偏移</b>（默认 2，最小 1），采集区块不再单独设保留数。末尾锚点层本轮不采、下轮带回，已采集旧楼层自动隐藏。<br>
+            切换为采集后，只在新楼层采集，已总结过的楼层不会重采；角色日记开关不受影响。
+          </p>
+        </div>
+      </details>
+
       <details class="cds-collapse" data-cds="compress"><summary><i class="fa-regular fa-compress"></i> 自动压缩剧情档案</summary>
         <div>
           <div class="cds-row"><span class="cds-lab">超阈值时自动压缩</span><span class="cds-ctrl"><label class="cd-switch"><input type="checkbox" id="cd-s-autocompress" ${s.autoCompress ? 'checked' : ''}><span class="cd-slider"></span></label></span></div>
@@ -16451,6 +16623,10 @@ async function cdRenderSettings() {
       diaryVersion: $('#cd-s-diaryver') && $('#cd-s-diaryver').val() || 'full',
       enableRelation: (s.enableRelation !== false),      // ★ FIX10：界面已隐藏停用，不该再由隐藏控件改写
       enableArchive: $('#cd-s-archive').is(':checked'),
+      // ★ 正文采集设置
+      processMode: ($('#cd-s-process-mode').length ? $('#cd-s-process-mode').val() : 'summary') === 'collect' ? 'collect' : 'summary',
+      collectTag: (($('#cd-s-collect-tag').length ? $('#cd-s-collect-tag').val() : 'state') || 'state').trim(),
+      collectBoxes: $('#cd-collect-boxes .cd-collect-box, .cd-collect-box').map(function () { return $(this).is(':checked') ? String($(this).val() || '').trim() : null; }).get().filter(Boolean),
       worldbookLink: $('#cd-s-worldbook').is(':checked'),
       injectDiary: $('#cd-s-inject-diary').is(':checked'),
       diaryCharFilter: $('#cd-s-diarycharfilter').is(':checked'),
