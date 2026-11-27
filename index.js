@@ -240,7 +240,7 @@ function cdCharOptions(cur) {
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.23.1';
+const PLUGIN_VERSION = '2.23.2';
 /* ★ FIX23：构建标识，用于定位用户跑的是哪批代码。
    CD_BUILD = 本版所基于的提交短 sha，配合 PLUGIN_VERSION 即可唯一确定版本；
    下次改动代码时请一并更新（无法自指自身 sha，故取基线）。 */
@@ -534,7 +534,7 @@ const DEFAULT_SETTINGS = {
   processMode     : 'summary',    // 正文处理方式: 'summary'=AI总结 | 'collect'=从正文标签框框采集摘要（不调API）
   collectTag      : 'state',      // [采集] 兼容旧版单标签；新版以 collectTags 为准
   collectTags     : ['state'],    // [采集] 要抓取的标签名清单（点选，可多选；如 state → 匹配 <state>…</state>）
-  collectBoxes    : ['摘要', '时间'], // [采集] 标签内要抓取的框框名清单（如 [摘要] [时间]），按勾选拼接进档案主线
+  collectBoxes    : ['摘要', '时间'], // [采集] 标签内要抓取的框框名清单（如 [摘要] [时间]）；勾选只作过滤，输出顺序跟随正文实际先后
   autoHideEnabled : false,        // 自动隐藏已总结楼层
   autoHideKeep    : 5,            // 保留最新 N 条楼层可见（用户+AI）
   autoHideMode    : 'b',          // 隐藏模式: 'b'=AI屏蔽留界面(幽灵图标,可恢复) | 'a'=界面也隐藏(彻底)
@@ -2985,8 +2985,49 @@ function cdScanCollectBoxes() {
 }
 
 /**
+ * ★ 正文采集专用：只扫「最新那一层」正文里真实出现的 <标签> 和标签内的 [框框]。
+ *   与过滤面板的 cdTagScanStart 完全无关 —— 只负责把扫到的东西列成点选 chip，不写任何过滤规则。
+ *   ★ 不走 cdScanCollectTags（那个把 state 列进了 SKIP，永远扫不到用户最常用的 <state>）。
+ * @returns {tags:string[], boxes:string[], floor:object|null}
+ */
+function cdCollectScanLatest() {
+  let chat = [];
+  try {
+    const ctx = (typeof SillyTavern !== 'undefined' && SillyTavern.getContext) ? SillyTavern.getContext() : null;
+    chat = (ctx && Array.isArray(ctx.chat)) ? ctx.chat : [];
+  } catch (e) {}
+  let latest = null;
+  for (let i = chat.length - 1; i >= 0; i--) {
+    const m = chat[i];
+    if (m && !m.is_system && String(m.mes || '').trim()) { latest = m; break; }
+  }
+  const tags = [], tagSeen = {};
+  const boxes = [], boxSeen = {};
+  if (latest) {
+    const mes = String(latest.mes || '');
+    const blocks = (typeof cdAngleBlocks === 'function') ? cdAngleBlocks(mes) : [];
+    const boxRe = /\[([^\]\[\n]{1,20})\]/g;
+    for (const b of blocks) {
+      const nm = String(b.name || '').trim();
+      if (!nm || tagSeen[nm]) continue;
+      tagSeen[nm] = 1; tags.push(nm);
+      const inner = String(b.raw || '');
+      let bm;
+      boxRe.lastIndex = 0;
+      while ((bm = boxRe.exec(inner)) !== null) {
+        const bn = String(bm[1] || '').trim();
+        if (bn && !boxSeen[bn]) { boxSeen[bn] = 1; boxes.push(bn); }
+      }
+    }
+  }
+  return { tags: tags, boxes: boxes, floor: latest };
+}
+
+/**
  * ★ 从一段楼层正文里采集勾选框框后的文字。
- *   读原始 mes（不走标签白名单过滤），找 <tag>…</tag>，在其中按 collectBoxes 顺序抓 [框框名] 后的文字。
+ *   读原始 mes（不走标签白名单过滤），找 <tag>…</tag>。
+ *   ★ 顺序铁律：正文里 [框框] 出现的先后 = 采进档案的先后；勾选清单只当「过滤器」，不再决定顺序。
+ *     用户明确要求「正文里什么样，采进档案就什么样」——不能把 [时间] 挪到 [摘要] 上面去误导模型。
  * @returns 拼接好的一段文本（可能为空）
  */
 function cdExtractCollectFromMes(mes, tags, boxes) {
@@ -2997,7 +3038,7 @@ function cdExtractCollectFromMes(mes, tags, boxes) {
   const wanted = Array.isArray(boxes) ? boxes.map(function (b) { return String(b || '').trim(); }).filter(Boolean) : [];
   if (!wanted.length) return '';
   const out = [];
-  // 按楼层里标签出现的先后顺序抓；每个标签块内按 boxes 勾选顺序输出
+  // 按楼层里标签出现的先后顺序抓；每个标签块内也按 [框框] 在正文里出现的先后顺序输出
   const tagSpans = [];
   for (const tag0 of tagList) {
     const tagEsc = String(tag0 || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -3010,16 +3051,19 @@ function cdExtractCollectFromMes(mes, tags, boxes) {
     }
   }
   tagSpans.sort(function (a, b) { return a.at - b.at; });
+  // 扫出这个标签块里所有 [框框] 段，按出现位置顺序；wanted 只决定「要不要」，不决定「排第几」
+  const boxRe = /\[([^\]\[\n]{1,20})\]\s*([\s\S]*?)(?=\s*\[[^\]\[\n]{1,20}\]|$)/g;
   for (const span of tagSpans) {
     const inner = span.inner;
     const parts = [];
-    for (const box of wanted) {
-      const boxEsc = box.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const re = new RegExp('\\[' + boxEsc + '\\]\\s*([\\s\\S]*?)(?=\\s*\\[[^\\]\\[\\n]{1,20}\\]|$)');
-      const mm = re.exec(inner);
-      if (mm && mm[1] && String(mm[1]).trim()) {
-        parts.push('【' + box + '】' + String(mm[1]).trim());
-      }
+    let bm;
+    boxRe.lastIndex = 0;
+    while ((bm = boxRe.exec(inner)) !== null) {
+      const name = String(bm[1] || '').trim();
+      if (!name || wanted.indexOf(name) < 0) continue;   // 没勾选的框框跳过
+      const val = String(bm[2] || '').trim();
+      if (!val) continue;
+      parts.push('【' + name + '】' + val);
     }
     if (parts.length) out.push(parts.join('\n'));
   }
@@ -16180,40 +16224,46 @@ ${_apiGuide}
     <div class="cds-card cds-sec" data-cds="collect">
       <div class="cds-sec-head"><span class="cds-no">6</span><span class="cds-gtitle">正文采集</span><span class="cds-gsub">不调 API · 直接抓正文摘要 <span class="cds-newtag">新</span></span></div>
       <div class="cds-row"><span class="cds-lab">处理方式</span><span class="cds-ctrl"><select id="cd-s-process-mode" class="cd-input" style="max-width:230px;"><option value="summary" ${s.processMode !== 'collect' ? 'selected' : ''}>AI 总结（原方式）</option><option value="collect" ${s.processMode === 'collect' ? 'selected' : ''}>正文采集（抓摘要框框）</option></select></span></div>
+      <div class="cd-tagscan-bar" style="margin-bottom:8px;">
+        <button class="cd-btn-secondary" id="cd-collect-scan-latest" style="font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;"><i class="fa-solid fa-magnifying-glass" style="margin-right:4px;"></i>扫描最新楼层</button>
+        <span class="cd-tagscan-barhint">只扫最新那一层正文里真实出现的 &lt;标签&gt; 和 [框框]，扫到啥列啥，点谁抓谁</span>
+      </div>
       <div class="cds-collect-sec">
-        <div class="cds-collect-title">① 选标签 <span class="cds-hint">自动扫描当前楼层里出现过的 &lt;标签&gt;，点一下选中 / 再点取消（可多选）</span></div>
+        <div class="cds-collect-title">① 选标签 <span class="cds-hint">扫最新一层正文里的 &lt;标签&gt;，点一下选中 / 再点取消（可多选）</span></div>
         <div class="cds-picks" id="cd-collect-tags">
           ${(function () {
-            var _scan = (typeof cdScanCollectTags === 'function') ? cdScanCollectTags() : [];
+            var _r = (typeof cdCollectScanLatest === 'function') ? cdCollectScanLatest() : { tags: [] };
+            var _scan = _r.tags || [];
             var _saved = Array.isArray(s.collectTags) ? s.collectTags : ['state'];
             var _all = _scan.slice();
             _saved.forEach(function (b) { if (_all.indexOf(b) < 0) _all.push(b); });
             if (!_all.length) _all = ['state'];
             return _all.map(function (b) {
-              var _ck = _saved.indexOf(b) >= 0 ? 'checked' : '';
+              var _ck = (_scan.length ? (_scan.indexOf(b) >= 0) : (_saved.indexOf(b) >= 0)) ? 'checked' : '';
               return '<label class="cds-pick"><input type="checkbox" class="cd-collect-tag" value="' + escapeAttr(b) + '" ' + _ck + '><span>' + escapeAttr(b) + '</span></label>';
             }).join('');
           })()}
         </div>
       </div>
       <div class="cds-collect-sec">
-        <div class="cds-collect-title">② 选框框 <span class="cds-hint">自动列出选中标签里的 [框框]，点一下选中 / 再点取消</span></div>
+        <div class="cds-collect-title">② 选框框 <span class="cds-hint">扫最新一层选中标签里的 [框框]，点一下选中 / 再点取消</span></div>
         <div class="cds-picks" id="cd-collect-boxes">
           ${(function () {
-            var _scan = (typeof cdScanCollectBoxes === 'function') ? cdScanCollectBoxes() : [];
+            var _r = (typeof cdCollectScanLatest === 'function') ? cdCollectScanLatest() : { boxes: [] };
+            var _scan = _r.boxes || [];
             var _saved = Array.isArray(s.collectBoxes) ? s.collectBoxes : ['摘要', '时间'];
             var _all = _scan.slice();
             _saved.forEach(function (b) { if (_all.indexOf(b) < 0) _all.push(b); });
             if (!_all.length) _all = ['摘要', '时间', '在场', '发展', '团队', '离线', '暗线'];
             return _all.map(function (b) {
-              var _ck = _saved.indexOf(b) >= 0 ? 'checked' : '';
+              var _ck = (_scan.length ? (_scan.indexOf(b) >= 0) : (_saved.indexOf(b) >= 0)) ? 'checked' : '';
               return '<label class="cds-pick"><input type="checkbox" class="cd-collect-box" value="' + escapeAttr(b) + '" ' + _ck + '><span>' + escapeAttr(b) + '</span></label>';
             }).join('');
           })()}
         </div>
       </div>
       <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;margin:6px 0 0;line-height:1.5;">
-        全程不用手打：扫到什么就列什么，点谁抓谁。「正文采集」不调 API：从每层的 <b>&lt;标签&gt;…&lt;/标签&gt;</b> 里按勾选的框框抓后面的文字，按顺序拼进<b>剧情档案主线</b>。例：<code>&lt;state&gt;[摘要]…[时间]…&lt;/state&gt;</code> 勾「摘要+时间」即抓这两段。<br>
+        全程不用手打：点「扫描最新楼层」，只扫最新那一层正文里真实出现的 <b>&lt;标签&gt;</b> 和 <b>[框框]</b>，扫到啥列啥、点谁抓谁（这是采集专用，跟内容过滤的扫描是两回事）。「正文采集」不调 API：从每层的 <b>&lt;标签&gt;…&lt;/标签&gt;</b> 里抓勾选框框后面的文字，<b>正文里框框啥先后，采进档案就啥先后</b>（勾选只决定抓不抓，不改变顺序）。例：<code>&lt;state&gt;[时间]…[摘要]…&lt;/state&gt;</code> 勾「摘要+时间」→ 档案里也是时间在前、摘要在后。<br>
         保留可见层数 = 运行参数里的<b>记忆锚点偏移</b>（默认 2，最小 1），采集区块不再单独设保留数。末尾锚点层本轮不采、下轮带回，已采集旧楼层自动隐藏。<br>
         切换为采集后，只在新楼层采集，已总结过的楼层不会重采；角色日记开关不受影响。
       </p>
@@ -16393,6 +16443,23 @@ ${_apiGuide}
     cdSaveSettings({ filterKeepTags: [] });
     if (typeof toastr !== 'undefined' && toastr.success) toastr.success('已清除「只保留」白名单');
     setTimeout(function () { try { cdRenderSettings(); } catch (e) {} }, 0);
+  }).on('click.tagscan', '#cd-collect-scan-latest', function () {
+    // ★ 正文采集专用扫描：只扫最新一层，结果填进两个点选区；与过滤面板的扫描互不干扰。
+    if (typeof cdCollectScanLatest !== 'function') return;
+    var _r = cdCollectScanLatest();
+    if (!_r.floor || (!_r.tags.length && !_r.boxes.length)) {
+      if (typeof toastr !== 'undefined' && toastr.info) toastr.info('最新一层没扫到成对的 <标签> 或 [框框]');
+      return;
+    }
+    var _t = (_r.tags.length ? _r.tags : ['state']);
+    var _b = (_r.boxes.length ? _r.boxes : ['摘要', '时间']);
+    $('#cd-collect-tags').html(_t.map(function (x) {
+      return '<label class="cds-pick"><input type="checkbox" class="cd-collect-tag" value="' + escapeAttr(x) + '" checked><span>' + escapeAttr(x) + '</span></label>';
+    }).join(''));
+    $('#cd-collect-boxes').html(_b.map(function (x) {
+      return '<label class="cds-pick"><input type="checkbox" class="cd-collect-box" value="' + escapeAttr(x) + '" checked><span>' + escapeAttr(x) + '</span></label>';
+    }).join(''));
+    if (typeof toastr !== 'undefined' && toastr.success) toastr.success('已扫最新楼层：' + _t.length + ' 个标签 / ' + _b.length + ' 个框框，记得点保存');
   });
 
   // 记录当前编辑来源（★ FIX10：与输入框同一口径，按当前选择来源，不再 openai 优先）
@@ -17083,6 +17150,15 @@ async function cdRenderEgg() {
 
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
+  {
+    version: 'v2.23.2',
+    date: '2026-11-27',
+    items: [
+      '【采集顺序改正】正文里 [框框] 出现的先后 = 采进剧情档案的先后。勾选清单现在只决定「抓不抓」，不再决定「排第几」——正文里时间在上、摘要在下，采进档案也是时间在上、摘要在下，不再误导模型。',
+      '【正文采集加「扫描最新楼层」按钮】独立按钮只扫最新那一层正文里真实出现的 &lt;标签&gt; 和 [框框]，扫到啥列啥、点谁抓谁；这是采集专用，跟内容过滤里的标签扫描互不相干，不会去改过滤规则。',
+      '【修掉：标签扫不出来】原来的扫描把最常用的 &lt;state&gt; 误列进跳过名单，导致永远只能显示写死的 state/摘要/时间；新扫描走独立解析，真实正文里有什么就列什么。',
+    ],
+  },
   {
     version: 'v2.23.1',
     date: '2026-11-27',
