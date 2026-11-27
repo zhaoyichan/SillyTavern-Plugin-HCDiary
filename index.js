@@ -240,7 +240,7 @@ function cdCharOptions(cur) {
 const PLUGIN_ID  = 'character-diary';
 const MODAL_ID   = 'cd-modal-root';
 const FAB_ID     = 'cd-fab';
-const PLUGIN_VERSION = '2.23.2';
+const PLUGIN_VERSION = '2.23.3';
 /* ★ FIX23：构建标识，用于定位用户跑的是哪批代码。
    CD_BUILD = 本版所基于的提交短 sha，配合 PLUGIN_VERSION 即可唯一确定版本；
    下次改动代码时请一并更新（无法自指自身 sha，故取基线）。 */
@@ -3021,6 +3021,35 @@ function cdCollectScanLatest() {
     }
   }
   return { tags: tags, boxes: boxes, floor: latest };
+}
+
+/**
+ * ★ 正文采集点选 chip 的统一生成器。
+ *   ★ 铁律：勾选只认 picked（=用户保存 / 当前勾选）；扫到什么只决定要不要显示「本层扫到」的砖红点，
+ *     绝不自动勾 —— 这就是「一排全勾」bug 的根治点，任何渲染/扫描路径都必须走这里。
+ */
+function cdCollectChipHtml(kind, name, picked, inLayer) {
+  var _dot = inLayer
+    ? ' <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#a84436;vertical-align:middle;" title="本层扫到"></span>'
+    : '';
+  return '<label class="cds-pick"><input type="checkbox" class="cd-collect-' + kind + '" value="'
+    + escapeAttr(name) + '"' + (picked ? ' checked' : '') + '><span>' + escapeAttr(name) + '</span>' + _dot + '</label>';
+}
+
+/** ★ 正文采集实时预览：按正文顺序显示当前勾选会抓到什么，跟真实采集走同一个函数 */
+function cdRenderCollectPreview() {
+  var $b = $('#cd-collect-preview-body');
+  if (!$b.length) return;
+  var _r = (typeof cdCollectScanLatest === 'function') ? cdCollectScanLatest() : {};
+  var _mes = (_r.floor && _r.floor.mes) ? _r.floor.mes : '';
+  var _tags = $('#cd-collect-tags .cd-collect-tag:checked').map(function () { return String($(this).val() || '').trim(); }).get().filter(Boolean);
+  var _boxes = $('#cd-collect-boxes .cd-collect-box:checked').map(function () { return String($(this).val() || '').trim(); }).get().filter(Boolean);
+  var _text = (_mes && _boxes.length) ? cdExtractCollectFromMes(_mes, _tags, _boxes) : '';
+  if (_text) {
+    $b.html('<br><span style="font-family:ui-monospace,Menlo,Consolas,monospace;white-space:pre-line;">' + escapeHtml(_text) + '</span>');
+  } else {
+    $b.text('（当前没勾任何框框，或最新层正文里没有对应内容，不会采集）');
+  }
 }
 
 /**
@@ -16226,10 +16255,15 @@ ${_apiGuide}
       <div class="cds-row"><span class="cds-lab">处理方式</span><span class="cds-ctrl"><select id="cd-s-process-mode" class="cd-input" style="max-width:230px;"><option value="summary" ${s.processMode !== 'collect' ? 'selected' : ''}>AI 总结（原方式）</option><option value="collect" ${s.processMode === 'collect' ? 'selected' : ''}>正文采集（抓摘要框框）</option></select></span></div>
       <div class="cd-tagscan-bar" style="margin-bottom:8px;">
         <button class="cd-btn-secondary" id="cd-collect-scan-latest" style="font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;"><i class="fa-solid fa-magnifying-glass" style="margin-right:4px;"></i>扫描最新楼层</button>
-        <span class="cd-tagscan-barhint">只扫最新那一层正文里真实出现的 &lt;标签&gt; 和 [框框]，扫到啥列啥，点谁抓谁</span>
+        <span class="cd-tagscan-barhint" id="cd-collect-scan-status">只扫最新那一层；<b>扫到 ≠ 勾选</b>，新发现只列出来、不会动你已经选好的。</span>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 14px;">
+        <button class="cd-btn-secondary" id="cd-collect-pick-all" style="padding:3px 10px;font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;"><i class="fa-regular fa-square-check" style="margin-right:4px;"></i>全选本层扫到的</button>
+        <button class="cd-btn-secondary" id="cd-collect-pick-mine" style="padding:3px 10px;font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;"><i class="fa-solid fa-filter" style="margin-right:4px;"></i>只保留已勾选</button>
+        <button class="cd-btn-secondary" id="cd-collect-restore" style="padding:3px 10px;font-size: calc(0.62rem * var(--cd-fs, 1));min-width:auto;"><i class="fa-solid fa-rotate-left" style="margin-right:4px;"></i>恢复上次保存</button>
       </div>
       <div class="cds-collect-sec">
-        <div class="cds-collect-title">① 选标签 <span class="cds-hint">扫最新一层正文里的 &lt;标签&gt;，点一下选中 / 再点取消（可多选）</span></div>
+        <div class="cds-collect-title">① 选标签 <span class="cds-hint">深棕底 = 已勾选要抓 · 砖红点 = 本层扫到（未勾 = 不抓）</span></div>
         <div class="cds-picks" id="cd-collect-tags">
           ${(function () {
             var _r = (typeof cdCollectScanLatest === 'function') ? cdCollectScanLatest() : { tags: [] };
@@ -16238,15 +16272,17 @@ ${_apiGuide}
             var _all = _scan.slice();
             _saved.forEach(function (b) { if (_all.indexOf(b) < 0) _all.push(b); });
             if (!_all.length) _all = ['state'];
+            // ★ 勾选只认 _saved，扫描结果绝不自动勾（一排全勾 bug 的根治点）
             return _all.map(function (b) {
-              var _ck = (_scan.length ? (_scan.indexOf(b) >= 0) : (_saved.indexOf(b) >= 0)) ? 'checked' : '';
-              return '<label class="cds-pick"><input type="checkbox" class="cd-collect-tag" value="' + escapeAttr(b) + '" ' + _ck + '><span>' + escapeAttr(b) + '</span></label>';
+              return (typeof cdCollectChipHtml === 'function')
+                ? cdCollectChipHtml('tag', b, _saved.indexOf(b) >= 0, _scan.indexOf(b) >= 0)
+                : ('<label class="cds-pick"><input type="checkbox" class="cd-collect-tag" value="' + escapeAttr(b) + '"' + (_saved.indexOf(b) >= 0 ? ' checked' : '') + '><span>' + escapeAttr(b) + '</span></label>');
             }).join('');
           })()}
         </div>
       </div>
       <div class="cds-collect-sec">
-        <div class="cds-collect-title">② 选框框 <span class="cds-hint">扫最新一层选中标签里的 [框框]，点一下选中 / 再点取消</span></div>
+        <div class="cds-collect-title">② 选框框 <span class="cds-hint">只列选中标签里的 [框框]；砖红点 = 本层扫到（没勾就不抓）</span></div>
         <div class="cds-picks" id="cd-collect-boxes">
           ${(function () {
             var _r = (typeof cdCollectScanLatest === 'function') ? cdCollectScanLatest() : { boxes: [] };
@@ -16256,14 +16292,18 @@ ${_apiGuide}
             _saved.forEach(function (b) { if (_all.indexOf(b) < 0) _all.push(b); });
             if (!_all.length) _all = ['摘要', '时间', '在场', '发展', '团队', '离线', '暗线'];
             return _all.map(function (b) {
-              var _ck = (_scan.length ? (_scan.indexOf(b) >= 0) : (_saved.indexOf(b) >= 0)) ? 'checked' : '';
-              return '<label class="cds-pick"><input type="checkbox" class="cd-collect-box" value="' + escapeAttr(b) + '" ' + _ck + '><span>' + escapeAttr(b) + '</span></label>';
+              return (typeof cdCollectChipHtml === 'function')
+                ? cdCollectChipHtml('box', b, _saved.indexOf(b) >= 0, _scan.indexOf(b) >= 0)
+                : ('<label class="cds-pick"><input type="checkbox" class="cd-collect-box" value="' + escapeAttr(b) + '"' + (_saved.indexOf(b) >= 0 ? ' checked' : '') + '><span>' + escapeAttr(b) + '</span></label>');
             }).join('');
           })()}
         </div>
       </div>
+      <div id="cd-collect-preview" style="font-size: calc(0.55rem * var(--cd-fs, 1));background:#f9ece7;border:1px solid #eccfc3;border-radius:8px;padding:8px 10px;margin-top:6px;color:#6e4c3e;line-height:1.6;">
+        <b><i class="fa-solid fa-eye" style="margin-right:4px;"></i>实时预览（按正文顺序）：</b><span id="cd-collect-preview-body">加载中…</span>
+      </div>
       <p style="font-size: calc(0.55rem * var(--cd-fs, 1));color:#8b7355;margin:6px 0 0;line-height:1.5;">
-        全程不用手打：点「扫描最新楼层」，只扫最新那一层正文里真实出现的 <b>&lt;标签&gt;</b> 和 <b>[框框]</b>，扫到啥列啥、点谁抓谁（这是采集专用，跟内容过滤的扫描是两回事）。「正文采集」不调 API：从每层的 <b>&lt;标签&gt;…&lt;/标签&gt;</b> 里抓勾选框框后面的文字，<b>正文里框框啥先后，采进档案就啥先后</b>（勾选只决定抓不抓，不改变顺序）。例：<code>&lt;state&gt;[时间]…[摘要]…&lt;/state&gt;</code> 勾「摘要+时间」→ 档案里也是时间在前、摘要在后。<br>
+        全程不用手打：点「扫描最新楼层」只扫最新一层真实出现的 <b>&lt;标签&gt;</b> 和 <b>[框框]</b>，<b>扫到 ≠ 勾选</b>——新发现只列出当候选，你点谁才抓谁。三个快捷键：全选本层扫到的 / 只保留已勾选 / 恢复上次保存。<b>正文里框框啥先后，采进档案就啥先后</b>（勾选只决定抓不抓，不改变顺序）。例：<code>&lt;state&gt;[时间]…[摘要]…&lt;/state&gt;</code> 勾「摘要+时间」→ 档案里也是时间在前、摘要在后。<br>
         保留可见层数 = 运行参数里的<b>记忆锚点偏移</b>（默认 2，最小 1），采集区块不再单独设保留数。末尾锚点层本轮不采、下轮带回，已采集旧楼层自动隐藏。<br>
         切换为采集后，只在新楼层采集，已总结过的楼层不会重采；角色日记开关不受影响。
       </p>
@@ -16444,23 +16484,68 @@ ${_apiGuide}
     if (typeof toastr !== 'undefined' && toastr.success) toastr.success('已清除「只保留」白名单');
     setTimeout(function () { try { cdRenderSettings(); } catch (e) {} }, 0);
   }).on('click.tagscan', '#cd-collect-scan-latest', function () {
-    // ★ 正文采集专用扫描：只扫最新一层，结果填进两个点选区；与过滤面板的扫描互不干扰。
+    // ★ 正文采集专用扫描：只扫最新一层；扫到的只补进候选列表，绝不自动勾（一排全勾 bug 的根治点）
     if (typeof cdCollectScanLatest !== 'function') return;
     var _r = cdCollectScanLatest();
     if (!_r.floor || (!_r.tags.length && !_r.boxes.length)) {
       if (typeof toastr !== 'undefined' && toastr.info) toastr.info('最新一层没扫到成对的 <标签> 或 [框框]');
       return;
     }
-    var _t = (_r.tags.length ? _r.tags : ['state']);
-    var _b = (_r.boxes.length ? _r.boxes : ['摘要', '时间']);
+    // 读当前勾选状态（用户已选的保留），扫描结果只用来补候选
+    var _picked = {
+      tag: $('#cd-collect-tags .cd-collect-tag:checked').map(function () { return String($(this).val() || '').trim(); }).get(),
+      box: $('#cd-collect-boxes .cd-collect-box:checked').map(function () { return String($(this).val() || '').trim(); }).get()
+    };
+    var _t = _r.tags.slice(), _b = _r.boxes.slice();
+    _picked.tag.forEach(function (x) { if (_t.indexOf(x) < 0) _t.push(x); });
+    _picked.box.forEach(function (x) { if (_b.indexOf(x) < 0) _b.push(x); });
     $('#cd-collect-tags').html(_t.map(function (x) {
-      return '<label class="cds-pick"><input type="checkbox" class="cd-collect-tag" value="' + escapeAttr(x) + '" checked><span>' + escapeAttr(x) + '</span></label>';
+      return cdCollectChipHtml('tag', x, _picked.tag.indexOf(x) >= 0, _r.tags.indexOf(x) >= 0);
     }).join(''));
     $('#cd-collect-boxes').html(_b.map(function (x) {
-      return '<label class="cds-pick"><input type="checkbox" class="cd-collect-box" value="' + escapeAttr(x) + '" checked><span>' + escapeAttr(x) + '</span></label>';
+      return cdCollectChipHtml('box', x, _picked.box.indexOf(x) >= 0, _r.boxes.indexOf(x) >= 0);
     }).join(''));
-    if (typeof toastr !== 'undefined' && toastr.success) toastr.success('已扫最新楼层：' + _t.length + ' 个标签 / ' + _b.length + ' 个框框，记得点保存');
+    try { cdRenderCollectPreview(); } catch (_e) {}
+    $('#cd-collect-scan-status').html('已扫最新层：发现 ' + _r.tags.length + ' 标签 / ' + _r.boxes.length + ' 框框。<b>新发现只列出、不勾选</b>，你原来选的没动。');
+    if (typeof toastr !== 'undefined' && toastr.success) toastr.success('已扫最新楼层，新发现只列出、不勾选，记得点保存');
+  }).on('click.tagscan', '#cd-collect-pick-all', function () {
+    // 全选本层扫到的（砖红点标记的），其它保持原样
+    if (typeof cdCollectScanLatest !== 'function') return;
+    var _r = cdCollectScanLatest();
+    $('#cd-collect-tags .cd-collect-tag').each(function () {
+      if (_r.tags.indexOf(String($(this).val() || '').trim()) >= 0) $(this).prop('checked', true);
+    });
+    $('#cd-collect-boxes .cd-collect-box').each(function () {
+      if (_r.boxes.indexOf(String($(this).val() || '').trim()) >= 0) $(this).prop('checked', true);
+    });
+    try { cdRenderCollectPreview(); } catch (_e) {}
+    if (typeof toastr !== 'undefined' && toastr.info) toastr.info('已全选本层扫到的，记得点保存');
+  }).on('click.tagscan', '#cd-collect-pick-mine', function () {
+    // 只保留已勾选的候选（把没勾的 chip 移出列表）
+    $('#cd-collect-tags .cd-collect-tag').each(function () { if (!$(this).prop('checked')) $(this).closest('.cds-pick').remove(); });
+    $('#cd-collect-boxes .cd-collect-box').each(function () { if (!$(this).prop('checked')) $(this).closest('.cds-pick').remove(); });
+    try { cdRenderCollectPreview(); } catch (_e) {}
+    if (typeof toastr !== 'undefined' && toastr.info) toastr.info('已只保留勾选的，记得点保存');
+  }).on('click.tagscan', '#cd-collect-restore', function () {
+    // 恢复上次保存：候选列表 + 勾选都回到保存值（连「只保留已勾选」删掉的也补回来）
+    var _s = (typeof cdGetSettings === 'function') ? cdGetSettings() : {};
+    var _t = (Array.isArray(_s.collectTags) && _s.collectTags.length) ? _s.collectTags.slice() : ['state'];
+    var _b = (Array.isArray(_s.collectBoxes) && _s.collectBoxes.length) ? _s.collectBoxes.slice() : ['摘要', '时间'];
+    var _r = (typeof cdCollectScanLatest === 'function') ? cdCollectScanLatest() : { tags: [], boxes: [] };
+    $('#cd-collect-tags').html(_t.map(function (x) {
+      return cdCollectChipHtml('tag', x, true, (_r.tags || []).indexOf(x) >= 0);
+    }).join(''));
+    $('#cd-collect-boxes').html(_b.map(function (x) {
+      return cdCollectChipHtml('box', x, true, (_r.boxes || []).indexOf(x) >= 0);
+    }).join(''));
+    try { cdRenderCollectPreview(); } catch (_e) {}
+    if (typeof toastr !== 'undefined' && toastr.info) toastr.info('已恢复上次保存的选择');
+  }).on('change.tagscan', '.cd-collect-tag, .cd-collect-box', function () {
+    // 任何勾选变化都刷新实时预览
+    try { cdRenderCollectPreview(); } catch (_e) {}
   });
+  // 面板渲染完初始化一次实时预览
+  setTimeout(function () { try { cdRenderCollectPreview(); } catch (_e) {} }, 0);
 
   // 记录当前编辑来源（★ FIX10：与输入框同一口径，按当前选择来源，不再 openai 优先）
   window._cdEditSource = _curSrc || 'tavern';
@@ -17150,6 +17235,15 @@ async function cdRenderEgg() {
 
 /* ============================== 版本更新日志 ============================== */
 const CHANGELOG = [
+  {
+    version: 'v2.23.3',
+    date: '2026-11-27',
+    items: [
+      '【修掉：采集设置一排全勾】重开设置时，只要扫到东西就把所有标签/框框全勾上、把你保存的「时间+摘要」覆盖掉——根因是勾选状态写成了「扫到就勾」。现在勾选只认你保存的值，扫描结果只负责列出候选、绝不自动勾；再点保存也不会把全勾写进设置。',
+      '【正文采集加三个快捷键】全选本层扫到的 / 只保留已勾选 / 恢复上次保存，一步到位；「恢复上次保存」连被删掉的候选也一起补回。',
+      '【采集加实时预览】按正文顺序显示当前勾选会抓到哪几段，跟真实采集走同一个函数，所见即所得。砖红点=本层扫到、深棕底=已勾选，两种状态一眼分开。',
+    ],
+  },
   {
     version: 'v2.23.2',
     date: '2026-11-27',
